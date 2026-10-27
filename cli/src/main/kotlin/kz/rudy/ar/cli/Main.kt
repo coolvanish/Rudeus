@@ -4,7 +4,9 @@ import kotlinx.coroutines.runBlocking
 import kz.rudy.ar.core.io.FileFixtureSource
 import kz.rudy.ar.core.io.FileMetricsSink
 import kz.rudy.ar.core.io.JvmRaster
+import kz.rudy.ar.core.meta.Fixture
 import kz.rudy.ar.core.meta.FixtureApi
+import kz.rudy.ar.core.meta.FixtureConverter
 import kz.rudy.ar.core.meta.Jobs
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaConfig
@@ -16,6 +18,8 @@ import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.pipeline.CharacterPipeline
 import kz.rudy.ar.core.pipeline.StyleGate
 import java.io.File
+import java.time.LocalDate
+import java.util.Base64
 import kotlin.system.exitProcess
 
 /*
@@ -23,6 +27,7 @@ import kotlin.system.exitProcess
  *
  *   character --fixtures <dir> --out <dir> [--ref <name>] [--all] [--live] [--replay-latency]
  *             [--drawings <dir>] [--provider meta|fireworks]
+ *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   metrics summarise <runsDir>
  */
 fun main(args: Array<String>) {
@@ -30,6 +35,7 @@ fun main(args: Array<String>) {
     val code = try {
         when (args[0]) {
             "character" -> character(parseFlags(args.drop(1)))
+            "fixture" -> fixture(parseFlags(args.drop(1)))
             "metrics" -> metrics(args.drop(1))
             "help", "--help", "-h" -> usage()
             else -> usage("unknown command: ${args[0]}")
@@ -50,6 +56,7 @@ private fun usage(error: String? = null): Int {
         usage:
           character --fixtures <dir> --out <dir> [--ref <name> | --all] [--live] [--replay-latency]
                     [--drawings <dir>] [--provider meta|fireworks]
+          fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
           metrics summarise <runsDir>
         """.trimIndent(),
     )
@@ -179,6 +186,68 @@ private fun styleRefs(fixturesDir: File): List<ByteArray> =
 private fun description(fixturesDir: File, ref: String): String =
     File(fixturesDir, "${Jobs.SPARK_SHEET}/$ref.description.txt").takeIf { it.isFile }?.readText()?.trim()
         ?: "a child's drawing of a character"
+
+// ---------------------------------------------------------------- fixture
+
+/** Converts a raw probe reply (`<ref>.response.json`) into `<out>/<ref>.fixture.json` via [FixtureConverter]. */
+private fun fixture(flags: Flags): Int {
+    val job = flags.require("job")
+    if (job !in FixtureConverter.JOBS) throw CliError("unknown job '$job' (expected one of ${FixtureConverter.JOBS.joinToString()})")
+    val response = File(flags.require("response"))
+    if (!response.isFile) throw CliError("response file not found: $response")
+    val ref = flags.get("ref") ?: response.name.removeSuffix(RESPONSE_SUFFIX).takeIf { it != response.name }
+        ?: throw CliError("cannot derive ref from ${response.name} (expected <ref>$RESPONSE_SUFFIX); pass --ref")
+    if (ref.isBlank() || '/' in ref || ".." in ref) throw CliError("bad ref '$ref': must be non-blank, without '/' or '..'")
+    val outDir = flags.get("out")?.let(::File) ?: response.absoluteFile.parentFile
+    if (outDir.absoluteFile.name != job) System.err.println("warning: out dir '${outDir.absoluteFile.name}' is not the job folder '$job'")
+    val latencyMs = flags.get("latency-ms")?.let { it.toLongOrNull() ?: throw CliError("--latency-ms must be an integer") }
+    val note = "converted from ${response.name} by cli fixture on ${LocalDate.now()}"
+
+    val target = File(outDir, "$ref${FixtureApi.SUFFIX}")
+    if (target.isFile && !flags.has("force")) {
+        val existingSynthetic = runCatching { FixtureApi.json.decodeFromString(Fixture.serializer(), target.readText()).synthetic }.getOrDefault(false)
+        if (existingSynthetic) throw CliError("${target.path} is a synthetic fixture; pass --force to replace it")
+    }
+
+    val raw = response.readText()
+    val (fx, pngBytes) = try {
+        val fx = FixtureConverter.fromResponse(job, ref, raw, latencyMs, synthetic = flags.has("synthetic"), note = note)
+        fx to if (job == Jobs.MUSE_STYLIZE) FixtureConverter.inlineStylizeBase64(raw)?.let(::decodePng) else null
+    } catch (e: MetaError) {
+        System.err.println("error: ${e.message}")
+        return 1
+    }
+
+    outDir.mkdirs()
+    val replacing = target.isFile
+    target.writeText(FixtureApi.json.encodeToString(Fixture.serializer(), fx) + "\n")
+    println("${if (replacing) "replaced" else "wrote"} ${target.path}")
+
+    if (job == Jobs.MUSE_STYLIZE) {
+        val png = File(outDir, FixtureConverter.outputName(ref))
+        when {
+            pngBytes != null && png.exists() -> println("kept existing ${png.path}")
+            pngBytes != null -> { png.writeBytes(pngBytes); println("wrote ${png.path} (decoded inline payload)") }
+            !png.isFile -> System.err.println("warning: ${png.path} is missing; the probe must save the stylized PNG there")
+        }
+    }
+    return 0
+}
+
+private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
+
+/** Decodes the inline stylize payload; throws [MetaError.Parse] unless it is non-empty base64 of a PNG. */
+private fun decodePng(b64: String): ByteArray {
+    val bytes = try { Base64.getDecoder().decode(b64) } catch (e: IllegalArgumentException) {
+        throw MetaError.Parse("${Jobs.MUSE_STYLIZE}: data[0].b64_json is not base64: ${e.message}", e)
+    }
+    if (bytes.size < PNG_SIGNATURE.size || !bytes.copyOf(PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE)) {
+        throw MetaError.Parse("${Jobs.MUSE_STYLIZE}: data[0].b64_json is not a PNG (${bytes.size} bytes)")
+    }
+    return bytes
+}
+
+private const val RESPONSE_SUFFIX = ".response.json"
 
 // ---------------------------------------------------------------- metrics
 

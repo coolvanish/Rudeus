@@ -30,10 +30,14 @@ object SheetParser {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** Parses raw model text. Throws [MetaError.Parse] when no JSON object can be found. */
-    fun parse(raw: String): CharacterSheet {
-        val element = extractJson(raw) ?: throw MetaError.Parse("character sheet reply holds no JSON object: ${raw.take(120)}")
-        return fromJson(element)
-    }
+    fun parse(raw: String): CharacterSheet = fromJson(extractObject(raw))
+
+    /**
+     * The model's JSON object exactly as returned (fences and prose stripped, no normalisation).
+     * Used by [parse] and by [FixtureConverter] for the `sheet` field. Throws [MetaError.Parse] when none is found.
+     */
+    fun extractObject(raw: String): JsonObject =
+        extractJson(raw) ?: throw MetaError.Parse("character sheet reply holds no JSON object: ${raw.take(120)}")
 
     fun fromJson(element: JsonElement): CharacterSheet {
         val obj = element as? JsonObject ?: throw MetaError.Parse("character sheet is not a JSON object")
@@ -72,7 +76,7 @@ object SheetParser {
     }
 
     /** Finds the first `{...}` block (handles ```json fences and chatty prefixes). */
-    private fun extractJson(raw: String): JsonElement? {
+    private fun extractJson(raw: String): JsonObject? {
         val text = raw.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
         val start = text.indexOf('{')
         val end = text.lastIndexOf('}')
