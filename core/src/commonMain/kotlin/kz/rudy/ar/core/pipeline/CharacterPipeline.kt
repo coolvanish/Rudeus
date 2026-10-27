@@ -11,6 +11,7 @@ import kz.rudy.ar.core.meta.MetaError
 import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.MetricsLog
+import kz.rudy.ar.core.metrics.StageCost
 
 /** Output of [CharacterPipeline.run]. `gatePassed=false` means the sprite shipped after exhausting retries. */
 data class CharacterResult(
@@ -49,6 +50,9 @@ data class CharacterResult(
  * <= [SPARK_IMAGE_MAX_SIDE], the sheet the cutout at <= [SHEET_IMAGE_MAX_SIDE]; the refs are scaled once per [run].
  * SAM always gets the full photo, and [CharacterResult.sprite] stays full size.
  *
+ * [onEvent] receives [PipelineEvent]s (stage started/finished, gate scored, finished/failed) on the calling coroutine
+ * only, in order; it drives the processing screen.
+ *
  * Only the calling coroutine touches [metrics]; the sheet coroutine reads nothing but `metrics.now()` (the clock must
  * be safe to read from any thread; the default system clock is). One [run] at a time per instance.
  */
@@ -61,14 +65,15 @@ class CharacterPipeline(
     private val cutoutComposer: ((image: ByteArray, mask: MaskResult) -> ByteArray)? = null,
     private val spriteMatter: ((ByteArray) -> ByteArray?)? = null,
     private val imageResizer: ((bytes: ByteArray, maxSide: Int) -> ByteArray)? = null,
+    private val onEvent: ((PipelineEvent) -> Unit)? = null,
 ) {
     init { require(maxRetries >= 0) }
 
     suspend fun run(ref: String, image: ByteArray, styleRefs: List<ByteArray>, description: String): CharacterResult {
         metrics.startCharacter(ref)
         var attempt = 0
-        try {
-            return coroutineScope {
+        val result = try {
+            coroutineScope {
                 // 1. cutout
                 val mask = stage(STAGE_CUTOUT, 1, Jobs.SAM_CUTOUT, metrics.costs.cutoutUsd) {
                     val result = models.segment(ref, image, Jobs.CUTOUT_PROMPTS)
@@ -80,6 +85,7 @@ class CharacterPipeline(
                 // disjoint from the loop's, so its measured cost is simply everything recorded for the job since now.
                 val sheetMark = metrics.costMark(Jobs.SPARK_SHEET)
                 val sheetImage = fit(cutout, SHEET_IMAGE_MAX_SIDE)
+                emit(PipelineEvent.StageStarted(STAGE_SHEET, 1))
                 val sheetCall = async { sheet(ref, description, sheetImage) }
 
                 // 2-3. stylize + matte + gate, with retries. Inputs are downscaled once here, not per attempt.
@@ -96,6 +102,7 @@ class CharacterPipeline(
                         models.stylize(ref, museCutout, museRefs)
                     }
                     sprite = matte(ref, stylized, attempt)
+                    emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
                     val t0 = metrics.now()
                     val gateMark = metrics.costMark(Jobs.SPARK_SCORE)
                     try {
@@ -104,18 +111,19 @@ class CharacterPipeline(
                         val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(scored), refRasters) }
                         score = gate.combine(modelScore, deterministic)
                         passed = gate.passes(score)
-                        metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costSince(gateMark, metrics.costs.scoreUsd))
+                        emit(PipelineEvent.GateScored(attempt, score, passed))
+                        record(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costSince(gateMark, metrics.costs.scoreUsd))
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
-                        metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costSince(gateMark, metrics.costs.scoreUsd))
+                        record(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costSince(gateMark, metrics.costs.scoreUsd))
                         throw e
                     }
                     if (passed || attempt > maxRetries) break
                 }
 
                 val sheet = sheetCall.await()
-                metrics.stage(STAGE_SHEET, sheet.ms, 1, sheet.ok, metrics.costSince(sheetMark, metrics.costs.sheetUsd))
+                record(STAGE_SHEET, sheet.ms, 1, sheet.ok, metrics.costSince(sheetMark, metrics.costs.sheetUsd))
 
                 metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)
                 CharacterResult(ref, sprite, sheet.sheet, score, passed, attempt, mask)
@@ -124,8 +132,22 @@ class CharacterPipeline(
             throw e
         } catch (e: Throwable) {
             metrics.endCharacter(gateScore = 0f, gatePassed = false, retries = (attempt - 1).coerceAtLeast(0))
-            throw if (e is MetaError) e else MetaError.Provider("$ref: ${e::class.simpleName}: ${e.message}", e)
+            val error = if (e is MetaError) e else MetaError.Provider("$ref: ${e::class.simpleName}: ${e.message}", e)
+            emit(PipelineEvent.Failed(error.message ?: error::class.simpleName.orEmpty()))
+            throw error
         }
+        emit(PipelineEvent.Finished(result))
+        return result
+    }
+
+    private fun emit(event: PipelineEvent) {
+        onEvent?.invoke(event)
+    }
+
+    /** Records stage [name] in [metrics] and reports it as finished. */
+    private fun record(name: String, ms: Long, attempt: Int, ok: Boolean, cost: StageCost) {
+        metrics.stage(name, ms, attempt, ok, cost)
+        emit(PipelineEvent.StageFinished(name, attempt, ok, ms))
     }
 
     /** [bytes] scaled to at most [maxSide] px on the long side by [imageResizer]; unchanged without one. */
@@ -149,9 +171,10 @@ class CharacterPipeline(
     /** Stage `matte`: [spriteMatter], else one SAM pass on the stylized image, else the unmatted sprite. */
     private suspend fun matte(ref: String, stylized: ByteArray, attempt: Int): ByteArray {
         val matter = spriteMatter ?: return stylized
+        emit(PipelineEvent.StageStarted(STAGE_MATTE, attempt))
         val t0 = metrics.now()
         matter(stylized)?.let {
-            metrics.stage(STAGE_MATTE, metrics.now() - t0, attempt, true, 0.0)
+            record(STAGE_MATTE, metrics.now() - t0, attempt, true, StageCost(0.0, measured = false))
             return it
         }
         // SAM fallback: sequential with the cutout (same job), so the mark isolates this pass.
@@ -166,22 +189,23 @@ class CharacterPipeline(
         } catch (e: Throwable) {
             null
         }
-        metrics.stage(STAGE_MATTE, metrics.now() - t0, attempt, viaSam != null, metrics.costSince(samMark, samEstimate))
+        record(STAGE_MATTE, metrics.now() - t0, attempt, viaSam != null, metrics.costSince(samMark, samEstimate))
         return viaSam ?: stylized
     }
 
     /** Runs [block] as stage [name]; its cost is what [job] recorded meanwhile, else [estimateUsd]. */
     private suspend inline fun <T> stage(name: String, attempt: Int, job: String, estimateUsd: Double, block: () -> T): T {
+        emit(PipelineEvent.StageStarted(name, attempt))
         val t0 = metrics.now()
         val mark = metrics.costMark(job)
         try {
             val r = block()
-            metrics.stage(name, metrics.now() - t0, attempt, true, metrics.costSince(mark, estimateUsd))
+            record(name, metrics.now() - t0, attempt, true, metrics.costSince(mark, estimateUsd))
             return r
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            metrics.stage(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, estimateUsd))
+            record(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, estimateUsd))
             throw e
         }
     }

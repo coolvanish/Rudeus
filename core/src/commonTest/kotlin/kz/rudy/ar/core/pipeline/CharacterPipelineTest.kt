@@ -201,6 +201,53 @@ class CharacterPipelineTest {
     }
 
     @Test
+    fun eventsFollowStageOrder() = runTest {
+        fun label(e: PipelineEvent): String = when (e) {
+            is PipelineEvent.StageStarted -> "+${e.stage}${e.attempt}"
+            is PipelineEvent.StageFinished -> "-${e.stage}${e.attempt}${if (e.ok) "" else "!"}"
+            is PipelineEvent.GateScored -> "score${e.attempt}${if (e.passed) "" else "!"}"
+            is PipelineEvent.Finished -> "done"
+            is PipelineEvent.Failed -> "failed"
+        }
+
+        // First try, with a matter.
+        val first = ArrayList<PipelineEvent>()
+        val ok = CharacterPipeline(FakeModels(scores = listOf(0.9f)), StyleGate(), metrics(), spriteMatter = { it }, onEvent = { first += it })
+            .run("cat-01", image, refs, "")
+        assertEquals(
+            listOf(
+                "+cutout1", "-cutout1", "+sheet1", "+stylize1", "-stylize1", "+matte1", "-matte1",
+                "+gate1", "score1", "-gate1", "-sheet1", "done",
+            ),
+            first.map(::label),
+        )
+        assertEquals(ok, (first.last() as PipelineEvent.Finished).result)
+        assertEquals(PipelineEvent.GateScored(1, 0.9f, true), first.single { it is PipelineEvent.GateScored })
+
+        // One retry, no matter (no matte events).
+        val retry = ArrayList<PipelineEvent>()
+        CharacterPipeline(FakeModels(scores = listOf(0.5f, 0.8f)), StyleGate(), metrics(), onEvent = { retry += it })
+            .run("cat-01", image, refs, "")
+        assertEquals(
+            listOf(
+                "+cutout1", "-cutout1", "+sheet1",
+                "+stylize1", "-stylize1", "+gate1", "score1!", "-gate1!",
+                "+stylize2", "-stylize2", "+gate2", "score2", "-gate2",
+                "-sheet1", "done",
+            ),
+            retry.map(::label),
+        )
+
+        // A failed cutout ends with Failed, after the stage's own failure.
+        val failed = ArrayList<PipelineEvent>()
+        assertFailsWith<MetaError> {
+            CharacterPipeline(FakeModels(segmentError = MetaError.Http(503, "down")), StyleGate(), metrics(), onEvent = { failed += it })
+                .run("cat-01", image, refs, "")
+        }
+        assertEquals(listOf("+cutout1", "-cutout1!", "failed"), failed.map(::label))
+    }
+
+    @Test
     fun gateScoreExactlyThresholdPasses() {
         val gate = StyleGate(threshold = 0.7f)
         assertTrue(gate.passes(0.7f))

@@ -16,6 +16,7 @@ object JvmPipeline {
         gate: StyleGate = StyleGate(),
         matte: Boolean = true,
         downscale: Boolean = true,
+        onEvent: ((PipelineEvent) -> Unit)? = null,
     ): CharacterPipeline =
         CharacterPipeline(
             models = models,
@@ -25,5 +26,6 @@ object JvmPipeline {
             cutoutComposer = JvmRaster::cutout,
             spriteMatter = if (matte) JvmRaster::matte else null,
             imageResizer = if (downscale) JvmRaster::downscale else null,
+            onEvent = onEvent,
         )
 }
