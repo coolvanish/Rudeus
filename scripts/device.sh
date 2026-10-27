@@ -8,9 +8,12 @@ PKG=kz.rudy.ar
 
 case "${1:-}" in
   run)
+    # Cold start so the one-shot RudeusGate lines (session_resumed, plane_detected_ms, depth_*) are logged again.
+    "$ADB" shell am force-stop "$PKG"
     "$ADB" shell am start -n "$PKG/.MainActivity" ;;
   log)
-    "$ADB" logcat -c
+    # No `logcat -c`: the gate probe logs plane/depth once at startup and clearing would drop those lines.
+    # Start this first, then `scripts/device.sh run` in another terminal.
     "$ADB" logcat -v time RudeusGate:I ARCore:I ARCore-Session:I Filament:W SceneView:D "$PKG":D AndroidRuntime:E '*:S' ;;
   shot)
     out="${2:-shot-$(date +%H%M%S).png}"
