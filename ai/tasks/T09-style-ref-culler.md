@@ -1,6 +1,6 @@
 # T09 — style-ref-culler
 
-status: doing
+status: done
 created: 2026-10-28
 day: Day 2
 gate: "8 culled style refs" (feeds ≥7/10 first-try gate passes)
@@ -65,5 +65,9 @@ Rules: no network, never read local.properties, no Gradle edits.
 - all six tests green
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: ...
+- measured: 30 synthetic 1024x1024 candidates cull in ~0.16–0.18 s on the Mac (JVM, warmed / cold); 8 RefCullerTest tests green.
+- review (rudeus-reviewer): merge after fixes → fixed in a2e5471 (duplicate names deterministic by content key;
+  near-duplicate = same picture via a 16x16 content signature, not same style; name bookkeeping after hard rejects).
+  Known nit left: stride sampling can alias 1–3 px strokes on 1024 px refs (outline share varies a little).
+- cut/deferred: nothing. `DUPLICATE_DISTANCE = 0.03` and `BACKGROUND_MIN_L = 90` are tuned on synthetic images only;
+  check the `cull.json` reasons on the first real candidate folder.
