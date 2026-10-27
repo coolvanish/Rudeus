@@ -76,8 +76,7 @@ class CharacterPipeline(
             coroutineScope {
                 // 1. cutout
                 val mask = stage(STAGE_CUTOUT, 1, Jobs.SAM_CUTOUT, metrics.costs.cutoutUsd) {
-                    val result = models.segment(ref, image, Jobs.CUTOUT_PROMPTS)
-                    result.largest()?.takeIf { !it.isEmpty }
+                    models.segment(ref, image, Jobs.CUTOUT_PROMPTS).largest()?.takeIf { !it.isEmpty }
                 }
                 val cutout = if (mask != null && cutoutComposer != null) cutoutComposer.invoke(image, mask) else image
 
