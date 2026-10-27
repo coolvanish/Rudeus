@@ -15,8 +15,13 @@ docs/api-samples/
   <job>/meta.json                 how this folder's samples were produced (endpoint, model, latency, cost)
   <job>/<ref>.fixture.json        normalised reply for input <ref> (schema below) — what FixtureApi reads
   <job>/<ref>.response.json       raw, REDACTED reply saved by scripts/probe-meta.sh (optional, real probes only)
+  <job>/<ref>.headers.txt         the reply headers of that probe (auth/cookie lines stripped)
+  <job>/request.json.tmpl         the request body scripts/probe-meta.sh sends (header lines: path, content-type, model)
+  sam-*/<ref>.<prompt>.response.json  SAM 3.1 takes ONE concept per request, so a probe saves one reply per prompt
   sam-cutout/<ref>.input.png|jpg  the photo given to SAM (also the CLI's input image for <ref>)
+  sam-cutout/prompts.json         ["drawing", "toy"]
   sam-table/prompts.json          the prompt list used for table scans
+  sam-rig/prompts.json            body parts for the rigging stretch (head, arm, leg, wing, tail, body)
   muse-stylize/refs/*.png         the style reference images (<= 9) sent to Muse Image edit
   muse-stylize/<ref>.out*.png     stylized outputs, one per attempt
   spark-sheet/<ref>.description.txt  the character description the CLI sends for <ref> (optional)
@@ -81,6 +86,66 @@ smoke-test runs, not README figures.
 - `<ref>` is kebab-case, no spaces: `cat-01`, `robot-toy-02`. It appears in `runs/*.json` as `characters[].input`.
 - Raw probe replies: `<ref>.response.json`; decoded binary payloads next to them: `<ref>.mask.png`, `<ref>.out.png`.
 - Per-attempt outputs: `<ref>.out-<n>.png`.
+
+## Endpoints (Day 1 probe)
+
+Everything is served by the **Meta Model API** (`https://api.meta.ai/v1`, `Authorization: Bearer <key>`, docs at
+https://dev.meta.ai/docs). Verified on 2026-10-28 against the official docs (the links in the last column); nothing
+has been exercised with a key yet, so the first real probe may still correct a detail. Each `request.json.tmpl`
+header lists its own `# unverified:` lines.
+
+| job | base URL (`META_BASE_URL`) | path | content type | model id | verified? |
+|---|---|---|---|---|---|
+| `sam-cutout` | `https://api.meta.ai` | `/v1/responses` (one request per prompt) | json (base64 data URL) | `sam-3.1` | yes — https://dev.meta.ai/docs/sam/segmenting ; reply wrapper for `stream:false` unverified |
+| `sam-table` | `https://api.meta.ai` | `/v1/responses` (one request per prompt) | json (base64 data URL) | `sam-3.1` | yes — https://dev.meta.ai/docs/sam/reading-segmentation ; same caveat |
+| `sam-rig` | `https://api.meta.ai` | `/v1/responses` (one request per prompt) | json (base64 data URL) | `sam-3.1` | yes (call shape) — https://dev.meta.ai/docs/media-segmentation ; quality on cartoon parts unverified |
+| `muse-stylize` | `https://api.meta.ai` | `/v1/images/edits` | json (`images[]` of data URLs, <= 10) | `muse-image-1.0` | yes — https://dev.meta.ai/docs/image-generation ; `background` is always `opaque` (alpha not kept) |
+| `spark-score` | `https://api.meta.ai` | `/v1/chat/completions` | json (`image_url` parts, data URLs) | `muse-spark-1.3` | yes — https://dev.meta.ai/docs/image-understanding |
+| `spark-sheet` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema`) | `muse-spark-1.3` | yes — https://dev.meta.ai/docs/features/structured-output ; Kazakh quality unverified |
+| `voice` | `https://api.meta.ai` | `/v1/asr/transcribe` | multipart (`request` JSON part + `audio` WAV) | `muse-voice-transcribe-1.0` | yes — https://dev.meta.ai/docs/api-reference/voice/transcribe ; Kazakh is NOT in the 25 supported languages |
+
+What the docs say that the code did not expect:
+
+- **SAM 3.1** is not a `/segment` endpoint. It rides the Responses API, accepts exactly one concept prompt per request
+  (comma lists return zero matches) and returns special-token text, one line per frame:
+  `<0f>0<|box;x1=..;y1=..;x2=..;y2=..;w=W;h=H;c=0.9|><|mask;x=0;y=0;data=H,W,~<base85>|>`. The mask payload is Meta's
+  own base85 encoding (`~` lossless, `!` one_bit), not COCO RLE; Meta ships `@meta-sam/parser` (TS) and
+  `meta_sam_parser` (Python) with `decode_mask_to_rle`. Zero matches = empty `output_text`, not an error.
+  `metadata` values are strings: `mask_encoding`, `include_confidence`, `propagation_direction`.
+- **Muse Image edit** wants `images: [{"image_url": "data:..."}, ...]` (1..10, the cutout first, then the refs) in a
+  JSON body, or multipart `image` via the OpenAI SDK. Reply `data[0].b64_json`, `output_format` (default webp — we
+  ask for png), `background: "opaque"`. $0.01 per image, 150 RPM.
+- **Muse Spark 1.3** is OpenAI-compatible Chat Completions. Use `max_completion_tokens` (`max_tokens` is a deprecated
+  alias), leave `temperature` at the default 1.0 (reasoning model; `stop`, `logprobs`, `n>1` -> 400),
+  `reasoning_effort` in minimal..xhigh. Standard tier $1.25/M in, $4.25/M out, 3,000 RPM; `-contributor` is cheaper
+  but Meta may train on it.
+- **Muse Voice Transcribe** file endpoint is multipart only: `request` part
+  `{"model","audioEncoding":"WAV","mode":"PUSH_TO_TALK","languageBias":[...],"keywords":[...]}` plus `audio` =
+  RIFF WAV, mono 16-bit PCM at 16 or 24 kHz (raw PCM -> 400). Reply `{"sessionId","transcript","audioDurationMs","turns"}`
+  (no `text` field). $0.18 per audio hour. Supported languages (25) do not include Kazakh or Russian; `languageBias`
+  is a hint by language *name*.
+- **Fallback providers.** No evidence (2026-10-28) that Baseten lists SAM 3.1 or that Fireworks serves SAM 3,
+  Muse Image or Voice Transcribe. Fireworks does serve the open-weight `accounts/fireworks/models/muse-spark-open`
+  (OpenAI-compatible, `https://api.fireworks.ai/inference/v1`, limited preview) — a chat-only fallback for the
+  Spark jobs. The "Baseten slug" in ai/build-plan.md would be a self-deployed SAM 3.1 from the Hugging Face
+  checkpoint, with its own request shape.
+
+## Probing
+
+```
+scripts/probe-meta.sh --dry-run sam-table photos/table-01.jpg     # renders the bodies, no key, no network
+export META_BASE_URL=https://api.meta.ai                           # no trailing slash, no /v1 (the template path has it)
+scripts/probe-meta.sh sam-table photos/table-01.jpg                # 6 requests, one per prompt in prompts.json
+scripts/probe-meta.sh muse-stylize docs/api-samples/sam-cutout/cat-01.input.png   # + muse-stylize/refs/*.png
+scripts/probe-meta.sh spark-sheet docs/api-samples/spark-sheet/cat-01.description.txt
+scripts/probe-meta.sh voice clips/jump-kk.wav                      # mono 16-bit PCM WAV, 16 or 24 kHz
+```
+
+The key is read from `local.properties` (`META_API_KEY=...`) or the environment and never printed. `--dry-run`
+prints the path, content type, body size and the first 300 chars of each rendered body with base64 collapsed, and
+exits 0 without `META_BASE_URL` or a key. Each real probe writes `<ref>[.<prompt>].response.json` (redacted),
+`<ref>[.<prompt>].headers.txt` and appends `{when, input, httpStatus, latencyMs}` to `meta.json`; fill in
+`costUsd`, `model`, `requestShape` and `probedAt` by hand afterwards.
 
 ## Redaction (pre-commit hook enforces the token shape)
 

@@ -1,0 +1,25 @@
+# path: /v1/asr/transcribe
+# base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
+# content-type: multipart
+# file-field: audio
+# file-type: audio/wav
+# accept: application/json
+# model: muse-voice-transcribe-1.0
+# verified: https://dev.meta.ai/docs/api-reference/voice/transcribe + .../voice/schemas + https://dev.meta.ai/docs/speech-to-text
+#   (2026-10-28): multipart/form-data with two parts: "request" (JSON, type application/json) and "audio" (the clip).
+#   audioEncoding must be "WAV": RIFF/WAVE, mono, 16-bit PCM at 16 kHz or 24 kHz (raw PCM is rejected -> 400).
+#   mode PUSH_TO_TALK (default, whole clip = one turn) | ENDPOINTING | DIARIZATION. Max 10 min / 32 MB.
+#   Reply (Accept: application/json): {"sessionId", "transcript", "audioDurationMs", "turns":[...]} — "text" is NOT
+#   a field. Price $0.18 per audio hour. Realtime variant: wss://api.meta.ai/v1/asr/realtime.
+# unverified: Kazakh is NOT among the 25 evaluated languages (nor is Russian); languageBias takes language NAMES
+#   ("Kazakh"), is only a hint, and an unknown name degrades to auto-detect. Expect the Day 1 gate to fail here
+#   unless the clip is short and clear; cut line 1 (Voice) is the fallback.
+# unverified: optional "keywords": ["секір", ...] biasing on Kazakh command words — try it on the second probe.
+{
+  "request": {
+    "model": "muse-voice-transcribe-1.0",
+    "audioEncoding": "WAV",
+    "mode": "PUSH_TO_TALK",
+    "languageBias": ["Kazakh"]
+  }
+}

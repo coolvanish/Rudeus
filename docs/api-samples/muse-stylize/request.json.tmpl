@@ -1,0 +1,24 @@
+# path: /v1/images/edits
+# base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
+# content-type: json
+# model: muse-image-1.0
+# verified: https://dev.meta.ai/docs/image-generation + https://dev.meta.ai/docs/api-reference/images/schemas (2026-10-28):
+#   JSON body is Meta-specific: "images" = 1..10 items, each {"image_url": <public URL or base64 data URL>} or
+#   {"file_id": ...}; the OpenAI SDK sends multipart "image" instead. The first image is the cutout, the rest are
+#   the style refs from refs/*.png ({{REF_IMAGE_ITEMS}}, max 9). response_format b64_json (default), output_format
+#   png|webp|jpeg (default webp). Reply: {"created", "data":[{"b64_json"}], "output_format", "background":"opaque",
+#   "usage":{...}}. Price $0.01/image. Unknown top-level fields -> 400. mask / input_fidelity -> 400.
+# unverified: "background" is documented as always "opaque" -> the transparent cutout background is probably NOT
+#   preserved; the pipeline may need to re-cut the stylized output with SAM (sam-cutout on the result).
+# unverified: reasoning_strength "low" is faster (single pass); "high" (default) self-refines. Try both on Day 1.
+{
+  "model": "muse-image-1.0",
+  "prompt": "The first image is a child's character cutout. Redraw this character in the exact style of the other reference images: same line weight, palette and shading. Keep the pose and silhouette, plain white background, no text.",
+  "images": [
+    { "image_url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" }{{REF_IMAGE_ITEMS}}
+  ],
+  "n": 1,
+  "response_format": "b64_json",
+  "output_format": "png",
+  "reasoning_strength": "low"
+}

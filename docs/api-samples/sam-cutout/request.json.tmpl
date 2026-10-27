@@ -1,0 +1,29 @@
+# path: /v1/responses
+# base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
+# content-type: json
+# model: sam-3.1
+# accept: application/json
+# per-prompt: true
+# verified: https://dev.meta.ai/docs/sam/segmenting + https://dev.meta.ai/docs/media-segmentation (2026-10-28):
+#   SAM 3.1 is served through the Responses API, one concept prompt per request (comma lists return zero matches),
+#   image_url accepts a base64 data URL, metadata values are strings (mask_encoding lossless|one_bit,
+#   include_confidence "true"|"false"). Output is special-token text per frame:
+#   <0f>0<|box;x1=..;y1=..;x2=..;y2=..;w=W;h=H;c=0.97|><|mask;x=0;y=0;data=H,W,~<base85>|>  — NOT COCO RLE.
+# unverified: the non-streaming JSON wrapper around that text (docs only show the SSE stream: event
+#   response.output_text.delta -> delta). Expect Responses-API shape output[0].content[0].text / output_text.
+# unverified: image size limits for base64 data URLs (none documented); keep inputs <= ~2 MB.
+{
+  "model": "sam-3.1",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "{{PROMPT}}" },
+        { "type": "input_image", "image_url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" }
+      ]
+    }
+  ],
+  "stream": false,
+  "metadata": { "mask_encoding": "lossless", "include_confidence": "true" }
+}

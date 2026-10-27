@@ -1,6 +1,6 @@
 # T01 — day1-gate-probes
 
-status: todo
+status: doing
 created: 2026-10-28
 day: Day 1 (carried over)
 gate: plane < 10 s · drift < 1 cm/60 s · cup footprint via ray–plane within 1–2 cm · SAM clean masks on 5–6 objects · Muse style stable over 3 gens · Kazakh ASR usable?

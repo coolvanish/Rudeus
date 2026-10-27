@@ -25,10 +25,14 @@ date probed. `FixtureApi` reads `meta.json` to replay realistic latency in the C
 
 ## Probing (Day 1 item, re-run when an endpoint changes)
 ```
-scripts/probe-meta.sh sam-table docs/api-samples/sam-table/table-01.jpg
+scripts/probe-meta.sh --dry-run sam-table docs/api-samples/sam-table/table-01.jpg   # render only: no key, no network
+export META_BASE_URL=https://api.meta.ai                                            # no trailing slash, no /v1
+scripts/probe-meta.sh sam-table docs/api-samples/sam-table/table-01.jpg             # one request per prompt
 ```
-The script reads the key from `local.properties` itself; you never see or print it. It writes the redacted response
-next to the input. **Do not** write your own curl with the key inline, and do not paste responses into chat
+The request shape per job lives in `docs/api-samples/<job>/request.json.tmpl` (verified endpoints and the
+`# unverified:` caveats are tabulated in docs/api-samples/README.md, "Endpoints (Day 1 probe)"). The script reads
+the key from `local.properties` itself; you never see or print it. It writes the redacted response
+next to the input (`<ref>.<prompt>.response.json` for the SAM jobs, since SAM 3.1 takes one concept per request). **Do not** write your own curl with the key inline, and do not paste responses into chat
 if they are larger than a screen: summarise shape and sizes instead.
 
 ## Redaction rules (pre-commit hook enforces the token shape)

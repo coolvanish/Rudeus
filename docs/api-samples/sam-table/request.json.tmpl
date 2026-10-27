@@ -1,0 +1,29 @@
+# path: /v1/responses
+# base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
+# content-type: json
+# model: sam-3.1
+# accept: application/json
+# per-prompt: true
+# verified: https://dev.meta.ai/docs/sam/segmenting + https://dev.meta.ai/docs/sam/reading-segmentation (2026-10-28):
+#   one concept per request -> this template is rendered once per entry of prompts.json (6 requests per photo,
+#   saved as <name>.<prompt>.response.json). Every match comes back as a box + mask record; zero matches is a
+#   valid outcome (empty output_text), which is how an absent table object shows up.
+#   Mask payload: data=H,W,~<base85 lossless> (or !<one_bit>). Decode with @meta-sam/parser / meta_sam_parser,
+#   or port decode_mask_to_rle to Kotlin (COCO RLE comes out column-major).
+# unverified: the non-streaming JSON wrapper (docs only show the SSE stream).
+# unverified: whether "object" as a concept returns anything useful; keep it last in prompts.json.
+{
+  "model": "sam-3.1",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "{{PROMPT}}" },
+        { "type": "input_image", "image_url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" }
+      ]
+    }
+  ],
+  "stream": false,
+  "metadata": { "mask_encoding": "lossless", "include_confidence": "true" }
+}
