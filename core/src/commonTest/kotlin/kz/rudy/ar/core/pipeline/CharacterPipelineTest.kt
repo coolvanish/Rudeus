@@ -6,11 +6,13 @@ import kz.rudy.ar.core.io.ArrayRaster
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.io.argbOf
 import kz.rudy.ar.core.meta.FakeModels
+import kz.rudy.ar.core.meta.MetaError
 import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.MetricsLog
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -122,6 +124,62 @@ class CharacterPipelineTest {
         val shipped = CharacterPipeline(empty, StyleGate(), log2, spriteMatter = { null }).run("cat-01", image, refs, "a cat")
         assertContentEquals(empty.sprite, shipped.sprite)
         assertFalse(log2.toRun().characters.single().stages.single { it.name == "matte" }.ok)
+    }
+
+    @Test
+    fun sheetRunsConcurrentlyAndIsRecordedLast() = runTest {
+        val models = FakeModels(
+            scores = listOf(0.5f, 0.9f),
+            delays = mapOf("segment" to 1_000L, "stylize" to 5_000L, "scoreStyle" to 2_000L, "characterSheet" to 6_000L),
+        )
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+
+        val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat")
+
+        assertEquals(2, result.attempts)
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "gate", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        val sheet = c.stages.last()
+        assertEquals(6_000L, sheet.ms)
+        assertTrue(sheet.ok)
+        // Sequential would be 1 + 2 * (5 + 2) + 6 = 21 s; with the sheet alongside the loop it is 1 + 14 = 15 s.
+        assertEquals(21_000L, c.stages.sumOf { it.ms })
+        assertEquals(15_000L, c.totalMs)
+        assertTrue(c.totalMs < c.stages.sumOf { it.ms })
+    }
+
+    @Test
+    fun sheetFailureShipsFallbackSheet() = runTest {
+        val models = FakeModels(scores = listOf(0.85f), sheetError = MetaError.Http(500, "boom"))
+        val log = metrics()
+
+        val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat")
+
+        assertEquals(SheetParser.fallback("cat-01"), result.sheet)
+        assertEquals("Cat", result.sheet.name)
+        assertEquals(Ability.JUMP, result.sheet.ability)
+        assertEquals(SheetParser.FALLBACK_LINES.getValue("kk"), result.sheet.lines.getValue("kk"))
+        assertEquals(SheetParser.FALLBACK_LINES.getValue("ru"), result.sheet.lines.getValue("ru"))
+        val c = log.toRun().characters.single()
+        assertEquals("sheet", c.stages.last().name)
+        assertFalse(c.stages.last().ok)
+        assertTrue(c.stages.dropLast(1).all { it.ok })
+        assertTrue(c.gatePassed)
+        assertEquals(0.85f, c.gateScore, 1e-4f)
+        assertEquals(0, c.retries)
+        assertEquals("Dos", SheetParser.fallback("01").name)
+        assertEquals("Robot", SheetParser.fallback("robot-toy-02").name)
+    }
+
+    @Test
+    fun cutoutFailureStillFailsTheCharacter() = runTest {
+        val models = FakeModels(segmentError = MetaError.Http(503, "down"))
+        val log = metrics()
+        assertFailsWith<MetaError.Http> { CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat") }
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout"), c.stages.map { it.name })
+        assertFalse(c.gatePassed)
+        assertEquals(0, models.calls.count { it.startsWith("characterSheet:") }, "the sheet never starts without a cutout")
     }
 
     @Test

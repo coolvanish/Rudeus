@@ -1,6 +1,8 @@
 package kz.rudy.ar.core.pipeline
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.meta.Jobs
@@ -25,8 +27,11 @@ data class CharacterResult(
 
 /**
  * photo -> cutout (SAM) -> stylize (Muse) -> gate (Spark score + deterministic half) -> retry stylize
- * up to [maxRetries] times while the gate fails -> character sheet (Spark). Every stage lands in [metrics]
- * with its duration, attempt number, success flag and an estimated cost from `metrics.costs`.
+ * up to [maxRetries] times while the gate fails. The character sheet (Spark vision on the cutout) starts right after
+ * the cutout and runs concurrently with the stylize/gate loop; a failed sheet call ships [SheetParser.fallback]
+ * instead of failing the character (cutout, stylize and gate failures still fail it). Every stage lands in [metrics]
+ * with its duration, attempt number, success flag and an estimated cost from `metrics.costs`; the sheet stage is
+ * recorded after the loop, so the stage order in the JSON is deterministic.
  *
  * [rasterDecoder] (e.g. `JvmRaster::decode`) enables the deterministic gate half; without it the model
  * score alone decides. [cutoutComposer] turns (photo, mask) into the transparent PNG Muse receives; without
@@ -37,6 +42,9 @@ data class CharacterResult(
  * stylize attempt (stage `matte`) and the gate scores the matted sprite. When it returns null (degenerate matte) the
  * stylized image gets one SAM pass ([Jobs.CUTOUT_PROMPTS] + [cutoutComposer]); if that fails too the unmatted sprite
  * ships and the `matte` stage is recorded with `ok=false`.
+ *
+ * Only the calling coroutine touches [metrics]; the sheet coroutine reads nothing but `metrics.now()` (the clock must
+ * be safe to read from any thread; the default system clock is). One [run] at a time per instance.
  */
 class CharacterPipeline(
     private val models: MetaModels,
@@ -53,50 +61,68 @@ class CharacterPipeline(
         metrics.startCharacter(ref)
         var attempt = 0
         try {
-            // 1. cutout
-            val mask = stage(STAGE_CUTOUT, 1, metrics.costs.cutoutUsd) {
-                val result = models.segment(ref, image, Jobs.CUTOUT_PROMPTS)
-                result.largest()?.takeIf { !it.isEmpty }
-            }
-            val cutout = if (mask != null && cutoutComposer != null) cutoutComposer.invoke(image, mask) else image
-
-            // 2-3. stylize + gate, with retries
-            val refRasters: List<RasterImage?> = rasterDecoder?.let { d -> styleRefs.map { d(it) } } ?: emptyList()
-            var sprite: ByteArray = ByteArray(0)
-            var score = 0f
-            var passed = false
-            while (true) {
-                attempt++
-                val stylized = stage(STAGE_STYLIZE, attempt, metrics.costs.stylizeUsd) { models.stylize(ref, cutout, styleRefs) }
-                sprite = matte(ref, stylized, attempt)
-                val t0 = metrics.now()
-                try {
-                    val modelScore = models.scoreStyle(ref, sprite, styleRefs)
-                    val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(sprite), refRasters) }
-                    score = gate.combine(modelScore, deterministic)
-                    passed = gate.passes(score)
-                    metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costs.scoreUsd)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Throwable) {
-                    metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costs.scoreUsd)
-                    throw e
+            return coroutineScope {
+                // 1. cutout
+                val mask = stage(STAGE_CUTOUT, 1, metrics.costs.cutoutUsd) {
+                    val result = models.segment(ref, image, Jobs.CUTOUT_PROMPTS)
+                    result.largest()?.takeIf { !it.isEmpty }
                 }
-                if (passed || attempt > maxRetries) break
-            }
+                val cutout = if (mask != null && cutoutComposer != null) cutoutComposer.invoke(image, mask) else image
 
-            // 4. sheet
-            val sheet = stage(STAGE_SHEET, 1, metrics.costs.sheetUsd) {
-                SheetParser.normalise(models.characterSheet(ref, description, cutout))
-            }
+                // 4. sheet: starts now, runs concurrently with 2-3, recorded after the loop.
+                val sheetCall = async { sheet(ref, description, cutout) }
 
-            metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)
-            return CharacterResult(ref, sprite, sheet, score, passed, attempt, mask)
+                // 2-3. stylize + matte + gate, with retries
+                val refRasters: List<RasterImage?> = rasterDecoder?.let { d -> styleRefs.map { d(it) } } ?: emptyList()
+                var sprite: ByteArray = ByteArray(0)
+                var score = 0f
+                var passed = false
+                while (true) {
+                    attempt++
+                    val stylized = stage(STAGE_STYLIZE, attempt, metrics.costs.stylizeUsd) { models.stylize(ref, cutout, styleRefs) }
+                    sprite = matte(ref, stylized, attempt)
+                    val t0 = metrics.now()
+                    try {
+                        val modelScore = models.scoreStyle(ref, sprite, styleRefs)
+                        val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(sprite), refRasters) }
+                        score = gate.combine(modelScore, deterministic)
+                        passed = gate.passes(score)
+                        metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costs.scoreUsd)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costs.scoreUsd)
+                        throw e
+                    }
+                    if (passed || attempt > maxRetries) break
+                }
+
+                val sheet = sheetCall.await()
+                metrics.stage(STAGE_SHEET, sheet.ms, 1, sheet.ok, metrics.costs.sheetUsd)
+
+                metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)
+                CharacterResult(ref, sprite, sheet.sheet, score, passed, attempt, mask)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             metrics.endCharacter(gateScore = 0f, gatePassed = false, retries = (attempt - 1).coerceAtLeast(0))
             throw if (e is MetaError) e else MetaError.Provider("$ref: ${e::class.simpleName}: ${e.message}", e)
+        }
+    }
+
+    private class SheetOutcome(val sheet: CharacterSheet, val ms: Long, val ok: Boolean)
+
+    /** The sheet call, in its own coroutine. Never throws except on cancellation: a failure yields the fallback sheet. */
+    private suspend fun sheet(ref: String, description: String, image: ByteArray): SheetOutcome {
+        val t0 = metrics.now()
+        return try {
+            val sheet = SheetParser.normalise(models.characterSheet(ref, description, image))
+            SheetOutcome(sheet, metrics.now() - t0, true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            SheetOutcome(SheetParser.fallback(ref), metrics.now() - t0, false)
         }
     }
 
