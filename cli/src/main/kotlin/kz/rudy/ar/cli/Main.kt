@@ -38,7 +38,7 @@ import kotlin.system.exitProcess
  *       stops starting characters once spent + worst case > --budget-usd (default 1.00), exits 1.
  *       --record: live-only; writes replayable fixtures (RecordingModels) + the input photo; refuses to
  *       overwrite synthetic fixtures, and real ones without --force, before the first API call.
- *       --bundle: <dir>/<ref>/sprite.png + sheet.json and an upserted <dir>/index.json (BundleIndex).
+ *       --bundle: <dir>/<ref>/sprite.png (<= 768 px) + sheet.json and an upserted <dir>/index.json (BundleIndex).
  *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
  *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
@@ -231,7 +231,7 @@ private fun character(flags: Flags): Int {
                     )
                     if (bundleDir != null) {
                         File(bundleDir, ref).mkdirs()
-                        File(bundleDir, Bundle.spritePath(ref)).writeBytes(result.sprite)
+                        File(bundleDir, Bundle.spritePath(ref)).writeBytes(JvmRaster.downscale(result.sprite, BUNDLE_SPRITE_MAX_SIDE))
                         File(bundleDir, Bundle.sheetPath(ref)).writeText(Bundle.encodeSheet(result.sheet))
                         val index = checkNotNull(bundleIndex).upsert(Bundle.entry(result, providerName, metrics.runId))
                         File(bundleDir, Bundle.INDEX).writeText(Bundle.encodeIndex(index))
@@ -266,6 +266,9 @@ private fun spentUsd(metrics: MetricsLog): Double = metrics.toRun().characters.s
 internal fun fmtUsd(d: Double): String = "%.4f".format(java.util.Locale.ROOT, d)
 
 private const val MUSE_DIR = "muse-stylize"
+
+/** Bundled sprites become a ~6 cm billboard on the table; 768 px is plenty and keeps the APK small (full size is 2-5 MB). */
+private const val BUNDLE_SPRITE_MAX_SIDE = 768
 internal val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg")
 
 /** `<fixtures>/sam-cutout/<ref>.input.(png|jpg|jpeg)` or `<ref>.(png|jpg)`; a missing file yields empty bytes (fixtures don't read it). */
