@@ -42,5 +42,9 @@ object Jobs {
     /** Prompts that distinguish a cutout call from a table scan. */
     val CUTOUT_PROMPTS = listOf("drawing", "toy")
 
+    /** The job a [MetaModels.segment] call belongs to: [SAM_CUTOUT] when every prompt is a cutout prompt, else [SAM_TABLE]. */
+    fun segmentJob(prompts: List<String>): String =
+        if (prompts.isNotEmpty() && prompts.all { it in CUTOUT_PROMPTS }) SAM_CUTOUT else SAM_TABLE
+
     val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, SPARK_SCORE, SPARK_SHEET, VOICE)
 }

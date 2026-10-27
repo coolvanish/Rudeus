@@ -3,6 +3,10 @@ package kz.rudy.ar.core.metrics
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.meta.CostMeter
+import kz.rudy.ar.core.meta.Pricing
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.update
 import kotlin.math.ceil
 import kotlin.math.round
 import kotlin.time.Clock
@@ -15,12 +19,18 @@ import kotlin.time.Instant
 
 @Serializable
 data class StageMetrics(
-    /** "cutout" | "stylize" | "gate" | "sheet" (and "table" | "voice" when those jobs are measured). */
+    /** "cutout" | "stylize" | "matte" | "gate" | "sheet" (and "table" | "voice" when those jobs are measured). */
     val name: String,
     val ms: Long,
     val costUsd: Double,
     val attempt: Int,
     val ok: Boolean,
+    /**
+     * true = [costUsd] is the sum of what the provider's replies reported for this stage (via [MetricsLog.record]);
+     * false = the [CostTable] estimate, or a stage without a model call (deterministic matte = 0). Runs written before
+     * the field existed parse as false.
+     */
+    val measured: Boolean = false,
 )
 
 @Serializable
@@ -64,24 +74,49 @@ data class MetricsRun(
 }
 
 /**
- * Per-call cost estimates in USD used for `costUsd` until the Day 1 probe records real prices
- * (then update here and in docs/api-samples/<job>/meta.json together). Defaults are deliberately
- * pessimistic image-model prices: a first-try character costs 0.004 + 0.02 + 0.002 + 0.002 = $0.028,
- * a two-retry character $0.072 (the Day 2 gate is <= $0.05 average).
+ * Per-stage cost estimates in USD, used for `costUsd` when no measured cost was recorded for the stage (offline
+ * fixture runs, a reply without `usage`). Calibrated to the published prices in [Pricing]:
+ *  - cutout = 2 SAM requests ("drawing", "toy") x $0.0025 = $0.005;
+ *  - stylize = 1 Muse image = $0.01;
+ *  - score: ~9 images at <= 512 px (sprite + 8 refs) at an assumed ~640 tokens each + ~140 prompt tokens = ~5,900
+ *    input tokens x $1.25/M = $0.0074, plus ~300 output (reasoning) tokens x $4.25/M = $0.0013 -> ~$0.009;
+ *  - sheet: 1 image (~640) + ~200 prompt tokens = ~840 input x $1.25/M = $0.0011, plus ~900 output tokens (reasoning +
+ *    the kk/ru JSON) x $4.25/M = $0.0038 -> ~$0.005;
+ *  - table = 5 SAM requests = $0.0125; voice = a ~5 s clip at $0.18/audio hour = $0.00025 -> $0.0003.
+ * Spark figures use the standard-tier rates, an upper bound for the contributor tier (see [Pricing]). A first-try
+ * character costs 0.005 + 0.01 + 0.009 + 0.005 = $0.029, a two-retry character 0.005 + 3 * 0.019 + 0.005 = $0.067
+ * (the Day 2 gate is <= $0.05 average). Keep docs/api-samples/<job>/meta.json `costUsd` in step.
  */
 data class CostTable(
-    val cutoutUsd: Double = 0.004,
-    val stylizeUsd: Double = 0.020,
-    val scoreUsd: Double = 0.002,
-    val sheetUsd: Double = 0.002,
-    val tableUsd: Double = 0.004,
-    val voiceUsd: Double = 0.003,
+    val cutoutUsd: Double = 0.005,
+    val stylizeUsd: Double = 0.010,
+    val scoreUsd: Double = 0.009,
+    val sheetUsd: Double = 0.005,
+    val tableUsd: Double = 0.0125,
+    val voiceUsd: Double = 0.0003,
 )
+
+/** Snapshot of the measured costs recorded for one job ([MetricsLog.costMark]); compare with [MetricsLog.costSince]. */
+data class CostMark(val job: String, val calls: Int, val nanoUsd: Long)
+
+/** Cost of one stage: measured from the replies, or the [CostTable] estimate. */
+data class StageCost(val usd: Double, val measured: Boolean) {
+    companion object {
+        fun estimate(usd: Double) = StageCost(usd, measured = false)
+    }
+}
 
 /**
  * Collects one run. Usage: `startCharacter(input)` -> `stage(...)`* -> `endCharacter(...)`, any number of
  * times, plus `recordScan(...)`; then `toRun()` / `toJson()`. The summary is always computed, never written by hand.
+ *
+ * As a [CostMeter] (pass it to `MetaApi`), it accumulates the measured cost of every model call per job, from any
+ * thread: an immutable map of per-job tallies in nano-USD behind one atomic reference, updated by compare-and-set,
+ * so concurrent records sum exactly and no lock or extra dependency is needed. A stage takes its measured cost as
+ * [costSince] a [costMark] of its job; the character pipeline's two coroutines use disjoint jobs. Everything else
+ * (`stage`, `startCharacter`, ...) is single-threaded: call it from one coroutine.
  */
+@OptIn(ExperimentalAtomicApi::class)
 class MetricsLog(
     val source: String,
     val provider: String,
@@ -91,8 +126,33 @@ class MetricsLog(
 ) : CostMeter {
     val runId: String = runIdFrom(clock())
 
-    /** CONTRACT STUB (Day 2 freeze): measured call costs are dropped until T07 accumulates them per stage. */
-    override fun record(job: String, ref: String, usd: Double) {}
+    private class Tally(val calls: Int, val nanoUsd: Long)
+
+    private val tallies = AtomicReference(emptyMap<String, Tally>())
+
+    /** Adds one measured call of [job] ([ref] is not used for accounting). Thread-safe; negative or NaN costs count as 0. */
+    override fun record(job: String, ref: String, usd: Double) {
+        val nano = if (usd.isFinite() && usd > 0) round(usd * NANO).toLong() else 0L
+        tallies.update { m ->
+            val t = m[job]
+            m + (job to Tally((t?.calls ?: 0) + 1, (t?.nanoUsd ?: 0L) + nano))
+        }
+    }
+
+    /** Total measured USD recorded for [job] so far. */
+    fun measuredUsd(job: String): Double = (tallies.load()[job]?.nanoUsd ?: 0L) / NANO
+
+    fun costMark(job: String): CostMark {
+        val t = tallies.load()[job]
+        return CostMark(job, t?.calls ?: 0, t?.nanoUsd ?: 0L)
+    }
+
+    /** The cost recorded for [mark]'s job since [mark] when at least one call was recorded since, else [estimateUsd]. */
+    fun costSince(mark: CostMark, estimateUsd: Double): StageCost {
+        val t = tallies.load()[mark.job]
+        if (t == null || t.calls == mark.calls) return StageCost.estimate(estimateUsd)
+        return StageCost((t.nanoUsd - mark.nanoUsd) / NANO, measured = true)
+    }
 
     private val characters = ArrayList<CharacterMetrics>()
     private val scans = ArrayList<ScanMetrics>()
@@ -110,10 +170,13 @@ class MetricsLog(
         currentStages.clear()
     }
 
-    fun stage(name: String, ms: Long, attempt: Int = 1, ok: Boolean = true, costUsd: Double = 0.0) {
+    fun stage(name: String, ms: Long, attempt: Int = 1, ok: Boolean = true, costUsd: Double = 0.0, measured: Boolean = false) {
         check(currentInput != null) { "stage('$name') outside startCharacter/endCharacter" }
-        currentStages += StageMetrics(name, ms, round4(costUsd), attempt, ok)
+        currentStages += StageMetrics(name, ms, round4(costUsd), attempt, ok, measured)
     }
+
+    fun stage(name: String, ms: Long, attempt: Int, ok: Boolean, cost: StageCost) =
+        stage(name, ms, attempt, ok, cost.usd, cost.measured)
 
     fun endCharacter(gateScore: Float, gatePassed: Boolean, retries: Int): CharacterMetrics {
         val input = checkNotNull(currentInput) { "endCharacter without startCharacter" }
@@ -150,6 +213,8 @@ class MetricsLog(
 
     companion object {
         val json: Json = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
+
+        private const val NANO = 1_000_000_000.0
 
         /** "2026-10-28T14:03:22Z" -> "2026-10-28T14-03-22Z" (safe as a file name). */
         fun runIdFrom(epochMs: Long): String =

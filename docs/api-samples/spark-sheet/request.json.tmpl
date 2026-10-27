@@ -2,7 +2,12 @@
 # base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
 # content-type: json
 # model: muse-spark-1.3-contributor   (user decision 2026-10-28: contributor tier, training on our prompts is acceptable, cheaper)
-# input: <ref>.description.txt (plain text) -> {{INPUT_TEXT}}
+# input: the character cutout image (PNG/JPEG, <= 512 px long side as the pipeline sends it) -> {{INPUT_MIME}}/{{INPUT_B64}}
+# changed 2026-10-28 (T07): the sheet is written by Spark vision LOOKING at the character: one text part + one
+#   image_url part, like spark-score. The text is Prompts.characterSheet("", withImage = true) verbatim; when the app
+#   has a description it becomes "The image shows a character a child drew: <description>. Reply ...". Without an
+#   image MetaApi still sends the old plain-string message ("A child drew a character: <description>. Reply ...").
+#   The drawing-01 sheet fixture was probed with the old text-only shape (input drawing-01.description.txt).
 # verified: https://dev.meta.ai/docs/features/structured-output + https://dev.meta.ai/docs/features/chat-completion (2026-10-28):
 #   response_format {"type":"json_schema","json_schema":{"name","schema"}} is supported on Chat Completions and the
 #   JSON string lands in choices[0].message.content. Use strict:true + additionalProperties:false.
@@ -15,7 +20,10 @@
   "messages": [
     {
       "role": "user",
-      "content": "A child drew a character: {{INPUT_TEXT}}. Reply with JSON only: {\"name\": short name, \"personality\": one sentence, \"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], \"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each."
+      "content": [
+        { "type": "text", "text": "The image shows a character a child drew. Reply with JSON only: {\"name\": short name, \"personality\": one sentence, \"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], \"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each." },
+        { "type": "image_url", "image_url": { "url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" } }
+      ]
     }
   ],
   "response_format": {

@@ -7,6 +7,10 @@ import kotlinx.serialization.json.JsonObject
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.io.FixtureSource
 import kz.rudy.ar.core.io.joinPath
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.fetchAndUpdate
+import kotlin.concurrent.atomics.update
 
 /**
  * Normalised fixture file: `<root>/<job>/<ref>.fixture.json`. One schema for every job; only the
@@ -59,13 +63,15 @@ data class FixtureMeta(
  * [MetaModels] that replays saved fixtures. Never touches the network, never flaky.
  * Repeated calls for the same `ref` walk through per-attempt lists (`outputs`, `scores`).
  */
+@OptIn(ExperimentalAtomicApi::class)
 class FixtureApi(
     private val source: FixtureSource,
     private val root: String = "docs/api-samples",
     private val replayLatency: Boolean = false,
 ) : MetaModels {
-    private val calls = HashMap<String, Int>()
-    private val metaCache = HashMap<String, FixtureMeta?>()
+    // Immutable maps behind atomic references: the pipeline's sheet coroutine may call in from another thread.
+    private val calls = AtomicReference(emptyMap<String, Int>())
+    private val metaCache = AtomicReference(emptyMap<String, FixtureMeta?>())
 
     fun fixturePath(job: String, ref: String): String = joinPath(root, job, "$ref.fixture.json")
 
@@ -73,10 +79,14 @@ class FixtureApi(
     fun listRefs(job: String): List<String> =
         source.list(joinPath(root, job)).filter { it.endsWith(SUFFIX) }.map { it.removeSuffix(SUFFIX) }
 
-    fun meta(job: String): FixtureMeta? = metaCache.getOrPut(job) {
-        source.readText(joinPath(root, job, "meta.json"))?.let { text ->
+    fun meta(job: String): FixtureMeta? {
+        val cache = metaCache.load()
+        if (job in cache) return cache[job]
+        val meta = source.readText(joinPath(root, job, "meta.json"))?.let { text ->
             try { json.decodeFromString(FixtureMeta.serializer(), text) } catch (e: Exception) { throw MetaError.Parse("$job/meta.json: ${e.message}", e) }
         }
+        metaCache.update { it + (job to meta) }
+        return meta
     }
 
     fun load(job: String, ref: String): Fixture {
@@ -88,10 +98,10 @@ class FixtureApi(
     }
 
     /** Resets the per-ref attempt counters (e.g. between pipeline runs on the same instance). */
-    fun reset() = calls.clear()
+    fun reset() = calls.store(emptyMap())
 
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
-        val job = if (prompts.isNotEmpty() && prompts.all { it in Jobs.CUTOUT_PROMPTS }) Jobs.SAM_CUTOUT else Jobs.SAM_TABLE
+        val job = Jobs.segmentJob(prompts)
         val fx = load(job, ref)
         replay(job, fx)
         return SegmentResult(fx.masks ?: throw MetaError.Parse("${fixturePath(job, ref)}: no masks"))
@@ -129,9 +139,7 @@ class FixtureApi(
 
     private fun nextCall(job: String, ref: String): Int {
         val key = "$job/$ref"
-        val n = calls[key] ?: 0
-        calls[key] = n + 1
-        return n
+        return calls.fetchAndUpdate { it + (key to (it[key] ?: 0) + 1) }[key] ?: 0
     }
 
     private suspend fun replay(job: String, fx: Fixture) {
