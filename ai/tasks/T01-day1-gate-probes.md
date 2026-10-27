@@ -48,7 +48,7 @@ Tests not required: the probe script, the recording.
 | depth occlusion acceptable | SUPPORTED | `depth_supported=true depth_mode=AUTOMATIC`; visual quality judged on Day 5 |
 | SAM clean masks 5–6 objects | PARTIAL | `sam-table/table-01.fixture.json`: laptop, toy car, knife clean (c ≥ 0.92); "remote" merged remote+speaker into one mask; "speaker" absent. Latency 1.5–3.2 s per prompt, $0.0025/request. `store:false` required for full-size photos |
 | Muse style stable x3 | UNTESTED | endpoint works (`muse-stylize/drawing-01.out-1.png`, 12–19 s, $0.01, opaque background); stability x3 needs the 8 real style refs (not available yet) |
-| Kazakh ASR usable | UNTESTED | needs a 5 s Kazakh clip; docs list neither Kazakh nor Russian among supported languages — expect cut line 1 |
+| Kazakh ASR usable | PASS (rescoped to English) | decision Oct 28: demo is spoken in English (Russian second); Kazakh is not an ASR language and that is accepted. `voice/jump-01`: "jump over the cup now fly to the book" transcribed exactly, 2.9 s, from a 16 kHz synthesized clip |
 
 Real samples: `sam-table/table-01.*` (5 prompts) and a complete real character `drawing-01` across sam-cutout, muse-stylize,
 spark-score and spark-sheet (all `synthetic:false`); `runs/2026-10-27T22-58-25Z.json` is the offline pipeline run on it
@@ -56,4 +56,4 @@ spark-score and spark-sheet (all `synthetic:false`); `runs/2026-10-27T22-58-25Z.
 Findings: SAM needs `store:false` for full-size photos; Spark reasoning eats small budgets (sheet 2048, score 512);
 the score is 0.00 against the synthetic 64x64 refs, so the 0.7 threshold cannot be judged until real refs exist;
 Muse returns an opaque background, so the pipeline needs a second cutout (design item for Day 2).
-The dashboard issues ids as `LLM_<id>_<suffix>` and the API accepts that form. Voice: not probed (no Kazakh clip).
+The dashboard issues ids as `LLM_<id>_<suffix>` and the API accepts that form. Voice: probed in English with a synthesized clip (demo language).

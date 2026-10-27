@@ -74,10 +74,14 @@ CLI runs with `--replay-latency`.
 
 ## Synthetic flag
 
-Everything in this folder today is **synthetic** (`"synthetic": true` in every fixture and meta.json): 64x64
-programmatically generated PNGs and hand-written replies that exercise the pipeline offline. `sample-01` passes the
-gate on the first try (score 0.85); `sample-02` fails twice and passes on the third attempt (0.55, 0.65, 0.75).
-When the Day 1 probe lands, replace them with real (redacted) replies, set `synthetic: false` and fill `probedAt`.
+`sample-01` and `sample-02` are **synthetic** (`"synthetic": true`): 64x64 programmatically generated PNGs and
+hand-written replies that exercise the pipeline offline. `sample-01` passes the gate on the first try (score 0.85);
+`sample-02` fails twice and passes on the third attempt (0.55, 0.65, 0.75). Keep them: tests depend on them.
+
+**Real** (`"synthetic": false`, probed 2026-10-28, each folder's `meta.json` carries latency, cost and notes):
+`sam-table/table-01` (5 prompts on a real table photo), the complete character `drawing-01` (sam-cutout, muse-stylize,
+spark-score, spark-sheet) and `voice/jump-01` (English). `drawing-01`'s score is 0.00 because the only style refs on
+disk are the synthetic squares; it becomes meaningful once the real refs land in `muse-stylize/refs/`.
 Never present a synthetic number as a measurement: `runs/*.json` produced with `provider: "fixture"` are
 smoke-test runs, not README figures.
 

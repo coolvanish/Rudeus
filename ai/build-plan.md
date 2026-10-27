@@ -13,7 +13,7 @@ Full editable version: Claude Doc "Rudeus AR Game Build Plan". This copy is the 
 | Muse Image edit | stylize cutout with ≤9 style reference images |
 | Spark 1.3 vision (contributor tier) | style gate: score vs refs (threshold 0.7, ≤2 retries) |
 | Spark 1.3 | character sheet JSON: name, personality, ability ∈ {jump, fly, roll, hide}, 5 lines kk/ru |
-| Voice Transcribe | optional; only if Kazakh ASR passes Day 1 |
+| Voice Transcribe | optional; demo voice commands in ENGLISH (Russian second). Kazakh is not an ASR language — accepted (Oct 28); copy stays kk/ru/en |
 
 ## Locked decisions
 - Android only; KMP split is the multiplatform story; README says iOS out of scope by choice.
@@ -38,7 +38,7 @@ Rules: AR view injected into `App()` as a slot composable from androidApp (no ex
 
 ## Day by day
 **Day 1 — Tue Oct 27: setup + go/no-go gate.** git init + public repo (README: new work after Oct 26); Pixel ARCore services updated; key → BuildConfig (contributor tier: `muse-spark-1.3-contributor`, user decision Oct 28 — cheaper, training on our prompts accepted; never the standard Spark model); `claude mcp add sceneview`; curl probes saved to `docs/api-samples/` (SAM on table photo w/ 5–6 objects, SAM on pencil drawing, Muse Image edit w/ refs, Spark vision score, Voice Kazakh clip, Baseten slug); arsceneview + manifest + CAMERA; record one ARCore session of the table (Recording API).
-Gate: plane < 10 s & drift < 1 cm/60 s · quad walks to tap · cup footprint via ray–plane within 1–2 cm · depth occlusion acceptable or decide occluders · SAM clean masks on 5–6 objects (latency, cost) · Muse Image style stable over 3 gens · Kazakh ASR usable?
+Gate: plane < 10 s & drift < 1 cm/60 s · quad walks to tap · cup footprint via ray–plane within 1–2 cm · depth occlusion acceptable or decide occluders · SAM clean masks on 5–6 objects (latency, cost) · Muse Image style stable over 3 gens · English ASR usable (demo language; Kazakh not supported, accepted Oct 28)?
 Rule: first three pass → AR is the base. Plane fails → phone-on-stand 2D fallback (CameraX + Canvas), only `:androidApp` changes.
 
 **Day 2 — Wed Oct 28: pipeline as CLI.** `:core` + `:cli`; 8 culled style refs; CharacterPipeline (cutout → stylize → gate → sheet); deterministic gate half (palette ΔE Lab, outline thickness); MetricsLog → `runs/<ts>.json`; run 10 drawings/toys → fixtures + bundled demo characters; unit tests on FixtureApi.

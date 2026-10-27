@@ -1,0 +1,9 @@
+{
+    "schema": 1,
+    "job": "voice",
+    "ref": "jump-01",
+    "synthetic": false,
+    "note": "converted from jump-01.input.response.json by cli fixture on 2026-10-28",
+    "text": "jump over the cup now fly to the book.!",
+    "latencyMs": 2878
+}

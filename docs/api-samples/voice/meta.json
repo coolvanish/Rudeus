@@ -1,11 +1,20 @@
 {
   "job": "voice",
-  "endpoint": "TODO(probe) POST /audio/transcriptions",
-  "model": "voice-transcribe",
-  "requestShape": "{model, audio: base64 pcm_s16le 16 kHz mono, language: kk}",
-  "latencyMs": 1800,
-  "costUsd": 0.003,
-  "probedAt": "",
-  "synthetic": true,
-  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Only if Kazakh ASR passes the Day 1 gate (cut line 1)."
+  "endpoint": "POST /v1/asr/transcribe (multipart: request JSON + audio WAV)",
+  "model": "muse-voice-transcribe-1.0",
+  "requestShape": "multipart/form-data: request={model, audioEncoding:WAV, mode:PUSH_TO_TALK, languageBias:[English,Russian], keywords:[jump,fly,roll,hide]} + audio=<16 kHz mono 16-bit WAV>",
+  "latencyMs": 2878,
+  "costUsd": 0.00015,
+  "probedAt": "2026-10-27T23:04:25Z",
+  "synthetic": false,
+  "notes": "Real probe 2026-10-28 with a 2.5 s synthesized English clip (macOS say): transcript exact, 2.9 s round trip. Decision: demo voice commands are English (Russian second); Kazakh is not an ASR language and that is accepted. $0.18 per audio hour -> ~$0.00015 per 3 s command.",
+  "path": "/v1/asr/transcribe",
+  "probes": [
+    {
+      "when": "2026-10-27T23:04:25Z",
+      "input": "jump-01.input",
+      "httpStatus": 200,
+      "latencyMs": 2878
+    }
+  ]
 }
