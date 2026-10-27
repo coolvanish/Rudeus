@@ -110,6 +110,42 @@ class RequestShapeTest {
     }
 
     @Test
+    fun sheetRequestCarriesImagePart() {
+        val model = MetaConfig(apiKey = "test-key").sparkModel
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)
+
+        val withImage = encode(ChatRequest.serializer(), ChatRequest.characterSheet(model, "", pngBytes))
+        assertEquals(setOf("model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"), withImage.keys)
+        assertEquals("json_schema", withImage["response_format"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals(2048, withImage["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals("low", withImage["reasoning_effort"]!!.jsonPrimitive.content)
+        val parts = withImage["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
+        val text = parts[0]["text"]!!.jsonPrimitive.content
+        assertEquals(Prompts.characterSheet("", withImage = true), text)
+        assertFalse(": ." in text || "  " in text, "blank description leaves no artefacts: $text")
+        assertTrue(parts[1]["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content.startsWith("data:image/png;base64,"))
+
+        val plain = encode(ChatRequest.serializer(), ChatRequest.characterSheet(model, "a cat", null))
+        val content = plain["messages"]!!.jsonArray.single().jsonObject["content"] as JsonPrimitive
+        assertTrue(content.isString, "no image: plain-string content, as before")
+        assertEquals(Prompts.characterSheet("a cat"), content.content)
+        assertTrue(content.content.startsWith("A child drew a character: a cat. Reply"), content.content)
+        assertTrue(Prompts.characterSheet("  ").startsWith("A child drew a character. Reply"))
+        assertTrue(Prompts.characterSheet("a red fox.", withImage = true).startsWith("The image shows a character a child drew: a red fox. Reply"))
+
+        // The probe template is the same body: same keys, same text part, one image_url part.
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/spark-sheet/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl).jsonObject
+        assertEquals(withImage.keys, tmplBody.keys)
+        assertEquals(withImage["response_format"], tmplBody["response_format"])
+        val tmplParts = tmplBody["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), tmplParts.map { it["type"]!!.jsonPrimitive.content })
+        assertEquals(text, tmplParts[0]["text"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun voiceRequestPartIsTheDocumentedJson() {
         val body = encode(TranscribeRequest.serializer(), TranscribeRequest(model = "muse-voice-transcribe-1.0", languageBias = listOf("Kazakh")))
         assertEquals(setOf("model", "audioEncoding", "mode", "languageBias"), body.keys)

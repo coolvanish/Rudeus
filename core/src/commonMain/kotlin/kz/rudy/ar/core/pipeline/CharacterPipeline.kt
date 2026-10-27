@@ -87,7 +87,7 @@ class CharacterPipeline(
 
             // 4. sheet
             val sheet = stage(STAGE_SHEET, 1, metrics.costs.sheetUsd) {
-                SheetParser.normalise(models.characterSheet(ref, description))
+                SheetParser.normalise(models.characterSheet(ref, description, cutout))
             }
 
             metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)

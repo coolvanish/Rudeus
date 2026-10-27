@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlin.io.encoding.Base64
 
 /*
  * Wire DTOs for [MetaApi], one request + response pair per job, plus a `parse*` function that turns the
@@ -237,7 +238,35 @@ data class ChatRequest(
     @SerialName("max_completion_tokens") val maxCompletionTokens: Int? = null,
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
     @SerialName("response_format") val responseFormat: ResponseFormat? = null,
-)
+) {
+    companion object {
+        /**
+         * The character-sheet call (docs/api-samples/spark-sheet/request.json.tmpl): json_schema output, 2048 tokens,
+         * reasoning low. With an [image]: one text part + one `image_url` part (like the score call), so Spark vision
+         * writes the sheet looking at the character; without: the plain-string message.
+         */
+        fun characterSheet(model: String, description: String, image: ByteArray?): ChatRequest {
+            val message = if (image == null) {
+                ChatMessage.text("user", Prompts.characterSheet(description))
+            } else {
+                ChatMessage.parts(
+                    "user",
+                    listOf(
+                        ChatContentPart.text(Prompts.characterSheet(description, withImage = true)),
+                        ChatContentPart.imageDataUrl(sniffImageMime(image), Base64.encode(image)),
+                    ),
+                )
+            }
+            return ChatRequest(
+                model = model,
+                messages = listOf(message),
+                maxCompletionTokens = Prompts.SHEET_MAX_COMPLETION_TOKENS,
+                reasoningEffort = Prompts.SHEET_REASONING_EFFORT,
+                responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
+            )
+        }
+    }
+}
 
 @Serializable
 data class ChatChoiceMessage(val role: String? = null, val content: String? = null)
@@ -333,10 +362,24 @@ object Prompts {
     const val STYLE_SCORE = "You are a strict art director. Rate from 0.00 to 1.00 how closely the FIRST image matches the " +
         "drawing style (line weight, palette, shading) of the reference images that follow. Reply with the number only."
 
-    fun characterSheet(description: String): String =
-        "A child drew a character: $description. Reply with JSON only: {\"name\": short name, \"personality\": one sentence, " +
-            "\"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], " +
-            "\"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each."
+    /**
+     * The sheet prompt. [withImage] = the message also carries the character's picture (Spark vision looks at it);
+     * a blank [description] is left out entirely (no "A child drew a character: ." artefacts).
+     */
+    fun characterSheet(description: String, withImage: Boolean = false): String {
+        val d = description.trim().trimEnd('.').trim()
+        val subject = when {
+            withImage && d.isNotEmpty() -> "The image shows a character a child drew: $d."
+            withImage -> "The image shows a character a child drew."
+            d.isNotEmpty() -> "A child drew a character: $d."
+            else -> "A child drew a character."
+        }
+        return "$subject $SHEET_INSTRUCTIONS"
+    }
+
+    private const val SHEET_INSTRUCTIONS = "Reply with JSON only: {\"name\": short name, \"personality\": one sentence, " +
+        "\"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], " +
+        "\"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each."
 
     // TODO(design): Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's
     //  transparency is lost; the pipeline may need a second sam-cutout pass on the stylized output. Pipeline unchanged.

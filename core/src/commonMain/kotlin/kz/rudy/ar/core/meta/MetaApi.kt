@@ -41,7 +41,8 @@ import kotlin.io.encoding.Base64
  * - segment: `POST /responses` on `sam-3.1`, ONE request per prompt (sent concurrently), one [MaskResult] per
  *   prompt in prompt order; no match = empty mask.
  * - stylize: `POST /images/edits`, JSON `images[]` = cutout + <= 9 refs.
- * - scoreStyle / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs Fireworks can serve).
+ * - scoreStyle / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs Fireworks can serve);
+ *   the sheet message carries the character's picture when one is given.
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(
@@ -94,13 +95,7 @@ class MetaApi(
     }
 
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
-        val req = ChatRequest(
-            model = config.sparkModel,
-            messages = listOf(ChatMessage.text("user", Prompts.characterSheet(description))), // plain string, as the template
-            maxCompletionTokens = Prompts.SHEET_MAX_COMPLETION_TOKENS,
-            reasoningEffort = Prompts.SHEET_REASONING_EFFORT,
-            responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
-        )
+        val req = ChatRequest.characterSheet(config.sparkModel, description, image)
         val resp: ChatResponse = postJson(ref, "characterSheet", config.chatPath, req)
         return parseOrThrow { parseSheet(resp.contentText()) }
     }
