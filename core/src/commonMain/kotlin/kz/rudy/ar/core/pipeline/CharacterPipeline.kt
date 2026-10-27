@@ -44,6 +44,11 @@ data class CharacterResult(
  * stylized image gets one SAM pass ([Jobs.CUTOUT_PROMPTS] + [cutoutComposer]); if that fails too the unmatted sprite
  * ships and the `matte` stage is recorded with `ok=false`.
  *
+ * [imageResizer] (e.g. `JvmRaster::downscale`: keeps aspect, never upscales) bounds what each model receives: Muse
+ * gets the cutout and the style refs at <= [MUSE_INPUT_MAX_SIDE], the Spark score the sprite and refs at
+ * <= [SPARK_IMAGE_MAX_SIDE], the sheet the cutout at <= [SHEET_IMAGE_MAX_SIDE]; the refs are scaled once per [run].
+ * SAM always gets the full photo, and [CharacterResult.sprite] stays full size.
+ *
  * Only the calling coroutine touches [metrics]; the sheet coroutine reads nothing but `metrics.now()` (the clock must
  * be safe to read from any thread; the default system clock is). One [run] at a time per instance.
  */
@@ -55,6 +60,7 @@ class CharacterPipeline(
     private val maxRetries: Int = 2,
     private val cutoutComposer: ((image: ByteArray, mask: MaskResult) -> ByteArray)? = null,
     private val spriteMatter: ((ByteArray) -> ByteArray?)? = null,
+    private val imageResizer: ((bytes: ByteArray, maxSide: Int) -> ByteArray)? = null,
 ) {
     init { require(maxRetries >= 0) }
 
@@ -73,24 +79,29 @@ class CharacterPipeline(
                 // 4. sheet: starts now, runs concurrently with 2-3, recorded after the loop. Its job (spark-sheet) is
                 // disjoint from the loop's, so its measured cost is simply everything recorded for the job since now.
                 val sheetMark = metrics.costMark(Jobs.SPARK_SHEET)
-                val sheetCall = async { sheet(ref, description, cutout) }
+                val sheetImage = fit(cutout, SHEET_IMAGE_MAX_SIDE)
+                val sheetCall = async { sheet(ref, description, sheetImage) }
 
-                // 2-3. stylize + matte + gate, with retries
-                val refRasters: List<RasterImage?> = rasterDecoder?.let { d -> styleRefs.map { d(it) } } ?: emptyList()
+                // 2-3. stylize + matte + gate, with retries. Inputs are downscaled once here, not per attempt.
+                val museCutout = fit(cutout, MUSE_INPUT_MAX_SIDE)
+                val museRefs = styleRefs.map { fit(it, MUSE_INPUT_MAX_SIDE) }
+                val sparkRefs = styleRefs.map { fit(it, SPARK_IMAGE_MAX_SIDE) }
+                val refRasters: List<RasterImage?> = rasterDecoder?.let { d -> sparkRefs.map { d(it) } } ?: emptyList()
                 var sprite: ByteArray = ByteArray(0)
                 var score = 0f
                 var passed = false
                 while (true) {
                     attempt++
                     val stylized = stage(STAGE_STYLIZE, attempt, Jobs.MUSE_STYLIZE, metrics.costs.stylizeUsd) {
-                        models.stylize(ref, cutout, styleRefs)
+                        models.stylize(ref, museCutout, museRefs)
                     }
                     sprite = matte(ref, stylized, attempt)
                     val t0 = metrics.now()
                     val gateMark = metrics.costMark(Jobs.SPARK_SCORE)
                     try {
-                        val modelScore = models.scoreStyle(ref, sprite, styleRefs)
-                        val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(sprite), refRasters) }
+                        val scored = fit(sprite, SPARK_IMAGE_MAX_SIDE)
+                        val modelScore = models.scoreStyle(ref, scored, sparkRefs)
+                        val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(scored), refRasters) }
                         score = gate.combine(modelScore, deterministic)
                         passed = gate.passes(score)
                         metrics.stage(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costSince(gateMark, metrics.costs.scoreUsd))
@@ -116,6 +127,9 @@ class CharacterPipeline(
             throw if (e is MetaError) e else MetaError.Provider("$ref: ${e::class.simpleName}: ${e.message}", e)
         }
     }
+
+    /** [bytes] scaled to at most [maxSide] px on the long side by [imageResizer]; unchanged without one. */
+    private fun fit(bytes: ByteArray, maxSide: Int): ByteArray = imageResizer?.invoke(bytes, maxSide) ?: bytes
 
     private class SheetOutcome(val sheet: CharacterSheet, val ms: Long, val ok: Boolean)
 
@@ -178,5 +192,14 @@ class CharacterPipeline(
         const val STAGE_MATTE = "matte"
         const val STAGE_GATE = "gate"
         const val STAGE_SHEET = "sheet"
+
+        /** Long-side bound (px) of the cutout and style refs sent to Muse Image. */
+        const val MUSE_INPUT_MAX_SIDE = 1024
+
+        /** Long-side bound (px) of the sprite and style refs sent to the Spark score (~9 images per call). */
+        const val SPARK_IMAGE_MAX_SIDE = 512
+
+        /** Long-side bound (px) of the cutout the sheet call looks at. */
+        const val SHEET_IMAGE_MAX_SIDE = 512
     }
 }

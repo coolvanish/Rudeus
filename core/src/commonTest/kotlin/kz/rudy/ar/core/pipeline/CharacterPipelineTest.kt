@@ -183,6 +183,24 @@ class CharacterPipelineTest {
     }
 
     @Test
+    fun pipelineDownscalesModelInputsOncePerRun() = runTest {
+        val models = FakeModels(scores = listOf(0.5f, 0.9f), sprite = "PNG".encodeToByteArray())
+        val resized = ArrayList<String>()
+        val resizer = { b: ByteArray, max: Int -> "${b.decodeToString()}@$max".also { resized += it }.encodeToByteArray() }
+        val pipeline = CharacterPipeline(models, StyleGate(), metrics(), imageResizer = resizer)
+
+        val result = pipeline.run("cat-01", "photo".encodeToByteArray(), listOf("r1".encodeToByteArray(), "r2".encodeToByteArray()), "")
+
+        assertEquals(2, result.attempts)
+        assertEquals(listOf("photo@1024", "photo@1024"), models.stylizeInputs.map { it.decodeToString() })
+        assertEquals(listOf("photo@512"), models.sheetImages.map { it!!.decodeToString() })
+        assertEquals(listOf("PNG@512", "PNG@512"), models.scoredImages.map { it.decodeToString() })
+        assertTrue(models.scoredRefs.all { refs -> refs.map { it.decodeToString() } == listOf("r1@512", "r2@512") })
+        assertEquals(listOf("r1@1024", "r1@512"), resized.filter { it.startsWith("r1") }, "refs scaled once per run, not per attempt")
+        assertEquals("PNG", result.sprite.decodeToString(), "the shipped sprite stays full size")
+    }
+
+    @Test
     fun gateScoreExactlyThresholdPasses() {
         val gate = StyleGate(threshold = 0.7f)
         assertTrue(gate.passes(0.7f))
