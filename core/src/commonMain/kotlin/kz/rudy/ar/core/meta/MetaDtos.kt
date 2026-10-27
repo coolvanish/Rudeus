@@ -437,9 +437,10 @@ object Prompts {
     /**
      * `max_completion_tokens` counts reasoning tokens too: the Day 1 sheet probe at 600 came back `content: null`,
      * `finish_reason: "length"`. Budgets below match docs/api-samples/spark-{score,sheet}/request.json.tmpl.
-     * Score probed: 16 and 64 run out of budget on reasoning (`finish_reason: "length"`), hence 512.
+     * Score probed: 16 and 64 run out of budget on reasoning (`finish_reason: "length"`); 512 ran out too on live run 1
+     * (toy-car-02, 9 images), hence 1024. Output tokens are billed as used, so the cap only stops truncation.
      */
-    const val SCORE_MAX_COMPLETION_TOKENS = 512
+    const val SCORE_MAX_COMPLETION_TOKENS = 1024
     const val SHEET_MAX_COMPLETION_TOKENS = 2048
     const val SCORE_REASONING_EFFORT = "low"
     const val SHEET_REASONING_EFFORT = "low"
