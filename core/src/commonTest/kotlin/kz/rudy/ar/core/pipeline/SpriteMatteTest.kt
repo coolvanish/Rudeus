@@ -39,7 +39,9 @@ class SpriteMatteTest {
         assertEquals(25, m.width)
         assertEquals(25, m.height)
         // Corners of the crop lie outside the ring: background, transparent.
-        for ((x, y) in listOf(0 to 0, 24 to 0, 0 to 24, 24 to 24)) assertEquals(0, m.argb(x, y).alpha, "corner ($x,$y)")
+        for ((x, y) in listOf(0 to 0, 24 to 0, 0 to 24, 24 to 24)) {
+            assertEquals(SpriteMatte.TRANSPARENT_WHITE, m.argb(x, y), "corner ($x,$y) is transparent WHITE, not black")
+        }
         // Centre (white) and lower interior (pale pink) are enclosed: fully opaque, colour kept.
         assertEquals(white, m.argb(12, 8))
         assertEquals(palePink, m.argb(12, 16))

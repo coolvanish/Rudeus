@@ -23,7 +23,8 @@ data class MatteResult(
  * through "background-like" pixels (already transparent, or near-white: high L*, low chroma in CIE Lab) marks the
  * background; it is 4-connected, so it cannot leak through a diagonal gap in the outline, and light regions enclosed
  * by the outline (a white belly, a pale-pink face) stay opaque. The opaque boundary is feathered by 1 px (alpha =
- * share of opaque pixels in its 3x3 neighbourhood) and the result is cropped to the opaque bounds.
+ * share of opaque pixels in its 3x3 neighbourhood) and the result is cropped to the opaque bounds. Background pixels
+ * are [TRANSPARENT_WHITE].
  *
  * A result with less than [MIN_OPAQUE] or more than [MAX_OPAQUE] of the frame opaque is degenerate (all background,
  * or no background found) and reported as failed. Pure and deterministic.
@@ -40,6 +41,12 @@ object SpriteMatte {
 
     /** Cheap pre-check before the Lab conversion: a near-white pixel has every channel at least this bright. */
     private const val BG_MIN_CHANNEL = 200
+
+    /**
+     * What background pixels become: alpha 0 over WHITE RGB, never transparent black. A model that drops the alpha
+     * channel instead of compositing then still sees the character on white (the background Muse and the refs use).
+     */
+    const val TRANSPARENT_WHITE = 0x00FFFFFF
 
     /** Degenerate-matte bounds on the opaque share of the frame. */
     const val MIN_OPAQUE = 0.05f
@@ -80,7 +87,7 @@ object SpriteMatte {
         if (fraction < MIN_OPAQUE || fraction > MAX_OPAQUE) return MatteResult(null, fraction, false)
 
         val cw = maxX - minX + 1; val ch = maxY - minY + 1
-        val out = ArrayRaster(cw, ch)
+        val out = ArrayRaster.solid(cw, ch, TRANSPARENT_WHITE)
         for (y in 0 until ch) for (x in 0 until cw) {
             val sx = minX + x; val sy = minY + y
             if (background[sy * w + sx]) continue
