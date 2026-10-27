@@ -38,7 +38,9 @@ A sheet stage with `ok: false` means the character shipped the fallback sheet.
 `measured` (added Day 2, default `false`, still `schema: 1`; older runs parse as `false`): `true` = `costUsd` is the sum
 of what the provider's replies reported for that stage (`MetricsLog` is `MetaApi`'s `CostMeter`; prices in
 `core/meta/Pricing.kt`); `false` = the `CostTable` estimate (fixture runs, replies without `usage`) or a stage with no
-model call. Spark costs use the standard-tier rates, an upper bound for the contributor tier we call.
+model call. A stage that failed with an error (not a gate below threshold) is charged only what was metered, else 0.
+When a character fails, its sheet stage is still recorded (outcome if done, else `ok: false` after cancelling it).
+Spark costs use the standard-tier rates, an upper bound for the contributor tier we call.
 
 ## Produce
 ```

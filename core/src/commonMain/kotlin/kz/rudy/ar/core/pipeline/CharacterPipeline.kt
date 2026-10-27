@@ -3,6 +3,8 @@ package kz.rudy.ar.core.pipeline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.meta.Jobs
@@ -10,6 +12,7 @@ import kz.rudy.ar.core.meta.MaskResult
 import kz.rudy.ar.core.meta.MetaError
 import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.SheetParser
+import kz.rudy.ar.core.metrics.CostMark
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.StageCost
 
@@ -43,7 +46,11 @@ data class CharacterResult(
  * [spriteMatter] (e.g. `JvmRaster::matte`) cuts the opaque white background Muse always returns; it runs after every
  * stylize attempt (stage `matte`) and the gate scores the matted sprite. When it returns null (degenerate matte) the
  * stylized image gets one SAM pass ([Jobs.CUTOUT_PROMPTS] + [cutoutComposer]); if that fails too the unmatted sprite
- * ships and the `matte` stage is recorded with `ok=false`.
+ * ships and the `matte` stage is recorded with `ok=false`. The deterministic gate half decodes the style refs matted
+ * by the same matter (once per run), so the sprite and the refs are both measured over the character only.
+ *
+ * A failed stage (an exception, not a gate below threshold) is charged only what was metered, else 0. When the
+ * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`).
  *
  * [imageResizer] (e.g. `JvmRaster::downscale`: keeps aspect, never upscales) bounds what each model receives: Muse
  * gets the cutout and the style refs at <= [MUSE_INPUT_MAX_SIDE], the Spark score the sprite and refs at
@@ -55,6 +62,10 @@ data class CharacterResult(
  *
  * Only the calling coroutine touches [metrics]; the sheet coroutine reads nothing but `metrics.now()` (the clock must
  * be safe to read from any thread; the default system clock is). One [run] at a time per instance.
+ *
+ * Threading: [run] does CPU-heavy work on the calling dispatcher (decode, matte and downscale of images up to a few
+ * megapixels, ~0.3 s per matte on a 1408x1536 Muse output), so call it off the main thread, e.g.
+ * `withContext(Dispatchers.Default) { pipeline.run(...) }` (or `Dispatchers.IO`); deliver [onEvent] to the UI yourself.
  */
 class CharacterPipeline(
     private val models: MetaModels,
@@ -85,44 +96,64 @@ class CharacterPipeline(
                 val sheetMark = metrics.costMark(Jobs.SPARK_SHEET)
                 val sheetImage = fit(cutout, SHEET_IMAGE_MAX_SIDE)
                 emit(PipelineEvent.StageStarted(STAGE_SHEET, 1))
+                val sheetStart = metrics.now()
                 val sheetCall = async { sheet(ref, description, sheetImage) }
 
                 // 2-3. stylize + matte + gate, with retries. Inputs are downscaled once here, not per attempt.
                 val museCutout = fit(cutout, MUSE_INPUT_MAX_SIDE)
                 val museRefs = styleRefs.map { fit(it, MUSE_INPUT_MAX_SIDE) }
                 val sparkRefs = styleRefs.map { fit(it, SPARK_IMAGE_MAX_SIDE) }
-                val refRasters: List<RasterImage?> = rasterDecoder?.let { d -> sparkRefs.map { d(it) } } ?: emptyList()
+                // The deterministic half compares like with like: the sprite is matted, so the refs are matted too
+                // (same matter, once per run; a ref whose matte fails is used as is).
+                val refRasters: List<RasterImage?> = rasterDecoder?.let { d ->
+                    sparkRefs.map { r -> d(spriteMatter?.invoke(r) ?: r) }
+                } ?: emptyList()
                 var sprite: ByteArray = ByteArray(0)
                 var score = 0f
                 var passed = false
-                while (true) {
-                    attempt++
-                    val stylized = stage(STAGE_STYLIZE, attempt, Jobs.MUSE_STYLIZE, metrics.costs.stylizeUsd) {
-                        models.stylize(ref, museCutout, museRefs)
+                try {
+                    while (true) {
+                        attempt++
+                        val stylized = stage(STAGE_STYLIZE, attempt, Jobs.MUSE_STYLIZE, metrics.costs.stylizeUsd) {
+                            models.stylize(ref, museCutout, museRefs)
+                        }
+                        sprite = matte(ref, stylized, attempt)
+                        emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
+                        val t0 = metrics.now()
+                        val gateMark = metrics.costMark(Jobs.SPARK_SCORE)
+                        try {
+                            val scored = fit(sprite, SPARK_IMAGE_MAX_SIDE)
+                            val modelScore = models.scoreStyle(ref, scored, sparkRefs)
+                            val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(scored), refRasters) }
+                            score = gate.combine(modelScore, deterministic)
+                            passed = gate.passes(score)
+                            emit(PipelineEvent.GateScored(attempt, score, passed))
+                            record(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costSince(gateMark, metrics.costs.scoreUsd))
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            record(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costSince(gateMark, 0.0))
+                            throw e
+                        }
+                        if (passed || attempt > maxRetries) break
                     }
-                    sprite = matte(ref, stylized, attempt)
-                    emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
-                    val t0 = metrics.now()
-                    val gateMark = metrics.costMark(Jobs.SPARK_SCORE)
-                    try {
-                        val scored = fit(sprite, SPARK_IMAGE_MAX_SIDE)
-                        val modelScore = models.scoreStyle(ref, scored, sparkRefs)
-                        val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(scored), refRasters) }
-                        score = gate.combine(modelScore, deterministic)
-                        passed = gate.passes(score)
-                        emit(PipelineEvent.GateScored(attempt, score, passed))
-                        record(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costSince(gateMark, metrics.costs.scoreUsd))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        record(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costSince(gateMark, metrics.costs.scoreUsd))
-                        throw e
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    // The character fails, but the sheet was (or is being) paid for: record it before giving up.
+                    // Finished -> its outcome; still running -> cancel it, charge what was metered (usually 0).
+                    if (sheetCall.isCompleted) {
+                        val sheet = sheetCall.await()
+                        record(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
+                    } else {
+                        sheetCall.cancel()
+                        record(STAGE_SHEET, metrics.now() - sheetStart, 1, false, sheetCost(sheetMark, false))
                     }
-                    if (passed || attempt > maxRetries) break
+                    throw e
                 }
 
                 val sheet = sheetCall.await()
-                record(STAGE_SHEET, sheet.ms, 1, sheet.ok, metrics.costSince(sheetMark, metrics.costs.sheetUsd))
+                record(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
 
                 metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)
                 CharacterResult(ref, sprite, sheet.sheet, score, passed, attempt, mask)
@@ -152,16 +183,25 @@ class CharacterPipeline(
     /** [bytes] scaled to at most [maxSide] px on the long side by [imageResizer]; unchanged without one. */
     private fun fit(bytes: ByteArray, maxSide: Int): ByteArray = imageResizer?.invoke(bytes, maxSide) ?: bytes
 
+    /** A sheet call that failed is charged only what was metered (0 when nothing was), never the estimate. */
+    private fun sheetCost(mark: CostMark, ok: Boolean): StageCost =
+        metrics.costSince(mark, if (ok) metrics.costs.sheetUsd else 0.0)
+
     private class SheetOutcome(val sheet: CharacterSheet, val ms: Long, val ok: Boolean)
 
-    /** The sheet call, in its own coroutine. Never throws except on cancellation: a failure yields the fallback sheet. */
+    /**
+     * The sheet call, in its own coroutine. Never throws except on a real cancellation of the caller: a failure yields
+     * the fallback sheet, and so does a CancellationException while this coroutine is still active (a timeout surfacing
+     * as cancellation, as in `segmentEach`).
+     */
     private suspend fun sheet(ref: String, description: String, image: ByteArray): SheetOutcome {
         val t0 = metrics.now()
         return try {
             val sheet = SheetParser.normalise(models.characterSheet(ref, description, image))
             SheetOutcome(sheet, metrics.now() - t0, true)
         } catch (e: CancellationException) {
-            throw e
+            if (!currentCoroutineContext().isActive) throw e
+            SheetOutcome(SheetParser.fallback(ref), metrics.now() - t0, false)
         } catch (e: Throwable) {
             SheetOutcome(SheetParser.fallback(ref), metrics.now() - t0, false)
         }
@@ -192,7 +232,10 @@ class CharacterPipeline(
         return viaSam ?: stylized
     }
 
-    /** Runs [block] as stage [name]; its cost is what [job] recorded meanwhile, else [estimateUsd]. */
+    /**
+     * Runs [block] as stage [name]; its cost is what [job] recorded meanwhile, else [estimateUsd] when it succeeded and
+     * 0 when it failed (an HTTP error that metered nothing is not billed).
+     */
     private suspend inline fun <T> stage(name: String, attempt: Int, job: String, estimateUsd: Double, block: () -> T): T {
         emit(PipelineEvent.StageStarted(name, attempt))
         val t0 = metrics.now()
@@ -204,7 +247,7 @@ class CharacterPipeline(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            record(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, estimateUsd))
+            record(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, 0.0))
             throw e
         }
     }

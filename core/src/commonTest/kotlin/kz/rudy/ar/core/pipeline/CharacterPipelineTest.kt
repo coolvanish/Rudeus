@@ -1,5 +1,7 @@
 package kz.rudy.ar.core.pipeline
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.io.ArrayRaster
@@ -118,12 +120,27 @@ class CharacterPipelineTest {
         assertTrue(matte.ok)
         assertEquals(log.costs.cutoutUsd, matte.costUsd, 1e-9)
 
-        // SAM finds nothing on the sprite either: the unmatted sprite ships, matte ok=false.
-        val empty = FakeModels(scores = listOf(0.9f))
+        // SAM finds nothing on the sprite either (empty masks; the composer is never reached): the unmatted sprite
+        // ships, matte ok=false, and the SAM pass that did run is still charged.
+        val empty = FakeModels(scores = listOf(0.9f), masks = emptyList())
         val log2 = metrics()
-        val shipped = CharacterPipeline(empty, StyleGate(), log2, spriteMatter = { null }).run("cat-01", image, refs, "a cat")
+        val shipped = CharacterPipeline(
+            empty, StyleGate(), log2,
+            cutoutComposer = { _, _ -> error("no mask, no composition") },
+            spriteMatter = { null },
+        ).run("cat-01", image, refs, "a cat")
         assertContentEquals(empty.sprite, shipped.sprite)
-        assertFalse(log2.toRun().characters.single().stages.single { it.name == "matte" }.ok)
+        assertEquals(2, empty.calls.count { it.startsWith("segment:") })
+        val emptyMatte = log2.toRun().characters.single().stages.single { it.name == "matte" }
+        assertFalse(emptyMatte.ok)
+        assertEquals(log2.costs.cutoutUsd, emptyMatte.costUsd, 1e-9)
+
+        // No cutoutComposer at all: SAM cannot cut the sprite, the unmatted sprite ships, matte ok=false.
+        val noComposer = FakeModels(scores = listOf(0.9f))
+        val log3 = metrics()
+        val unmatted = CharacterPipeline(noComposer, StyleGate(), log3, spriteMatter = { null }).run("cat-01", image, refs, "a cat")
+        assertContentEquals(noComposer.sprite, unmatted.sprite)
+        assertFalse(log3.toRun().characters.single().stages.single { it.name == "matte" }.ok)
     }
 
     @Test
@@ -169,6 +186,88 @@ class CharacterPipelineTest {
         assertEquals(0, c.retries)
         assertEquals("Dos", SheetParser.fallback("01").name)
         assertEquals("Robot", SheetParser.fallback("robot-toy-02").name)
+        assertEquals(0.0, c.stages.last().costUsd, "a failed call that metered nothing is not charged the estimate")
+    }
+
+    @Test
+    fun strayCancellationInTheSheetIsASheetFailure() = runTest {
+        // A timeout surfacing as CancellationException while the pipeline is alive: fallback sheet, character ships.
+        val models = FakeModels(scores = listOf(0.85f), sheetError = kotlinx.coroutines.CancellationException("timeout"))
+        val log = metrics()
+        val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat")
+        assertEquals(SheetParser.fallback("cat-01"), result.sheet)
+        assertFalse(log.toRun().characters.single().stages.last().ok)
+
+        // A real cancellation of the caller still propagates.
+        val slow = FakeModels(delays = mapOf("stylize" to 5_000L, "characterSheet" to 5_000L))
+        val job = launch { CharacterPipeline(slow, StyleGate(), metrics()).run("cat-01", image, refs, "a cat") }
+        delay(1_000L)
+        job.cancel()
+        job.join()
+        assertTrue(job.isCancelled)
+    }
+
+    @Test
+    fun failedCharacterStillRecordsTheSheet() = runTest {
+        // The sheet finished (and was paid for) before stylize failed: recorded with its outcome and estimate.
+        val done = FakeModels(
+            stylizeError = MetaError.Http(500, "muse down"),
+            delays = mapOf("characterSheet" to 1_000L, "stylize" to 3_000L),
+        )
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        val events = ArrayList<PipelineEvent>()
+        assertFailsWith<MetaError.Http> {
+            CharacterPipeline(done, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "")
+        }
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "sheet"), c.stages.map { it.name })
+        val stylize = c.stages[1]
+        assertFalse(stylize.ok)
+        assertEquals(0.0, stylize.costUsd, "failed stylize, nothing metered: not charged")
+        val sheet = c.stages.last()
+        assertTrue(sheet.ok)
+        assertEquals(1_000L, sheet.ms)
+        assertEquals(log.costs.sheetUsd, sheet.costUsd, 1e-9)
+        assertEquals(log.costs.cutoutUsd + log.costs.sheetUsd, c.totalCostUsd, 1e-9)
+        assertTrue(PipelineEvent.StageFinished("sheet", 1, true, 1_000L) in events)
+        assertTrue(events.last() is PipelineEvent.Failed)
+
+        // The sheet was still running: cancelled, recorded ok=false, charged nothing.
+        val running = FakeModels(
+            stylizeError = MetaError.Http(500, "muse down"),
+            delays = mapOf("characterSheet" to 10_000L, "stylize" to 3_000L),
+        )
+        val log2 = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        val events2 = ArrayList<PipelineEvent>()
+        assertFailsWith<MetaError.Http> {
+            CharacterPipeline(running, StyleGate(), log2, onEvent = { events2 += it }).run("cat-01", image, refs, "")
+        }
+        val sheet2 = log2.toRun().characters.single().stages.last()
+        assertEquals("sheet", sheet2.name)
+        assertFalse(sheet2.ok)
+        assertEquals(3_000L, sheet2.ms)
+        assertEquals(0.0, sheet2.costUsd)
+        assertTrue(PipelineEvent.StageFinished("sheet", 1, false, 3_000L) in events2)
+    }
+
+    @Test
+    fun deterministicHalfUsesMattedRefs() = runTest {
+        val matted = ArrayList<String>()
+        val decoded = ArrayList<String>()
+        val matter = { b: ByteArray ->
+            val s = b.decodeToString()
+            matted += s
+            if (s == "r2") null else "m:$s".encodeToByteArray() // r2's matte fails: used as is
+        }
+        val pipeline = CharacterPipeline(
+            FakeModels(scores = listOf(0.5f, 0.9f), sprite = "PNG".encodeToByteArray()), StyleGate(), metrics(),
+            rasterDecoder = { b -> decoded += b.decodeToString(); null },
+            spriteMatter = matter,
+        )
+        pipeline.run("cat-01", image, listOf("r1".encodeToByteArray(), "r2".encodeToByteArray()), "")
+
+        assertEquals(listOf("r1", "r2", "PNG", "PNG"), matted, "refs matted once per run, the sprite per attempt")
+        assertEquals(listOf("m:r1", "r2", "m:PNG", "m:PNG"), decoded, "the gate decodes matted refs and matted sprites")
     }
 
     @Test
@@ -178,6 +277,7 @@ class CharacterPipelineTest {
         assertFailsWith<MetaError.Http> { CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat") }
         val c = log.toRun().characters.single()
         assertEquals(listOf("cutout"), c.stages.map { it.name })
+        assertEquals(0.0, c.stages.single().costUsd, "failed cutout, nothing metered: not charged")
         assertFalse(c.gatePassed)
         assertEquals(0, models.calls.count { it.startsWith("characterSheet:") }, "the sheet never starts without a cutout")
     }

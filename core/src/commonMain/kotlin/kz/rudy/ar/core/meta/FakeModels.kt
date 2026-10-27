@@ -18,8 +18,10 @@ class FakeModels(
     var transcript: String = "сәлем",
     /** When set, [segment] throws it (to exercise failure paths). */
     var segmentError: MetaError? = null,
-    /** When set, [characterSheet] throws it. */
-    var sheetError: MetaError? = null,
+    /** When set, [characterSheet] throws it (after its delay); any Throwable, e.g. a stray CancellationException. */
+    var sheetError: Throwable? = null,
+    /** When set, [stylize] throws it (after its delay). */
+    var stylizeError: Throwable? = null,
     var delays: Map<String, Long> = emptyMap(),
 ) : MetaModels {
     val calls = ArrayList<String>()
@@ -43,6 +45,7 @@ class FakeModels(
         calls += "stylize:$ref"
         stylizeInputs += cutout
         pause("stylize")
+        stylizeError?.let { throw it }
         return sprite
     }
 
