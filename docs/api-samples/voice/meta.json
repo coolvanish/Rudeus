@@ -1,0 +1,11 @@
+{
+  "job": "voice",
+  "endpoint": "TODO(probe) POST /audio/transcriptions",
+  "model": "voice-transcribe",
+  "requestShape": "{model, audio: base64 pcm_s16le 16 kHz mono, language: kk}",
+  "latencyMs": 1800,
+  "costUsd": 0.003,
+  "probedAt": "",
+  "synthetic": true,
+  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Only if Kazakh ASR passes the Day 1 gate (cut line 1)."
+}

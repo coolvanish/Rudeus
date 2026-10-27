@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "job": "spark-sheet",
+  "ref": "sample-02",
+  "synthetic": true,
+  "note": "'sheet' is the model's JSON as returned; SheetParser normalises it.",
+  "sheet": {
+    "name": "Қоян",
+    "personality": "Shy but quick.",
+    "ability": "FLY",
+    "lines": {
+      "kk": [
+        "Сәлем!",
+        "Ұшайық!",
+        "Мен мұндамын!",
+        "Қарап тұр!",
+        "Жарайсың!"
+      ],
+      "ru": [
+        "Привет!",
+        "Летим!",
+        "Я здесь!",
+        "Смотри!",
+        "Молодец!"
+      ]
+    }
+  }
+}

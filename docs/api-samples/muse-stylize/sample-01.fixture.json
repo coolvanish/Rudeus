@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job": "muse-stylize",
+  "ref": "sample-01",
+  "synthetic": true,
+  "note": "On-style on the first attempt (same palette + outline as refs/).",
+  "outputs": [
+    "sample-01.out.png"
+  ]
+}

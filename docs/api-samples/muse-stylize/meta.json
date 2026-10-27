@@ -1,0 +1,11 @@
+{
+  "job": "muse-stylize",
+  "endpoint": "TODO(probe) POST /images/edits",
+  "model": "muse-image-edit",
+  "requestShape": "{model, image: base64 png, reference_images: [<=9 base64], prompt, response_format: b64_json}",
+  "latencyMs": 9000,
+  "costUsd": 0.02,
+  "probedAt": "",
+  "synthetic": true,
+  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Expected: data[0].b64_json PNG. Base64 > 2 KB is replaced by '<base64 N bytes>' and saved as <ref>.out.png."
+}

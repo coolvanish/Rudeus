@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on committed keys or local config
+        run: |
+          set -e
+          if git ls-files | grep -qE '^(local\.properties|\.env(\..*)?)$'; then echo "local config committed"; exit 1; fi
+          if git grep -nE 'META_API_KEY[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9_-]{16,}' -- . ':!scripts/probe-meta.sh' ':!.githooks' ':!.claude' ':!.github'; then echo "key-shaped string committed"; exit 1; fi
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+          accept-android-sdk-licenses: true
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Core tests, shared host test, CLI, debug APK
+        run: ./gradlew :core:jvmTest :shared:testAndroidHostTest :cli:compileKotlin :androidApp:assembleDebug --console=plain
+      - name: Offline pipeline smoke (fixtures)
+        run: ./gradlew :cli:run --args="character --fixtures docs/api-samples --out build/ci-runs --all" --console=plain -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            core/build/test-results/**/*.xml
+            shared/build/test-results/**/*.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rudeus-debug-apk
+          path: androidApp/build/outputs/apk/debug/*.apk

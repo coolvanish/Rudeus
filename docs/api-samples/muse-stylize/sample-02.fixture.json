@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "job": "muse-stylize",
+  "ref": "sample-02",
+  "synthetic": true,
+  "note": "Attempt 1 off-palette without outline, attempt 2 closer, attempt 3 on-style.",
+  "outputs": [
+    "sample-02.out-1.png",
+    "sample-02.out-2.png",
+    "sample-02.out-3.png"
+  ]
+}

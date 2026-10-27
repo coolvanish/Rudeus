@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Blocks commits that would leak a key or local config. Enabled by: git config core.hooksPath .githooks
+set -e
+if git diff --cached --name-only | grep -qE '^(local\.properties|\.env(\..*)?)$'; then
+  echo "pre-commit: local.properties / dotenv files must never be committed." >&2
+  exit 1
+fi
+added=$(git diff --cached -U0 | grep -E '^\+' | grep -vE '^\+\+\+' || true)
+if echo "$added" | grep -qE 'META_API_KEY[[:space:]]*=[[:space:]]*["'"'"']?[A-Za-z0-9_-]{16,}'; then
+  echo "pre-commit: staged diff contains what looks like META_API_KEY. Redact it." >&2
+  exit 1
+fi
+if echo "$added" | grep -qE '(Bearer|sk|key|tok)[-_ ][A-Za-z0-9_-]{32,}'; then
+  echo "pre-commit: staged diff contains a token-shaped string. Redact it (docs/api-samples must be scrubbed)." >&2
+  exit 1
+fi
+exit 0

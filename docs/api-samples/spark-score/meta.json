@@ -1,0 +1,11 @@
+{
+  "job": "spark-score",
+  "endpoint": "TODO(probe) POST /chat/completions",
+  "model": "spark-1.3",
+  "requestShape": "{model, messages: [{role: user, content: [text prompt, image_url sprite, image_url refs...]}], max_tokens: 16}",
+  "latencyMs": 1200,
+  "costUsd": 0.002,
+  "probedAt": "",
+  "synthetic": true,
+  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Expected: choices[0].message.content is a bare number in 0..1."
+}

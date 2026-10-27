@@ -1,0 +1,11 @@
+{
+  "job": "sam-cutout",
+  "endpoint": "TODO(probe) POST /segment",
+  "model": "sam-3.1",
+  "requestShape": "{model, image: base64, prompts: [\"drawing\",\"toy\"], output_format: \"rle\"}",
+  "latencyMs": 1500,
+  "costUsd": 0.004,
+  "probedAt": "",
+  "synthetic": true,
+  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Expected: one mask per prompt, COCO uncompressed RLE or bbox."
+}

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job": "spark-score",
+  "ref": "sample-01",
+  "synthetic": true,
+  "note": "Passes first try.",
+  "scores": [
+    0.85
+  ]
+}

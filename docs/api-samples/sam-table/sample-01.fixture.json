@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "job": "sam-table",
+  "ref": "sample-01",
+  "synthetic": true,
+  "note": "Prompts cup, book, phone, bottle, hand, object. Empty mask (rle = [width*height]) = object absent.",
+  "masks": [
+    {
+      "label": "cup",
+      "width": 64,
+      "height": 64,
+      "rle": [
+        2564,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        48,
+        16,
+        300
+      ],
+      "score": 0.9
+    },
+    {
+      "label": "book",
+      "width": 64,
+      "height": 64,
+      "bbox": {
+        "x": 28,
+        "y": 44,
+        "w": 33,
+        "h": 17
+      },
+      "score": 0.88
+    },
+    {
+      "label": "phone",
+      "width": 64,
+      "height": 64,
+      "rle": [
+        4096
+      ],
+      "score": 0.1
+    },
+    {
+      "label": "bottle",
+      "width": 64,
+      "height": 64,
+      "rle": [
+        4096
+      ],
+      "score": 0.08
+    },
+    {
+      "label": "hand",
+      "width": 64,
+      "height": 64,
+      "rle": [
+        4096
+      ],
+      "score": 0.03
+    },
+    {
+      "label": "object",
+      "width": 64,
+      "height": 64,
+      "rle": [
+        2844,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        31,
+        33,
+        195
+      ],
+      "score": 0.5
+    }
+  ]
+}
