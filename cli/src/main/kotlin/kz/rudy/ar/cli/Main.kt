@@ -1,6 +1,8 @@
 package kz.rudy.ar.cli
 
 import kotlinx.coroutines.runBlocking
+import kz.rudy.ar.core.bundle.Bundle
+import kz.rudy.ar.core.bundle.BundleIndex
 import kz.rudy.ar.core.io.FileFixtureSource
 import kz.rudy.ar.core.io.FileMetricsSink
 import kz.rudy.ar.core.meta.Fixture
@@ -12,8 +14,11 @@ import kz.rudy.ar.core.meta.MetaConfig
 import kz.rudy.ar.core.meta.MetaError
 import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.Provider
+import kz.rudy.ar.core.meta.RecordingModels
+import kz.rudy.ar.core.metrics.GateCheck
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
+import kz.rudy.ar.core.metrics.Verdict
 import kz.rudy.ar.core.pipeline.JvmPipeline
 import java.io.File
 import java.time.LocalDate
@@ -21,14 +26,24 @@ import java.util.Base64
 import kotlin.system.exitProcess
 
 /*
- * rudeus CLI — runs the same :core pipeline as the phone, from the Mac.
+ * rudeus CLI — runs the same :core pipeline as the phone, from the Mac. Working dir = repo root (`:cli:run`).
  *
- *   character --fixtures <dir> --out <dir> [--ref <name>] [--all] [--live] [--replay-latency]
- *             [--drawings <dir>] [--provider meta|fireworks]
+ *   character [--fixtures <dir>] --out <dir> [--ref <name> | --all | --drawings <dir>] [--refs <dir>]
+ *             [--bundle <dir>] [--replay-latency]
+ *             [--live [--provider meta|fireworks] [--budget-usd <x>] [--record <fixturesDir> [--force]]]
+ *       offline (default): FixtureApi over --fixtures (default docs/api-samples), provider "fixture".
+ *       --live: MetaApi, key from META_API_KEY env or repo-root local.properties (KeySource, never printed);
+ *       stops starting characters once spent + worst case > --budget-usd (default 1.00), exits 1.
+ *       --record: live-only; writes replayable fixtures (RecordingModels) + the input photo; refuses to
+ *       overwrite synthetic fixtures, and real ones without --force, before the first API call.
+ *       --bundle: <dir>/<ref>/sprite.png + sheet.json and an upserted <dir>/index.json (BundleIndex).
  *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
  *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
+ *   refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>]   (live, $0.01/image)
+ *   refs cull --from <dir> [--keep 8] --out <dir> [--force]
  *   metrics summarise <runsDir>
+ *   metrics gate <run.json>        Day 2 gate table; exit 0 only on PASS
  */
 fun main(args: Array<String>) {
     if (args.isEmpty()) usage()
@@ -36,6 +51,7 @@ fun main(args: Array<String>) {
         when (args[0]) {
             "character" -> character(parseFlags(args.drop(1)))
             "fixture" -> fixture(parseFlags(args.drop(1)))
+            "refs" -> refs(args.drop(1))
             "metrics" -> metrics(args.drop(1))
             "help", "--help", "-h" -> usage()
             else -> usage("unknown command: ${args[0]}")
@@ -47,32 +63,38 @@ fun main(args: Array<String>) {
     exitProcess(code)
 }
 
-private class CliError(message: String) : Exception(message)
+internal class CliError(message: String) : Exception(message)
 
-private fun usage(error: String? = null): Int {
+internal fun usage(error: String? = null): Int {
     if (error != null) System.err.println("error: $error")
     System.err.println(
         """
         usage:
-          character --fixtures <dir> --out <dir> [--ref <name> | --all] [--live] [--replay-latency]
-                    [--drawings <dir>] [--provider meta|fireworks]
+          character [--fixtures <dir>] --out <dir> [--ref <name> | --all | --drawings <dir>] [--refs <dir>]
+                    [--bundle <dir>] [--replay-latency]
+                    [--live [--provider meta|fireworks] [--budget-usd <x>] [--record <fixturesDir> [--force]]]
           fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
           fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
                   [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
+          refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>]
+          refs cull --from <dir> [--keep 8] --out <dir> [--force]
           metrics summarise <runsDir>
+          metrics gate <run.json>
         """.trimIndent(),
     )
     return if (error == null) 0 else 2
 }
 
-private class Flags(val values: Map<String, List<String>>, val switches: Set<String>) {
+internal class Flags(val values: Map<String, List<String>>, val switches: Set<String>) {
     fun get(name: String): String? = values[name]?.last()
     fun all(name: String): List<String> = values[name].orEmpty()
     fun require(name: String): String = get(name) ?: throw CliError("--$name is required")
     fun has(name: String): Boolean = name in switches
+    fun double(name: String): Double? = get(name)?.let { it.toDoubleOrNull() ?: throw CliError("--$name must be a number") }
+    fun int(name: String): Int? = get(name)?.let { it.toIntOrNull() ?: throw CliError("--$name must be an integer") }
 }
 
-private fun parseFlags(args: List<String>): Flags {
+internal fun parseFlags(args: List<String>): Flags {
     val values = HashMap<String, MutableList<String>>()
     val switches = HashSet<String>()
     var i = 0
@@ -86,10 +108,17 @@ private fun parseFlags(args: List<String>): Flags {
     return Flags(values, switches)
 }
 
+internal fun requireSafeRef(ref: String) {
+    if (ref.isBlank() || '/' in ref || '\\' in ref || ".." in ref) throw CliError("bad ref '$ref': must be non-blank, without '/' or '..'")
+}
+
 // ---------------------------------------------------------------- character
 
+private const val DEFAULT_FIXTURES = "docs/api-samples"
+private const val DEFAULT_LIVE_BUDGET_USD = 1.00
+
 private fun character(flags: Flags): Int {
-    val fixturesDir = File(flags.require("fixtures"))
+    val fixturesDir = File(flags.get("fixtures") ?: DEFAULT_FIXTURES)
     val outDir = File(flags.require("out"))
     val live = flags.has("live")
     val replayLatency = flags.has("replay-latency")
@@ -99,26 +128,22 @@ private fun character(flags: Flags): Int {
         else -> throw CliError("--provider must be meta or fireworks")
     }
     if (!fixturesDir.isDirectory) throw CliError("fixtures dir not found: $fixturesDir")
+    val recordDir = flags.get("record")?.let(::File)
+    // Offline the replies already are fixtures; recording them would only copy files onto themselves.
+    if (recordDir != null && !live) throw CliError("--record is live-only (it records real replies); add --live or drop --record")
+    val budgetUsd = flags.double("budget-usd")?.also { if (it <= 0.0) throw CliError("--budget-usd must be positive") }
+        ?: if (live) DEFAULT_LIVE_BUDGET_USD else null
+    if (!live && budgetUsd != null) System.err.println("warning: --budget-usd is unused offline (fixtures cost nothing)")
+    val bundleDir = flags.get("bundle")?.let(::File)
 
     val source = FileFixtureSource(File("."))
     val fixtureApi = FixtureApi(source, root = fixturesDir.path, replayLatency = replayLatency)
-
-    val models: MetaModels
-    val providerName: String
-    if (live) {
-        val key = System.getenv("META_API_KEY").orEmpty()
-        if (key.isBlank()) throw CliError("--live needs META_API_KEY in the environment")
-        models = MetaApi(MetaConfig(apiKey = key, provider = provider))
-        providerName = provider.metricsName
-    } else {
-        models = fixtureApi
-        providerName = "fixture"
-    }
 
     // Inputs: --ref <name>, --all (every sam-cutout fixture), or --drawings <dir> (every image file, live runs).
     val inputs: List<Pair<String, File>> = when {
         flags.get("drawings") != null -> {
             val dir = File(flags.require("drawings"))
+            if (!dir.isDirectory) throw CliError("drawings dir not found: $dir")
             dir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }.orEmpty()
                 .sortedBy { it.name }.map { it.nameWithoutExtension to it }
         }
@@ -130,20 +155,47 @@ private fun character(flags: Flags): Int {
         else -> throw CliError("give --ref <name>, --all or --drawings <dir>")
     }
     if (inputs.isEmpty()) throw CliError("no inputs found")
+    inputs.forEach { requireSafeRef(it.first) }
+    if (live) inputs.firstOrNull { !it.second.isFile }?.let { throw CliError("${it.first}: input photo not found (${it.second.path})") }
 
-    val styleRefs = styleRefs(fixturesDir)
-    if (styleRefs.isEmpty()) System.err.println("warning: no style refs in ${File(fixturesDir, "$MUSE_DIR/refs")}; deterministic gate half is off")
+    val refsDir = flags.get("refs")?.let(::File)?.also { if (!it.isDirectory) throw CliError("refs dir not found: $it") }
+        ?: File(fixturesDir, "$MUSE_DIR/refs")
+    val styleRefs = styleRefs(refsDir)
+    if (styleRefs.isEmpty()) System.err.println("warning: no style refs in $refsDir; deterministic gate half is off")
 
+    // Everything that can refuse runs before the first API call.
+    if (recordDir != null) Record.preflight(recordDir, inputs, force = flags.has("force"))
+    var bundleIndex: BundleIndex? = bundleDir?.let { dir ->
+        val f = File(dir, Bundle.INDEX)
+        try { Bundle.decodeIndex(f.takeIf { it.isFile }?.readText()) } catch (e: Exception) { throw CliError("${f.path}: not a bundle index (${e.message})") }
+    }
+
+    val providerName = if (live) provider.metricsName else "fixture"
     val metrics = MetricsLog(source = "cli", provider = providerName, device = "mac")
+    val models: MetaModels = if (live) {
+        val api = MetaApi(MetaConfig(apiKey = KeySource.read(), provider = provider), costMeter = metrics)
+        if (recordDir != null) RecordingModels(api, Record.writer(recordDir), clock = System::currentTimeMillis) else api
+    } else {
+        fixtureApi
+    }
     val pipeline = JvmPipeline.create(models, metrics)
     val spritesDir = File(outDir, "sprites").apply { mkdirs() }
+    val c = metrics.costs
+    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + c.scoreUsd) + c.sheetUsd
 
-    println("run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency")
+    println(
+        "run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency" +
+            (budgetUsd?.let { ", budget=$${fmtUsd(it)} (worst case $${fmtUsd(worstCaseUsd)}/character)" } ?: "") +
+            (recordDir?.let { ", record=${it.path}" } ?: "") + (bundleDir?.let { ", bundle=${it.path}" } ?: ""),
+    )
     var failures = 0
+    val skipped = ArrayList<String>()
     runBlocking {
         for ((ref, file) in inputs) {
+            if (budgetUsd != null && spentUsd(metrics) + worstCaseUsd > budgetUsd) { skipped += ref; continue }
             val image = file.takeIf { it.isFile }?.readBytes() ?: ByteArray(0)
             val description = description(fixturesDir, ref)
+            if (recordDir != null) Record.copyInput(recordDir, ref, file)
             try {
                 val result = pipeline.run(ref, image, styleRefs, description)
                 val spriteFile = File(spritesDir, "$ref.png")
@@ -152,6 +204,14 @@ private fun character(flags: Flags): Int {
                     "  $ref: gate=${result.gateScore} ${if (result.gatePassed) "PASS" else "FAIL"} attempts=${result.attempts} " +
                         "ability=${result.sheet.ability} name=${result.sheet.name} -> ${spriteFile.path}",
                 )
+                if (bundleDir != null) {
+                    File(bundleDir, ref).mkdirs()
+                    File(bundleDir, Bundle.spritePath(ref)).writeBytes(result.sprite)
+                    File(bundleDir, Bundle.sheetPath(ref)).writeText(Bundle.encodeSheet(result.sheet))
+                    val index = checkNotNull(bundleIndex).upsert(Bundle.entry(result, providerName, metrics.runId))
+                    File(bundleDir, Bundle.INDEX).writeText(Bundle.encodeIndex(index))
+                    bundleIndex = index
+                }
             } catch (e: MetaError) {
                 failures++
                 println("  $ref: FAILED ${e::class.simpleName}: ${e.message}")
@@ -162,12 +222,24 @@ private fun character(flags: Flags): Int {
     val path = FileMetricsSink(outDir).write("${metrics.runId}.json", metrics.toJson())
     val s = metrics.toRun().summary
     println("wrote $path")
+    if (bundleDir != null) println("bundle: ${File(bundleDir, Bundle.INDEX).path} (${bundleIndex?.characters?.size ?: 0} character(s))")
     println("summary: n=${s.n} passFirstTry=${s.gatePassRateFirstTry} p50=${s.p50Ms}ms p90=${s.p90Ms}ms cost=$${s.costPerCharacterUsd}/character")
-    return if (failures == 0) 0 else 1
+    if (skipped.isNotEmpty()) {
+        println(
+            "budget: spent $${fmtUsd(spentUsd(metrics))} of $${fmtUsd(budgetUsd ?: 0.0)}; worst case $${fmtUsd(worstCaseUsd)}/character; " +
+                "skipped ${skipped.size}: ${skipped.joinToString()}",
+        )
+    }
+    return if (failures == 0 && skipped.isEmpty()) 0 else 1
 }
 
+/** Recorded stage costs of the run so far (measured once MetaApi reports them to the MetricsLog, estimates until then). */
+private fun spentUsd(metrics: MetricsLog): Double = metrics.toRun().characters.sumOf { it.totalCostUsd }
+
+internal fun fmtUsd(d: Double): String = "%.4f".format(java.util.Locale.ROOT, d)
+
 private const val MUSE_DIR = "muse-stylize"
-private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg")
+internal val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg")
 
 /** `<fixtures>/sam-cutout/<ref>.input.(png|jpg|jpeg)` or `<ref>.(png|jpg)`; a missing file yields empty bytes (fixtures don't read it). */
 private fun inputImage(fixturesDir: File, ref: String): File {
@@ -176,13 +248,13 @@ private fun inputImage(fixturesDir: File, ref: String): File {
     return candidates.map { File(dir, it) }.firstOrNull { it.isFile } ?: File(dir, "$ref.input.png")
 }
 
-private fun styleRefs(fixturesDir: File): List<ByteArray> =
-    File(fixturesDir, "$MUSE_DIR/refs").listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }
+private fun styleRefs(refsDir: File): List<ByteArray> =
+    refsDir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }
         .orEmpty().sortedBy { it.name }.map { it.readBytes() }
 
+/** `spark-sheet/<ref>.description.txt` when present, else blank: Spark sees the cutout image instead. */
 private fun description(fixturesDir: File, ref: String): String =
-    File(fixturesDir, "${Jobs.SPARK_SHEET}/$ref.description.txt").takeIf { it.isFile }?.readText()?.trim()
-        ?: "a child's drawing of a character"
+    File(fixturesDir, "${Jobs.SPARK_SHEET}/$ref.description.txt").takeIf { it.isFile }?.readText()?.trim().orEmpty()
 
 // ---------------------------------------------------------------- fixture
 
@@ -300,7 +372,7 @@ private fun samFixture(job: String, flags: Flags): Int {
     return 0
 }
 
-private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
+internal val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47)
 
 /** Decodes the inline stylize payload; throws [MetaError.Parse] unless it is non-empty base64 of a PNG. */
 private fun decodePng(b64: String): ByteArray {
@@ -317,9 +389,13 @@ private const val RESPONSE_SUFFIX = FixtureConverter.RESPONSE_SUFFIX
 
 // ---------------------------------------------------------------- metrics
 
-private fun metrics(args: List<String>): Int {
-    if (args.size < 2 || args[0] != "summarise") return usage("metrics takes: summarise <runsDir>")
-    val dir = File(args[1])
+private fun metrics(args: List<String>): Int = when {
+    args.size == 2 && args[0] == "summarise" -> summarise(File(args[1]))
+    args.size == 2 && args[0] == "gate" -> gate(File(args[1]))
+    else -> usage("metrics takes: summarise <runsDir> | gate <run.json>")
+}
+
+private fun summarise(dir: File): Int {
     val files = dir.listFiles { f -> f.isFile && f.extension == "json" }.orEmpty().sortedBy { it.name }
     if (files.isEmpty()) throw CliError("no runs/*.json in $dir")
     val runs = ArrayList<MetricsRun>()
@@ -328,4 +404,13 @@ private fun metrics(args: List<String>): Int {
     }
     print(MetricsLog.summarise(runs))
     return 0
+}
+
+/** Prints the Day 2 gate table of one run ([GateCheck]); exit 0 only when it PASSes. */
+private fun gate(file: File): Int {
+    if (!file.isFile) throw CliError("run file not found: $file")
+    val run = try { MetricsLog.fromJson(file.readText()) } catch (e: Exception) { throw CliError("${file.path}: not a metrics run (${e.message})") }
+    val report = GateCheck.check(run)
+    print(report.format())
+    return if (report.verdict == Verdict.PASS) 0 else 1
 }
