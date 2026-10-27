@@ -1,0 +1,16 @@
+# Style sentence (SUBJECT replaced per candidate):
+One single character for a children's game, drawn as a flat sticker illustration: a bold, even, dark-brown ink outline about 3% of the image width around every shape, flat bright crayon colours only (sunny yellow, sky blue, leaf green, tomato red, grape purple, warm cream), a light wax-crayon texture inside the fills, no gradients, no shading, no shadow, no text, no frame. Full body, centred, facing the viewer, friendly simple face, on a plain pure white background with wide empty margins. The character is: SUBJECT.
+
+# Subjects, in candidate order gen-01..gen-12:
+gen-01: a round orange cat sitting.
+gen-02: a small boxy robot with antenna.
+gen-03: a camel with two humps.
+gen-04: a snow leopard cub.
+gen-05: a golden eagle with open wings.
+gen-06: a little brown horse.
+gen-07: a fluffy white-and-cream sheep.
+gen-08: a round yurt house with a friendly face and a little door.
+gen-09: a red apple creature with small legs.
+gen-10: a blue fish with tiny legs.
+gen-11: a friendly green dinosaur.
+gen-12: a yellow star creature waving.
