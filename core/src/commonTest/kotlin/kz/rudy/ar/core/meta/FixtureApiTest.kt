@@ -7,6 +7,9 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FixtureApiTest {
@@ -111,5 +114,42 @@ class FixtureApiTest {
         assertEquals(0.82f, parseScore("Score: 82%"))
         assertEquals(1f, parseScore("1"))
         assertFailsWith<MetaError.Parse> { parseScore("no idea") }
+    }
+
+    /** T01 brief: the converted REAL Day 1 sam-table probe (docs/api-samples/sam-table/table-01.*) loads through FixtureApi. */
+    @Test
+    fun fixtureApiLoadsRealSamTableResponse() = runTest {
+        val api = FixtureApi(DiskFixtureSource.repoRoot(), root)
+        val fx = api.load(Jobs.SAM_TABLE, "table-01")
+        assertFalse(fx.synthetic, "table-01 is real probe output")
+        val prompts = listOf("laptop", "remote", "speaker", "toy car", "knife")
+        val seg = api.segment("table-01", byteArrayOf(), prompts)
+        assertTrue(seg.masks.size >= 5)
+        assertEquals(prompts, seg.masks.map { it.label }, "prompts.json order")
+        assertTrue(seg.masks.all { it.width == 900 && it.height == 1600 }, "every mask is the 900x1600 frame")
+        val laptop = seg.byLabel("laptop")!!
+        assertNotNull(laptop.bbox)
+        assertEquals(900 * 1600, laptop.rle!!.sum())
+        assertFalse(laptop.isEmpty)
+        val speaker = seg.byLabel("speaker")!!
+        assertNull(speaker.rle, "absent object: no rle")
+        assertNull(speaker.bbox, "absent object: no bbox")
+        assertTrue(speaker.isEmpty)
+    }
+
+    @Test
+    fun fixtureApiLoadsRealSamCutoutResponse() = runTest {
+        val api = FixtureApi(DiskFixtureSource.repoRoot(), root)
+        assertFalse(api.load(Jobs.SAM_CUTOUT, "drawing-01").synthetic)
+        val seg = api.segment("drawing-01", byteArrayOf(), Jobs.CUTOUT_PROMPTS)
+        assertEquals(listOf("drawing", "toy"), seg.masks.map { it.label })
+        assertTrue(seg.masks.all { it.width == 532 && it.height == 577 })
+        val drawing = seg.byLabel("drawing")!!
+        assertEquals(BBox(126, 20, 335, 552), drawing.bbox)
+        assertEquals(532 * 577, drawing.rle!!.sum())
+        assertEquals(drawing, seg.largest(), "the pipeline picks the drawing")
+        val toy = seg.byLabel("toy")!!
+        assertNull(toy.rle)
+        assertNull(toy.bbox)
     }
 }

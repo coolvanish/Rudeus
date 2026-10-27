@@ -131,7 +131,7 @@ class FixtureConverterTest {
 
     @Test
     fun sparkScoreReplyBecomesScoresAndRoundTripsThroughFixtureApi() = runTest {
-        val raw = """{"id":"chatcmpl-x","object":"chat.completion","model":"muse-spark-1.3",
+        val raw = """{"id":"chatcmpl-x","object":"chat.completion","model":"muse-spark-1.3-contributor",
             "choices":[{"index":0,"message":{"role":"assistant","content":"0.85"},"finish_reason":"stop"}],
             "usage":{"prompt_tokens":900,"completion_tokens":2}}"""
         val fx = convert(Jobs.SPARK_SCORE, raw, ref = "sample-01")

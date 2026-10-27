@@ -41,7 +41,7 @@ import kotlin.io.encoding.Base64
  * - segment: `POST /responses` on `sam-3.1`, ONE request per prompt (sent concurrently), one [MaskResult] per
  *   prompt in prompt order; no match = empty mask.
  * - stylize: `POST /images/edits`, JSON `images[]` = cutout + <= 9 refs.
- * - scoreStyle / characterSheet: `POST /chat/completions` on `muse-spark-1.3` (the only jobs Fireworks can serve).
+ * - scoreStyle / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs Fireworks can serve).
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(
@@ -96,6 +96,7 @@ class MetaApi(
             model = config.sparkModel,
             messages = listOf(ChatMessage.text("user", Prompts.characterSheet(description))), // plain string, as the template
             maxCompletionTokens = Prompts.SHEET_MAX_COMPLETION_TOKENS,
+            reasoningEffort = Prompts.SHEET_REASONING_EFFORT,
             responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
         )
         val resp: ChatResponse = postJson(ref, "characterSheet", config.chatPath, req)

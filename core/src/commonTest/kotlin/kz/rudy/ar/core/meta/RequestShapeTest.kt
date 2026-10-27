@@ -25,9 +25,10 @@ class RequestShapeTest {
     @Test
     fun samRequestIsAResponsesCallWithOneConcept() {
         val body = encode(SegmentRequest.serializer(), SegmentRequest.of("sam-3.1", "cup", "image/jpeg", png))
-        assertEquals(setOf("model", "input", "stream", "metadata"), body.keys)
+        assertEquals(setOf("model", "input", "stream", "store", "metadata"), body.keys)
         assertFalse("prompts" in body || "image" in body || "output_format" in body)
         assertEquals(JsonPrimitive(false), body["stream"])
+        assertEquals(JsonPrimitive(false), body["store"], "store:false or large inline images fail with 401 (Day 1 probe)")
         val message = body["input"]!!.jsonArray.single().jsonObject
         assertEquals(setOf("type", "role", "content"), message.keys)
         assertEquals("message", message["type"]!!.jsonPrimitive.content)
@@ -60,7 +61,7 @@ class RequestShapeTest {
     @Test
     fun sparkScoreUsesMaxCompletionTokensAndNoTemperature() {
         val req = ChatRequest(
-            model = "muse-spark-1.3",
+            model = MetaConfig(apiKey = "test-key").sparkModel,
             messages = listOf(ChatMessage.parts("user", listOf(ChatContentPart.text(Prompts.STYLE_SCORE), ChatContentPart.imageDataUrl("image/png", png)))),
             maxCompletionTokens = Prompts.SCORE_MAX_COMPLETION_TOKENS,
             reasoningEffort = Prompts.SCORE_REASONING_EFFORT,
@@ -68,7 +69,9 @@ class RequestShapeTest {
         val body = encode(ChatRequest.serializer(), req)
         assertEquals(setOf("model", "messages", "reasoning_effort", "max_completion_tokens"), body.keys)
         assertFalse("max_tokens" in body || "temperature" in body)
-        assertEquals(16, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals("muse-spark-1.3-contributor", body["model"]!!.jsonPrimitive.content, "contributor tier, never standard")
+        assertEquals(512, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "16 and 64 ran out on reasoning")
+        assertEquals("low", body["reasoning_effort"]!!.jsonPrimitive.content)
         val parts = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
         assertEquals(setOf("type", "text"), parts[0].keys)
@@ -78,13 +81,17 @@ class RequestShapeTest {
     @Test
     fun sparkSheetSendsTheTemplateJsonSchema() {
         val req = ChatRequest(
-            model = "muse-spark-1.3",
+            model = MetaConfig(apiKey = "test-key").sparkModel,
             messages = listOf(ChatMessage.text("user", Prompts.characterSheet("a cat"))),
             maxCompletionTokens = Prompts.SHEET_MAX_COMPLETION_TOKENS,
+            reasoningEffort = Prompts.SHEET_REASONING_EFFORT,
             responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
         )
         val body = encode(ChatRequest.serializer(), req)
-        assertEquals(setOf("model", "messages", "response_format", "max_completion_tokens"), body.keys)
+        assertEquals(setOf("model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"), body.keys)
+        assertEquals("muse-spark-1.3-contributor", body["model"]!!.jsonPrimitive.content, "contributor tier, never standard")
+        assertEquals(2048, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "600 ran out on the Day 1 probe")
+        assertEquals("low", body["reasoning_effort"]!!.jsonPrimitive.content)
         val message = body["messages"]!!.jsonArray.single().jsonObject
         assertEquals(setOf("role", "content"), message.keys)
         val content = message["content"] as JsonPrimitive
@@ -120,12 +127,27 @@ class RequestShapeTest {
         val c = MetaConfig(apiKey = "test-key")
         assertEquals("https://api.meta.ai/v1/responses", c.url(c.segmentPath))
         assertEquals("https://api.meta.ai/v1/asr/transcribe", c.url(c.transcribePath))
-        assertEquals(listOf("sam-3.1", "muse-image-1.0", "muse-spark-1.3", "muse-voice-transcribe-1.0"), listOf(c.samModel, c.museImageModel, c.sparkModel, c.voiceModel))
+        assertEquals(listOf("sam-3.1", "muse-image-1.0", "muse-spark-1.3-contributor", "muse-voice-transcribe-1.0"), listOf(c.samModel, c.museImageModel, c.sparkModel, c.voiceModel))
+        assertEquals(MetaConfig.META_SPARK_MODEL, c.sparkModel)
         val fw = MetaConfig(apiKey = "test-key", provider = Provider.FIREWORKS)
         assertEquals(MetaConfig.FIREWORKS_SPARK_MODEL, fw.sparkModel)
         assertTrue(fw.serves(Jobs.SPARK_SCORE) && fw.serves(Jobs.SPARK_SHEET))
         assertFalse(fw.serves(Jobs.SAM_TABLE) || fw.serves(Jobs.MUSE_STYLIZE) || fw.serves(Jobs.VOICE))
         assertEquals("image/png", sniffImageMime(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D)))
         assertEquals("image/jpeg", sniffImageMime(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())))
+    }
+
+    @Test
+    fun nullChatContentFromARunOutBudgetIsAParseErrorNamingTheFinishReason() {
+        val raw = """{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":null},"finish_reason":"length"}],
+            "usage":{"prompt_tokens":120,"completion_tokens":600}}"""
+        val resp = MetaApi.json.decodeFromString(ChatResponse.serializer(), raw) // decodes; no SerializationException
+        val e = kotlin.test.assertFailsWith<MetaError.Parse> { resp.contentText() }
+        assertEquals("empty content, finish_reason=length", e.message)
+        val fx = kotlin.test.assertFailsWith<MetaError.Parse> {
+            FixtureConverter.fromResponse(Jobs.SPARK_SHEET, "sample-01", raw, null, synthetic = false, note = "")
+        }
+        assertTrue("finish_reason=length" in fx.message!!, fx.message)
+        assertEquals("0.8", MetaApi.json.decodeFromString(ChatResponse.serializer(), """{"choices":[{"message":{"content":"0.8"}}]}""").contentText())
     }
 }

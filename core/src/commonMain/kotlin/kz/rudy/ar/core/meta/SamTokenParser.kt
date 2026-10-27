@@ -181,6 +181,9 @@ object SamTokenParser {
     fun maskResult(label: String, text: String, strict: Boolean = true, emptyWidth: Int = 0, emptyHeight: Int = 0): MaskResult =
         merge(label, parse(text, strict), strict, emptyWidth, emptyHeight)
 
+    // TODO(T04): merging is wrong for the level builder: the real Day 1 "remote" prompt matched the remote AND the
+    //  speaker and merged them into one 438x223 bbox. Keep each detection as its own footprint (label + index, its own
+    //  rle/bbox/score; best score first) and derive this merged mask from them only where one object is wanted (cutout).
     fun merge(label: String, detections: List<Detection>, strict: Boolean = true, emptyWidth: Int = 0, emptyHeight: Int = 0): MaskResult {
         if (detections.isEmpty()) return MaskResult(label = label, width = emptyWidth, height = emptyHeight)
         val fw = detections[0].box.frameWidth

@@ -16,7 +16,7 @@ import kotlinx.serialization.json.jsonObject
  *
  * Shapes verified against https://dev.meta.ai/docs on 2026-10-28 (the request templates in
  * docs/api-samples/<job>/request.json.tmpl are the same bodies, with their source pages). Nothing has been sent
- * with a key yet; the remaining guesses are marked `TODO(probe)`.
+ * with a key until the Day 1 probes; SAM replies are now confirmed, the remaining guesses are marked `TODO(probe)`.
  */
 
 // ---------------------------------------------------------------- SAM 3.1 (Responses API, one concept per request)
@@ -51,12 +51,17 @@ data class SamMetadata(
 /**
  * `POST /v1/responses` for `sam-3.1`: one short noun-phrase concept + one image. Comma lists return zero matches,
  * so [MetaApi.segment] sends one of these per prompt (https://dev.meta.ai/docs/sam/segmenting).
+ *
+ * [store] is always `false`: the Responses API defaults to `store: true` and then tries to persist the inline base64
+ * image; on the Day 1 probe a full-size 1440x2560 JPEG failed with HTTP 401 `invalid_api_key` unless the body carried
+ * `"store": false` (the sam-* request templates send it too). We never need a stored response.
  */
 @Serializable
 data class SegmentRequest(
     val model: String,
     val input: List<ResponsesMessage>,
     val stream: Boolean = false,
+    val store: Boolean = false,
     val metadata: SamMetadata = SamMetadata(),
 ) {
     companion object {
@@ -85,8 +90,9 @@ data class ResponsesErrorDto(val code: String? = null, val message: String? = nu
  * Non-streaming Responses reply (https://dev.meta.ai/docs/api-reference/responses/schemas, "Response"):
  * `output[]` items, a `message` item holding `output_text` parts, plus an optional top-level `output_text`.
  *
- * TODO(probe): the SAM pages only show the SSE stream (`response.output_text.delta`); that `stream:false` returns
- *  this documented Response object with the token text in it is the remaining guess. [outputText] reads either place.
+ * Confirmed by the Day 1 SAM probes (the `<ref>.input.<prompt>.response.json` files in docs/api-samples sam-table and sam-cutout): `stream:false`
+ * returns `status: "completed"` with the token text in `output[0].content[0]` (`type: "output_text"`, `text`) and
+ * NO top-level `output_text`; a no-match prompt has an empty `text`. [text] still accepts the top-level field.
  */
 @Serializable
 data class ResponsesResponse(
@@ -242,8 +248,17 @@ data class ChatChoice(val index: Int = 0, val message: ChatChoiceMessage? = null
 @Serializable
 data class ChatResponse(val choices: List<ChatChoice> = emptyList())
 
-fun ChatResponse.contentText(): String =
-    choices.firstOrNull()?.message?.content ?: throw MetaError.Parse("chat reply has no choices[0].message.content")
+/**
+ * `choices[0].message.content`. A reasoning model that runs out of `max_completion_tokens` replies with
+ * `content: null` and `finish_reason: "length"` (seen on the Day 1 spark-sheet probe at 600 tokens): that is a
+ * [MetaError.Parse] naming the finish reason, not a decode error.
+ */
+fun ChatResponse.contentText(): String {
+    val choice = choices.firstOrNull() ?: throw MetaError.Parse("chat reply has no choices[0].message.content")
+    val content = choice.message?.content
+    if (content.isNullOrBlank()) throw MetaError.Parse("empty content, finish_reason=${choice.finishReason ?: "unknown"}")
+    return content
+}
 
 /** The score prompt asks for a bare number in 0..1; this also accepts `{"score": 0.8}` or "82%". */
 fun parseScore(text: String): Float {
@@ -349,8 +364,13 @@ object Prompts {
         jsonSchema = JsonSchemaFormat(name = "CharacterSheet", schema = CHARACTER_SHEET_SCHEMA, strict = true),
     )
 
-    /** Template value. TODO(probe): reasoning tokens count against it; raise to 64 if content comes back empty ("length"). */
-    const val SCORE_MAX_COMPLETION_TOKENS = 16
-    const val SHEET_MAX_COMPLETION_TOKENS = 600
+    /**
+     * `max_completion_tokens` counts reasoning tokens too: the Day 1 sheet probe at 600 came back `content: null`,
+     * `finish_reason: "length"`. Budgets below match docs/api-samples/spark-{score,sheet}/request.json.tmpl.
+     * Score probed: 16 and 64 run out of budget on reasoning (`finish_reason: "length"`), hence 512.
+     */
+    const val SCORE_MAX_COMPLETION_TOKENS = 512
+    const val SHEET_MAX_COMPLETION_TOKENS = 2048
     const val SCORE_REASONING_EFFORT = "low"
+    const val SHEET_REASONING_EFFORT = "low"
 }

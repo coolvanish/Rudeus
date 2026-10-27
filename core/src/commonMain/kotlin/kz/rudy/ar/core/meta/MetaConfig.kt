@@ -24,7 +24,11 @@ data class MetaConfig(
     val baseUrl: String = defaultBaseUrl(provider),
     val samModel: String = "sam-3.1",
     val museImageModel: String = "muse-image-1.0",
-    /** Spark for the score + sheet chat calls; on [Provider.FIREWORKS] defaults to [FIREWORKS_SPARK_MODEL]. */
+    /**
+     * Spark for the score + sheet chat calls: the CONTRIBUTOR tier on Meta, never the standard model
+     * (user decision 2026-10-28: contributor tier, training on our prompts is acceptable, cheaper).
+     * On [Provider.FIREWORKS] defaults to [FIREWORKS_SPARK_MODEL].
+     */
     val sparkModel: String = defaultSparkModel(provider),
     val voiceModel: String = "muse-voice-transcribe-1.0",
     /** Endpoint paths relative to [baseUrl] (which already ends in `/v1`). SAM rides the Responses API. */
@@ -49,6 +53,9 @@ data class MetaConfig(
     fun serves(job: String): Boolean = provider == Provider.META || job == Jobs.SPARK_SCORE || job == Jobs.SPARK_SHEET
 
     companion object {
+        /** Spark contributor tier (user decision 2026-10-28: contributor tier, training on our prompts is acceptable, cheaper). */
+        const val META_SPARK_MODEL = "muse-spark-1.3-contributor"
+
         /** Open-weight Spark on Fireworks (OpenAI-compatible chat only). */
         const val FIREWORKS_SPARK_MODEL = "accounts/fireworks/models/muse-spark-open"
 
@@ -58,7 +65,7 @@ data class MetaConfig(
         }
 
         fun defaultSparkModel(provider: Provider): String = when (provider) {
-            Provider.META -> "muse-spark-1.3"
+            Provider.META -> META_SPARK_MODEL
             Provider.FIREWORKS -> FIREWORKS_SPARK_MODEL
         }
     }

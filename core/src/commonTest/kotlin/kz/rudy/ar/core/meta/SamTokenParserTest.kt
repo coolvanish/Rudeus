@@ -160,4 +160,20 @@ class SamTokenParserTest {
             """{"status":"completed","output":[{"type":"message","content":[{"type":"refusal","refusal":"no"}]}]}""")
         assertFailsWith<MetaError.Provider> { decoded.text() }
     }
+
+    @Test
+    fun realProbeTokenOrderWithConfidenceBeforeData() {
+        // Exactly the shape of the Day 1 sam-cutout reply: box c after h, mask c between y and data.
+        val payload = SamMaskCodec.encodeOneBit(booleanArrayOf(true, true, false, true), 2, 2)
+        val text = "<0f>0<|box;x1=126;y1=20;x2=127;y2=21;w=532;h=577;c=0.9452055096626282|>" +
+            "<|mask;x=0;y=0;c=0.9452055096626282;data=2,2,$payload|>"
+        val d = SamTokenParser.parse(text).single()
+        assertEquals(0.9452055f, d.box.confidence)
+        assertEquals(0.9452055f, d.mask.confidence)
+        assertEquals(2 to 2, d.mask.height to d.mask.width)
+        val m = SamTokenParser.maskResult("drawing", text)
+        assertEquals(532 to 577, m.width to m.height)
+        assertEquals(setOf(126 to 20, 127 to 20, 127 to 21), on(m))
+        assertEquals(0.9452055f, m.score)
+    }
 }
