@@ -180,7 +180,7 @@ lines = [l for l in open(hdr, errors="replace").read().splitlines() if not re.ma
 open(hdr, "w").write("\n".join(lines) + "\n")
 m = json.load(open(meta)) if os.path.exists(meta) else {"job": job, "probes": []}
 m["job"] = job; m["path"] = path
-m.setdefault("probes", []).append({"when": datetime.datetime.utcnow().isoformat() + "Z", "input": os.path.basename(raw).replace(".response.json", ""), "httpStatus": int(code), "latencyMs": int(ms)})
+m.setdefault("probes", []).append({"when": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "input": os.path.basename(raw).replace(".response.json", ""), "httpStatus": int(code), "latencyMs": int(ms)})
 m["latencyMs"] = int(sum(p["latencyMs"] for p in m["probes"]) / len(m["probes"]))
 json.dump(m, open(meta, "w"), indent=2)
 print(f"{job}: HTTP {code} in {ms} ms -> {raw} (redacted), latency recorded in {meta}")
