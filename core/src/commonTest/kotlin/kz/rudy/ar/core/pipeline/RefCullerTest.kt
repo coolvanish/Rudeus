@@ -36,6 +36,40 @@ class RefCullerTest {
 
     private fun consistentSet(n: Int): List<RefCandidate> = (0 until n).map { RefCandidate("ref$it", consistent(it)) }
 
+    /** [img] moved by ([dx], [dy]) on a white page, with every pixel of [from] recoloured to [to]. */
+    private fun shifted(img: ArrayRaster, dx: Int, dy: Int, from: Int = 0, to: Int = 0): ArrayRaster {
+        val out = ArrayRaster.solid(img.width, img.height, white)
+        for (y in 0 until img.height) for (x in 0 until img.width) {
+            val sx = x - dx; val sy = y - dy
+            if (sx !in 0 until img.width || sy !in 0 until img.height) continue
+            val p = img.argb(sx, sy)
+            out.set(x, y, if (p == from) to else p)
+        }
+        return out
+    }
+
+    /** Rows and columns swapped: the same pixels (palette and outline share) in another silhouette. */
+    private fun transposed(img: ArrayRaster): ArrayRaster {
+        val out = ArrayRaster(img.height, img.width)
+        for (y in 0 until img.height) for (x in 0 until img.width) out.set(y, x, img.argb(x, y))
+        return out
+    }
+
+    /** A "T": a wide bar on top and a stem under it, both outlined; not symmetric under transposition. */
+    private fun tee(): ArrayRaster {
+        val img = ArrayRaster.solid(256, 256, white)
+        val fill = argbOf(255, 210, 70, 50)
+        fun box(x0: Int, y0: Int, x1: Int, y1: Int) {
+            for (y in y0 until y1) for (x in x0 until x1) {
+                val edge = x - x0 < 4 || x1 - 1 - x < 4 || y - y0 < 4 || y1 - 1 - y < 4
+                img.set(x, y, if (edge) ink else fill)
+            }
+        }
+        box(30, 30, 230, 80)
+        box(105, 80, 150, 230)
+        return img
+    }
+
     private fun reasonOf(result: CullResult, name: String): String =
         result.dropped.single { it.name == name }.reason
 
@@ -59,10 +93,20 @@ class RefCullerTest {
 
     @Test
     fun nearDuplicateDropped() {
-        val copy = RefCandidate("ref2-copy", consistent(2))
+        // A real copy: moved 1 px and the body fill nudged by 2 in red.
+        val fill = argbOf(255, 212, 66, 50) // consistent(2)'s body colour
+        val copy = RefCandidate("ref2-copy", shifted(consistent(2), 1, 1, from = fill, to = argbOf(255, 214, 66, 50)))
         val result = RefCuller.cull(consistentSet(5) + copy, keep = 8)
         assertEquals(listOf("ref0", "ref1", "ref2", "ref3", "ref4"), result.kept.sorted())
         assertEquals("near-duplicate of ref2", reasonOf(result, "ref2-copy"))
+    }
+
+    @Test
+    fun sameStyleDifferentShapeBothKept() {
+        // Identical pixel histogram (palette and outline share), different silhouette: both are useful refs.
+        val result = RefCuller.cull(listOf(RefCandidate("tee", tee()), RefCandidate("tee-sideways", transposed(tee()))), keep = 2)
+        assertEquals(listOf("tee", "tee-sideways"), result.kept.sorted())
+        assertTrue(result.dropped.isEmpty(), result.dropped.toString())
     }
 
     @Test
@@ -72,14 +116,33 @@ class RefCullerTest {
             RefCandidate("blank", ArrayRaster.solid(300, 300, white)),
             RefCandidate("full", ArrayRaster.solid(300, 300, argbOf(255, 200, 60, 50))),
             RefCandidate("ref1", consistent(5)),
+            // A too-small "x" first must not knock out the valid "x" after it.
+            RefCandidate("x", ArrayRaster.solid(100, 100, ink)),
+            RefCandidate("x", consistent(6)),
         )
         val result = RefCuller.cull(candidates, keep = 8)
-        assertEquals(listOf("ref0", "ref1", "ref2"), result.kept.sorted())
+        assertEquals(listOf("ref0", "ref1", "ref2", "x"), result.kept.sorted())
         assertTrue(reasonOf(result, "tiny").startsWith("too small"), reasonOf(result, "tiny"))
         assertTrue(reasonOf(result, "blank").startsWith("empty"), reasonOf(result, "blank"))
         assertTrue(reasonOf(result, "full").startsWith("no background"), reasonOf(result, "full"))
-        // The second "ref1" is the one dropped; the first stays.
+        assertTrue(reasonOf(result, "x").startsWith("too small"), reasonOf(result, "x"))
+        // One of the two valid "ref1"s is kept, the other is a duplicate name.
         assertEquals("duplicate name", reasonOf(result, "ref1"))
+    }
+
+    @Test
+    fun duplicateNamesDeterministicUnderShuffle() {
+        val candidates = consistentSet(4) + listOf(
+            RefCandidate("ref1", consistent(6)),
+            RefCandidate("ref2", ref(argbOf(255, 40, 90, 220), argbOf(255, 40, 200, 120), variant = 3)),
+        )
+        val expected = RefCuller.cull(candidates, keep = 3)
+        assertEquals(2, expected.dropped.count { it.reason == "duplicate name" })
+        val rnd = Random(7)
+        repeat(8) {
+            val shuffled = RefCuller.cull(candidates.shuffled(rnd), keep = 3)
+            assertEquals(expected, shuffled)
+        }
     }
 
     @Test
