@@ -29,5 +29,19 @@ internal object KeySource {
         throw CliError("no $VARIABLE: not set in the environment and not found in ${file.absolutePath}")
     }
 
-    private fun clean(raw: String): String = raw.trim().removeSurrounding("\"").removeSurrounding("'").trim()
+    /**
+     * `"abc" # note` / `'abc'` -> the text between the quotes; `abc # note` -> `abc` (an unquoted ` #...` is a
+     * trailing comment; keys never contain whitespace).
+     */
+    private fun clean(raw: String): String {
+        val v = raw.trim()
+        val quote = v.firstOrNull()?.takeIf { it == '"' || it == '\'' }
+        if (quote != null) {
+            val end = v.indexOf(quote, startIndex = 1)
+            return (if (end > 0) v.substring(1, end) else v.substring(1)).trim()
+        }
+        return v.replace(TRAILING_COMMENT, "").trim()
+    }
+
+    private val TRAILING_COMMENT = Regex("\\s+#.*$")
 }

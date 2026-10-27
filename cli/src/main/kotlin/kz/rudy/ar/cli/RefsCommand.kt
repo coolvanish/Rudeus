@@ -28,7 +28,7 @@ import java.util.Base64
 /*
  * Style-reference candidates (Day 2: "8 culled style refs").
  *
- *   refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>]
+ *   refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>] [--force]
  *       POST /v1/images/generations on Muse Image (verified 2026-10-28, https://dev.meta.ai/docs/image-generation):
  *       body {model, prompt, n, size?, response_format:"b64_json", output_format:"png"} — unknown top-level fields
  *       are a 400, so no `background`. $0.01 per image. Writes gen-<nn>.png (numbering continues after existing
@@ -81,9 +81,14 @@ private fun generate(flags: Flags): Int {
     if (n !in 1..MAX_IMAGES) throw CliError("--n must be 1..$MAX_IMAGES")
     val size = flags.get("size")?.also { if (!Regex("\\d+x\\d+").matches(it)) throw CliError("--size must be WxH, e.g. 1024x1024") }
     val outDir = File(flags.require("out"))
-    val budget = flags.double("budget-usd") ?: DEFAULT_GENERATE_BUDGET_USD
+    refuseProtectedRefsDir(outDir, flags.has("force"))
+    val budget = flags.budget("budget-usd") ?: DEFAULT_GENERATE_BUDGET_USD
     val cost = n * USD_PER_IMAGE
     if (cost > budget + 1e-9) throw CliError("$n image(s) cost $${fmtUsd(cost)} > --budget-usd $${fmtUsd(budget)}")
+    // A paid reply must have somewhere to land: check before the request, not after.
+    outDir.mkdirs()
+    if (!outDir.isDirectory || !outDir.canWrite()) throw CliError("--out $outDir is not a writable directory")
+    File(outDir, "prompt.txt").takeIf { it.exists() && !it.canWrite() }?.let { throw CliError("$it is not writable") }
 
     val config = MetaConfig(apiKey = KeySource.read())
     val body = refsJson.encodeToString(GenerationRequest.serializer(), GenerationRequest(config.museImageModel, prompt, n, size))
@@ -101,7 +106,6 @@ private fun generate(flags: Flags): Int {
     val parsed = try { refsJson.decodeFromString(GenerationResponse.serializer(), text) } catch (e: Exception) {
         throw CliError("cannot decode the generations reply: ${e.message}")
     }
-    outDir.mkdirs()
     var next = nextGenIndex(outDir)
     val written = ArrayList<String>()
     for ((i, img) in parsed.data.withIndex()) {
@@ -152,9 +156,6 @@ private fun nextGenIndex(dir: File): Int =
 
 // ---------------------------------------------------------------- cull
 
-/** Tests rely on the synthetic refs here; `refs cull` never writes into it without --force. */
-private const val PROTECTED_REFS_DIR = "docs/api-samples/muse-stylize/refs"
-
 @Serializable
 private data class CullReport(
     val schema: Int = 1,
@@ -173,9 +174,7 @@ private fun cull(flags: Flags): Int {
     val outDir = File(flags.require("out"))
     val keep = flags.int("keep") ?: 8
     if (keep <= 0) throw CliError("--keep must be positive")
-    if (outDir.canonicalPath.replace('\\', '/').endsWith("/$PROTECTED_REFS_DIR") && !flags.has("force")) {
-        throw CliError("$outDir holds the synthetic refs the tests rely on; pass --force to write there")
-    }
+    refuseProtectedRefsDir(outDir, flags.has("force"))
 
     val files = from.listFiles { f -> f.isFile }.orEmpty().sortedBy { it.name }
     val dropped = ArrayList<CullDrop>()

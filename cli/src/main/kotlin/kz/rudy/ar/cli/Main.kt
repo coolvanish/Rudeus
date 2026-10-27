@@ -1,5 +1,6 @@
 package kz.rudy.ar.cli
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kz.rudy.ar.core.bundle.Bundle
 import kz.rudy.ar.core.bundle.BundleIndex
@@ -40,7 +41,7 @@ import kotlin.system.exitProcess
  *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
  *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
- *   refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>]   (live, $0.01/image)
+ *   refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>] [--force]   (live, $0.01/image)
  *   refs cull --from <dir> [--keep 8] --out <dir> [--force]
  *   metrics summarise <runsDir>
  *   metrics gate <run.json>        Day 2 gate table; exit 0 only on PASS
@@ -76,7 +77,7 @@ internal fun usage(error: String? = null): Int {
           fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
           fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
                   [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
-          refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>]
+          refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>] [--force]
           refs cull --from <dir> [--keep 8] --out <dir> [--force]
           metrics summarise <runsDir>
           metrics gate <run.json>
@@ -92,6 +93,20 @@ internal class Flags(val values: Map<String, List<String>>, val switches: Set<St
     fun has(name: String): Boolean = name in switches
     fun double(name: String): Double? = get(name)?.let { it.toDoubleOrNull() ?: throw CliError("--$name must be a number") }
     fun int(name: String): Int? = get(name)?.let { it.toIntOrNull() ?: throw CliError("--$name must be an integer") }
+
+    /** A USD cap: finite and > 0 (NaN or Infinity would silently disable every comparison). */
+    fun budget(name: String): Double? = double(name)?.also {
+        if (!it.isFinite() || it <= 0.0) throw CliError("--$name must be a finite positive number")
+    }
+}
+
+/** Tests rely on the synthetic refs here; `refs generate` / `refs cull` never write into it without --force. */
+private const val PROTECTED_REFS_DIR = "docs/api-samples/muse-stylize/refs"
+
+internal fun refuseProtectedRefsDir(outDir: File, force: Boolean) {
+    if (!force && outDir.canonicalPath.replace('\\', '/').endsWith("/$PROTECTED_REFS_DIR")) {
+        throw CliError("$outDir holds the synthetic refs the tests rely on; pass --force to write there")
+    }
 }
 
 internal fun parseFlags(args: List<String>): Flags {
@@ -131,8 +146,7 @@ private fun character(flags: Flags): Int {
     val recordDir = flags.get("record")?.let(::File)
     // Offline the replies already are fixtures; recording them would only copy files onto themselves.
     if (recordDir != null && !live) throw CliError("--record is live-only (it records real replies); add --live or drop --record")
-    val budgetUsd = flags.double("budget-usd")?.also { if (it <= 0.0) throw CliError("--budget-usd must be positive") }
-        ?: if (live) DEFAULT_LIVE_BUDGET_USD else null
+    val budgetUsd = flags.budget("budget-usd") ?: if (live) DEFAULT_LIVE_BUDGET_USD else null
     if (!live && budgetUsd != null) System.err.println("warning: --budget-usd is unused offline (fixtures cost nothing)")
     val bundleDir = flags.get("bundle")?.let(::File)
 
@@ -156,6 +170,11 @@ private fun character(flags: Flags): Int {
     }
     if (inputs.isEmpty()) throw CliError("no inputs found")
     inputs.forEach { requireSafeRef(it.first) }
+    // cat-01.jpg + cat-01.png would share fixtures, sprite and bundle entry; the second would silently replace the first.
+    val duplicates = inputs.groupBy({ it.first }, { it.second.path }).filterValues { it.size > 1 }
+    if (duplicates.isNotEmpty()) {
+        throw CliError("several inputs map to the same ref; rename them:\n  " + duplicates.entries.joinToString("\n  ") { (ref, files) -> "$ref: ${files.joinToString()}" })
+    }
     if (live) inputs.firstOrNull { !it.second.isFile }?.let { throw CliError("${it.first}: input photo not found (${it.second.path})") }
 
     val refsDir = flags.get("refs")?.let(::File)?.also { if (!it.isDirectory) throw CliError("refs dir not found: $it") }
@@ -181,7 +200,8 @@ private fun character(flags: Flags): Int {
     val pipeline = JvmPipeline.create(models, metrics)
     val spritesDir = File(outDir, "sprites").apply { mkdirs() }
     val c = metrics.costs
-    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + c.scoreUsd) + c.sheetUsd
+    // Each attempt may add a matte SAM pass on the stylized sprite (T07), hence the cutout inside the bracket.
+    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + c.scoreUsd + c.cutoutUsd) + c.sheetUsd
 
     println(
         "run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency" +
@@ -190,38 +210,43 @@ private fun character(flags: Flags): Int {
     )
     var failures = 0
     val skipped = ArrayList<String>()
-    runBlocking {
-        for ((ref, file) in inputs) {
-            if (budgetUsd != null && spentUsd(metrics) + worstCaseUsd > budgetUsd) { skipped += ref; continue }
-            val image = file.takeIf { it.isFile }?.readBytes() ?: ByteArray(0)
-            val description = description(fixturesDir, ref)
-            if (recordDir != null) Record.copyInput(recordDir, ref, file)
-            try {
-                val result = pipeline.run(ref, image, styleRefs, description)
-                val spriteFile = File(spritesDir, "$ref.png")
-                spriteFile.writeBytes(result.sprite)
-                println(
-                    "  $ref: gate=${result.gateScore} ${if (result.gatePassed) "PASS" else "FAIL"} attempts=${result.attempts} " +
-                        "ability=${result.sheet.ability} name=${result.sheet.name} -> ${spriteFile.path}",
-                )
-                if (bundleDir != null) {
-                    File(bundleDir, ref).mkdirs()
-                    File(bundleDir, Bundle.spritePath(ref)).writeBytes(result.sprite)
-                    File(bundleDir, Bundle.sheetPath(ref)).writeText(Bundle.encodeSheet(result.sheet))
-                    val index = checkNotNull(bundleIndex).upsert(Bundle.entry(result, providerName, metrics.runId))
-                    File(bundleDir, Bundle.INDEX).writeText(Bundle.encodeIndex(index))
-                    bundleIndex = index
+    // The run JSON always lands (finally), even if something unexpected escapes the loop after paid calls.
+    try {
+        runBlocking {
+            for ((ref, file) in inputs) {
+                if (budgetUsd != null && spentUsd(metrics) + worstCaseUsd > budgetUsd) { skipped += ref; continue }
+                // Any failure (model or local I/O) costs only this character; the rest of the paid run goes on.
+                try {
+                    val image = file.takeIf { it.isFile }?.readBytes() ?: ByteArray(0)
+                    val description = description(fixturesDir, ref)
+                    if (recordDir != null) Record.copyInput(recordDir, ref, file)
+                    val result = pipeline.run(ref, image, styleRefs, description)
+                    val spriteFile = File(spritesDir, "$ref.png")
+                    spriteFile.writeBytes(result.sprite)
+                    println(
+                        "  $ref: gate=${result.gateScore} ${if (result.gatePassed) "PASS" else "FAIL"} attempts=${result.attempts} " +
+                            "ability=${result.sheet.ability} name=${result.sheet.name} -> ${spriteFile.path}",
+                    )
+                    if (bundleDir != null) {
+                        File(bundleDir, ref).mkdirs()
+                        File(bundleDir, Bundle.spritePath(ref)).writeBytes(result.sprite)
+                        File(bundleDir, Bundle.sheetPath(ref)).writeText(Bundle.encodeSheet(result.sheet))
+                        val index = checkNotNull(bundleIndex).upsert(Bundle.entry(result, providerName, metrics.runId))
+                        File(bundleDir, Bundle.INDEX).writeText(Bundle.encodeIndex(index))
+                        bundleIndex = index
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failures++
+                    println("  $ref: FAILED ${e::class.simpleName}: ${e.message}")
                 }
-            } catch (e: MetaError) {
-                failures++
-                println("  $ref: FAILED ${e::class.simpleName}: ${e.message}")
             }
         }
+    } finally {
+        println("wrote ${FileMetricsSink(outDir).write("${metrics.runId}.json", metrics.toJson())}")
     }
-
-    val path = FileMetricsSink(outDir).write("${metrics.runId}.json", metrics.toJson())
     val s = metrics.toRun().summary
-    println("wrote $path")
     if (bundleDir != null) println("bundle: ${File(bundleDir, Bundle.INDEX).path} (${bundleIndex?.characters?.size ?: 0} character(s))")
     println("summary: n=${s.n} passFirstTry=${s.gatePassRateFirstTry} p50=${s.p50Ms}ms p90=${s.p90Ms}ms cost=$${s.costPerCharacterUsd}/character")
     if (skipped.isNotEmpty()) {
