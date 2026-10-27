@@ -61,3 +61,4 @@ files are parked in `attic/`.
 MIT (see `LICENSE`). Third-party: SceneView (Apache-2.0), ARCore SDK (Apache-2.0), Ktor (Apache-2.0),
 kotlinx libraries (Apache-2.0), Compose Multiplatform (Apache-2.0). Sounds: CC0 (list in `docs/third-party.md` on Day 6).
 Drawings and toys in the demo are the author's own.
+Exception: the SAM mask codec port (`core/.../meta/SamMaskCodec.kt`) and its test vectors (`SamMaskCodecTest.kt`) are derived from Meta's `@meta-sam/parser` and licensed under the SAM License, not MIT: see [`LICENSES/SAM-LICENSE.txt`](LICENSES/SAM-LICENSE.txt).

@@ -28,6 +28,8 @@ import kotlin.system.exitProcess
  *   character --fixtures <dir> --out <dir> [--ref <name>] [--all] [--live] [--replay-latency]
  *             [--drawings <dir>] [--provider meta|fireworks]
  *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
+ *   fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
+ *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   metrics summarise <runsDir>
  */
 fun main(args: Array<String>) {
@@ -57,20 +59,23 @@ private fun usage(error: String? = null): Int {
           character --fixtures <dir> --out <dir> [--ref <name> | --all] [--live] [--replay-latency]
                     [--drawings <dir>] [--provider meta|fireworks]
           fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
+          fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
+                  [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
           metrics summarise <runsDir>
         """.trimIndent(),
     )
     return if (error == null) 0 else 2
 }
 
-private class Flags(val values: Map<String, String>, val switches: Set<String>) {
-    fun get(name: String): String? = values[name]
-    fun require(name: String): String = values[name] ?: throw CliError("--$name is required")
+private class Flags(val values: Map<String, List<String>>, val switches: Set<String>) {
+    fun get(name: String): String? = values[name]?.last()
+    fun all(name: String): List<String> = values[name].orEmpty()
+    fun require(name: String): String = get(name) ?: throw CliError("--$name is required")
     fun has(name: String): Boolean = name in switches
 }
 
 private fun parseFlags(args: List<String>): Flags {
-    val values = HashMap<String, String>()
+    val values = HashMap<String, MutableList<String>>()
     val switches = HashSet<String>()
     var i = 0
     while (i < args.size) {
@@ -78,7 +83,7 @@ private fun parseFlags(args: List<String>): Flags {
         if (!a.startsWith("--")) throw CliError("unexpected argument: $a")
         val name = a.removePrefix("--")
         val next = args.getOrNull(i + 1)
-        if (next != null && !next.startsWith("--")) { values[name] = next; i += 2 } else { switches += name; i++ }
+        if (next != null && !next.startsWith("--")) { values.getOrPut(name) { ArrayList() } += next; i += 2 } else { switches += name; i++ }
     }
     return Flags(values, switches)
 }
@@ -193,6 +198,8 @@ private fun description(fixturesDir: File, ref: String): String =
 private fun fixture(flags: Flags): Int {
     val job = flags.require("job")
     if (job !in FixtureConverter.JOBS) throw CliError("unknown job '$job' (expected one of ${FixtureConverter.JOBS.joinToString()})")
+    if (job in FixtureConverter.SAM_JOBS) return samFixture(job, flags)
+    if (flags.all("response").size > 1) throw CliError("--response is repeatable only for the SAM jobs")
     val response = File(flags.require("response"))
     if (!response.isFile) throw CliError("response file not found: $response")
     val ref = flags.get("ref") ?: response.name.removeSuffix(RESPONSE_SUFFIX).takeIf { it != response.name }
@@ -204,10 +211,7 @@ private fun fixture(flags: Flags): Int {
     val note = "converted from ${response.name} by cli fixture on ${LocalDate.now()}"
 
     val target = File(outDir, "$ref${FixtureApi.SUFFIX}")
-    if (target.isFile && !flags.has("force")) {
-        val existingSynthetic = runCatching { FixtureApi.json.decodeFromString(Fixture.serializer(), target.readText()).synthetic }.getOrDefault(false)
-        if (existingSynthetic) throw CliError("${target.path} is a synthetic fixture; pass --force to replace it")
-    }
+    refuseSyntheticOverwrite(target, flags)
 
     val raw = response.readText()
     val (fx, pngBytes) = try {
@@ -218,10 +222,7 @@ private fun fixture(flags: Flags): Int {
         return 1
     }
 
-    outDir.mkdirs()
-    val replacing = target.isFile
-    target.writeText(FixtureApi.json.encodeToString(Fixture.serializer(), fx) + "\n")
-    println("${if (replacing) "replaced" else "wrote"} ${target.path}")
+    writeFixture(outDir, target, fx)
 
     if (job == Jobs.MUSE_STYLIZE) {
         val png = File(outDir, FixtureConverter.outputName(ref))
@@ -231,6 +232,79 @@ private fun fixture(flags: Flags): Int {
             !png.isFile -> System.err.println("warning: ${png.path} is missing; the probe must save the stylized PNG there")
         }
     }
+    return 0
+}
+
+private fun refuseSyntheticOverwrite(target: File, flags: Flags) {
+    if (target.isFile && !flags.has("force")) {
+        val existingSynthetic = runCatching { FixtureApi.json.decodeFromString(Fixture.serializer(), target.readText()).synthetic }.getOrDefault(false)
+        if (existingSynthetic) throw CliError("${target.path} is a synthetic fixture; pass --force to replace it")
+    }
+}
+
+private fun writeFixture(outDir: File, target: File, fx: Fixture) {
+    outDir.mkdirs()
+    val replacing = target.isFile
+    target.writeText(FixtureApi.json.encodeToString(Fixture.serializer(), fx) + "\n")
+    println("${if (replacing) "replaced" else "wrote"} ${target.path}")
+}
+
+/**
+ * SAM 3.1 takes one concept per request, so a probe leaves one `<ref>.<prompt>.response.json` per prompt.
+ * Collects them (repeated `--response`, in the given order, or every `<ref>[.input].*.response.json` in
+ * `--responses-dir`, ordered by prompts.json) and writes ONE `<ref>.fixture.json` with one mask per prompt.
+ */
+private fun samFixture(job: String, flags: Flags): Int {
+    val dirFlag = flags.get("responses-dir")
+    val given = flags.all("response")
+    if ((dirFlag == null) == given.isEmpty()) throw CliError("$job: give --response <file> (repeatable) or --responses-dir <dir> --ref <ref>, not both")
+
+    val files: List<File>
+    val dir: File
+    if (dirFlag != null) {
+        dir = File(dirFlag)
+        if (!dir.isDirectory) throw CliError("responses dir not found: $dir")
+        val wanted = flags.require("ref")
+        files = dir.listFiles { f -> f.isFile && FixtureConverter.splitSamResponseName(f.name)?.first == wanted }.orEmpty().sortedBy { it.name }
+        if (files.isEmpty()) throw CliError("no $wanted.<prompt>${FixtureConverter.RESPONSE_SUFFIX} (or $wanted.input.<prompt>...) in $dir")
+    } else {
+        files = given.map(::File)
+        files.firstOrNull { !it.isFile }?.let { throw CliError("response file not found: $it") }
+        dir = files.first().absoluteFile.parentFile
+    }
+
+    val split = files.map { f -> f to (FixtureConverter.splitSamResponseName(f.name) ?: throw CliError("${f.name}: expected <ref>.<prompt>${FixtureConverter.RESPONSE_SUFFIX}")) }
+    val refs = split.map { it.second.first }.distinct()
+    val ref = flags.get("ref") ?: refs.singleOrNull() ?: throw CliError("replies name several refs (${refs.joinToString()}); pass --ref")
+    if (ref.isBlank() || '/' in ref || ".." in ref) throw CliError("bad ref '$ref': must be non-blank, without '/' or '..'")
+
+    // Real prompt text from prompts.json (file names carry a sanitised token); prompts.json also fixes the order.
+    val promptsFile = flags.get("prompts")?.let(::File) ?: File(dir, "prompts.json")
+    val prompts: List<String> = if (promptsFile.isFile) {
+        runCatching { kotlinx.serialization.json.Json.decodeFromString<List<String>>(promptsFile.readText()) }
+            .getOrElse { throw CliError("${promptsFile.path}: must be a JSON array of strings") }
+    } else emptyList()
+    val byToken = prompts.associateBy { FixtureConverter.samPromptToken(it) }
+    var entries = split.map { (f, rp) -> Triple(f, byToken[rp.second] ?: rp.second, prompts.indexOfFirst { FixtureConverter.samPromptToken(it) == rp.second }) }
+    if (dirFlag != null) entries = entries.sortedWith(compareBy({ if (it.third < 0) Int.MAX_VALUE else it.third }, { it.first.name }))
+    val missing = prompts.filter { p -> entries.none { it.second == p } }
+    if (missing.isNotEmpty()) System.err.println("warning: no reply for prompt(s) ${missing.joinToString()}; the fixture has no mask for them")
+
+    val outDir = flags.get("out")?.let(::File) ?: dir
+    if (outDir.absoluteFile.name != job) System.err.println("warning: out dir '${outDir.absoluteFile.name}' is not the job folder '$job'")
+    val latencyMs = flags.get("latency-ms")?.let { it.toLongOrNull() ?: throw CliError("--latency-ms must be an integer") }
+    val note = "converted from ${entries.joinToString { it.first.name }} by cli fixture on ${LocalDate.now()}"
+    val target = File(outDir, "$ref${FixtureApi.SUFFIX}")
+    refuseSyntheticOverwrite(target, flags)
+
+    val fx = try {
+        FixtureConverter.fromSamResponses(job, ref, entries.map { it.second to it.first.readText() }, latencyMs, synthetic = flags.has("synthetic"), note = note)
+    } catch (e: MetaError) {
+        System.err.println("error: ${e.message}")
+        return 1
+    }
+    writeFixture(outDir, target, fx)
+    for (m in fx.masks.orEmpty()) println("  ${m.label}: ${if (m.isEmpty) "absent" else "area=${m.area} bbox=${m.bbox}"} ${m.width}x${m.height}")
     return 0
 }
 
@@ -247,7 +321,7 @@ private fun decodePng(b64: String): ByteArray {
     return bytes
 }
 
-private const val RESPONSE_SUFFIX = ".response.json"
+private const val RESPONSE_SUFFIX = FixtureConverter.RESPONSE_SUFFIX
 
 // ---------------------------------------------------------------- metrics
 

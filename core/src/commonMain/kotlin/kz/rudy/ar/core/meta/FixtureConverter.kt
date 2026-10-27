@@ -12,6 +12,9 @@ import kotlinx.serialization.json.Json
  *
  * Pure: no file IO. Image payloads are never decoded into pixels here; for `muse-stylize` the fixture names the
  * sibling `<ref>.out-1.png` that the probe (or the CLI, for an unredacted payload) must save next to it.
+ *
+ * SAM 3.1 takes one concept per request, so the probe saves one reply per prompt (`<ref>.<prompt>.response.json`);
+ * the SAM jobs go through [fromSamResponses], which builds ONE fixture with one mask per prompt, in prompt order.
  */
 object FixtureConverter {
     /** Jobs the converter understands; anything else is a caller error. */
@@ -28,7 +31,7 @@ object FixtureConverter {
     /**
      * Builds the fixture for one raw reply.
      *
-     * @throws IllegalArgumentException when [job] is not one of [JOBS].
+     * @throws IllegalArgumentException when [job] is not one of [JOBS], or is a SAM job (see [fromSamResponses]).
      * @throws MetaError.Parse when the reply does not fit the DTOs; the message names [job] and the first 200 chars of [rawJson].
      */
     fun fromResponse(
@@ -40,11 +43,10 @@ object FixtureConverter {
         note: String,
     ): Fixture {
         require(job in JOBS) { "unknown job '$job' (expected one of ${JOBS.joinToString()})" }
+        require(job !in SAM_JOBS) { "$job takes one reply per prompt: use fromSamResponses" }
         val base = Fixture(job = job, ref = ref, synthetic = synthetic, note = note, latencyMs = latencyMs)
         return try {
             when (job) {
-                Jobs.SAM_CUTOUT, Jobs.SAM_TABLE, Jobs.SAM_RIG ->
-                    base.copy(masks = parseSegment(decode(SegmentResponse.serializer(), rawJson)).masks)
                 Jobs.MUSE_STYLIZE -> {
                     val payload = parseStylize(decode(StylizeResponse.serializer(), rawJson))
                     val extra = if (isRedacted(payload)) "; payload redacted, sibling ${outputName(ref)} must be saved by scripts/probe-meta.sh" else ""
@@ -67,6 +69,62 @@ object FixtureConverter {
             throw parseError(job, rawJson, e.message, e)
         }
     }
+
+    /**
+     * Builds one SAM fixture from the per-prompt replies [promptToRawJson] (`prompt` to raw Responses JSON), in order:
+     * one mask per prompt labelled with the prompt; an empty `output_text` is an absent object (no rle/bbox, with the
+     * frame size of its siblings). Masks are decoded strictly: a payload that does not decode fails the conversion.
+     *
+     * @throws IllegalArgumentException when [job] is not a SAM job or [promptToRawJson] is empty.
+     * @throws MetaError.Parse naming [job], the prompt and the first 200 chars of the offending reply.
+     */
+    fun fromSamResponses(
+        job: String,
+        ref: String,
+        promptToRawJson: List<Pair<String, String>>,
+        latencyMs: Long?,
+        synthetic: Boolean,
+        note: String,
+    ): Fixture {
+        require(job in SAM_JOBS) { "fromSamResponses takes a SAM job (${SAM_JOBS.joinToString()}), not '$job'" }
+        require(promptToRawJson.isNotEmpty()) { "$job: no replies to convert" }
+        val masks = promptToRawJson.map { (prompt, raw) ->
+            try {
+                parseSamResponse(prompt, decode(ResponsesResponse.serializer(), raw), strict = true)
+            } catch (e: MetaError) {
+                throw parseError(job, raw, "prompt '$prompt': ${e.message}", e)
+            } catch (e: SerializationException) {
+                throw parseError(job, raw, "prompt '$prompt': ${e.message}", e)
+            } catch (e: IllegalArgumentException) {
+                throw parseError(job, raw, "prompt '$prompt': ${e.message}", e)
+            }
+        }
+        return Fixture(job = job, ref = ref, synthetic = synthetic, note = note, latencyMs = latencyMs, masks = withFrameSize(masks))
+    }
+
+    /**
+     * Splits a per-prompt reply file name `<name>.<promptToken>.response.json` (as scripts/probe-meta.sh writes it)
+     * into `(ref, promptToken)`, or null when it does not have that shape. The token never contains a dot (see
+     * [samPromptToken]), so the LAST dot ends the name; a trailing `.input` (`sample-01.input.png` was the input) is
+     * dropped so the ref matches `<ref>.fixture.json`.
+     */
+    fun splitSamResponseName(fileName: String): Pair<String, String>? {
+        if (!fileName.endsWith(RESPONSE_SUFFIX)) return null
+        val stem = fileName.removeSuffix(RESPONSE_SUFFIX)
+        val dot = stem.lastIndexOf('.')
+        if (dot <= 0 || dot == stem.lastIndex) return null
+        return stem.substring(0, dot).removeSuffix(".input") to stem.substring(dot + 1)
+    }
+
+    /** The prompt as it appears in a reply file name: runs of anything but `A-Za-z0-9_-` become `_` (probe-meta.sh). */
+    fun samPromptToken(prompt: String): String = prompt.replace(promptTokenRun, "_")
+
+    private val promptTokenRun = Regex("[^A-Za-z0-9_-]+")
+
+    const val RESPONSE_SUFFIX = ".response.json"
+
+    /** The jobs whose replies are SAM token text, one reply per prompt. */
+    val SAM_JOBS: List<String> = listOf(Jobs.SAM_CUTOUT, Jobs.SAM_TABLE, Jobs.SAM_RIG)
 
     /** File name of the single stylize output a converted `muse-stylize` fixture points at. */
     fun outputName(ref: String): String = "$ref.out-1.png"

@@ -1,0 +1,131 @@
+package kz.rudy.ar.core.meta
+
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/**
+ * Every request DTO, serialised exactly as [MetaApi] sends it, has the top-level keys of its
+ * docs/api-samples/<job>/request.json.tmpl (the bodies verified against https://dev.meta.ai/docs on 2026-10-28).
+ */
+class RequestShapeTest {
+    private fun <T> encode(serializer: KSerializer<T>, value: T): JsonObject =
+        MetaApi.json.parseToJsonElement(MetaApi.json.encodeToString(serializer, value)).jsonObject
+
+    private val png = "iVBORw0KGgo="
+
+    @Test
+    fun samRequestIsAResponsesCallWithOneConcept() {
+        val body = encode(SegmentRequest.serializer(), SegmentRequest.of("sam-3.1", "cup", "image/jpeg", png))
+        assertEquals(setOf("model", "input", "stream", "metadata"), body.keys)
+        assertFalse("prompts" in body || "image" in body || "output_format" in body)
+        assertEquals(JsonPrimitive(false), body["stream"])
+        val message = body["input"]!!.jsonArray.single().jsonObject
+        assertEquals(setOf("type", "role", "content"), message.keys)
+        assertEquals("message", message["type"]!!.jsonPrimitive.content)
+        assertEquals("user", message["role"]!!.jsonPrimitive.content)
+        val (text, image) = message["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(mapOf("type" to "input_text", "text" to "cup"), text.mapValues { it.value.jsonPrimitive.content })
+        assertEquals(mapOf("type" to "input_image", "image_url" to "data:image/jpeg;base64,$png"), image.mapValues { it.value.jsonPrimitive.content })
+        val metadata = body["metadata"]!!.jsonObject
+        assertEquals(setOf("mask_encoding", "include_confidence"), metadata.keys)
+        assertTrue(metadata.values.all { it is JsonPrimitive && it.isString }, "metadata values are strings")
+        assertEquals("true", metadata["include_confidence"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun museEditSendsImagesArrayNotReferenceImages() {
+        val req = StylizeRequest(
+            model = "muse-image-1.0", prompt = Prompts.STYLIZE,
+            images = listOf(ImageInput(dataUrl("image/png", png)), ImageInput(dataUrl("image/png", png))),
+            reasoningStrength = "low",
+        )
+        val body = encode(StylizeRequest.serializer(), req)
+        assertEquals(setOf("model", "prompt", "images", "n", "response_format", "output_format", "reasoning_strength"), body.keys)
+        assertFalse("reference_images" in body || "image" in body)
+        assertEquals(setOf("image_url"), body["images"]!!.jsonArray[0].jsonObject.keys)
+        assertEquals("b64_json", body["response_format"]!!.jsonPrimitive.content)
+        assertEquals("png", body["output_format"]!!.jsonPrimitive.content)
+        assertFalse("reasoning_strength" in encode(StylizeRequest.serializer(), req.copy(reasoningStrength = null)))
+    }
+
+    @Test
+    fun sparkScoreUsesMaxCompletionTokensAndNoTemperature() {
+        val req = ChatRequest(
+            model = "muse-spark-1.3",
+            messages = listOf(ChatMessage.parts("user", listOf(ChatContentPart.text(Prompts.STYLE_SCORE), ChatContentPart.imageDataUrl("image/png", png)))),
+            maxCompletionTokens = Prompts.SCORE_MAX_COMPLETION_TOKENS,
+            reasoningEffort = Prompts.SCORE_REASONING_EFFORT,
+        )
+        val body = encode(ChatRequest.serializer(), req)
+        assertEquals(setOf("model", "messages", "reasoning_effort", "max_completion_tokens"), body.keys)
+        assertFalse("max_tokens" in body || "temperature" in body)
+        assertEquals(16, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
+        val parts = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
+        assertEquals(setOf("type", "text"), parts[0].keys)
+        assertEquals("data:image/png;base64,$png", parts[1]["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun sparkSheetSendsTheTemplateJsonSchema() {
+        val req = ChatRequest(
+            model = "muse-spark-1.3",
+            messages = listOf(ChatMessage.text("user", Prompts.characterSheet("a cat"))),
+            maxCompletionTokens = Prompts.SHEET_MAX_COMPLETION_TOKENS,
+            responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
+        )
+        val body = encode(ChatRequest.serializer(), req)
+        assertEquals(setOf("model", "messages", "response_format", "max_completion_tokens"), body.keys)
+        val message = body["messages"]!!.jsonArray.single().jsonObject
+        assertEquals(setOf("role", "content"), message.keys)
+        val content = message["content"] as JsonPrimitive
+        assertTrue(content.isString, "sheet content is a plain string, as in the template")
+        assertEquals(Prompts.characterSheet("a cat"), content.content)
+        val format = body["response_format"]!!.jsonObject
+        assertEquals("json_schema", format["type"]!!.jsonPrimitive.content)
+        val js = format["json_schema"]!!.jsonObject
+        assertEquals(setOf("name", "schema", "strict"), js.keys)
+        assertEquals("CharacterSheet", js["name"]!!.jsonPrimitive.content)
+        val schema = js["schema"]!!.jsonObject
+        assertEquals(listOf("name", "personality", "ability", "lines"), (schema["required"] as JsonArray).map { it.jsonPrimitive.content })
+        val ability = schema["properties"]!!.jsonObject["ability"]!!.jsonObject
+        assertEquals(listOf("jump", "fly", "roll", "hide"), ability["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("false", schema["additionalProperties"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun voiceRequestPartIsTheDocumentedJson() {
+        val body = encode(TranscribeRequest.serializer(), TranscribeRequest(model = "muse-voice-transcribe-1.0", languageBias = listOf("Kazakh")))
+        assertEquals(setOf("model", "audioEncoding", "mode", "languageBias"), body.keys)
+        assertEquals("WAV", body["audioEncoding"]!!.jsonPrimitive.content)
+        assertEquals("PUSH_TO_TALK", body["mode"]!!.jsonPrimitive.content)
+        assertFalse("audio" in body || "language" in body)
+        val withKeywords = encode(TranscribeRequest.serializer(), TranscribeRequest(model = "m", keywords = listOf("секір")))
+        assertEquals(setOf("model", "audioEncoding", "mode", "keywords"), withKeywords.keys)
+        assertEquals("Kazakh", languageName("kk"))
+        assertEquals(null, languageName("xx"))
+    }
+
+    @Test
+    fun configDefaultsPointAtTheMetaModelApi() {
+        val c = MetaConfig(apiKey = "test-key")
+        assertEquals("https://api.meta.ai/v1/responses", c.url(c.segmentPath))
+        assertEquals("https://api.meta.ai/v1/asr/transcribe", c.url(c.transcribePath))
+        assertEquals(listOf("sam-3.1", "muse-image-1.0", "muse-spark-1.3", "muse-voice-transcribe-1.0"), listOf(c.samModel, c.museImageModel, c.sparkModel, c.voiceModel))
+        val fw = MetaConfig(apiKey = "test-key", provider = Provider.FIREWORKS)
+        assertEquals(MetaConfig.FIREWORKS_SPARK_MODEL, fw.sparkModel)
+        assertTrue(fw.serves(Jobs.SPARK_SCORE) && fw.serves(Jobs.SPARK_SHEET))
+        assertFalse(fw.serves(Jobs.SAM_TABLE) || fw.serves(Jobs.MUSE_STYLIZE) || fw.serves(Jobs.VOICE))
+        assertEquals("image/png", sniffImageMime(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D)))
+        assertEquals("image/jpeg", sniffImageMime(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())))
+    }
+}

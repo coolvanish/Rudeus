@@ -87,9 +87,12 @@ data class MaskResult(
     }
 }
 
-/** Result of one segmentation call: zero or more masks (one per prompt for table scans). */
+/**
+ * Result of one segmentation call: zero or more masks (one per prompt for table scans).
+ * [failedPrompts] lists the prompts whose request failed (their mask is empty); a partial scan is still a scan.
+ */
 @Serializable
-data class SegmentResult(val masks: List<MaskResult>) {
+data class SegmentResult(val masks: List<MaskResult>, val failedPrompts: List<String> = emptyList()) {
     fun largest(): MaskResult? = masks.maxByOrNull { it.area }
     fun byLabel(label: String): MaskResult? = masks.firstOrNull { it.label.equals(label, ignoreCase = true) }
 }

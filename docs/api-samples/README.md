@@ -51,7 +51,7 @@ Only the field for the job is present:
 | job | field | semantics |
 |---|---|---|
 | `sam-cutout` | `masks` | one per prompt (`drawing`, `toy`); the pipeline takes the largest non-empty mask |
-| `sam-table` | `masks` | one per prompt from `prompts.json`; an absent object is an empty mask (`"rle": [width*height]`) |
+| `sam-table` | `masks` | one per prompt from `prompts.json`; an absent object (SAM returned no match) is a mask with `label`, `width`, `height` and no `rle`/`bbox` |
 | `muse-stylize` | `outputs` | sibling PNG file names, one per stylize attempt; the last one repeats |
 | `spark-score` | `scores` | one gate score per call in order (attempt 1, 2, 3); the last one repeats |
 | `spark-sheet` | `sheet` | the model's JSON exactly as returned; `SheetParser` maps unknown abilities to JUMP and pads to 5 lines |
