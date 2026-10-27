@@ -6,6 +6,7 @@ import kz.rudy.ar.core.bundle.Bundle
 import kz.rudy.ar.core.bundle.BundleIndex
 import kz.rudy.ar.core.io.FileFixtureSource
 import kz.rudy.ar.core.io.FileMetricsSink
+import kz.rudy.ar.core.io.JvmRaster
 import kz.rudy.ar.core.meta.Fixture
 import kz.rudy.ar.core.meta.FixtureApi
 import kz.rudy.ar.core.meta.FixtureConverter
@@ -217,7 +218,8 @@ private fun character(flags: Flags): Int {
                 if (budgetUsd != null && spentUsd(metrics) + worstCaseUsd > budgetUsd) { skipped += ref; continue }
                 // Any failure (model or local I/O) costs only this character; the rest of the paid run goes on.
                 try {
-                    val image = file.takeIf { it.isFile }?.readBytes() ?: ByteArray(0)
+                    // Upright first (EXIF orientation), so SAM masks, cutouts and replays all share one pixel grid.
+                    val image = file.takeIf { it.isFile }?.readBytes()?.let(JvmRaster::upright) ?: ByteArray(0)
                     val description = description(fixturesDir, ref)
                     if (recordDir != null) Record.copyInput(recordDir, ref, file)
                     val result = pipeline.run(ref, image, styleRefs, description)
