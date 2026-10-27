@@ -1,0 +1,15 @@
+{
+  "created": 1793141870,
+  "data": [
+    {
+      "b64_json": "<base64 1893732 chars>"
+    }
+  ],
+  "output_format": "png",
+  "background": "opaque",
+  "usage": {
+    "input_tokens": 4602,
+    "output_tokens": 1100,
+    "total_tokens": 5702
+  }
+}

@@ -1,11 +1,20 @@
 {
   "job": "muse-stylize",
-  "endpoint": "TODO(probe) POST /images/edits",
-  "model": "muse-image-edit",
-  "requestShape": "{model, image: base64 png, reference_images: [<=9 base64], prompt, response_format: b64_json}",
-  "latencyMs": 9000,
-  "costUsd": 0.02,
-  "probedAt": "",
-  "synthetic": true,
-  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Expected: data[0].b64_json PNG. Base64 > 2 KB is replaced by '<base64 N bytes>' and saved as <ref>.out.png."
+  "endpoint": "POST /v1/images/edits",
+  "model": "muse-image-1.0",
+  "requestShape": "{model, prompt, images:[{image_url:data-url} x (cutout + <=9 refs)], n:1, response_format:b64_json, output_format:png, reasoning_strength:low}",
+  "latencyMs": 11956,
+  "costUsd": 0.01,
+  "probedAt": "2026-10-27T22:57:52Z",
+  "synthetic": false,
+  "notes": "Real probe 2026-10-28: drawing-01 photo + the 2 synthetic 64x64 refs (shape probe only; the real 8 style refs are not available yet). Reply: data[0].b64_json PNG, background:'opaque' (no alpha), latency ~19 s. $0.01 per generated image.",
+  "path": "/v1/images/edits",
+  "probes": [
+    {
+      "when": "2026-10-27T22:57:52Z",
+      "input": "drawing-01.input",
+      "httpStatus": 200,
+      "latencyMs": 11956
+    }
+  ]
 }

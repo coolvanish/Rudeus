@@ -11,7 +11,7 @@ Full editable version: Claude Doc "Rudeus AR Game Build Plan". This copy is the 
 | SAM 3.1 job 2 | rig stylized sprite into parts (head/legs/arms/wings) — stretch |
 | SAM 3.1 job 3 | segment table objects (cup, book, phone, hand…) into level geometry + occluders |
 | Muse Image edit | stylize cutout with ≤9 style reference images |
-| Spark 1.3 vision | style gate: score vs refs (threshold 0.7, ≤2 retries) |
+| Spark 1.3 vision (contributor tier) | style gate: score vs refs (threshold 0.7, ≤2 retries) |
 | Spark 1.3 | character sheet JSON: name, personality, ability ∈ {jump, fly, roll, hide}, 5 lines kk/ru |
 | Voice Transcribe | optional; only if Kazakh ASR passes Day 1 |
 
@@ -37,7 +37,7 @@ Untouched CMP template: Kotlin 2.4.21, AGP 9.1.1, CMP 1.12.2, compileSdk 37, min
 Rules: AR view injected into `App()` as a slot composable from androidApp (no expect/actual, no stub actuals). `:core` has no Compose. AR/Filament/Gradle code hand-written or hand-reviewed; agents work on `:core`/`:cli` with tests + saved real API responses (`docs/api-samples/`).
 
 ## Day by day
-**Day 1 — Tue Oct 27: setup + go/no-go gate.** git init + public repo (README: new work after Oct 26); Pixel ARCore services updated; key → BuildConfig (standard tier); `claude mcp add sceneview`; curl probes saved to `docs/api-samples/` (SAM on table photo w/ 5–6 objects, SAM on pencil drawing, Muse Image edit w/ refs, Spark vision score, Voice Kazakh clip, Baseten slug); arsceneview + manifest + CAMERA; record one ARCore session of the table (Recording API).
+**Day 1 — Tue Oct 27: setup + go/no-go gate.** git init + public repo (README: new work after Oct 26); Pixel ARCore services updated; key → BuildConfig (contributor tier: `muse-spark-1.3-contributor`, user decision Oct 28 — cheaper, training on our prompts accepted; never the standard Spark model); `claude mcp add sceneview`; curl probes saved to `docs/api-samples/` (SAM on table photo w/ 5–6 objects, SAM on pencil drawing, Muse Image edit w/ refs, Spark vision score, Voice Kazakh clip, Baseten slug); arsceneview + manifest + CAMERA; record one ARCore session of the table (Recording API).
 Gate: plane < 10 s & drift < 1 cm/60 s · quad walks to tap · cup footprint via ray–plane within 1–2 cm · depth occlusion acceptable or decide occluders · SAM clean masks on 5–6 objects (latency, cost) · Muse Image style stable over 3 gens · Kazakh ASR usable?
 Rule: first three pass → AR is the base. Plane fails → phone-on-stand 2D fallback (CameraX + Canvas), only `:androidApp` changes.
 
@@ -65,7 +65,7 @@ Gate: fresh install → character → full scenario with Wi-Fi off halfway, no c
 Never cut: Day 1 gate, metrics JSON, Day 6 offline mode, Day 7 shoot.
 
 ## Risks → fallbacks
-No plane on plain/glossy table → textured cloth, side light, else 2D stand mode · SAM latency → scan on demand + cover animation, cache masks · style drift → fixed refs, gate+retry, template body · tracking loss → one anchor, freeze on PAUSED · API outage → FixtureApi + bundled characters · Baseten slug 404 → provider interface, Fireworks fallback · branded toys → own drawings only · agent AR code drift → hand-review AR/Gradle · depth jitter (no ToF) → occluder boxes · contributor tier → standard tier key.
+No plane on plain/glossy table → textured cloth, side light, else 2D stand mode · SAM latency → scan on demand + cover animation, cache masks · style drift → fixed refs, gate+retry, template body · tracking loss → one anchor, freeze on PAUSED · API outage → FixtureApi + bundled characters · Baseten slug 404 → provider interface, Fireworks fallback · branded toys → own drawings only · agent AR code drift → hand-review AR/Gradle · depth jitter (no ToF) → occluder boxes · Spark tier is contributor by decision (Oct 28); if a contributor model is withdrawn, switch the model id only, never the standard tier.
 
 ## Rubric mapping
 Impact 30: kids' game in Kazakh/Russian from own drawings (Build for Your World). Tooling 25: SAM ×3 jobs, Muse Image edit, Spark gate + sheet, Voice. Demo 25: real table, real cup, 3-min video. Depth 20: measured style gate, ray–plane geometry, metrics JSON, KMP split, Recording/Playback dev loop.

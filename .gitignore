@@ -30,3 +30,6 @@ release/*.mp4
 release/*.mov
 attic/
 runs/sprites/
+
+# raw probe header dumps (proxy debug blobs look like tokens; the response.json is the evidence)
+docs/api-samples/**/*.headers.txt

@@ -1,11 +1,44 @@
 {
   "job": "sam-table",
-  "endpoint": "TODO(probe) POST /segment",
+  "endpoint": "POST /v1/responses",
   "model": "sam-3.1",
-  "requestShape": "{model, image: base64, prompts: prompts.json, output_format: \"rle\"}",
-  "latencyMs": 2000,
-  "costUsd": 0.004,
-  "probedAt": "",
-  "synthetic": true,
-  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Expected: one mask per prompt; empty mask = absent, not an error."
+  "requestShape": "{model, input:[{type:message, role:user, content:[{type:input_text,text}, {type:input_image,image_url:data-url}]}], stream:false, metadata:{mask_encoding:lossless, include_confidence:'true'}}",
+  "latencyMs": 2110,
+  "costUsd": 0.0025,
+  "probedAt": "2026-10-27T22:48:58Z",
+  "synthetic": false,
+  "notes": "Real probe 2026-10-28 on a Pixel 9 Pro XL photo. One request per prompt (Responses API, one concept each). With the Responses API default store:true, bodies above roughly 530 KB (a 1440x2560 JPEG of ~446 KB, base64-encoded) were rejected with HTTP 401 invalid_api_key while 1600 px (~270 KB) and 2048 px (~397 KB) succeeded; with store:false (now in the templates) the full-size photo succeeds too. Keep store:false on every SAM call. Latency is per prompt; a 5-prompt table scan with 3 in flight is ~2 round-trips. usage.images_processed=1 per request. table-01: laptop, toy car, knife clean; 'remote' merged the remote and the speaker into one mask; 'speaker' absent. costUsd is per request (SAM image segmentation $2.50 per 1,000 images, dev.meta.ai/docs/pricing-rate-limits); a 5-prompt table scan is 5 requests = $0.0125.",
+  "path": "/v1/responses",
+  "probes": [
+    {
+      "when": "2026-10-27T22:48:49Z",
+      "input": "table-01.input.laptop",
+      "httpStatus": 200,
+      "latencyMs": 2093
+    },
+    {
+      "when": "2026-10-27T22:48:51Z",
+      "input": "table-01.input.remote",
+      "httpStatus": 200,
+      "latencyMs": 1486
+    },
+    {
+      "when": "2026-10-27T22:48:53Z",
+      "input": "table-01.input.speaker",
+      "httpStatus": 200,
+      "latencyMs": 1965
+    },
+    {
+      "when": "2026-10-27T22:48:56Z",
+      "input": "table-01.input.toy_car",
+      "httpStatus": 200,
+      "latencyMs": 3233
+    },
+    {
+      "when": "2026-10-27T22:48:58Z",
+      "input": "table-01.input.knife",
+      "httpStatus": 200,
+      "latencyMs": 1947
+    }
+  ]
 }

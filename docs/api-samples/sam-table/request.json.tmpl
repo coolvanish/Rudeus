@@ -10,7 +10,8 @@
 #   valid outcome (empty output_text), which is how an absent table object shows up.
 #   Mask payload: data=H,W,~<base85 lossless> (or !<one_bit>). Decode with @meta-sam/parser / meta_sam_parser,
 #   or port decode_mask_to_rle to Kotlin (COCO RLE comes out column-major).
-# unverified: the non-streaming JSON wrapper (docs only show the SSE stream).
+# verified 2026-10-28 by probe: non-streaming reply is {status:"completed", output:[{content:[{type:"output_text", text}]}]}, no top-level output_text.
+# store:false — the default store:true persists the inline base64 image; large bodies failed with HTTP 401 at ~600 KB.
 # unverified: whether "object" as a concept returns anything useful; keep it last in prompts.json.
 {
   "model": "sam-3.1",
@@ -25,5 +26,6 @@
     }
   ],
   "stream": false,
+  "store": false,
   "metadata": { "mask_encoding": "lossless", "include_confidence": "true" }
 }

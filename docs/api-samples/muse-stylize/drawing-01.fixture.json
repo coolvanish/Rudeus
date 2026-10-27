@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "drawing-01",
+    "synthetic": false,
+    "note": "converted from drawing-01.input.response.json by cli fixture on 2026-10-28; payload redacted, sibling drawing-01.out-1.png must be saved by scripts/probe-meta.sh",
+    "outputs": [
+        "drawing-01.out-1.png"
+    ],
+    "latencyMs": 13111
+}

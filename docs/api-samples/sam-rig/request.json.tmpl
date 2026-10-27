@@ -7,7 +7,8 @@
 # verified: https://dev.meta.ai/docs/sam/segmenting (2026-10-28): same call as sam-cutout, one body part per request
 #   (prompts.json: head, arm, leg, wing, tail, body). Input is the stylized sprite PNG; the box token carries
 #   x1,y1,x2,y2 in source pixels — enough for squash/stretch pivots even without decoding the mask.
-# unverified: the non-streaming JSON wrapper (docs only show the SSE stream).
+# verified 2026-10-28 by probe: non-streaming reply is {status:"completed", output:[{content:[{type:"output_text", text}]}]}, no top-level output_text.
+# store:false — the default store:true persists the inline base64 image; large bodies failed with HTTP 401 at ~600 KB.
 # unverified: SAM 3.1 quality on cartoon body parts (no docs claim); this job is a stretch goal (cut line 2).
 {
   "model": "sam-3.1",
@@ -22,5 +23,6 @@
     }
   ],
   "stream": false,
+  "store": false,
   "metadata": { "mask_encoding": "one_bit", "include_confidence": "true" }
 }

@@ -1,17 +1,18 @@
 # path: /v1/chat/completions
 # base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
 # content-type: json
-# model: muse-spark-1.3
+# model: muse-spark-1.3-contributor   (user decision 2026-10-28: contributor tier, training on our prompts is acceptable, cheaper)
 # verified: https://dev.meta.ai/docs/image-understanding + https://dev.meta.ai/docs/features/chat-completion (2026-10-28):
 #   OpenAI-compatible Chat Completions; images go in content parts {"type":"image_url","image_url":{"url": data URL}},
 #   several images per message are allowed. max_completion_tokens (max_tokens still accepted as deprecated alias).
 #   Muse Spark is a reasoning model: temperature default 1.0 is recommended, "stop"/logprobs/n>1 -> 400,
 #   reasoning_effort in none|minimal|low|medium|high|xhigh ("none" -> 400 on Muse Spark). Reply:
 #   choices[0].message.content. Standard tier $1.25/M in, $4.25/M out; muse-spark-1.3-contributor is the cheap tier.
-# unverified: whether a 16-token budget leaves room for the number after reasoning (reasoning tokens may count);
-#   raise max_completion_tokens to 64 if content comes back empty with finish_reason "length".
+# changed 2026-10-28: max_completion_tokens counts reasoning tokens (the 600-token sheet probe came back "length"
+#   with content null), so 16 cannot survive reasoning -> 64 (mirrors core/meta Prompts).
+# probed: 16 and 64 run out of budget on reasoning (finish_reason "length", content null) -> 512.
 {
-  "model": "muse-spark-1.3",
+  "model": "muse-spark-1.3-contributor",
   "messages": [
     {
       "role": "user",
@@ -22,5 +23,5 @@
     }
   ],
   "reasoning_effort": "low",
-  "max_completion_tokens": 16
+  "max_completion_tokens": 512
 }

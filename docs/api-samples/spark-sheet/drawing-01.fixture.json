@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "drawing-01",
+    "synthetic": false,
+    "note": "converted from drawing-01.description.response.json by cli fixture on 2026-10-28",
+    "sheet": {
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Менің атым Тарбик!",
+                "Кел, бірге ойнайық!",
+                "Мен тәтті қарбызбын!",
+                "Күн шуағын жақсы көремін!",
+                "Сенімен дос болайық!"
+            ],
+            "ru": [
+                "Привет! Меня зовут Тарбик!",
+                "Давай играть вместе!",
+                "Я сладкий арбузик!",
+                "Я люблю тёплое солнышко!",
+                "Давай дружить с тобой!"
+            ]
+        },
+        "name": "Тарбик",
+        "personality": "Cheerful and kind friend who loves sunshine and playing with kids."
+    },
+    "latencyMs": 7646
+}

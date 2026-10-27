@@ -27,13 +27,15 @@
 # Prompts come from docs/api-samples/<job>/prompts.json when it exists, else a per-job default.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-dry=0
+dry=0; auth_check=0
 if [ "${1:-}" = "--dry-run" ]; then dry=1; shift; fi
+# --auth-check: load the key the same way, GET /v1/models, print the HTTP status, exit. No template or input needed.
+if [ "${1:-}" = "--auth-check" ]; then auth_check=1; shift; set -- "${1:-sam-table}" "${2:-/dev/null}"; fi
 job="${1:?job}"; input="${2:?input file}"; shift 2 || true
 dir="docs/api-samples/$job"; mkdir -p "$dir"
 tmpl="$dir/request.json.tmpl"
-[ -f "$tmpl" ] || { echo "missing $tmpl: write the request body template first (see docs/api-samples/README.md)" >&2; exit 2; }
-[ -f "$input" ] || { echo "input file not found: $input" >&2; exit 2; }
+[ "$auth_check" = 1 ] || [ -f "$tmpl" ] || { echo "missing $tmpl: write the request body template first (see docs/api-samples/README.md)" >&2; exit 2; }
+[ "$auth_check" = 1 ] || [ -f "$input" ] || { echo "input file not found: $input" >&2; exit 2; }
 path=$(sed -n 's/^# path: //p' "$tmpl" | head -1); : "${path:?first line of $tmpl must be '# path: /v1/...'}"
 ctype=$(sed -n 's/^# content-type: //p' "$tmpl" | head -1); ctype="${ctype:-json}"
 accept=$(sed -n 's/^# accept: //p' "$tmpl" | head -1)
@@ -43,7 +45,7 @@ name=$(basename "${input%.*}")
 # Render every request body into a scratch dir (python reads the files itself: a real photo's base64
 # does not fit in argv). manifest.tsv: <label>\t<curl-args-file>; each curl-args file holds one argument per line.
 work=$(mktemp -d "${TMPDIR:-/tmp}/probe-meta.XXXXXX"); trap 'rm -rf "$work"' EXIT
-python3 -I - "$tmpl" "$input" "$job" "$prompts_file" "docs/api-samples/muse-stylize/refs" "$work" "$dry" <<'PY'
+[ "$auth_check" = 1 ] || python3 -I - "$tmpl" "$input" "$job" "$prompts_file" "docs/api-samples/muse-stylize/refs" "$work" "$dry" <<'PY'
 import sys, json, re, os, base64, mimetypes
 tmpl, inp, job, prompts_file, refs_dir, work, dry = sys.argv[1:]
 dry = dry == "1"
@@ -148,9 +150,26 @@ PY
 : "${META_BASE_URL:?set META_BASE_URL (no trailing slash, without /v1; the template path carries /v1)}"
 key="${META_API_KEY:-}"
 if [ -z "$key" ] && [ -f local.properties ]; then
-  key=$(grep -E '^META_API_KEY=' local.properties | cut -d= -f2- | tr -d '\r')
+  # Last matching line wins; strip CR, surrounding whitespace and quotes.
+  key=$(grep -E '^[[:space:]]*META_API_KEY[[:space:]]*=' local.properties | tail -n 1 | cut -d= -f2- | tr -d '\r' \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")
 fi
 [ -n "$key" ] || { echo "META_API_KEY not found (local.properties or env)" >&2; exit 2; }
+# Shape diagnostic only, never the value. Model API keys look like LLM|<digits>|<secret> (dev.meta.ai/docs/authentication);
+# the dashboard also issues LLM_<digits>_<secret>, which the API accepts.
+if [[ "$key" =~ ^LLM[\|_][0-9]+[\|_][^|[:space:]]+$ ]]; then
+  echo "key: format ok (${#key} chars)" >&2
+else
+  pipes=$(printf '%s' "$key" | tr -cd '|' | wc -c | tr -d ' ')
+  nlines=$(grep -cE '^[[:space:]]*META_API_KEY[[:space:]]*=' local.properties 2>/dev/null || echo 0)
+  echo "key: UNEXPECTED FORMAT (${#key} chars, $pipes pipes, $nlines matching lines in local.properties); expected LLM|<id>|<secret>" >&2
+fi
+if [ "$auth_check" = 1 ]; then
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "$META_BASE_URL/v1/models")
+  unset key
+  echo "auth-check: GET $META_BASE_URL/v1/models -> HTTP $code"
+  [ "$code" = 200 ]; exit $?
+fi
 
 while IFS=$'\t' read -r label argsfile; do
   [ -n "$label" ] || continue
@@ -168,12 +187,32 @@ raw, hdr, meta, job, path, ms, code = sys.argv[1:]
 txt = open(raw, encoding="utf-8", errors="replace").read()
 try:
     obj = json.loads(txt)
+    # Base64 blobs over 2 KB are decoded and saved next to the reply as <ref>.out-<n>.<ext> (ref = input stem
+    # without a trailing ".input", matching FixtureConverter.outputName), and replaced by "<base64 N chars>" —
+    # the exact placeholder FixtureConverter.isRedacted expects.
+    import base64
+    stem = re.sub(r"\.response\.json$", "", os.path.basename(raw)); stem = re.sub(r"\.input$", "", stem)
+    saved = []
+    def sniff(b):
+        if b[:8] == b"\x89PNG\r\n\x1a\n": return "png"
+        if b[:3] == b"\xff\xd8\xff": return "jpg"
+        if b[:4] == b"RIFF" and b[8:12] == b"WEBP": return "webp"
+        return "bin"
     def scrub(x):
-        if isinstance(x, dict): return {k: ("<redacted>" if re.search(r"(auth|key|token|secret)", k, re.I) else scrub(v)) for k, v in x.items()}
+        # Secret-looking keys only; usage counters like input_tokens must survive (the DTOs read them as ints).
+        if isinstance(x, dict): return {k: ("<redacted>" if re.search(r"(authorization|api[_-]?key|secret|(^|_)token$|cookie|session_?id)", k, re.I) else scrub(v)) for k, v in x.items()}
         if isinstance(x, list): return [scrub(v) for v in x]
-        if isinstance(x, str) and len(x) > 2048 and re.fullmatch(r"[A-Za-z0-9+/=\n]+", x): return f"<base64 {len(x)} chars>"
+        if isinstance(x, str) and len(x) > 2048 and re.fullmatch(r"[A-Za-z0-9+/=\n]+", x):
+            try:
+                b = base64.b64decode(x, validate=False)
+                out = os.path.join(os.path.dirname(raw), f"{stem}.out-{len(saved) + 1}.{sniff(b)}")
+                open(out, "wb").write(b); saved.append(out)
+            except Exception:
+                pass
+            return f"<base64 {len(x)} chars>"
         return x
     open(raw, "w").write(json.dumps(scrub(obj), indent=2, ensure_ascii=False))
+    for s_ in saved: print(f"saved decoded payload -> {s_} ({os.path.getsize(s_)} bytes)")
 except Exception:
     pass
 lines = [l for l in open(hdr, errors="replace").read().splitlines() if not re.match(r"(?i)^(authorization|x-api-key|set-cookie|cookie)", l)]

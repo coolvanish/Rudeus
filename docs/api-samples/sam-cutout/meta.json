@@ -1,11 +1,26 @@
 {
   "job": "sam-cutout",
-  "endpoint": "TODO(probe) POST /segment",
+  "endpoint": "POST /v1/responses",
   "model": "sam-3.1",
-  "requestShape": "{model, image: base64, prompts: [\"drawing\",\"toy\"], output_format: \"rle\"}",
-  "latencyMs": 1500,
-  "costUsd": 0.004,
-  "probedAt": "",
-  "synthetic": true,
-  "notes": "SYNTHETIC placeholder until the Day 1 probe (scripts/probe-meta.sh) is saved. Expected: one mask per prompt, COCO uncompressed RLE or bbox."
+  "requestShape": "same as sam-table; prompts from sam-cutout/prompts.json (drawing, toy)",
+  "latencyMs": 1802,
+  "costUsd": 0.0025,
+  "probedAt": "2026-10-27T22:48:20Z",
+  "synthetic": false,
+  "notes": "Real probe 2026-10-28 on a Pixel 9 Pro XL photo. One request per prompt (Responses API, one concept each). With the Responses API default store:true, bodies above roughly 530 KB (a 1440x2560 JPEG of ~446 KB, base64-encoded) were rejected with HTTP 401 invalid_api_key while 1600 px (~270 KB) and 2048 px (~397 KB) succeeded; with store:false (now in the templates) the full-size photo succeeds too. Keep store:false on every SAM call. Latency is per prompt; a 5-prompt table scan with 3 in flight is ~2 round-trips. usage.images_processed=1 per request. drawing-01: 'drawing' mask clean (c=0.945), 'toy' absent as expected. costUsd is per request; a 2-prompt cutout is $0.005.",
+  "path": "/v1/responses",
+  "probes": [
+    {
+      "when": "2026-10-27T22:48:18Z",
+      "input": "drawing-01.input.drawing",
+      "httpStatus": 200,
+      "latencyMs": 2070
+    },
+    {
+      "when": "2026-10-27T22:48:20Z",
+      "input": "drawing-01.input.toy",
+      "httpStatus": 200,
+      "latencyMs": 1535
+    }
+  ]
 }

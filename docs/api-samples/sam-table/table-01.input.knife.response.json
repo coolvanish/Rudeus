@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "mask_encoding": "lossless",
+    "include_confidence": "true"
+  },
+  "top_logprobs": 0,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "service_tier": "auto",
+  "model": "sam-3.1",
+  "background": false,
+  "tools": [],
+  "tool_choice": "auto",
+  "truncation": "disabled",
+  "id": "resp_6ae12a5ad6aaf02f88f24b16",
+  "object": "response",
+  "status": "completed",
+  "created_at": 1793141338.0,
+  "completed_at": 1793141338.0,
+  "error": null,
+  "incomplete_details": null,
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_3da3e182-e8c6-4527-a3a8-685ac27c2aff",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "<0f>0<|box;x1=633;y1=501;x2=793;y2=534;w=900;h=1600;c=0.921951174736023|><|mask;x=0;y=0;c=0.921951174736023;data=34,161,~!!!+?!kES+1dg{NOkUT(jZGycFivW'?'e6F1rqa&)lbr5ZKG9OJ:h&o9]fwXIP*QF%]GQ_`O(5yhw'v(O3[ds@x7p[?l&[D+?WMHN!@RO6]m%Jc+JEomroU6b{?4NbAEAxm#pttWsZ%cU('ri3NGo'?LhMMrs9/2_Q8u6J9_YTiQg6:7Fy]wqAqHI8'U%+7evRA!:K.q)myZavXa9(30_TXWL+mTv={@K7fZ5GAe9zFY{ohtr!i9)C8jE)^(73L@:Ju0sYM7+$BtVhjYkZ%B7GUI0?u6m466FkfN3kx/v[Pi'3@$FsGuq9kt.qeIZ'(9d/BSrc*`46vHpawZ1:SW6ZK&7@4t7:f9=&ToL_UGLB)sz]#t5.1NFDthA-?e+ndCOvy6mYlWyXc@lsjA501H1D0zs[F.cndbFu&3AiHl'H7V8gHNdXv39!0R!cuM4fj3b%@$?hOO=IZKn=4=TD)uVOWM'T6I1%q*bUl7gZA+WqLZ{V_/pFS]/w]'jbs{[V@zNUZwklaNps]qKJrAKTi.M:hj77gMV_d#c^fCKd'(3%hp:XWl`eBV+=uA(k_Xk8sY.tOT6Uf_ddD!Zr$x/V+Fl-X*#8ZVAT]s+!MR:!E_#Q8`SrGF*&S$kOca/&/1%ENsEMUd]RZjoCosn&Y`P#StMIFt9eU2^tx)h/GrJem!q#V..nj:2#x-cpF)JdwbxZjGf=$3['k6EU/lXjKDS'#BuhrTE*AhjR@+_Tjhq3Ao4RLR!sKoFc`!e^ekWmC#FS{{wQd$x8?.T{F22t05&&]Htjph&(TM@N#zdu&Cz2UM4C@_bnru#WG14+bocAaHwmMY*Ycjs^pb:rwew(oK7AN2B@BJ(DQqiKF(/#ipbVxH-&7[PdlrR3l#Sn2x&-J`obyDK#U{ZSisT*?ozI`3?OMT+a/(#2R@3'H[5RA(V1lElHIic:{I-OV%s=Q2-&z7xKxF.XXeqre_?ePgKD9-Oe{kcxe1RbsOF)8SE|>\n",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "status": "completed"
+    }
+  ],
+  "instructions": null,
+  "usage": {
+    "input_tokens": "<redacted>",
+    "input_tokens_details": "<redacted>",
+    "output_tokens": "<redacted>",
+    "output_tokens_details": "<redacted>",
+    "total_tokens": "<redacted>",
+    "images_processed": 1
+  },
+  "parallel_tool_calls": true,
+  "store": true
+}

@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "mask_encoding": "lossless",
+    "include_confidence": "true"
+  },
+  "top_logprobs": 0,
+  "temperature": 1.0,
+  "top_p": 1.0,
+  "service_tier": "auto",
+  "model": "sam-3.1",
+  "background": false,
+  "tools": [],
+  "tool_choice": "auto",
+  "truncation": "disabled",
+  "id": "resp_6ae12a57740dd823d4e44d7c",
+  "object": "response",
+  "status": "completed",
+  "created_at": 1793141334.0,
+  "completed_at": 1793141335.0,
+  "error": null,
+  "incomplete_details": null,
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_f1bb43fb-a481-4968-9f1d-aca2321ac643",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "<0f>0<|box;x1=558;y1=323;x2=635;y2=394;w=900;h=1600;c=0.9179486632347107|><|mask;x=0;y=0;c=0.9179486632347107;data=72,78,~!!!*5!0cYggvZ[_54Kc&$m:r6(5j2w%gqU?-2ytJ+7cuRlq`Ms!BP0VN@hIu(G1O.hWq#[:hRzSgotTU#ut&JM5aOfReFoPmIR)8GcB4!Uvnro^uGkThA.Tn/5:rYck.qk`=R{BC'9XYE{d^]VkFaR0/'B.pcTd{np4!]K2@Sqs.(qI^xhC%(kAe7iRzD/RkWLUtD5!xUJ/C]kWdd^uRlS!_QIMzNQ*&&pAi/=/qM4j7u3uKL#g9h_y-uqj?ot^_bf`H#p6IWfiUgaPgB?3CY=X-CF_xj)R(k@3VR%xgey9jg9u`6ejI`[DzASbDuvu7fH)TUNL4@UZpuy?!@uHbr0$h.&keYSFTWz8p{B_+QoPDitCc%y!0wj`ud+8P2W&&eb[$A+OT]@2Me3_to)-H83:X#_Kyj@+$NJMdj_X%kg!{l7FbUnf9:^z$Y2'Kvi48$2v6Qje.2-fchC3'25YqUh1E#&9jGX]sI!Z{HQiPQdg5]gW)BE?uA!9RO.ONEz89B^8SQvEEpXmfJ_tBpRn0O/:m_Q&heOclpGbljV7uA2f-LAUUsfk1wuhzff5AlDY^4XG^tnX./u9R){L8]@6T+Hl9I)8+NL0mj{M_cjRhZ/r*o]&1/WtyQFTM[W(T30MYOlwmX.zcEg%yJHZ`LR7#6#9X3e11hQfjSvE4HjPdBIa'u8/%V(Er3xRM4`o/1^eX=S/i0rGdy)hq`@M.pr'23e%g5%cMdI_n#=DVv.fa-ec1`G8mU`Ubm_2OtS^834wJ0[4V%@.(bllQ+oU]vcrmHF6VAMGFFS73'^`&#YO%Lx'yZl5l9OS:L0V_:4W73f/Jc+{w-+X1=8a7o&n3PbF$L/B)H]LxpFxar`6!Sf%rHj2!!!|>\n",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "status": "completed"
+    }
+  ],
+  "instructions": null,
+  "usage": {
+    "input_tokens": "<redacted>",
+    "input_tokens_details": "<redacted>",
+    "output_tokens": "<redacted>",
+    "output_tokens_details": "<redacted>",
+    "total_tokens": "<redacted>",
+    "images_processed": 1
+  },
+  "parallel_tool_calls": true,
+  "store": true
+}

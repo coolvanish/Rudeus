@@ -100,8 +100,8 @@ header lists its own `# unverified:` lines.
 | `sam-table` | `https://api.meta.ai` | `/v1/responses` (one request per prompt) | json (base64 data URL) | `sam-3.1` | yes — https://dev.meta.ai/docs/sam/reading-segmentation ; same caveat |
 | `sam-rig` | `https://api.meta.ai` | `/v1/responses` (one request per prompt) | json (base64 data URL) | `sam-3.1` | yes (call shape) — https://dev.meta.ai/docs/media-segmentation ; quality on cartoon parts unverified |
 | `muse-stylize` | `https://api.meta.ai` | `/v1/images/edits` | json (`images[]` of data URLs, <= 10) | `muse-image-1.0` | yes — https://dev.meta.ai/docs/image-generation ; `background` is always `opaque` (alpha not kept) |
-| `spark-score` | `https://api.meta.ai` | `/v1/chat/completions` | json (`image_url` parts, data URLs) | `muse-spark-1.3` | yes — https://dev.meta.ai/docs/image-understanding |
-| `spark-sheet` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema`) | `muse-spark-1.3` | yes — https://dev.meta.ai/docs/features/structured-output ; Kazakh quality unverified |
+| `spark-score` | `https://api.meta.ai` | `/v1/chat/completions` | json (`image_url` parts, data URLs) | `muse-spark-1.3-contributor` | yes — https://dev.meta.ai/docs/image-understanding |
+| `spark-sheet` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema`) | `muse-spark-1.3-contributor` | yes — https://dev.meta.ai/docs/features/structured-output ; Kazakh quality unverified |
 | `voice` | `https://api.meta.ai` | `/v1/asr/transcribe` | multipart (`request` JSON part + `audio` WAV) | `muse-voice-transcribe-1.0` | yes — https://dev.meta.ai/docs/api-reference/voice/transcribe ; Kazakh is NOT in the 25 supported languages |
 
 What the docs say that the code did not expect:

@@ -41,11 +41,19 @@ Tests not required: the probe script, the recording.
 ## Result
 | Criterion | Status | Evidence |
 |---|---|---|
-| plane < 10 s | | |
-| drift < 1 cm / 60 s | | |
-| quad walks to tap | | |
-| cup footprint 1–2 cm | | |
-| depth occlusion acceptable | | |
-| SAM clean masks 5–6 objects | | |
-| Muse style stable x3 | | |
-| Kazakh ASR usable | | |
+| plane < 10 s | PASS | `RudeusGate plane_detected_ms=1387` on Pixel 9 Pro XL, ARCore 1.57, textured cloth (2026-10-28) |
+| drift < 1 cm / 60 s | UNTESTED | needs anchor placed + 60 s still; read `anchor t_ms=0` vs `t_ms≈60000` |
+| quad walks to tap | UNTESTED | T02 (billboard quad not in the build yet) |
+| cup footprint 1–2 cm | UNTESTED | needs four `tap u= v=` lines on the same object edge |
+| depth occlusion acceptable | SUPPORTED | `depth_supported=true depth_mode=AUTOMATIC`; visual quality judged on Day 5 |
+| SAM clean masks 5–6 objects | PARTIAL | `sam-table/table-01.fixture.json`: laptop, toy car, knife clean (c ≥ 0.92); "remote" merged remote+speaker into one mask; "speaker" absent. Latency 1.5–3.2 s per prompt, $0.0025/request. `store:false` required for full-size photos |
+| Muse style stable x3 | UNTESTED | endpoint works (`muse-stylize/drawing-01.out-1.png`, 12–19 s, $0.01, opaque background); stability x3 needs the 8 real style refs (not available yet) |
+| Kazakh ASR usable | UNTESTED | needs a 5 s Kazakh clip; docs list neither Kazakh nor Russian among supported languages — expect cut line 1 |
+
+Real samples: `sam-table/table-01.*` (5 prompts) and a complete real character `drawing-01` across sam-cutout, muse-stylize,
+spark-score and spark-sheet (all `synthetic:false`); `runs/2026-10-27T22-58-25Z.json` is the offline pipeline run on it
+(smoke run, provider=fixture, old CostTable pricing — not a README figure). Spark runs on `muse-spark-1.3-contributor` (user decision).
+Findings: SAM needs `store:false` for full-size photos; Spark reasoning eats small budgets (sheet 2048, score 512);
+the score is 0.00 against the synthetic 64x64 refs, so the 0.7 threshold cannot be judged until real refs exist;
+Muse returns an opaque background, so the pipeline needs a second cutout (design item for Day 2).
+The dashboard issues ids as `LLM_<id>_<suffix>` and the API accepts that form. Voice: not probed (no Kazakh clip).
