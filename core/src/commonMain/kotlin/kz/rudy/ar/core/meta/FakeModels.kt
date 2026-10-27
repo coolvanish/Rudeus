@@ -41,7 +41,7 @@ class FakeModels(
         return s
     }
 
-    override suspend fun characterSheet(ref: String, description: String): CharacterSheet {
+    override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
         calls += "characterSheet:$ref"
         return sheet
     }

@@ -3,7 +3,6 @@ package kz.rudy.ar.cli
 import kotlinx.coroutines.runBlocking
 import kz.rudy.ar.core.io.FileFixtureSource
 import kz.rudy.ar.core.io.FileMetricsSink
-import kz.rudy.ar.core.io.JvmRaster
 import kz.rudy.ar.core.meta.Fixture
 import kz.rudy.ar.core.meta.FixtureApi
 import kz.rudy.ar.core.meta.FixtureConverter
@@ -15,8 +14,7 @@ import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.Provider
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
-import kz.rudy.ar.core.pipeline.CharacterPipeline
-import kz.rudy.ar.core.pipeline.StyleGate
+import kz.rudy.ar.core.pipeline.JvmPipeline
 import java.io.File
 import java.time.LocalDate
 import java.util.Base64
@@ -137,13 +135,7 @@ private fun character(flags: Flags): Int {
     if (styleRefs.isEmpty()) System.err.println("warning: no style refs in ${File(fixturesDir, "$MUSE_DIR/refs")}; deterministic gate half is off")
 
     val metrics = MetricsLog(source = "cli", provider = providerName, device = "mac")
-    val pipeline = CharacterPipeline(
-        models = models,
-        gate = StyleGate(),
-        metrics = metrics,
-        rasterDecoder = JvmRaster::decode,
-        cutoutComposer = JvmRaster::cutout,
-    )
+    val pipeline = JvmPipeline.create(models, metrics)
     val spritesDir = File(outDir, "sprites").apply { mkdirs() }
 
     println("run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency")

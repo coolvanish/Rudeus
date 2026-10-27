@@ -115,7 +115,7 @@ class FixtureApi(
         return scores[nextCall(Jobs.SPARK_SCORE, ref).coerceAtMost(scores.lastIndex)].coerceIn(0f, 1f)
     }
 
-    override suspend fun characterSheet(ref: String, description: String): CharacterSheet {
+    override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
         val fx = load(Jobs.SPARK_SHEET, ref)
         replay(Jobs.SPARK_SHEET, fx)
         return SheetParser.fromJson(fx.sheet ?: throw MetaError.Parse("${fixturePath(Jobs.SPARK_SHEET, ref)}: no sheet"))

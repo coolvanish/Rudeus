@@ -2,6 +2,7 @@ package kz.rudy.ar.core.metrics
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kz.rudy.ar.core.meta.CostMeter
 import kotlin.math.ceil
 import kotlin.math.round
 import kotlin.time.Clock
@@ -87,8 +88,11 @@ class MetricsLog(
     val device: String,
     val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     val costs: CostTable = CostTable(),
-) {
+) : CostMeter {
     val runId: String = runIdFrom(clock())
+
+    /** CONTRACT STUB (Day 2 freeze): measured call costs are dropped until T07 accumulates them per stage. */
+    override fun record(job: String, ref: String, usd: Double) {}
 
     private val characters = ArrayList<CharacterMetrics>()
     private val scans = ArrayList<ScanMetrics>()

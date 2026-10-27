@@ -47,6 +47,8 @@ import kotlin.io.encoding.Base64
 class MetaApi(
     private val config: MetaConfig,
     private val client: HttpClient = defaultClient(config),
+    /** Receives the measured cost of every call (from the reply's `usage`); null = not measured. */
+    private val costMeter: CostMeter? = null,
 ) : MetaModels {
 
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
@@ -91,7 +93,7 @@ class MetaApi(
         return parseOrThrow { parseScore(resp.contentText()) }
     }
 
-    override suspend fun characterSheet(ref: String, description: String): CharacterSheet {
+    override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
         val req = ChatRequest(
             model = config.sparkModel,
             messages = listOf(ChatMessage.text("user", Prompts.characterSheet(description))), // plain string, as the template

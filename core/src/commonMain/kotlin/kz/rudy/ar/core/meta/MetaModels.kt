@@ -19,8 +19,11 @@ interface MetaModels {
     /** Spark vision: how well [image] matches the style of [refs], in 0..1. */
     suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float
 
-    /** Spark text: name / personality / ability / 5 lines in kk and ru for the character [description]. */
-    suspend fun characterSheet(ref: String, description: String): CharacterSheet
+    /**
+     * Spark: name / personality / ability / 5 lines in kk and ru. [image] (the cutout, PNG/JPEG) lets Spark vision see
+     * the character; [description] is an optional hint (blank = none). Implementations may ignore either.
+     */
+    suspend fun characterSheet(ref: String, description: String, image: ByteArray? = null): CharacterSheet
 
     /** Voice Transcribe: [pcm16kMono] 16-bit little-endian PCM, 16 kHz mono, in language [lang] ("kk", "ru"). */
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String
