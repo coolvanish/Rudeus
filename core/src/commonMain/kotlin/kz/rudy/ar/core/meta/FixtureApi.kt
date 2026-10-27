@@ -101,7 +101,7 @@ class FixtureApi(
     fun reset() = calls.store(emptyMap())
 
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
-        val job = if (prompts.isNotEmpty() && prompts.all { it in Jobs.CUTOUT_PROMPTS }) Jobs.SAM_CUTOUT else Jobs.SAM_TABLE
+        val job = Jobs.segmentJob(prompts)
         val fx = load(job, ref)
         replay(job, fx)
         return SegmentResult(fx.masks ?: throw MetaError.Parse("${fixturePath(job, ref)}: no masks"))

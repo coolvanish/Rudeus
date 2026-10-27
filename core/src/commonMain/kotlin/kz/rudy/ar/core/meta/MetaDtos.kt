@@ -7,7 +7,9 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlin.io.encoding.Base64
 
 /*
@@ -102,6 +104,8 @@ data class ResponsesResponse(
     val output: List<ResponsesOutputItem>? = null,
     @SerialName("output_text") val outputText: String? = null,
     val error: ResponsesErrorDto? = null,
+    /** `{input_tokens, output_tokens, images_processed, ...}`; read leniently via [Usage.of]. */
+    val usage: JsonElement? = null,
 )
 
 /**
@@ -167,14 +171,7 @@ data class StylizeRequest(
 @Serializable
 data class ImageDataDto(@SerialName("b64_json") val b64Json: String? = null, val url: String? = null)
 
-@Serializable
-data class ImageUsageDto(
-    @SerialName("input_tokens") val inputTokens: Long? = null,
-    @SerialName("output_tokens") val outputTokens: Long? = null,
-    @SerialName("total_tokens") val totalTokens: Long? = null,
-)
-
-/** `{created, data:[{b64_json}], output_format, background: "opaque", usage}`. */
+/** `{created, data:[{b64_json}], output_format, background: "opaque", usage: {input_tokens, output_tokens, total_tokens}}`. */
 @Serializable
 data class StylizeResponse(
     val created: Long? = null,
@@ -182,7 +179,8 @@ data class StylizeResponse(
     @SerialName("output_format") val outputFormat: String? = null,
     /** Always "opaque" per the docs: the cutout's transparency is not preserved. */
     val background: String? = null,
-    val usage: ImageUsageDto? = null,
+    /** Read leniently via [Usage.of]; Muse is priced per generated image, the tokens are informative only. */
+    val usage: JsonElement? = null,
 )
 
 fun parseStylize(resp: StylizeResponse): String =
@@ -275,7 +273,11 @@ data class ChatChoiceMessage(val role: String? = null, val content: String? = nu
 data class ChatChoice(val index: Int = 0, val message: ChatChoiceMessage? = null, @SerialName("finish_reason") val finishReason: String? = null)
 
 @Serializable
-data class ChatResponse(val choices: List<ChatChoice> = emptyList())
+data class ChatResponse(
+    val choices: List<ChatChoice> = emptyList(),
+    /** `{prompt_tokens, completion_tokens, ...}`; read leniently via [Usage.of]. */
+    val usage: JsonElement? = null,
+)
 
 /**
  * `choices[0].message.content`. A reasoning model that runs out of `max_completion_tokens` replies with
@@ -344,6 +346,31 @@ fun languageName(code: String): String? = when (code.trim().lowercase()) {
     "ru", "rus", "russian" -> "Russian"
     "en", "eng", "english" -> "English"
     else -> null
+}
+
+// ---------------------------------------------------------------- usage (measured cost)
+
+/**
+ * The `usage` block of any reply, read leniently: chat `{prompt_tokens, completion_tokens}`, Responses / image
+ * `{input_tokens, output_tokens}`, SAM `images_processed`. A value that is not a non-negative number (saved fixtures
+ * say `"<redacted>"`) is absent; a missing or malformed block is all-absent. Never throws: usage must not fail a call.
+ */
+data class Usage(val inputTokens: Long? = null, val outputTokens: Long? = null, val imagesProcessed: Long? = null) {
+    companion object {
+        fun of(usage: JsonElement?): Usage {
+            val obj = usage as? JsonObject ?: return Usage()
+            fun num(key: String): Long? {
+                val p = obj[key] as? JsonPrimitive ?: return null
+                val v = p.longOrNull ?: p.doubleOrNull?.takeIf { it.isFinite() }?.toLong() ?: return null
+                return v.takeIf { it >= 0 }
+            }
+            return Usage(
+                inputTokens = num("prompt_tokens") ?: num("input_tokens"),
+                outputTokens = num("completion_tokens") ?: num("output_tokens"),
+                imagesProcessed = num("images_processed"),
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------- shared helpers

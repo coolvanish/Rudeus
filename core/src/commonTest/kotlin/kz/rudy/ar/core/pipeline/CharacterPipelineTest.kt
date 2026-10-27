@@ -49,7 +49,7 @@ class CharacterPipelineTest {
         assertTrue(c.stages.all { it.ok })
         assertEquals(0, c.retries)
         assertTrue(c.gatePassed)
-        assertEquals(0.028, c.totalCostUsd, 1e-9)
+        assertEquals(0.029, c.totalCostUsd, 1e-9) // CostTable: 0.005 + 0.01 + 0.009 + 0.005
         assertEquals(1, run.summary.n)
         assertEquals(1f, run.summary.gatePassRateFirstTry)
     }

@@ -48,7 +48,11 @@ import kotlin.io.encoding.Base64
 class MetaApi(
     private val config: MetaConfig,
     private val client: HttpClient = defaultClient(config),
-    /** Receives the measured cost of every call (from the reply's `usage`); null = not measured. */
+    /**
+     * Receives the measured cost of every successful call, once per HTTP request: SAM and Muse from the request /
+     * image count, Spark from the reply's token `usage` (skipped when the reply has none), all priced by [Pricing].
+     * SAM calls report [Jobs.segmentJob] (cutout vs table). Null = not measured.
+     */
     private val costMeter: CostMeter? = null,
 ) : MetaModels {
 
@@ -56,9 +60,11 @@ class MetaApi(
         requireServed(Jobs.SAM_TABLE, "segment")
         val mime = sniffImageMime(image)
         val b64 = Base64.encode(image)
+        val job = Jobs.segmentJob(prompts)
         return segmentEach(prompts, MAX_SAM_CONCURRENCY) { prompt ->
             val req = SegmentRequest.of(config.samModel, prompt, mime, b64, config.samMaskEncoding)
             val resp: ResponsesResponse = postJson(ref, "segment[$prompt]", config.segmentPath, req)
+            meter(job, ref, Pricing.samUsd(Usage.of(resp.usage)))
             // Lenient on the phone: malformed lines are skipped, an undecodable mask falls back to its filled box.
             parseOrThrow { parseSamResponse(prompt, resp, strict = false) }
         }
@@ -76,6 +82,7 @@ class MetaApi(
             reasoningStrength = config.museReasoningStrength,
         )
         val resp: StylizeResponse = postJson(ref, "stylize", config.stylizePath, req)
+        meter(Jobs.MUSE_STYLIZE, ref, Pricing.museUsd(resp.data.size))
         return parseOrThrow { Base64.decode(parseStylize(resp)) }
     }
 
@@ -91,12 +98,14 @@ class MetaApi(
             reasoningEffort = Prompts.SCORE_REASONING_EFFORT,
         )
         val resp: ChatResponse = postJson(ref, "scoreStyle", config.chatPath, req)
+        Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(Jobs.SPARK_SCORE, ref, it) }
         return parseOrThrow { parseScore(resp.contentText()) }
     }
 
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
         val req = ChatRequest.characterSheet(config.sparkModel, description, image)
         val resp: ChatResponse = postJson(ref, "characterSheet", config.chatPath, req)
+        Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(Jobs.SPARK_SHEET, ref, it) }
         return parseOrThrow { parseSheet(resp.contentText()) }
     }
 
@@ -125,7 +134,14 @@ class MetaApi(
                 accept(ContentType.Application.Json)
             }
         }
+        Pricing.voiceUsd(resp.audioDurationMs)?.let { meter(Jobs.VOICE, ref, it) }
         return parseOrThrow { parseTranscript(resp) }
+    }
+
+    /** One [CostMeter.record] per successful HTTP call; a misbehaving meter never fails the call. */
+    private fun meter(job: String, ref: String, usd: Double) {
+        val m = costMeter ?: return
+        try { m.record(job, ref, usd) } catch (e: Exception) { /* cost is telemetry, never a failure */ }
     }
 
     private fun requireServed(job: String, call: String) {
