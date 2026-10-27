@@ -11,7 +11,9 @@ val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
+// HAND-REVIEW: tolerate META_API_KEY="..." / '...' in local.properties; stray quotes broke the generated BuildConfig.
 val metaApiKey: String = (localProps.getProperty("META_API_KEY") ?: System.getenv("META_API_KEY") ?: "")
+    .trim().removeSurrounding("\"").removeSurrounding("'")
 
 kotlin {
     compilerOptions {
