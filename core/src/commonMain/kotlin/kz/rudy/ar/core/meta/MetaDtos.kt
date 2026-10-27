@@ -408,8 +408,8 @@ object Prompts {
         "\"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], " +
         "\"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each."
 
-    // TODO(design): Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's
-    //  transparency is lost; the pipeline may need a second sam-cutout pass on the stylized output. Pipeline unchanged.
+    // Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's transparency is
+    // lost; hence "plain white background": CharacterPipeline mattes it away (SpriteMatte, SAM pass as fallback).
     const val STYLIZE = "The first image is a child's character cutout. Redraw this character in the exact style of the other " +
         "reference images: same line weight, palette and shading. Keep the pose and silhouette, plain white background, no text."
 
