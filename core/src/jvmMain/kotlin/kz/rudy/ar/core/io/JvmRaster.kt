@@ -1,6 +1,9 @@
 package kz.rudy.ar.core.io
 
 import kz.rudy.ar.core.meta.MaskResult
+import kz.rudy.ar.core.meta.sniffImageMime
+import kz.rudy.ar.core.pipeline.SpriteMatte
+import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -42,5 +45,47 @@ object JvmRaster {
             out.set(x, y, if (inside) src.argb(sx, sy) or (0xFF shl 24) else 0)
         }
         return encodePng(out)
+    }
+
+    /**
+     * [SpriteMatte] on a Muse output: white background -> transparent, cropped, encoded as PNG. Null when the bytes
+     * cannot be decoded or the matte is degenerate (the pipeline then falls back to SAM).
+     */
+    fun matte(png: ByteArray): ByteArray? {
+        val src = decode(png) ?: return null
+        val result = SpriteMatte.matte(src)
+        return result.raster?.let { encodePng(it) }
+    }
+
+    /**
+     * Scales [bytes] down so the long side is at most [maxSide], keeping the aspect ratio; never upscales (returns the
+     * input unchanged when it already fits or cannot be decoded). PNG stays PNG with alpha; JPEG input stays JPEG.
+     * Progressive bilinear halving keeps thin outlines from aliasing.
+     */
+    fun downscale(bytes: ByteArray, maxSide: Int): ByteArray {
+        require(maxSide > 0) { "maxSide must be positive" }
+        val src: BufferedImage = try { ImageIO.read(ByteArrayInputStream(bytes)) ?: return bytes } catch (e: Exception) { return bytes }
+        val longSide = maxOf(src.width, src.height)
+        if (longSide <= maxSide) return bytes
+        val scale = maxSide.toDouble() / longSide
+        val tw = maxOf(1, Math.round(src.width * scale).toInt())
+        val th = maxOf(1, Math.round(src.height * scale).toInt())
+        val jpeg = sniffImageMime(bytes) == "image/jpeg"
+        val type = if (jpeg) BufferedImage.TYPE_INT_RGB else BufferedImage.TYPE_INT_ARGB
+        var img: BufferedImage = src
+        var w = src.width; var h = src.height
+        do {
+            w = maxOf(tw, w / 2); h = maxOf(th, h / 2)
+            val next = BufferedImage(w, h, type)
+            val g = next.createGraphics()
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            g.drawImage(img, 0, 0, w, h, null)
+            g.dispose()
+            img = next
+        } while (w != tw || h != th)
+        val out = ByteArrayOutputStream()
+        ImageIO.write(img, if (jpeg) "jpg" else "png", out)
+        return out.toByteArray()
     }
 }

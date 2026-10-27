@@ -9,6 +9,7 @@ import kz.rudy.ar.core.meta.FakeModels
 import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.MetricsLog
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -73,6 +74,54 @@ class CharacterPipelineTest {
         assertTrue(gates.none { it.ok })
         assertEquals(3, c.stages.count { it.name == "stylize" })
         assertEquals("sheet", c.stages.last().name)
+    }
+
+    @Test
+    fun pipelineScoresMattedSprite() = runTest {
+        val models = FakeModels(scores = listOf(0.5f, 0.9f))
+        val log = metrics()
+        val matted = byteArrayOf(7, 7, 7)
+        val pipeline = CharacterPipeline(models, StyleGate(), log, spriteMatter = { matted })
+
+        val result = pipeline.run("cat-01", image, refs, "a cat")
+
+        assertEquals(2, result.attempts)
+        assertContentEquals(matted, result.sprite)
+        assertEquals(2, models.scoredImages.size)
+        assertTrue(models.scoredImages.all { it.contentEquals(matted) }, "the gate sees the matted sprite on every attempt")
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "matte", "gate", "stylize", "matte", "gate", "sheet"), c.stages.map { it.name })
+        val mattes = c.stages.filter { it.name == "matte" }
+        assertEquals(listOf(1, 2), mattes.map { it.attempt })
+        assertTrue(mattes.all { it.ok && it.costUsd == 0.0 }, "deterministic matte is free")
+    }
+
+    @Test
+    fun matteFailureFallsBackToSam() = runTest {
+        val models = FakeModels(scores = listOf(0.9f))
+        val log = metrics()
+        val samCut = byteArrayOf(5, 5)
+        val pipeline = CharacterPipeline(
+            models, StyleGate(), log,
+            cutoutComposer = { img, _ -> if (img.contentEquals(models.sprite)) samCut else img },
+            spriteMatter = { null },
+        )
+
+        val result = pipeline.run("cat-01", image, refs, "a cat")
+
+        assertEquals(2, models.calls.count { it.startsWith("segment:") }, "one cutout + one SAM pass on the stylized sprite")
+        assertContentEquals(samCut, result.sprite)
+        assertContentEquals(samCut, models.scoredImages.single())
+        val matte = log.toRun().characters.single().stages.single { it.name == "matte" }
+        assertTrue(matte.ok)
+        assertEquals(log.costs.cutoutUsd, matte.costUsd, 1e-9)
+
+        // SAM finds nothing on the sprite either: the unmatted sprite ships, matte ok=false.
+        val empty = FakeModels(scores = listOf(0.9f))
+        val log2 = metrics()
+        val shipped = CharacterPipeline(empty, StyleGate(), log2, spriteMatter = { null }).run("cat-01", image, refs, "a cat")
+        assertContentEquals(empty.sprite, shipped.sprite)
+        assertFalse(log2.toRun().characters.single().stages.single { it.name == "matte" }.ok)
     }
 
     @Test

@@ -5,7 +5,8 @@ import kz.rudy.ar.core.domain.CharacterSheet
 
 /**
  * Scripted [MetaModels] for tests: [scores] are returned in order (last one repeats), the sheet and
- * masks are fixed, every call is appended to [calls] as `"job:ref"`.
+ * masks are fixed, every call is appended to [calls] as `"job:ref"`; the images [scoreStyle] received land in
+ * [scoredImages].
  */
 class FakeModels(
     var scores: List<Float> = listOf(0.85f),
@@ -17,6 +18,7 @@ class FakeModels(
     var segmentError: MetaError? = null,
 ) : MetaModels {
     val calls = ArrayList<String>()
+    val scoredImages = ArrayList<ByteArray>()
     private var scoreIndex = 0
 
     val stylizeCalls: Int get() = calls.count { it.startsWith("stylize:") }
@@ -35,6 +37,7 @@ class FakeModels(
 
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
         calls += "scoreStyle:$ref"
+        scoredImages += image
         if (scores.isEmpty()) return 0f
         val s = scores[scoreIndex.coerceAtMost(scores.lastIndex)]
         scoreIndex++
