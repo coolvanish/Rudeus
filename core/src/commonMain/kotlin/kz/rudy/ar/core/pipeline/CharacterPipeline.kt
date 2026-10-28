@@ -77,8 +77,8 @@ data class CharacterResult(
  * [onEvent] receives [PipelineEvent]s (stage started/finished, gate scored, finished/failed) on the calling coroutine
  * only, in order; it drives the processing screen.
  *
- * Only the calling coroutine touches [metrics]; the sheet coroutine reads nothing but `metrics.now()` (the clock must
- * be safe to read from any thread; the default system clock is). One [run] at a time per instance.
+ * Only the calling coroutine touches [metrics]; the sheet and the two score coroutines read nothing but `metrics.now()`
+ * (the clock must be safe to read from any thread; the default system clock is). One [run] at a time per instance.
  *
  * Threading: [run] does CPU-heavy work on the calling dispatcher (decode, matte and downscale of images up to a few
  * megapixels, ~0.3 s per matte on a 1408x1536 Muse output), so call it off the main thread, e.g.
@@ -316,7 +316,7 @@ class CharacterPipeline(
         /** Long-side bound (px) of the cutout and style refs sent to Muse Image. */
         const val MUSE_INPUT_MAX_SIDE = 1024
 
-        /** Long-side bound (px) of the sprite and style refs sent to the Spark score (~9 images per call). */
+        /** Long-side bound (px) of the sprite and style refs sent to the Spark score (sprite + [SPARK_MAX_REFS] refs). */
         const val SPARK_IMAGE_MAX_SIDE = 512
 
         /**

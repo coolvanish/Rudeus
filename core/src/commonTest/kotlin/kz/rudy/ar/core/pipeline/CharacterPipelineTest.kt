@@ -564,6 +564,30 @@ class CharacterPipelineTest {
     }
 
     @Test
+    fun bothLooksThrowingFailTheAttempt() = runTest {
+        val inner = FakeModels(scores = listOf(0.9f))
+        var calls = 0
+        val models = object : MetaModels by inner {
+            override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+                if (++calls == 1) throw MetaError.Parse("empty content, finish_reason=length") else inner.scoreStyle(ref, image, refs)
+            override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+                // A timeout surfacing as cancellation while the pipeline is alive: a failed look, not a dead character.
+                if (calls == 1) throw kotlinx.coroutines.CancellationException("timeout") else 0f
+        }
+        val log = metrics()
+        val events = ArrayList<PipelineEvent>()
+
+        val result = CharacterPipeline(models, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "")
+
+        assertTrue(result.gatePassed)
+        assertEquals(2, result.attempts)
+        assertEquals(PipelineEvent.GateScored(1, 0f, false), events.filterIsInstance<PipelineEvent.GateScored>().first())
+        val looks = log.toRun().characters.single().stages.filter { it.attempt == 1 && (it.name == "gate" || it.name == "rescore") }
+        assertEquals(listOf(false, false), looks.map { it.ok })
+        assertEquals(listOf(0.0, 0.0), looks.map { it.costUsd }, "nothing metered, nothing charged")
+    }
+
+    @Test
     fun rescoreErrorKeepsTheStyleScore() = runTest {
         val inner = FakeModels(scores = listOf(0.6f))
         val models = object : MetaModels by inner {

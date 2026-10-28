@@ -41,8 +41,9 @@ import kotlin.io.encoding.Base64
  * - segment: `POST /responses` on `sam-3.1`, ONE request per prompt (sent concurrently), one [MaskResult] per
  *   prompt in prompt order; no match = empty mask.
  * - stylize: `POST /images/edits`, JSON `images[]` = cutout + <= 9 refs.
- * - scoreStyle / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs Fireworks can serve);
- *   the sheet message carries the character's picture when one is given.
+ * - scoreStyle / scoreTechnique / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs
+ *   Fireworks can serve); scoreTechnique meters under [Jobs.SPARK_SCORE_TECHNIQUE]; the sheet message carries the
+ *   character's picture when one is given.
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(

@@ -35,8 +35,8 @@ concurrently with the loop, so `totalMs` < the sum of stage `ms`; it is recorded
 when the pipeline has a sprite matter (the CLI and the app do); its cost is 0 unless it fell back to a SAM pass.
 A sheet stage with `ok: false` means the character shipped the fallback sheet.
 `rescore` (added 2026-10-28, T11) is the gate's colour-free look (`Prompts.STYLE_SCORE_NO_COLOUR` + outline-only
-deterministic half), run in parallel with `gate` on every attempt (runs from 2026-10-28T09-11-21Z and earlier ran it
-only after a failed `gate`). Each stage's `ok` is its own look's verdict; the attempt keeps the higher score and passes
+deterministic half), run in parallel with `gate` on every attempt since commit 13b3be9 (run 2026-10-28T09-11-21Z ran
+it only after a failed `gate`; earlier runs have no `rescore` at all). Each stage's `ok` is its own look's verdict; the attempt keeps the higher score and passes
 if either look does, so `totalMs` < the sum of stage `ms` within an attempt too. A colour-free pass on attempt 1
 counts as a first-try pass (`retries: 0`).
 
