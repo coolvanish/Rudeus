@@ -20,17 +20,18 @@ overwrite them. Reusing a ref that is already recorded (e.g. `drawing-01`) needs
 Only our own drawings and generic, unbranded toys (no licensed characters, no logos, no people's faces). Photograph
 on a plain background, the whole character in frame, daylight. Aim for 10 inputs: the Day 2 gate needs n >= 10.
 
-## Style refs first
+## Style refs
 
-```
-./gradlew :cli:run --args="refs generate --prompt @docs/style-refs/style-prompt.txt --n 10 --out docs/style-refs/candidates --budget-usd 0.10"
-./gradlew :cli:run --args="refs cull --from docs/style-refs/candidates --keep 8 --out docs/style-refs"
-```
+Done: `docs/style-refs/` holds 8 provisional refs (Muse-generated, culled from 12; see `docs/style-refs/README.md`
+for how to replace them). `--refs docs/style-refs` sends every image directly in that folder.
 
-Write the style description into `docs/style-refs/style-prompt.txt` first (or pass `--prompt "<text>"`).
-`refs generate` costs $0.01 per image and appends the prompt to `candidates/prompt.txt`; `refs cull` copies the 8 most
-consistent into `docs/style-refs` and writes `docs/style-refs/cull.json`. `--refs docs/style-refs` sends every image
-directly in that folder (not the `candidates/` subfolder).
+## Morning of Oct 28: finish the Day 2 gate
+
+The gate needs n >= 10 distinct drawings/toys **in one run**. Three are already here (`watermelon-01.jpg`,
+`toy-car-01.jpg`, `toy-car-02.jpg`, recorded in live run 2); add 7 more photos, then run the command below with
+`--force` (it re-records those three, ~$0.09). Do not name a new photo `drawing-01`, `sample-01` or `sample-02`:
+tests depend on those fixtures. Photos in this folder are not committed (`.gitignore`); `--record` keeps a copy as
+`docs/api-samples/sam-cutout/<ref>.input.<ext>`.
 
 ## The live run
 
@@ -39,7 +40,7 @@ in process and never prints it. Default budget is $1.00; the run stops starting 
 could exceed it, still writes the run JSON, and exits 1.
 
 ```
-./gradlew :cli:run --args="character --live --drawings docs/drawings --refs docs/style-refs --record docs/api-samples --bundle docs/bundled --budget-usd 1 --out runs"
+./gradlew :cli:run --args="character --live --drawings docs/drawings --refs docs/style-refs --record docs/api-samples --force --bundle docs/bundled --budget-usd 1 --out runs"
 ./gradlew :cli:run --args="metrics gate runs/<runId>.json"
 ```
 

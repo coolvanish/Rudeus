@@ -1,0 +1,4 @@
+# Input photos stay local; --record copies each one to docs/api-samples/sam-cutout/<ref>.input.<ext>.
+*.jpg
+*.jpeg
+*.png
