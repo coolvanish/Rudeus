@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy_car2",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Джиппи",
+        "personality": "Brave and cheerful off-road friend who loves adventures.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Джиппымын!",
+                "Кел, бірге саяхаттайық!",
+                "Мен балшықтан қорықпаймын!",
+                "Дөңгелектерім қатты айналады!",
+                "Жоғары отыр, кеттік!"
+            ],
+            "ru": [
+                "Привет! Я Джиппи!",
+                "Давай путешествовать вместе!",
+                "Я грязи не боюсь!",
+                "Мои колёса крутятся быстро!",
+                "Садись выше, поехали!"
+            ]
+        }
+    },
+    "latencyMs": 8593
+}

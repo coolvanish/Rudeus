@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy_duck",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Бөпеш",
+        "personality": "Cheerful and curious, loves rolling and learning shapes.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Менің атым Бөпеш!",
+                "Кәне, бірге ойнайық!",
+                "Пішінді орнына қояйық!",
+                "Сен өте ақылдысың!",
+                "Жарайсың! Тағы ойнаймыз!"
+            ],
+            "ru": [
+                "Привет! Меня зовут Бопеш!",
+                "Давай играть вместе!",
+                "Поставим фигурку на место!",
+                "Ты очень умный!",
+                "Молодец! Поиграем ещё!"
+            ]
+        }
+    },
+    "latencyMs": 11319
+}

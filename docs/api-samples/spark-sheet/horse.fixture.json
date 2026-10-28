@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "horse",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Ақбөбек",
+        "personality": "A gentle and cheerful little horse who loves to run and play.",
+        "ability": "jump",
+        "lines": {
+            "kk": [
+                "Сәлем! Менің атым Ақбөбек!",
+                "Жасыл шөпті жақсы көремін!",
+                "Жүгірейік, ойнайық бірге!",
+                "Мен жылдам жүгіре аламын!",
+                "Сен менің досымсың!"
+            ],
+            "ru": [
+                "Привет! Меня зовут Акбобек!",
+                "Я люблю зелёную травку!",
+                "Давай бегать и играть!",
+                "Я умею быстро бегать!",
+                "Ты мой друг!"
+            ]
+        }
+    },
+    "latencyMs": 8032
+}

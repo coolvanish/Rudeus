@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy_fox",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Аппақ",
+        "personality": "Curious and gentle, loves to play in the snow.",
+        "ability": "hide",
+        "lines": {
+            "kk": [
+                "Сәлем! Менімен ойнайсың ба?",
+                "Қарда бірге жүгірейік!",
+                "Мен аппақ түлкімін!",
+                "Сені көргеніме қуаныштымын!",
+                "Құшақтасайық, досым!"
+            ],
+            "ru": [
+                "Привет! Поиграешь со мной?",
+                "Побежим вместе по снегу!",
+                "Я белый лисёнок!",
+                "Я рад тебя видеть!",
+                "Обнимемся, друг мой!"
+            ]
+        }
+    },
+    "latencyMs": 8791
+}

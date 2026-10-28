@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "drawing_watermelon",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Қарбөбек",
+        "personality": "Cheerful and juicy, always ready to play with friends.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Қарбөбекпін!",
+                "Кел, бірге ойнайық!",
+                "Мен өте тәттімін!",
+                "Күнде күліп жүремін!",
+                "Сені жақсы көремін!"
+            ],
+            "ru": [
+                "Привет! Я Арбузик!",
+                "Давай играть вместе!",
+                "Я очень сладкий!",
+                "Я всегда улыбаюсь!",
+                "Я тебя люблю!"
+            ]
+        }
+    },
+    "latencyMs": 7820
+}

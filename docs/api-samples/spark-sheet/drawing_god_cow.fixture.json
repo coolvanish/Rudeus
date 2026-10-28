@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "drawing_god_cow",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Бөжек",
+        "personality": "Cheerful and kind little bug who loves to make friends.",
+        "ability": "fly",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Бөжекпін!",
+                "Бірге ойнайықшы, жарай ма?",
+                "Мен қызыл нүктелерді жақсы көремін",
+                "Қане, гүлдерді бірге санайық!",
+                "Сен менің ең жақсы досымсың!"
+            ],
+            "ru": [
+                "Привет! Я Божек!",
+                "Давай поиграем вместе, ладно?",
+                "Я люблю красные точечки!",
+                "Давай посчитаем цветочки вместе!",
+                "Ты мой лучший друг!"
+            ]
+        }
+    },
+    "latencyMs": 11444
+}

@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "drawing_car",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Жылдам",
+        "personality": "Cheerful and brave, always ready to race with friends.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Жылдаммын!",
+                "Кел, бірге жарысайық!",
+                "Қорықпа, мен қасыңдамын!",
+                "Біз бәріміз жеңеміз!",
+                "Қатты күл, көңілді жүр!"
+            ],
+            "ru": [
+                "Привет! Я Быстрый!",
+                "Давай гонять вместе!",
+                "Не бойся, я рядом!",
+                "Мы все победим!",
+                "Смейся громко, веселись!"
+            ]
+        }
+    },
+    "latencyMs": 8682
+}

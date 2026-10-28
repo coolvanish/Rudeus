@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "drawing_cowcow",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "drawing_cowcow.out-1.png",
+        "drawing_cowcow.out-2.png",
+        "drawing_cowcow.out-3.png"
+    ],
+    "latencyMs": 23735
+}

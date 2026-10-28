@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "horse",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "horse.out-1.png",
+        "horse.out-2.png",
+        "horse.out-3.png"
+    ],
+    "latencyMs": 24740
+}

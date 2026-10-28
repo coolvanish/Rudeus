@@ -1,0 +1,18 @@
+{
+    "schema": 1,
+    "job": "spark-score",
+    "ref": "horse",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "scores": [
+        0.4,
+        0.35,
+        0.28
+    ],
+    "techniqueScores": [
+        0.3,
+        0.35,
+        0.25
+    ],
+    "latencyMs": 10385
+}

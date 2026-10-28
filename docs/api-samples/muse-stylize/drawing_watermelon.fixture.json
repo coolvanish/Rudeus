@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "drawing_watermelon",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "drawing_watermelon.out-1.png",
+        "drawing_watermelon.out-2.png",
+        "drawing_watermelon.out-3.png"
+    ],
+    "latencyMs": 32001
+}

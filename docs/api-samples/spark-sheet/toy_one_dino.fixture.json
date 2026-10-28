@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy_one_dino",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Тезбай",
+        "personality": "Brave and playful little raptor who loves to run fast.",
+        "ability": "jump",
+        "lines": {
+            "kk": [
+                "Сәлем! Менімен ойнайсың ба?",
+                "Мен өте жылдам жүгіремін!",
+                "Кел, бірге секірейік!",
+                "Мен сені қорғаймын!",
+                "Біз ең жақсы достармыз!"
+            ],
+            "ru": [
+                "Привет! Поиграешь со мной?",
+                "Я бегаю очень быстро!",
+                "Давай прыгать вместе!",
+                "Я тебя защищу!",
+                "Мы лучшие друзья!"
+            ]
+        }
+    },
+    "latencyMs": 10447
+}

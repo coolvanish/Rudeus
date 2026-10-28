@@ -5,7 +5,9 @@
     "synthetic": false,
     "note": "recorded by cli character --live on 2026-10-28",
     "outputs": [
-        "toy-car-02.out-1.png"
+        "toy-car-02.out-1.png",
+        "toy-car-02.out-2.png",
+        "toy-car-02.out-3.png"
     ],
-    "latencyMs": 17485
+    "latencyMs": 29829
 }
