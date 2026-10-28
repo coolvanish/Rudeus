@@ -9,8 +9,13 @@ import com.google.ar.core.TrackingState
 // So the first tap creates the session anchor only once the hit plane has been TRACKING for ANCHOR_PLANE_SETTLE_MS;
 // earlier taps show a hint and do nothing (RudeusArView). Plain holder, main thread only, no Compose state.
 
-/** How long a horizontal plane must have been continuously TRACKING before a tap on it may create the anchor. */
-internal const val ANCHOR_PLANE_SETTLE_MS = 2_000L
+/**
+ * How long a horizontal plane must have been continuously TRACKING before a tap on it may create the anchor.
+ * HAND-REVIEW: 10 s, not 2 s (review of draft 1): the only data points are "3.7 s after detection: 4.7 cm jump" and
+ * "~21 s after: 0.07 cm / 50 s", so 2 s sat inside the measured bad window. Lower it once the Pixel shows a shorter
+ * wait is enough.
+ */
+internal const val ANCHOR_PLANE_SETTLE_MS = 10_000L
 
 internal class PlaneSettle {
     /** ARCore Planes are hashable (same object across frames); a table yields a handful of them. */

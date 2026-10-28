@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,6 +36,7 @@ import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.ScrimPill
 import kz.rudy.ar.ui.t
+import kotlin.math.abs
 
 // HAND-REVIEW: minimal AR host for the Day 1/3 gates. Plane detection + ONE anchor per session (locked decision).
 // This file is the single owner of the session anchor.
@@ -48,6 +50,12 @@ import kz.rudy.ar.ui.t
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
+
+/**
+ * HAND-REVIEW: walk taps only count on the anchor's own surface, within this height of the anchor. Otherwise a tap
+ * past the table edge hits the floor plane and the character walks off into the air (planeCoords drops the height).
+ */
+private const val WALK_TAP_HEIGHT_TOLERANCE_M = 0.03f
 
 @Composable
 fun RudeusArView(
@@ -70,11 +78,13 @@ fun RudeusArView(
     val poser = remember(sprite) { CharacterPoser(sprite) }
     var anchor by remember { mutableStateOf<Anchor?>(null) }
     var showHint by remember { mutableStateOf(false) }
+    var hintTaps by remember { mutableIntStateOf(0) } // each premature tap restarts the hint timer
     val probe = remember { GateProbe() }
     val recorder = rememberARRecorder()
 
-    LaunchedEffect(showHint) {
-        if (showHint) {
+    LaunchedEffect(hintTaps) {
+        if (hintTaps > 0) {
+            showHint = true
             delay(HINT_VISIBLE_MS)
             showHint = false
         }
@@ -119,18 +129,19 @@ fun RudeusArView(
             onGestureListener = rememberOnGestureListener(
                 onSingleTapConfirmed = { event, _ ->
                     val frame = latestFrame[0] ?: return@rememberOnGestureListener
+                    val a = anchorRef[0]
                     val hit = frame.hitTest(event).firstOrNull {
                         val t = it.trackable
-                        t is Plane && t.isPoseInPolygon(it.hitPose)
+                        t is Plane && t.isPoseInPolygon(it.hitPose) &&
+                            (a == null || abs(it.hitPose.ty() - a.pose.ty()) <= WALK_TAP_HEIGHT_TOLERANCE_M)
                     }
-                    val a = anchorRef[0]
                     if (a == null) {
                         val now = SystemClock.elapsedRealtime()
                         val plane = hit?.trackable as? Plane
                         val age = plane?.let { settle.trackingAgeMs(it, now) }
                         if (hit == null || plane == null || !settle.isSettled(plane, now)) {
                             Log.i(GATE_TAG, "anchor_rejected plane_age_ms=$age need_ms=$ANCHOR_PLANE_SETTLE_MS")
-                            showHint = true
+                            hintTaps++
                             return@rememberOnGestureListener
                         }
                         val created = hit.createAnchor()
@@ -149,14 +160,19 @@ fun RudeusArView(
             ),
         ) {
             anchor?.let { a ->
-                AnchorNode(anchor = a) {
+                // HAND-REVIEW: SceneView's AnchorNode defaults to isPositionEditable = true; a drag would detach and
+                // recreate the session anchor (AnchorNode.onMoveBegin/onMoveEnd) and freeze the game on a dead anchor.
+                AnchorNode(anchor = a, apply = { isPositionEditable = false }) {
                     // Billboard quad in the anchor's frame: feet at the node origin (center = height / 2), front = +Z.
                     PlaneNode(
                         size = Size(x = sprite.widthM, y = sprite.heightM, z = 0f),
                         center = Position(y = sprite.heightM / 2f),
                         normal = Direction(z = 1f),
                         materialInstance = sprite.material,
-                        apply = { characterNode[0] = this },
+                        apply = {
+                            isTouchable = false // taps go through to the table hit test, drags never reach a node
+                            characterNode[0] = this
+                        },
                     )
                 }
             }

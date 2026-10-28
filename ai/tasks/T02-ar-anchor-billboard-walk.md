@@ -95,3 +95,10 @@ dependencies. `scripts/verify.sh` exit 0.
 Known risks: sprite V orientation (Filament `flipUV` default is assumed; fix = `uvScale = UvScale(1f, -1f)` if upside
 down); the AR view is re-created when the screen switches Scanning → Play (slot recomposes in a new parent), so place
 the anchor in Play; `PausedOverlay` / `trackingLost` in the HUD is not wired (needs a callback through `App`).
+
+- Review (rudeus-reviewer, draft 1): merge after fixes → done by the orchestrator: AnchorNode `isPositionEditable = false`
+  and the sprite node not touchable (a drag detached and recreated the session anchor and froze the loop); anchor
+  settle 2 s → 10 s (2 s sat inside the measured 4.7 cm jump window); walk taps only on the anchor's surface (±3 cm
+  height, no walking off the table edge into the air); the hint timer restarts on every early tap. Open: Scanning and
+  Play each create their own AR session (place the anchor in Play, don't leave Play during the 60 s run);
+  PausedOverlay is not driven by the loop yet.
