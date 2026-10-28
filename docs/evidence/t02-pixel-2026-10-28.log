@@ -1,0 +1,43 @@
+# RudeusGate lines, T02 draft 1 + review fixes on the Pixel 9 Pro XL, 2026-10-28 16:14-16:20 local (+05).
+# White table with a bottle; screenshot: t02-dino-on-table-2026-10-28.jpg. Run A anchor 16:15:37, run B 16:19:13.
+10-28 16:14:04.469 I/RudeusGate( 9393): plane_detected_ms=4986
+10-28 16:14:47.189 I/RudeusGate( 9393): plane_detected_ms=5947
+10-28 16:14:51.710 I/RudeusGate( 9393): anchor_rejected plane_age_ms=null need_ms=10000
+10-28 16:15:10.492 I/RudeusGate( 9393): tracking_failure=INSUFFICIENT_FEATURES
+10-28 16:15:11.790 I/RudeusGate( 9393): tracking_failure=null
+10-28 16:15:18.691 I/RudeusGate( 9393): anchor_rejected plane_age_ms=null need_ms=10000
+10-28 16:15:37.214 I/RudeusGate( 9393): anchor t_ms=0 pos=(-0.2693,-0.7382,-0.6742)
+10-28 16:15:37.214 I/RudeusGate( 9393): anchor_plane_age_ms=13380
+10-28 16:15:39.636 I/RudeusGate( 9393): tap u=0.1081 v=0.0218 world=(-0.1595,-0.7381,-0.6836) anchorTracking=TRACKING t_ms=2426
+10-28 16:15:40.742 I/RudeusGate( 9393): tap u=-0.0589 v=0.0866 world=(-0.3015,-0.7381,-0.5745) anchorTracking=TRACKING t_ms=3531
+10-28 16:15:41.783 I/RudeusGate( 9393): tap u=-0.0991 v=-0.1390 world=(-0.4034,-0.7380,-0.7796) anchorTracking=TRACKING t_ms=4572
+10-28 16:15:47.226 I/RudeusGate( 9393): anchor t_ms=10015 pos=(-0.2692,-0.7379,-0.6740)
+10-28 16:15:53.387 I/RudeusGate( 9393): tap u=0.0756 v=0.0274 world=(-0.1890,-0.7379,-0.6689) anchorTracking=TRACKING t_ms=16177
+10-28 16:15:55.114 I/RudeusGate( 9393): tap u=0.1243 v=0.0324 world=(-0.1408,-0.7378,-0.6777) anchorTracking=TRACKING t_ms=17904
+10-28 16:15:57.234 I/RudeusGate( 9393): anchor t_ms=20023 pos=(-0.2692,-0.7378,-0.6739)
+10-28 16:16:07.248 I/RudeusGate( 9393): anchor t_ms=30037 pos=(-0.2755,-0.7608,-0.6954)
+10-28 16:16:12.142 I/RudeusGate( 9393): tap u=0.0937 v=-0.2486 world=(-0.2554,-0.7610,-0.9604) anchorTracking=TRACKING t_ms=34932
+10-28 16:16:17.255 I/RudeusGate( 9393): anchor t_ms=40045 pos=(-0.2755,-0.7611,-0.6956)
+10-28 16:16:25.900 I/RudeusGate( 9393): tap u=0.0225 v=-0.3030 world=(-0.3390,-0.7610,-0.9927) anchorTracking=TRACKING t_ms=48689
+10-28 16:16:27.263 I/RudeusGate( 9393): anchor t_ms=50053 pos=(-0.1380,-0.7610,-0.6348)
+10-28 16:16:28.633 I/RudeusGate( 9393): tap u=0.0867 v=-0.2120 world=(-0.0463,-0.6141,-0.6974) anchorTracking=TRACKING t_ms=51422
+10-28 16:16:37.263 I/RudeusGate( 9393): anchor t_ms=60053 pos=(-0.1492,-0.6134,-0.4920)
+10-28 16:16:39.929 I/RudeusGate( 9393): tap u=0.0762 v=-0.1383 world=(-0.0625,-0.6133,-0.6240) anchorTracking=TRACKING t_ms=62719
+10-28 16:16:47.268 I/RudeusGate( 9393): anchor t_ms=70057 pos=(-0.1492,-0.6130,-0.4916)
+10-28 16:16:57.281 I/RudeusGate( 9393): anchor t_ms=80071 pos=(-0.1492,-0.6128,-0.4914)
+10-28 16:17:03.761 I/RudeusGate( 9393): tracking_failure=INSUFFICIENT_FEATURES
+10-28 16:17:05.672 I/RudeusGate( 9393): tracking_failure=null
+10-28 16:17:07.289 I/RudeusGate( 9393): anchor t_ms=90078 pos=(-0.2757,-0.7597,-0.6969)
+10-28 16:17:17.296 I/RudeusGate( 9393): anchor t_ms=100085 pos=(-0.2757,-0.7597,-0.6969)
+10-28 16:17:21.208 I/RudeusGate( 9393): tap u=0.1137 v=-0.1341 world=(-0.2039,-0.7597,-0.8574) anchorTracking=TRACKING t_ms=103997
+10-28 16:17:24.143 I/RudeusGate( 9393): tap u=0.0959 v=-0.3016 world=(-0.2675,-0.7595,-1.0131) anchorTracking=TRACKING t_ms=106932
+10-28 16:17:27.315 I/RudeusGate( 9393): anchor t_ms=110104 pos=(-0.2756,-0.7593,-0.6965)
+10-28 16:17:37.323 I/RudeusGate( 9393): anchor t_ms=120112 pos=(-0.2758,-0.7602,-0.6973)
+10-28 16:18:26.847 I/RudeusGate( 9393): plane_detected_ms=4837
+10-28 16:18:51.274 I/RudeusGate( 9393): plane_detected_ms=10914
+10-28 16:19:00.195 I/RudeusGate( 9393): anchor_rejected plane_age_ms=8921 need_ms=10000
+10-28 16:19:13.069 I/RudeusGate( 9393): anchor t_ms=0 pos=(-0.1647,-0.8673,-0.8048)
+10-28 16:19:13.069 I/RudeusGate( 9393): anchor_plane_age_ms=13994
+10-28 16:19:23.080 I/RudeusGate( 9393): anchor t_ms=10012 pos=(-0.1645,-0.8627,-0.8009)
+10-28 16:19:33.088 I/RudeusGate( 9393): anchor t_ms=20019 pos=(-0.1645,-0.8623,-0.8005)
+10-28 16:19:43.094 I/RudeusGate( 9393): anchor t_ms=30025 pos=(-0.1646,-0.8642,-0.8021)

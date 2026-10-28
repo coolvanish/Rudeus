@@ -102,3 +102,9 @@ the anchor in Play; `PausedOverlay` / `trackingLost` in the HUD is not wired (ne
   height, no walking off the table edge into the air); the hint timer restarts on every early tap. Open: Scanning and
   Play each create their own AR session (place the anchor in Play, don't leave Play during the 60 s run);
   PausedOverlay is not driven by the loop yet.
+- Pixel, Oct 28 16:14–16:20 (`docs/evidence/t02-pixel-2026-10-28.log`, screenshot `t02-dino-on-table-2026-10-28.jpg`):
+  the dino stands upright on a white table at the tap, ~6 cm; the 10 s settle gate rejected early taps
+  (`anchor_rejected`) and accepted at 13.4 s / 14.0 s plane age. Anchor world pose, run A: 0.1 cm for 20 s, 3.2 cm at
+  30 s, then 14–25 cm at 50–80 s together with the tapped plane height (the whole world frame moved, a map
+  correction while walking around), back to 3.2 cm after a tracking loss at 90 s. Run B: 0.4–0.7 cm over 30 s.
+  Open: whether the dino stayed on its real spot during run A's excursion (human eye), walking to taps confirmed?
