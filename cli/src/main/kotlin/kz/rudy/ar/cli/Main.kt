@@ -161,6 +161,10 @@ private fun character(flags: Flags): Int {
         flags.get("drawings") != null -> {
             val dir = File(flags.require("drawings"))
             if (!dir.isDirectory) throw CliError("drawings dir not found: $dir")
+            // ImageIO decodes only png/jpg; say so instead of silently running fewer characters (live run 4 lost 3 webp).
+            dir.listFiles { f -> f.isFile && f.extension.lowercase() in UNSUPPORTED_IMAGE_EXTENSIONS }.orEmpty()
+                .sortedBy { it.name }
+                .forEach { System.err.println("warning: skipped ${it.name}: convert it to png first (sips -s format png ${it.name} --out ${it.nameWithoutExtension}.png)") }
             dir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }.orEmpty()
                 .sortedBy { it.name }.map { it.nameWithoutExtension to it }
         }
@@ -277,6 +281,7 @@ private const val MUSE_DIR = "muse-stylize"
 /** Bundled sprites become a ~6 cm billboard on the table; 768 px is plenty and keeps the APK small (full size is 2-5 MB). */
 private const val BUNDLE_SPRITE_MAX_SIDE = 768
 internal val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg")
+private val UNSUPPORTED_IMAGE_EXTENSIONS = setOf("webp", "heic", "heif", "gif", "bmp", "tif", "tiff", "avif")
 
 /** `<fixtures>/sam-cutout/<ref>.input.(png|jpg|jpeg)` or `<ref>.(png|jpg)`; a missing file yields empty bytes (fixtures don't read it). */
 private fun inputImage(fixturesDir: File, ref: String): File {
