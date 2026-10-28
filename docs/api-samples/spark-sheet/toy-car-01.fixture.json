@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy-car-01",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Зуми",
+        "personality": "Cheerful little green car who loves to race fast and make friends.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Менімен жарысайық!",
+                "Мен өте жылдам көлікпін!",
+                "Дөңгелектерім зымырап айналады!",
+                "Кеттік! Жел сияқты ұшамыз!",
+                "Сен менің ең жақсы досымсың!"
+            ],
+            "ru": [
+                "Привет! Давай наперегонки!",
+                "Я очень быстрая машинка!",
+                "Мои колёсики крутятся быстро!",
+                "Поехали! Помчим как ветер!",
+                "Ты мой лучший друг!"
+            ]
+        }
+    },
+    "latencyMs": 10320
+}

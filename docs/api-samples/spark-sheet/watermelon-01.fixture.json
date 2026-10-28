@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "watermelon-01",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Қарбызбек",
+        "personality": "Cheerful and mischievous watermelon friend who loves to play.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Қарбызбекпін!",
+                "Бірге ойнайық, жарай ма?",
+                "Мен дөңгеленіп жүгіре аламын!",
+                "Тәтті және көңілдімін!",
+                "Құшақтасайық, досым!"
+            ],
+            "ru": [
+                "Привет! Я Арбузик!",
+                "Давай играть вместе, ладно?",
+                "Я умею катиться быстро!",
+                "Я сладкий и весёлый!",
+                "Обнимемся, друг мой!"
+            ]
+        }
+    },
+    "latencyMs": 10340
+}

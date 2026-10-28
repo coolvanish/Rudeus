@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "drawing_penguini",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "drawing_penguini.out-1.png"
+    ],
+    "latencyMs": 45388
+}

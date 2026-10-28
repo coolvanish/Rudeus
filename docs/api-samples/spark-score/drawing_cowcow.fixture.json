@@ -1,0 +1,18 @@
+{
+    "schema": 1,
+    "job": "spark-score",
+    "ref": "drawing_cowcow",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "scores": [
+        0.25,
+        0.25,
+        0.25
+    ],
+    "techniqueScores": [
+        0.32,
+        0.35,
+        0.3
+    ],
+    "latencyMs": 5487
+}

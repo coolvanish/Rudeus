@@ -19,25 +19,45 @@ interface MetaModels {
     /** Spark vision: how well [image] matches the style of [refs], in 0..1. */
     suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float
 
-    /** Spark text: name / personality / ability / 5 lines in kk and ru for the character [description]. */
-    suspend fun characterSheet(ref: String, description: String): CharacterSheet
+    /**
+     * Spark vision: like [scoreStyle] but technique only (line weight, fill texture, shading, shapes), ignoring the
+     * character's own colours. The gate asks it alongside [scoreStyle] on every attempt.
+     */
+    suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float
+
+    /**
+     * Spark: name / personality / ability / 5 lines in kk and ru. [image] (the cutout, PNG/JPEG) lets Spark vision see
+     * the character; [description] is an optional hint (blank = none). Implementations may ignore either.
+     */
+    suspend fun characterSheet(ref: String, description: String, image: ByteArray? = null): CharacterSheet
 
     /** Voice Transcribe: [pcm16kMono] 16-bit little-endian PCM, 16 kHz mono, in language [lang] ("kk", "ru"). */
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String
 }
 
-/** Job names; they double as the fixture folder names under docs/api-samples. */
+/** Job names; they double as the fixture folder names under docs/api-samples (except [SPARK_SCORE_TECHNIQUE]). */
 object Jobs {
     const val SAM_CUTOUT = "sam-cutout"
     const val SAM_TABLE = "sam-table"
     const val SAM_RIG = "sam-rig"
     const val MUSE_STYLIZE = "muse-stylize"
     const val SPARK_SCORE = "spark-score"
+
+    /**
+     * Cost-metering key of [MetaModels.scoreTechnique] only (its fixtures stay in [SPARK_SCORE]): the two score looks
+     * run at once, so their measured costs are told apart by job.
+     */
+    const val SPARK_SCORE_TECHNIQUE = "spark-score-technique"
+
     const val SPARK_SHEET = "spark-sheet"
     const val VOICE = "voice"
 
     /** Prompts that distinguish a cutout call from a table scan. */
     val CUTOUT_PROMPTS = listOf("drawing", "toy")
+
+    /** The job a [MetaModels.segment] call belongs to: [SAM_CUTOUT] when every prompt is a cutout prompt, else [SAM_TABLE]. */
+    fun segmentJob(prompts: List<String>): String =
+        if (prompts.isNotEmpty() && prompts.all { it in CUTOUT_PROMPTS }) SAM_CUTOUT else SAM_TABLE
 
     val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, SPARK_SCORE, SPARK_SHEET, VOICE)
 }

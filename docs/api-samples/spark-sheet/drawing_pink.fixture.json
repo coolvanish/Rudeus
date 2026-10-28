@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "drawing_pink",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Қоқи",
+        "personality": "Cheerful and kind friend who loves standing in the water.",
+        "ability": "fly",
+        "lines": {
+            "kk": [
+                "Сәлем! Менің атым Қоқи!",
+                "Бірге ойнайықшы, жарай ма?",
+                "Мен қызғылт суды жақсы көремін!",
+                "Қане, қанаттарымызды қағайық!",
+                "Сен менің ең жақсы досымсың!"
+            ],
+            "ru": [
+                "Привет! Меня зовут Коки!",
+                "Давай поиграем вместе, ладно?",
+                "Я очень люблю розовую воду!",
+                "Давай помашем крылышками!",
+                "Ты мой самый лучший друг!"
+            ]
+        }
+    },
+    "latencyMs": 8638
+}

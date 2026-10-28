@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "job": "spark-score",
+    "ref": "drawing_pink",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "scores": [
+        0.3,
+        0.85
+    ],
+    "techniqueScores": [
+        0.3
+    ],
+    "latencyMs": 13349
+}

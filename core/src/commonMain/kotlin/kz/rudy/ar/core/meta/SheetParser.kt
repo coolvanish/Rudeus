@@ -54,6 +54,16 @@ object SheetParser {
         return normalise(CharacterSheet(name, personality, ability, lines))
     }
 
+    /**
+     * The sheet a character ships with when the sheet call fails: a name derived from [ref] (its first word with
+     * letters, capitalised: "cat-01" -> "Cat"; "Dos" when there is none), ability JUMP, the [FALLBACK_LINES].
+     */
+    fun fallback(ref: String): CharacterSheet {
+        val word = ref.split('-', '_', ' ', '.').map { w -> w.filter { it.isLetter() } }.firstOrNull { it.isNotEmpty() }
+        val name = word?.lowercase()?.replaceFirstChar { it.uppercaseChar() } ?: "Dos"
+        return normalise(CharacterSheet(name, "", Ability.JUMP, FALLBACK_LINES))
+    }
+
     /** "fly" / "FLY" / " Fly " -> FLY; anything else -> JUMP. */
     fun parseAbility(raw: String?): Ability {
         val key = raw?.trim()?.uppercase() ?: return Ability.JUMP

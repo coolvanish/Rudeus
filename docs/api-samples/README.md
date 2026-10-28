@@ -72,6 +72,24 @@ CLI runs with `--replay-latency`.
 `latencyMs` is the measured wall time of the real call; `costUsd` the per-call estimate that `CostTable`
 (core/metrics/MetricsLog.kt) must match. `probedAt` stays empty while the folder is synthetic.
 
+## Cost: measured vs estimated
+
+Live calls are priced from each reply by `core/meta/Pricing.kt` and reported to `MetricsLog` (`MetaApi`'s
+`CostMeter`): SAM 3.1 $0.0025 per request (`usage.images_processed` when present), Muse Image $0.01 per generated
+image, Spark at the standard-tier $1.25/M input + $4.25/M output tokens from `usage.prompt_tokens` /
+`completion_tokens` (an upper bound: the contributor tier is cheaper, its price is unpublished). `usage` is parsed
+leniently, so the saved replies here, whose token counts read `"<redacted>"`, still decode; they just carry no Spark
+cost. Stages without a measured cost (every `FixtureApi` run, a reply without `usage`) use the `CostTable` estimates:
+cutout $0.005 (2 SAM requests), stylize $0.01, score ~$0.009 (~9 images at <= 512 px), sheet ~$0.005; the arithmetic
+is in `CostTable`'s KDoc. `runs/*.json` mark each stage `measured: true|false`.
+
+## Pipeline image sizes
+
+`CharacterPipeline` sends SAM the full photo; Muse gets the cutout downscaled to <= 1024 px on the long side; the
+Spark score gets the matted sprite and the style refs at <= 512 px (the refs are downscaled once per run); the sheet
+call gets the cutout at <= 512 px. Muse's output is matted (`SpriteMatte`: white background -> transparent) before
+the gate sees it. The sheet call runs concurrently with stylize/matte/gate.
+
 ## Synthetic flag
 
 `sample-01` and `sample-02` are **synthetic** (`"synthetic": true`): 64x64 programmatically generated PNGs and

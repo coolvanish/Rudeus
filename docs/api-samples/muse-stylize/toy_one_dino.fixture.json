@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "toy_one_dino",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "toy_one_dino.out-1.png"
+    ],
+    "latencyMs": 33290
+}

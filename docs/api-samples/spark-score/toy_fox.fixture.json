@@ -1,0 +1,18 @@
+{
+    "schema": 1,
+    "job": "spark-score",
+    "ref": "toy_fox",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "scores": [
+        0.1,
+        0.2,
+        0.2
+    ],
+    "techniqueScores": [
+        0.1,
+        0.2,
+        0.25
+    ],
+    "latencyMs": 11812
+}

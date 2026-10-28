@@ -44,6 +44,8 @@ data class PaletteEntry(val lab: Lab, val weight: Float)
  *    outline-thickness proxy (share of dark pixels), both against the style references.
  * `score = modelWeight * model + (1 - modelWeight) * deterministic`; with no decoded rasters the model
  * score is used alone. Scores are rounded to 3 decimals so `0.7` compares exactly with the threshold.
+ * An attempt that fails gets a colour-free second look with the same weights: `scoreTechnique` and
+ * [techniqueScore] (outline only); see `CharacterPipeline`.
  */
 class StyleGate(
     val threshold: Float = 0.7f,
@@ -71,6 +73,19 @@ class StyleGate(
         val refOutline = refImages.map { outlineFraction(it) }.average().toFloat()
         val outlineScore = outlineScore(outlineFraction(stylized), refOutline)
         return (PALETTE_WEIGHT * paletteScore + (1f - PALETTE_WEIGHT) * outlineScore).coerceIn(0f, 1f)
+    }
+
+    /**
+     * The deterministic half without colour, for the gate's colour-free second look (`MetaModels.scoreTechnique`):
+     * the outline proxy alone. Null when [deterministicScore] would be.
+     */
+    fun techniqueScore(stylized: RasterImage?, refs: List<RasterImage?>): Float? {
+        if (stylized == null) return null
+        val refImages = refs.filterNotNull()
+        // Same null cases as deterministicScore: a fully transparent sprite, or every ref fully transparent.
+        if (palette(stylized, 1).isEmpty() || refImages.all { palette(it, 1).isEmpty() }) return null
+        val refOutline = refImages.map { outlineFraction(it) }.average().toFloat()
+        return outlineScore(outlineFraction(stylized), refOutline)
     }
 
     companion object {

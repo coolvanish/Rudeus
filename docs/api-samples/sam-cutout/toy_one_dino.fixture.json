@@ -1,0 +1,20 @@
+{
+    "schema": 1,
+    "job": "sam-cutout",
+    "ref": "toy_one_dino",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "masks": [
+        {
+            "label": "drawing",
+            "width": 0,
+            "height": 0
+        },
+        {
+            "label": "toy",
+            "width": 0,
+            "height": 0
+        }
+    ],
+    "latencyMs": 2758
+}

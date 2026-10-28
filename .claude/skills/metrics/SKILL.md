@@ -20,7 +20,7 @@ p50 < 40 s, <= $0.05 per character.
   "characters": [
     {
       "input": "drawings/cat-01.jpg",
-      "stages": [ { "name": "cutout|stylize|gate|sheet", "ms": 1234, "costUsd": 0.004, "attempt": 1, "ok": true } ],
+      "stages": [ { "name": "cutout|stylize|matte|gate|sheet", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
       "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031
     }
   ],
@@ -29,6 +29,23 @@ p50 < 40 s, <= $0.05 per character.
 }
 ```
 `summary` is computed by `MetricsLog.summarise()`; never written by hand.
+
+Stage order per character: `cutout`, then per attempt `stylize`, `matte`, `gate` [`rescore`], then `sheet` last (the sheet call runs
+concurrently with the loop, so `totalMs` < the sum of stage `ms`; it is recorded after the loop). `matte` appears only
+when the pipeline has a sprite matter (the CLI and the app do); its cost is 0 unless it fell back to a SAM pass.
+A sheet stage with `ok: false` means the character shipped the fallback sheet.
+`rescore` (added 2026-10-28, T11) is the gate's colour-free look (`Prompts.STYLE_SCORE_NO_COLOUR` + outline-only
+deterministic half), run in parallel with `gate` on every attempt since commit 13b3be9 (run 2026-10-28T09-11-21Z ran
+it only after a failed `gate`; earlier runs have no `rescore` at all). Each stage's `ok` is its own look's verdict; the attempt keeps the higher score and passes
+if either look does, so `totalMs` < the sum of stage `ms` within an attempt too. A colour-free pass on attempt 1
+counts as a first-try pass (`retries: 0`).
+
+`measured` (added Day 2, default `false`, still `schema: 1`; older runs parse as `false`): `true` = `costUsd` is the sum
+of what the provider's replies reported for that stage (`MetricsLog` is `MetaApi`'s `CostMeter`; prices in
+`core/meta/Pricing.kt`); `false` = the `CostTable` estimate (fixture runs, replies without `usage`) or a stage with no
+model call. A stage that failed with an error (not a gate below threshold) is charged only what was metered, else 0.
+When a character fails, its sheet stage is still recorded (outcome if done, else `ok: false` after cancelling it).
+Spark costs use the standard-tier rates, an upper bound for the contributor tier we call.
 
 ## Produce
 ```

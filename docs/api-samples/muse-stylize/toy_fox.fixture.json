@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "toy_fox",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "toy_fox.out-1.png",
+        "toy_fox.out-2.png",
+        "toy_fox.out-3.png"
+    ],
+    "latencyMs": 41692
+}

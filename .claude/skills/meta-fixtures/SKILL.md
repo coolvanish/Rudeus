@@ -41,6 +41,10 @@ if they are larger than a screen: summarise shape and sizes instead.
 
 ## Contract the pipeline relies on
 - Gate: `score in [0,1]`, threshold **0.7**, at most **2 retries**, then the character ships with `gatePassed=false`.
+  Every attempt also gets a colour-free look in parallel (`scoreTechnique`, `Prompts.STYLE_SCORE_NO_COLOUR`; user
+  decision 2026-10-28): recorded as `techniqueScores` next to `scores` in `spark-score/<ref>.fixture.json`. Fixtures
+  recorded before that have no or fewer `techniqueScores`; a missing list makes that look fail (`rescore` ok=false),
+  a short one repeats its last value. Spark gets the first 3 style refs (`CharacterPipeline.SPARK_MAX_REFS`).
 - Sheet: `ability` must parse into `Ability {JUMP, FLY, ROLL, HIDE}`; unknown -> `JUMP`. Lines: 5 in `kk`, 5 in `ru`.
 - Cutout: a single mask; multiple masks -> take the largest connected component.
 - Table: one mask per prompt; empty mask -> object absent, not an error.

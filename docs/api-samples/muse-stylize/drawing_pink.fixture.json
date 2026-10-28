@@ -1,0 +1,12 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "drawing_pink",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "drawing_pink.out-1.png",
+        "drawing_pink.out-2.png"
+    ],
+    "latencyMs": 28935
+}

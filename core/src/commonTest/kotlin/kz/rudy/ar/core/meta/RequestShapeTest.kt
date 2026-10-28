@@ -59,6 +59,20 @@ class RequestShapeTest {
     }
 
     @Test
+    fun stylizePromptAsksForRefOutlineAndIdentity() {
+        val p = Prompts.STYLIZE.lowercase()
+        for (phrase in listOf("reference images", "bold, even outline", "line weight and colour", "flat crayon colour", "white background", "recognises")) {
+            assertTrue(phrase in p, "stylize prompt mentions \"$phrase\": $p")
+        }
+        assertFalse('\n' in Prompts.STYLIZE, "one paragraph")
+
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/muse-stylize/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl.replace("{{REF_IMAGE_ITEMS}}", "")).jsonObject
+        assertEquals(Prompts.STYLIZE, tmplBody["prompt"]!!.jsonPrimitive.content, "the probe template sends the same prompt")
+    }
+
+    @Test
     fun sparkScoreUsesMaxCompletionTokensAndNoTemperature() {
         val req = ChatRequest(
             model = MetaConfig(apiKey = "test-key").sparkModel,
@@ -70,7 +84,12 @@ class RequestShapeTest {
         assertEquals(setOf("model", "messages", "reasoning_effort", "max_completion_tokens"), body.keys)
         assertFalse("max_tokens" in body || "temperature" in body)
         assertEquals("muse-spark-1.3-contributor", body["model"]!!.jsonPrimitive.content, "contributor tier, never standard")
-        assertEquals(512, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "16 and 64 ran out on reasoning")
+        assertEquals(1024, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "16, 64 and 512 ran out on reasoning")
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/spark-score/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl.replace("{{REF_CHAT_PARTS}}", "")).jsonObject
+        assertEquals(body["max_completion_tokens"], tmplBody["max_completion_tokens"], "template budget matches the code")
+        assertEquals(Prompts.STYLE_SCORE, tmplBody["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
         assertEquals("low", body["reasoning_effort"]!!.jsonPrimitive.content)
         val parts = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
@@ -107,6 +126,44 @@ class RequestShapeTest {
         val ability = schema["properties"]!!.jsonObject["ability"]!!.jsonObject
         assertEquals(listOf("jump", "fly", "roll", "hide"), ability["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
         assertEquals("false", schema["additionalProperties"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun sheetRequestCarriesImagePart() {
+        val model = MetaConfig(apiKey = "test-key").sparkModel
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)
+
+        val withImage = encode(ChatRequest.serializer(), ChatRequest.characterSheet(model, "", pngBytes))
+        assertEquals(setOf("model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"), withImage.keys)
+        assertEquals("json_schema", withImage["response_format"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals(2048, withImage["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals("low", withImage["reasoning_effort"]!!.jsonPrimitive.content)
+        val parts = withImage["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
+        val text = parts[0]["text"]!!.jsonPrimitive.content
+        assertEquals(Prompts.characterSheet("", withImage = true), text)
+        assertFalse(": ." in text || "  " in text, "blank description leaves no artefacts: $text")
+        assertTrue(parts[1]["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content.startsWith("data:image/png;base64,"))
+
+        val plain = encode(ChatRequest.serializer(), ChatRequest.characterSheet(model, "a cat", null))
+        val content = plain["messages"]!!.jsonArray.single().jsonObject["content"] as JsonPrimitive
+        assertTrue(content.isString, "no image: plain-string content, as before")
+        assertEquals(Prompts.characterSheet("a cat"), content.content)
+        assertTrue(content.content.startsWith("A child drew a character: a cat. Reply"), content.content)
+        assertTrue(Prompts.characterSheet("  ").startsWith("A child drew a character. Reply"))
+        assertTrue(Prompts.characterSheet("a red fox.", withImage = true).startsWith("The image shows a character a child drew: a red fox. Reply"))
+        // Live run 2 named the toy cars "Vrum" and "Zippy"; the game is Kazakh first, so the name is asked for in Cyrillic.
+        assertTrue("name in Kazakh (Cyrillic script)" in Prompts.characterSheet("", withImage = true))
+
+        // The probe template is the same body: same keys, same text part, one image_url part.
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/spark-sheet/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl).jsonObject
+        assertEquals(withImage.keys, tmplBody.keys)
+        assertEquals(withImage["response_format"], tmplBody["response_format"])
+        val tmplParts = tmplBody["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), tmplParts.map { it["type"]!!.jsonPrimitive.content })
+        assertEquals(text, tmplParts[0]["text"]!!.jsonPrimitive.content)
     }
 
     @Test

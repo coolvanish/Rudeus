@@ -11,6 +11,11 @@
 # changed 2026-10-28: max_completion_tokens counts reasoning tokens (the 600-token sheet probe came back "length"
 #   with content null), so 16 cannot survive reasoning -> 64 (mirrors core/meta Prompts).
 # probed: 16 and 64 run out of budget on reasoning (finish_reason "length", content null) -> 512.
+# changed 2026-10-28 (T10, live run 1): 512 ran out too with 9 images (toy-car-02) -> 1024. Output tokens are billed
+#   as used; the cap only stops truncation (mirrors core/meta Prompts.SCORE_MAX_COMPLETION_TOKENS).
+# added 2026-10-28 (T11, user decision): every attempt is also scored, in parallel, with Prompts.STYLE_SCORE_NO_COLOUR
+#   (technique only, the character's colours ignored) in the same request shape; swap the text part to probe it.
+#   Since then the pipeline sends 3 style refs (CharacterPipeline.SPARK_MAX_REFS), not 8.
 {
   "model": "muse-spark-1.3-contributor",
   "messages": [
@@ -23,5 +28,5 @@
     }
   ],
   "reasoning_effort": "low",
-  "max_completion_tokens": 512
+  "max_completion_tokens": 1024
 }

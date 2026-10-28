@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "job": "spark-score",
+    "ref": "drawing_car_2",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "scores": [
+        0.25,
+        0.6
+    ],
+    "techniqueScores": [
+        0.25,
+        0.7
+    ],
+    "latencyMs": 5992
+}

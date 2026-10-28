@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "job": "muse-stylize",
+    "ref": "watermelon-01",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "outputs": [
+        "watermelon-01.out-1.png"
+    ],
+    "latencyMs": 15981
+}

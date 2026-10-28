@@ -1,0 +1,33 @@
+{
+    "schema": 1,
+    "from": "/private/tmp/claude-501/-Users-kuanyshsalyk--claude-spares-spare-jEJdZ1/29e9da77-74dc-4a42-bb9c-a22df2c29a23/scratchpad/cand640",
+    "keep": 8,
+    "kept": [
+        "gen-03-camel.png",
+        "gen-08-yurt.png",
+        "gen-04-snow-leopard.png",
+        "gen-07-sheep.png",
+        "gen-12-star.png",
+        "gen-06-horse.png",
+        "gen-11-dinosaur.png",
+        "gen-05-eagle.png"
+    ],
+    "dropped": [
+        {
+            "name": "gen-09-apple.png",
+            "reason": "outlier: mean distance 0.66"
+        },
+        {
+            "name": "gen-10-fish.png",
+            "reason": "outlier: mean distance 0.60"
+        },
+        {
+            "name": "gen-02-robot.png",
+            "reason": "outlier: mean distance 0.39"
+        },
+        {
+            "name": "gen-01-cat.png",
+            "reason": "outlier: mean distance 0.32"
+        }
+    ]
+}

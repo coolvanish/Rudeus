@@ -47,6 +47,10 @@ data class MetaConfig(
 ) {
     init { require(apiKey.isNotBlank()) { "MetaConfig.apiKey is blank" } }
 
+    /** The generated data-class `toString` would print [apiKey]; this one never does. */
+    override fun toString(): String =
+        "MetaConfig(provider=$provider, baseUrl=$baseUrl, apiKey=<hidden>, sparkModel=$sparkModel, museImageModel=$museImageModel)"
+
     fun url(path: String): String = baseUrl.trimEnd('/') + "/" + path.trimStart('/')
 
     /** False for the jobs a provider does not serve (everything but chat on Fireworks). */

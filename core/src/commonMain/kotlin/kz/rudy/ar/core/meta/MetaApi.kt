@@ -41,21 +41,31 @@ import kotlin.io.encoding.Base64
  * - segment: `POST /responses` on `sam-3.1`, ONE request per prompt (sent concurrently), one [MaskResult] per
  *   prompt in prompt order; no match = empty mask.
  * - stylize: `POST /images/edits`, JSON `images[]` = cutout + <= 9 refs.
- * - scoreStyle / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs Fireworks can serve).
+ * - scoreStyle / scoreTechnique / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs
+ *   Fireworks can serve); scoreTechnique meters under [Jobs.SPARK_SCORE_TECHNIQUE]; the sheet message carries the
+ *   character's picture when one is given.
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(
     private val config: MetaConfig,
     private val client: HttpClient = defaultClient(config),
+    /**
+     * Receives the measured cost of every successful call, once per HTTP request: SAM and Muse from the request /
+     * image count, Spark from the reply's token `usage` (skipped when the reply has none), all priced by [Pricing].
+     * SAM calls report [Jobs.segmentJob] (cutout vs table). Null = not measured.
+     */
+    private val costMeter: CostMeter? = null,
 ) : MetaModels {
 
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
         requireServed(Jobs.SAM_TABLE, "segment")
         val mime = sniffImageMime(image)
         val b64 = Base64.encode(image)
+        val job = Jobs.segmentJob(prompts)
         return segmentEach(prompts, MAX_SAM_CONCURRENCY) { prompt ->
             val req = SegmentRequest.of(config.samModel, prompt, mime, b64, config.samMaskEncoding)
             val resp: ResponsesResponse = postJson(ref, "segment[$prompt]", config.segmentPath, req)
+            meter(job, ref, Pricing.samUsd(Usage.of(resp.usage)))
             // Lenient on the phone: malformed lines are skipped, an undecodable mask falls back to its filled box.
             parseOrThrow { parseSamResponse(prompt, resp, strict = false) }
         }
@@ -73,12 +83,20 @@ class MetaApi(
             reasoningStrength = config.museReasoningStrength,
         )
         val resp: StylizeResponse = postJson(ref, "stylize", config.stylizePath, req)
+        meter(Jobs.MUSE_STYLIZE, ref, Pricing.museUsd(resp.data.size))
         return parseOrThrow { Base64.decode(parseStylize(resp)) }
     }
 
-    override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
+    override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+        score(ref, "scoreStyle", Jobs.SPARK_SCORE, Prompts.STYLE_SCORE, image, refs)
+
+    override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+        score(ref, "scoreTechnique", Jobs.SPARK_SCORE_TECHNIQUE, Prompts.STYLE_SCORE_NO_COLOUR, image, refs)
+
+    /** One Spark score call, metered under [job]: [prompt], then [image], then up to [MAX_STYLE_REFS] [refs]. */
+    private suspend fun score(ref: String, call: String, job: String, prompt: String, image: ByteArray, refs: List<ByteArray>): Float {
         val parts = ArrayList<ChatContentPart>()
-        parts += ChatContentPart.text(Prompts.STYLE_SCORE)
+        parts += ChatContentPart.text(prompt)
         parts += ChatContentPart.imageDataUrl(sniffImageMime(image), Base64.encode(image))
         refs.take(MAX_STYLE_REFS).forEach { parts += ChatContentPart.imageDataUrl(sniffImageMime(it), Base64.encode(it)) }
         val req = ChatRequest(
@@ -87,19 +105,15 @@ class MetaApi(
             maxCompletionTokens = Prompts.SCORE_MAX_COMPLETION_TOKENS,
             reasoningEffort = Prompts.SCORE_REASONING_EFFORT,
         )
-        val resp: ChatResponse = postJson(ref, "scoreStyle", config.chatPath, req)
+        val resp: ChatResponse = postJson(ref, call, config.chatPath, req)
+        Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(job, ref, it) }
         return parseOrThrow { parseScore(resp.contentText()) }
     }
 
-    override suspend fun characterSheet(ref: String, description: String): CharacterSheet {
-        val req = ChatRequest(
-            model = config.sparkModel,
-            messages = listOf(ChatMessage.text("user", Prompts.characterSheet(description))), // plain string, as the template
-            maxCompletionTokens = Prompts.SHEET_MAX_COMPLETION_TOKENS,
-            reasoningEffort = Prompts.SHEET_REASONING_EFFORT,
-            responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
-        )
+    override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
+        val req = ChatRequest.characterSheet(config.sparkModel, description, image)
         val resp: ChatResponse = postJson(ref, "characterSheet", config.chatPath, req)
+        Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(Jobs.SPARK_SHEET, ref, it) }
         return parseOrThrow { parseSheet(resp.contentText()) }
     }
 
@@ -128,7 +142,14 @@ class MetaApi(
                 accept(ContentType.Application.Json)
             }
         }
+        Pricing.voiceUsd(resp.audioDurationMs)?.let { meter(Jobs.VOICE, ref, it) }
         return parseOrThrow { parseTranscript(resp) }
+    }
+
+    /** One [CostMeter.record] per successful HTTP call; a misbehaving meter never fails the call. */
+    private fun meter(job: String, ref: String, usd: Double) {
+        val m = costMeter ?: return
+        try { m.record(job, ref, usd) } catch (e: Exception) { /* cost is telemetry, never a failure */ }
     }
 
     private fun requireServed(job: String, call: String) {
