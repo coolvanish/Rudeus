@@ -59,6 +59,20 @@ class RequestShapeTest {
     }
 
     @Test
+    fun stylizePromptAsksForRefOutlineAndIdentity() {
+        val p = Prompts.STYLIZE.lowercase()
+        for (phrase in listOf("reference images", "bold, even outline", "line weight and colour", "flat crayon colour", "white background", "recognises")) {
+            assertTrue(phrase in p, "stylize prompt mentions \"$phrase\": $p")
+        }
+        assertFalse('\n' in Prompts.STYLIZE, "one paragraph")
+
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/muse-stylize/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl.replace("{{REF_IMAGE_ITEMS}}", "")).jsonObject
+        assertEquals(Prompts.STYLIZE, tmplBody["prompt"]!!.jsonPrimitive.content, "the probe template sends the same prompt")
+    }
+
+    @Test
     fun sparkScoreUsesMaxCompletionTokensAndNoTemperature() {
         val req = ChatRequest(
             model = MetaConfig(apiKey = "test-key").sparkModel,

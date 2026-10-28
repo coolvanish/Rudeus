@@ -410,8 +410,13 @@ object Prompts {
 
     // Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's transparency is
     // lost; hence "plain white background": CharacterPipeline mattes it away (SpriteMatte, SAM pass as fallback).
-    const val STYLIZE = "The first image is a child's character cutout. Redraw this character in the exact style of the other " +
-        "reference images: same line weight, palette and shading. Keep the pose and silhouette, plain white background, no text."
+    // T10 (live run 1): the old "same line weight, palette and shading" kept the character but drew thin sketchy lines
+    // with hatching, so the prompt now names the refs' look explicitly. Identical to docs/api-samples/muse-stylize/request.json.tmpl.
+    const val STYLIZE = "The first image is a child's character. Redraw it as a clean sticker illustration in exactly the " +
+        "style of the reference images that follow: copy their bold, even outline (the same line weight and colour " +
+        "everywhere), flat crayon colour fills with only light crayon texture, and simple friendly shapes with few " +
+        "details. Keep the character's identity so the child recognises it: the same silhouette, pose, colours and " +
+        "features. One character only, centred on a plain pure white background with wide margins, no text, no shadow."
 
     /** JSON schema for the sheet, identical to docs/api-samples/spark-sheet/request.json.tmpl. */
     val CHARACTER_SHEET_SCHEMA: JsonObject = Json.parseToJsonElement(
