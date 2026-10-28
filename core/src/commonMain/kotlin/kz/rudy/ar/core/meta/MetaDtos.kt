@@ -404,7 +404,7 @@ object Prompts {
         return "$subject $SHEET_INSTRUCTIONS"
     }
 
-    private const val SHEET_INSTRUCTIONS = "Reply with JSON only: {\"name\": short name, \"personality\": one sentence, " +
+    private const val SHEET_INSTRUCTIONS = "Reply with JSON only: {\"name\": a short friendly name in Kazakh (Cyrillic script), \"personality\": one sentence, " +
         "\"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], " +
         "\"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each."
 

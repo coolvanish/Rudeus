@@ -152,6 +152,8 @@ class RequestShapeTest {
         assertTrue(content.content.startsWith("A child drew a character: a cat. Reply"), content.content)
         assertTrue(Prompts.characterSheet("  ").startsWith("A child drew a character. Reply"))
         assertTrue(Prompts.characterSheet("a red fox.", withImage = true).startsWith("The image shows a character a child drew: a red fox. Reply"))
+        // Live run 2 named the toy cars "Vrum" and "Zippy"; the game is Kazakh first, so the name is asked for in Cyrillic.
+        assertTrue("name in Kazakh (Cyrillic script)" in Prompts.characterSheet("", withImage = true))
 
         // The probe template is the same body: same keys, same text part, one image_url part.
         val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/spark-sheet/request.json.tmpl")!!
