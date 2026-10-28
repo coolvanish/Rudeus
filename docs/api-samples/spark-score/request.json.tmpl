@@ -11,6 +11,8 @@
 # changed 2026-10-28: max_completion_tokens counts reasoning tokens (the 600-token sheet probe came back "length"
 #   with content null), so 16 cannot survive reasoning -> 64 (mirrors core/meta Prompts).
 # probed: 16 and 64 run out of budget on reasoning (finish_reason "length", content null) -> 512.
+# changed 2026-10-28 (T10, live run 1): 512 ran out too with 9 images (toy-car-02) -> 1024. Output tokens are billed
+#   as used; the cap only stops truncation (mirrors core/meta Prompts.SCORE_MAX_COMPLETION_TOKENS).
 {
   "model": "muse-spark-1.3-contributor",
   "messages": [
@@ -23,5 +25,5 @@
     }
   ],
   "reasoning_effort": "low",
-  "max_completion_tokens": 512
+  "max_completion_tokens": 1024
 }

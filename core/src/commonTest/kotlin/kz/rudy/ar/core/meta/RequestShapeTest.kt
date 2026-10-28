@@ -59,6 +59,20 @@ class RequestShapeTest {
     }
 
     @Test
+    fun stylizePromptAsksForRefOutlineAndIdentity() {
+        val p = Prompts.STYLIZE.lowercase()
+        for (phrase in listOf("reference images", "bold, even outline", "line weight and colour", "flat crayon colour", "white background", "recognises")) {
+            assertTrue(phrase in p, "stylize prompt mentions \"$phrase\": $p")
+        }
+        assertFalse('\n' in Prompts.STYLIZE, "one paragraph")
+
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/muse-stylize/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl.replace("{{REF_IMAGE_ITEMS}}", "")).jsonObject
+        assertEquals(Prompts.STYLIZE, tmplBody["prompt"]!!.jsonPrimitive.content, "the probe template sends the same prompt")
+    }
+
+    @Test
     fun sparkScoreUsesMaxCompletionTokensAndNoTemperature() {
         val req = ChatRequest(
             model = MetaConfig(apiKey = "test-key").sparkModel,
@@ -70,7 +84,12 @@ class RequestShapeTest {
         assertEquals(setOf("model", "messages", "reasoning_effort", "max_completion_tokens"), body.keys)
         assertFalse("max_tokens" in body || "temperature" in body)
         assertEquals("muse-spark-1.3-contributor", body["model"]!!.jsonPrimitive.content, "contributor tier, never standard")
-        assertEquals(512, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "16 and 64 ran out on reasoning")
+        assertEquals(1024, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "16, 64 and 512 ran out on reasoning")
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/spark-score/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl.replace("{{REF_CHAT_PARTS}}", "")).jsonObject
+        assertEquals(body["max_completion_tokens"], tmplBody["max_completion_tokens"], "template budget matches the code")
+        assertEquals(Prompts.STYLE_SCORE, tmplBody["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
         assertEquals("low", body["reasoning_effort"]!!.jsonPrimitive.content)
         val parts = body["messages"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })

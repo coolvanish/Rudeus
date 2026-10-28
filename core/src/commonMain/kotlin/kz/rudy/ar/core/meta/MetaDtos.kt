@@ -410,8 +410,13 @@ object Prompts {
 
     // Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's transparency is
     // lost; hence "plain white background": CharacterPipeline mattes it away (SpriteMatte, SAM pass as fallback).
-    const val STYLIZE = "The first image is a child's character cutout. Redraw this character in the exact style of the other " +
-        "reference images: same line weight, palette and shading. Keep the pose and silhouette, plain white background, no text."
+    // T10 (live run 1): the old "same line weight, palette and shading" kept the character but drew thin sketchy lines
+    // with hatching, so the prompt now names the refs' look explicitly. Identical to docs/api-samples/muse-stylize/request.json.tmpl.
+    const val STYLIZE = "The first image is a child's character. Redraw it as a clean sticker illustration in exactly the " +
+        "style of the reference images that follow: copy their bold, even outline (the same line weight and colour " +
+        "everywhere), flat crayon colour fills with only light crayon texture, and simple friendly shapes with few " +
+        "details. Keep the character's identity so the child recognises it: the same silhouette, pose, colours and " +
+        "features. One character only, centred on a plain pure white background with wide margins, no text, no shadow."
 
     /** JSON schema for the sheet, identical to docs/api-samples/spark-sheet/request.json.tmpl. */
     val CHARACTER_SHEET_SCHEMA: JsonObject = Json.parseToJsonElement(
@@ -437,9 +442,10 @@ object Prompts {
     /**
      * `max_completion_tokens` counts reasoning tokens too: the Day 1 sheet probe at 600 came back `content: null`,
      * `finish_reason: "length"`. Budgets below match docs/api-samples/spark-{score,sheet}/request.json.tmpl.
-     * Score probed: 16 and 64 run out of budget on reasoning (`finish_reason: "length"`), hence 512.
+     * Score probed: 16 and 64 run out of budget on reasoning (`finish_reason: "length"`); 512 ran out too on live run 1
+     * (toy-car-02, 9 images), hence 1024. Output tokens are billed as used, so the cap only stops truncation.
      */
-    const val SCORE_MAX_COMPLETION_TOKENS = 512
+    const val SCORE_MAX_COMPLETION_TOKENS = 1024
     const val SHEET_MAX_COMPLETION_TOKENS = 2048
     const val SCORE_REASONING_EFFORT = "low"
     const val SHEET_REASONING_EFFORT = "low"

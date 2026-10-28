@@ -8,7 +8,9 @@ import kz.rudy.ar.core.io.ArrayRaster
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.io.argbOf
 import kz.rudy.ar.core.meta.FakeModels
+import kz.rudy.ar.core.meta.Jobs
 import kz.rudy.ar.core.meta.MetaError
+import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.MetricsLog
 import kotlin.test.Test
@@ -248,6 +250,91 @@ class CharacterPipelineTest {
         assertEquals(3_000L, sheet2.ms)
         assertEquals(0.0, sheet2.costUsd)
         assertTrue(PipelineEvent.StageFinished("sheet", 1, false, 3_000L) in events2)
+    }
+
+    /**
+     * [FakeModels] whose score call meters [scoreUsd] to [meter] (like MetaApi: the reply's usage is billed even when
+     * its content is empty), then throws on the attempts in [failOn] (1-based), as Spark did with
+     * `finish_reason=length`; other attempts return the inner score.
+     */
+    private class FlakyScore(
+        private val inner: FakeModels,
+        private val meter: MetricsLog,
+        private val failOn: Set<Int>,
+        private val scoreUsd: Double = 0.002,
+    ) : MetaModels by inner {
+        var scoreCalls = 0
+        override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
+            scoreCalls++
+            meter.record(Jobs.SPARK_SCORE, ref, scoreUsd)
+            if (scoreCalls in failOn) throw MetaError.Parse("empty content, finish_reason=length")
+            return inner.scoreStyle(ref, image, refs)
+        }
+    }
+
+    @Test
+    fun scoreErrorCountsAsFailedAttempt() = runTest {
+        val log = metrics()
+        val models = FlakyScore(FakeModels(scores = listOf(0.85f)), log, failOn = setOf(1))
+        val events = ArrayList<PipelineEvent>()
+
+        val result = CharacterPipeline(models, StyleGate(), log, onEvent = { events += it }).run("toy-car-02", image, refs, "")
+
+        assertEquals(2, result.attempts)
+        assertTrue(result.gatePassed)
+        assertEquals(0.85f, result.gateScore, 1e-4f)
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "gate", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        val gates = c.stages.filter { it.name == "gate" }
+        assertEquals(listOf(false, true), gates.map { it.ok })
+        assertEquals(listOf(0.002, 0.002), gates.map { it.costUsd }, "each gate is charged what was metered, never the estimate")
+        assertTrue(gates.all { it.measured })
+        assertEquals(1, c.retries)
+        assertTrue(c.gatePassed)
+        assertEquals(
+            listOf(PipelineEvent.GateScored(1, 0f, false), PipelineEvent.GateScored(2, 0.85f, true)),
+            events.filterIsInstance<PipelineEvent.GateScored>(),
+        )
+        assertTrue(PipelineEvent.StageFinished("gate", 1, false, gates[0].ms) in events)
+        assertTrue(events.last() is PipelineEvent.Finished)
+
+        // Nothing metered on the failed call: the gate stage is charged 0, not the estimate.
+        val log2 = metrics()
+        CharacterPipeline(FlakyScore(FakeModels(scores = listOf(0.85f)), log2, failOn = setOf(1), scoreUsd = 0.0), StyleGate(), log2)
+            .run("toy-car-02", image, refs, "")
+        assertEquals(0.0, log2.toRun().characters.single().stages.first { it.name == "gate" }.costUsd)
+    }
+
+    @Test
+    fun scoreErrorOnEveryAttemptShipsUnpassed() = runTest {
+        val log = metrics()
+        val models = FlakyScore(FakeModels(), log, failOn = setOf(1, 2, 3))
+
+        val result = CharacterPipeline(models, StyleGate(), log, maxRetries = 2).run("toy-car-02", image, refs, "")
+
+        assertEquals(3, result.attempts)
+        assertFalse(result.gatePassed)
+        assertEquals(0f, result.gateScore)
+        assertEquals(3, models.scoreCalls)
+        val c = log.toRun().characters.single()
+        val gates = c.stages.filter { it.name == "gate" }
+        assertEquals(listOf(1, 2, 3), gates.map { it.attempt })
+        assertTrue(gates.none { it.ok })
+        assertEquals(3, c.stages.count { it.name == "stylize" })
+        assertEquals("sheet", c.stages.last().name)
+        assertTrue(c.stages.last().ok)
+        assertFalse(c.gatePassed)
+        assertEquals(2, c.retries)
+
+        // The deterministic half throwing is the same failed attempt.
+        val log2 = metrics()
+        val det = CharacterPipeline(
+            FakeModels(scores = listOf(0.9f)), StyleGate(), log2,
+            rasterDecoder = { b -> if (b in refs) null else error("corrupt PNG") }, // refs decode, the sprite throws
+        ).run("cat-01", image, refs, "")
+        assertEquals(3, det.attempts)
+        assertFalse(det.gatePassed)
+        assertEquals(3, log2.toRun().characters.single().stages.count { it.name == "gate" && !it.ok })
     }
 
     @Test

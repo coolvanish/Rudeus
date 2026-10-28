@@ -33,7 +33,7 @@ data class CharacterResult(
  * photo -> cutout (SAM) -> stylize (Muse) -> gate (Spark score + deterministic half) -> retry stylize
  * up to [maxRetries] times while the gate fails. The character sheet (Spark vision on the cutout) starts right after
  * the cutout and runs concurrently with the stylize/gate loop; a failed sheet call ships [SheetParser.fallback]
- * instead of failing the character (cutout, stylize and gate failures still fail it). Every stage lands in [metrics]
+ * instead of failing the character (cutout and stylize failures still fail it). Every stage lands in [metrics]
  * with its duration, attempt number, success flag and cost: the measured cost when the models report to [metrics]
  * as their `CostMeter` (`MetaApi(config, client, costMeter = metrics)`), else the `metrics.costs` estimate. The sheet
  * stage is recorded after the loop, so the stage order in the JSON is deterministic.
@@ -51,6 +51,11 @@ data class CharacterResult(
  *
  * A failed stage (an exception, not a gate below threshold) is charged only what was metered, else 0. When the
  * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`).
+ *
+ * A gate that throws (the Spark score call, e.g. `finish_reason=length`, or the deterministic half) is a failed
+ * attempt, not a dead character: the `gate` stage is recorded `ok=false` with what was metered, the attempt counts as
+ * score 0 / not passed ([PipelineEvent.GateScored] `(attempt, 0, false)`), and the loop retries as for a low score.
+ * When the last attempt's gate threw, the character ships with `gatePassed=false` and `gateScore=0`.
  *
  * [imageResizer] (e.g. `JvmRaster::downscale`: keeps aspect, never upscales) bounds what each model receives: Muse
  * gets the cutout and the style refs at <= [MUSE_INPUT_MAX_SIDE], the Spark score the sprite and refs at
@@ -132,8 +137,11 @@ class CharacterPipeline(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Throwable) {
+                            // A failed score call (e.g. Spark out of tokens) is a failed attempt, not a dead character.
+                            score = 0f
+                            passed = false
+                            emit(PipelineEvent.GateScored(attempt, score, passed))
                             record(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costSince(gateMark, 0.0))
-                            throw e
                         }
                         if (passed || attempt > maxRetries) break
                     }
