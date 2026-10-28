@@ -27,8 +27,10 @@ drawing in the refs' style (not hand it back) without losing what the child drew
 ## Done so far
 - `Prompts.STYLIZE` + `docs/api-samples/muse-stylize/request.json.tmpl`: a drawing must be redrawn from scratch with the
   refs' outline, soft palette and crayon texture, keeping each part's colour; no border. `RequestShapeTest` green.
-- `character --drawings` warns about webp/heic/gif/… files instead of skipping them silently; `docs/drawings/.gitignore`
-  ignores `*.webp`.
+- `character --drawings` converts webp/HEIC/avif/gif/bmp/tiff inputs (`cli/.../ImageConvert.kt`: macOS `sips`, webp
+  also `dwebp`; webp → PNG, the rest → JPEG to keep EXIF rotation) instead of skipping them silently. No new dependency:
+  a JVM webp reader (TwelveMonkeys) would need a Gradle change. Offline smoke: a webp and a HEIC replayed end to end; a
+  broken webp gives a clear error. `docs/drawings/.gitignore` ignores `*.webp`, `*.heic`, `*.heif`, `*.avif`.
 - Inputs ready in scratch for the next run: `toy_dino.webp` → png, and `toy_dinos.webp` cropped into 4 single toys
   (black dino, two-headed dragon, cheetah, brachiosaurus). `toy_animals.webp` is left out: the 5 plush toys touch, so
   no crop holds one toy. With the 6 jpgs that makes 11 inputs.
