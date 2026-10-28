@@ -2,7 +2,7 @@ package kz.rudy.ar.core.pipeline
 
 /**
  * Progress of one [CharacterPipeline.run], delivered to its `onEvent` callback on the calling coroutine, in order.
- * [stage] names are the `CharacterPipeline.STAGE_*` constants (`cutout`, `stylize`, `matte`, `gate`, `sheet`); free of
+ * [stage] names are the `CharacterPipeline.STAGE_*` constants (`cutout`, `stylize`, `matte`, `gate`, `rescore`, `sheet`); free of
  * UI types so ProcessingScreen (T03) can map them to its own steps.
  *
  * A first-try run reads: Started(cutout) Finished(cutout) Started(sheet) Started(stylize) Finished(stylize)

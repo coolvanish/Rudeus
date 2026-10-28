@@ -390,6 +390,15 @@ object Prompts {
         "drawing style (line weight, palette, shading) of the reference images that follow. Reply with the number only."
 
     /**
+     * The gate's second look at an attempt that failed [STYLE_SCORE] (user decision 2026-10-28): technique only, the
+     * character's own colours ignored, so a red-and-black ladybug is not failed for not being pastel like the refs.
+     */
+    const val STYLE_SCORE_NO_COLOUR = "You are a strict art director. Rate from 0.00 to 1.00 how closely the FIRST image " +
+        "matches the drawing technique (line weight, fill texture, shading, simple shapes) of the reference images that " +
+        "follow. Ignore the subject and its colours completely: a character in any colours can match. Reply with the " +
+        "number only."
+
+    /**
      * The sheet prompt. [withImage] = the message also carries the character's picture (Spark vision looks at it);
      * a blank [description] is left out entirely (no "A child drew a character: ." artefacts).
      */

@@ -5,13 +5,15 @@ import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
 
 /**
- * Scripted [MetaModels] for tests: [scores] are returned in order (last one repeats), the sheet and
+ * Scripted [MetaModels] for tests: [scores] are returned in order (last one repeats), [techniqueScores] likewise
+ * for [scoreTechnique] (empty = 0), the sheet and
  * masks are fixed, every call is appended to [calls] as `"job:ref"`. The images each call received are kept
  * ([stylizeInputs], [scoredImages], [scoredRefs], [sheetImages]); [delays] (method name -> ms, e.g. `"stylize"`)
  * makes a call suspend first, for concurrency tests under virtual time.
  */
 class FakeModels(
     var scores: List<Float> = listOf(0.85f),
+    var techniqueScores: List<Float> = emptyList(),
     var sheet: CharacterSheet = DEFAULT_SHEET,
     var masks: List<MaskResult> = listOf(DEFAULT_MASK),
     var sprite: ByteArray = byteArrayOf(0x50, 0x4E, 0x47),
@@ -30,9 +32,11 @@ class FakeModels(
     val scoredRefs = ArrayList<List<ByteArray>>()
     val sheetImages = ArrayList<ByteArray?>()
     private var scoreIndex = 0
+    private var techniqueIndex = 0
 
     val stylizeCalls: Int get() = calls.count { it.startsWith("stylize:") }
     val scoreCalls: Int get() = calls.count { it.startsWith("scoreStyle:") }
+    val techniqueCalls: Int get() = calls.count { it.startsWith("scoreTechnique:") }
 
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
         calls += "segment:$ref"
@@ -58,6 +62,13 @@ class FakeModels(
         val s = scores[scoreIndex.coerceAtMost(scores.lastIndex)]
         scoreIndex++
         return s
+    }
+
+    override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
+        calls += "scoreTechnique:$ref"
+        pause("scoreTechnique")
+        if (techniqueScores.isEmpty()) return 0f
+        return techniqueScores[techniqueIndex++.coerceAtMost(techniqueScores.lastIndex)]
     }
 
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {

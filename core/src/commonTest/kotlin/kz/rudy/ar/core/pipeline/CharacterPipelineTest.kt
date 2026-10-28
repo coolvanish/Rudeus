@@ -96,7 +96,7 @@ class CharacterPipelineTest {
         assertEquals(2, models.scoredImages.size)
         assertTrue(models.scoredImages.all { it.contentEquals(matted) }, "the gate sees the matted sprite on every attempt")
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "matte", "gate", "stylize", "matte", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "matte", "gate", "rescore", "stylize", "matte", "gate", "sheet"), c.stages.map { it.name })
         val mattes = c.stages.filter { it.name == "matte" }
         assertEquals(listOf(1, 2), mattes.map { it.attempt })
         assertTrue(mattes.all { it.ok && it.costUsd == 0.0 }, "deterministic matte is free")
@@ -157,7 +157,7 @@ class CharacterPipelineTest {
 
         assertEquals(2, result.attempts)
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "sheet"), c.stages.map { it.name })
         val sheet = c.stages.last()
         assertEquals(6_000L, sheet.ms)
         assertTrue(sheet.ok)
@@ -406,7 +406,8 @@ class CharacterPipelineTest {
         pipeline.run("cat-01", image, listOf("r1".encodeToByteArray(), "r2".encodeToByteArray()), "")
 
         assertEquals(listOf("r1", "r2", "PNG", "PNG"), matted, "refs matted once per run, the sprite per attempt")
-        assertEquals(listOf("m:r1", "r2", "m:PNG", "m:PNG"), decoded, "the gate decodes matted refs and matted sprites")
+        // Attempt 1 fails: its colour-free rescore decodes the same matted sprite again.
+        assertEquals(listOf("m:r1", "r2", "m:PNG", "m:PNG", "m:PNG"), decoded, "the gate decodes matted refs and matted sprites")
     }
 
     @Test
@@ -470,7 +471,7 @@ class CharacterPipelineTest {
         assertEquals(
             listOf(
                 "+cutout1", "-cutout1", "+sheet1",
-                "+stylize1", "-stylize1", "+gate1", "score1!", "-gate1!",
+                "+stylize1", "-stylize1", "+gate1", "-gate1!", "+rescore1", "score1!", "-rescore1!",
                 "+stylize2", "-stylize2", "+gate2", "score2", "-gate2",
                 "-sheet1", "done",
             ),
@@ -496,6 +497,88 @@ class CharacterPipelineTest {
         assertFalse(gate.passes(gate.combine(0.7f, 0.69f)))
         // 0.6 * 0.5 + 0.4 * 1.0 = 0.7
         assertTrue(gate.passes(gate.combine(0.5f, 1.0f)))
+    }
+
+    @Test
+    fun colourFreeRescorePassesTheAttempt() = runTest {
+        // A red-and-black ladybug: the style look fails it on palette, the colour-free look passes the same sprite.
+        val models = FakeModels(scores = listOf(0.3f), techniqueScores = listOf(0.9f))
+        val log = metrics()
+        val events = ArrayList<PipelineEvent>()
+
+        val result = CharacterPipeline(models, StyleGate(), log, onEvent = { events += it }).run("ladybug-01", image, refs, "")
+
+        assertTrue(result.gatePassed)
+        assertEquals(1, result.attempts, "passed first try: no second stylize")
+        assertEquals(0.9f, result.gateScore)
+        assertEquals(1, models.stylizeCalls)
+        assertEquals(1, models.techniqueCalls)
+        assertEquals(listOf("scoreStyle:ladybug-01", "scoreTechnique:ladybug-01"), models.calls.filter { it.startsWith("score") })
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf(false, true), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.ok })
+        assertTrue(c.gatePassed)
+        assertEquals(0, c.retries, "counts as a first-try pass")
+        assertEquals(listOf(PipelineEvent.GateScored(1, 0.9f, true)), events.filterIsInstance<PipelineEvent.GateScored>())
+    }
+
+    @Test
+    fun rescoreOnlyAfterAFailedStyleLook() = runTest {
+        // Attempt 1: style 0.4, colour-free 0.5 -> fails with the higher (0.5) -> retry. Attempt 2: style 0.85 passes,
+        // no rescore.
+        val models = FakeModels(scores = listOf(0.4f, 0.85f), techniqueScores = listOf(0.5f))
+        val log = metrics()
+        val events = ArrayList<PipelineEvent>()
+
+        val result = CharacterPipeline(models, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "")
+
+        assertTrue(result.gatePassed)
+        assertEquals(2, result.attempts)
+        assertEquals(1, models.techniqueCalls)
+        assertEquals(
+            listOf(PipelineEvent.GateScored(1, 0.5f, false), PipelineEvent.GateScored(2, 0.85f, true)),
+            events.filterIsInstance<PipelineEvent.GateScored>(),
+        )
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf(1, 1, 2), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.attempt })
+    }
+
+    @Test
+    fun rescoreErrorKeepsTheStyleScore() = runTest {
+        val inner = FakeModels(scores = listOf(0.6f))
+        val models = object : MetaModels by inner {
+            override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+                throw MetaError.Parse("empty content, finish_reason=length")
+        }
+        val log = metrics()
+
+        val result = CharacterPipeline(models, StyleGate(), log, maxRetries = 0).run("cat-01", image, refs, "")
+
+        assertFalse(result.gatePassed)
+        assertEquals(0.6f, result.gateScore, "the style look's score stands")
+        val c = log.toRun().characters.single()
+        val rescore = c.stages.single { it.name == "rescore" }
+        assertFalse(rescore.ok)
+        assertEquals(0.0, rescore.costUsd, "a failed rescore that metered nothing is not charged")
+        assertEquals("sheet", c.stages.last().name)
+    }
+
+    @Test
+    fun techniqueScoreIgnoresPalette() {
+        val gate = StyleGate()
+        val ref = sample(body = argbOf(255, 240, 220, 180)) // pastel beige, black outline
+        val ladybug = sample() // red, the same outline
+        val det = assertNotNull(gate.deterministicScore(ladybug, listOf(ref)))
+        assertTrue(det < 0.9f, "the style half sees the palette difference, got $det")
+        assertEquals(1f, assertNotNull(gate.techniqueScore(ladybug, listOf(ref))), 1e-5f)
+
+        // Thicker ink scores lower; the same null cases as the deterministic half.
+        val inky = ArrayRaster.solid(16, 16, argbOf(255, 10, 10, 10))
+        assertTrue(gate.techniqueScore(inky, listOf(ref))!! < 0.5f)
+        assertEquals(null, gate.techniqueScore(null, listOf(ref)))
+        assertEquals(null, gate.techniqueScore(ladybug, emptyList()))
+        assertEquals(null, gate.techniqueScore(ArrayRaster(16, 16), listOf(ref)), "fully transparent sprite")
     }
 
     @Test
@@ -542,8 +625,8 @@ class CharacterPipelineTest {
         assertEquals(0.42f, gate.combine(0.42f, null), 1e-5f)
     }
 
-    /** 16x16: red body with a black 1px outline, transparent corners. */
-    private fun sample(): RasterImage {
+    /** 16x16: a [body]-coloured (default red) body with a black 1px outline, transparent corners. */
+    private fun sample(body: Int = argbOf(255, 220, 40, 40)): RasterImage {
         val r = ArrayRaster(16, 16)
         for (y in 0 until 16) for (x in 0 until 16) {
             val edge = x == 2 || x == 13 || y == 2 || y == 13
@@ -551,7 +634,7 @@ class CharacterPipelineTest {
             r.set(x, y, when {
                 !inside -> 0
                 edge -> argbOf(255, 10, 10, 10)
-                else -> argbOf(255, 220, 40, 40)
+                else -> body
             })
         }
         return r

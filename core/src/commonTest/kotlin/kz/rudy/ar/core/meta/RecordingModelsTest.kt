@@ -66,6 +66,37 @@ class RecordingModelsTest {
     }
 
     @Test
+    fun recordingKeepsStyleAndTechniqueScoresApart() = runTest {
+        val fake = FakeModels(scores = listOf(0.3f, 0.85f), techniqueScores = listOf(0.5f))
+        val writer = MemoryWriter(root)
+        val rec = RecordingModels(fake, writer, clock())
+        val img = byteArrayOf(1)
+
+        // Pipeline order: style fails, colour-free look fails, retry passes on style.
+        rec.scoreStyle("cat-01", img, emptyList())
+        rec.scoreTechnique("cat-01", img, emptyList())
+        rec.scoreStyle("cat-01", img, emptyList())
+
+        val replay = FixtureApi(writer.source, root)
+        val fx = replay.load(Jobs.SPARK_SCORE, "cat-01")
+        assertEquals(listOf(0.3f, 0.85f), fx.scores, "a technique write keeps the style list")
+        assertEquals(listOf(0.5f), fx.techniqueScores)
+        assertEquals(0.3f, replay.scoreStyle("cat-01", img, emptyList()))
+        assertEquals(0.5f, replay.scoreTechnique("cat-01", img, emptyList()))
+        assertEquals(0.85f, replay.scoreStyle("cat-01", img, emptyList()), "the two lists advance independently")
+    }
+
+    @Test
+    fun techniqueScoreFromAnOldFixtureThrows() = runTest {
+        val writer = MemoryWriter(root)
+        RecordingModels(FakeModels(scores = listOf(0.9f)), writer, clock()).scoreStyle("cat-01", byteArrayOf(1), emptyList())
+        val replay = FixtureApi(writer.source, root)
+        assertEquals(null, replay.load(Jobs.SPARK_SCORE, "cat-01").techniqueScores, "absent, not an empty list")
+        val e = kotlin.test.assertFailsWith<MetaError.Parse> { replay.scoreTechnique("cat-01", byteArrayOf(1), emptyList()) }
+        assertTrue("techniqueScores" in (e.message ?: ""))
+    }
+
+    @Test
     fun recordingSkipsSecondSegmentForSameRef() = runTest {
         val fake = FakeModels()
         val writer = MemoryWriter(root)

@@ -22,6 +22,8 @@ import kotlin.concurrent.atomics.update
  * | sam-table    | `masks`   | one per prompt; an absent object is a mask with no rle/bbox         |
  * | muse-stylize | `outputs` | sibling PNG file names, one per attempt (last one repeats)          |
  * | spark-score  | `scores`  | one score per call, in order (last one repeats)                     |
+ * | spark-score  | `techniqueScores` | [scoreTechnique] calls, in order (last one repeats); absent in
+ * |              |           | fixtures recorded before 2026-10-28, which then throw on that call   |
  * | spark-sheet  | `sheet`   | the model's JSON as returned, parsed by [SheetParser]               |
  * | voice        | `text`    | the transcript                                                      |
  *
@@ -38,6 +40,8 @@ data class Fixture(
     val masks: List<MaskResult>? = null,
     val outputs: List<String>? = null,
     val scores: List<Float>? = null,
+    /** [MetaModels.scoreTechnique] replies, in call order (spark-score only). */
+    val techniqueScores: List<Float>? = null,
     val sheet: JsonObject? = null,
     val text: String? = null,
     val latencyMs: Long? = null,
@@ -125,6 +129,14 @@ class FixtureApi(
         return scores[nextCall(Jobs.SPARK_SCORE, ref).coerceAtMost(scores.lastIndex)].coerceIn(0f, 1f)
     }
 
+    override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
+        val fx = load(Jobs.SPARK_SCORE, ref)
+        val scores = fx.techniqueScores.orEmpty()
+        if (scores.isEmpty()) throw MetaError.Parse("${fixturePath(Jobs.SPARK_SCORE, ref)}: no techniqueScores")
+        replay(Jobs.SPARK_SCORE, fx)
+        return scores[nextCall(TECHNIQUE_CALLS, ref).coerceAtMost(scores.lastIndex)].coerceIn(0f, 1f)
+    }
+
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
         val fx = load(Jobs.SPARK_SHEET, ref)
         replay(Jobs.SPARK_SHEET, fx)
@@ -150,6 +162,9 @@ class FixtureApi(
 
     companion object {
         const val SUFFIX = ".fixture.json"
+
+        /** Call-counter key for [scoreTechnique], apart from [scoreStyle]'s: the two lists advance independently. */
+        private const val TECHNIQUE_CALLS = "${Jobs.SPARK_SCORE}#technique"
         val json: Json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true; explicitNulls = false }
     }
 }

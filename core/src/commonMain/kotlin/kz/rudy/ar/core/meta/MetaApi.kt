@@ -86,9 +86,16 @@ class MetaApi(
         return parseOrThrow { Base64.decode(parseStylize(resp)) }
     }
 
-    override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
+    override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+        score(ref, "scoreStyle", Prompts.STYLE_SCORE, image, refs)
+
+    override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
+        score(ref, "scoreTechnique", Prompts.STYLE_SCORE_NO_COLOUR, image, refs)
+
+    /** One Spark score call (job [Jobs.SPARK_SCORE]): [prompt], then [image], then up to [MAX_STYLE_REFS] [refs]. */
+    private suspend fun score(ref: String, call: String, prompt: String, image: ByteArray, refs: List<ByteArray>): Float {
         val parts = ArrayList<ChatContentPart>()
-        parts += ChatContentPart.text(Prompts.STYLE_SCORE)
+        parts += ChatContentPart.text(prompt)
         parts += ChatContentPart.imageDataUrl(sniffImageMime(image), Base64.encode(image))
         refs.take(MAX_STYLE_REFS).forEach { parts += ChatContentPart.imageDataUrl(sniffImageMime(it), Base64.encode(it)) }
         val req = ChatRequest(
@@ -97,7 +104,7 @@ class MetaApi(
             maxCompletionTokens = Prompts.SCORE_MAX_COMPLETION_TOKENS,
             reasoningEffort = Prompts.SCORE_REASONING_EFFORT,
         )
-        val resp: ChatResponse = postJson(ref, "scoreStyle", config.chatPath, req)
+        val resp: ChatResponse = postJson(ref, call, config.chatPath, req)
         Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(Jobs.SPARK_SCORE, ref, it) }
         return parseOrThrow { parseScore(resp.contentText()) }
     }

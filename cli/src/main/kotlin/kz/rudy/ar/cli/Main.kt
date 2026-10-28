@@ -209,8 +209,9 @@ private fun character(flags: Flags): Int {
     val pipeline = JvmPipeline.create(models, metrics)
     val spritesDir = File(outDir, "sprites").apply { mkdirs() }
     val c = metrics.costs
-    // Each attempt may add a matte SAM pass on the stylized sprite (T07), hence the cutout inside the bracket.
-    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + c.scoreUsd + c.cutoutUsd) + c.sheetUsd
+    // Each attempt may add a matte SAM pass on the stylized sprite (T07) and a colour-free rescore (T11), hence the
+    // cutout and the second score inside the bracket.
+    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + 2 * c.scoreUsd + c.cutoutUsd) + c.sheetUsd
 
     println(
         "run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency" +

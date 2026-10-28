@@ -22,6 +22,7 @@ fun interface FixtureWriter {
  * | segment       | `sam-cutout/<ref>.fixture.json` `masks` — FIRST cutout call per ref only  |
  * | stylize       | `muse-stylize/<ref>.out-<n>.png` (raw bytes) + fixture `outputs`         |
  * | scoreStyle    | `spark-score/<ref>.fixture.json` `scores`, in call order                 |
+ * | scoreTechnique| the same file's `techniqueScores`, in call order                          |
  * | characterSheet| `spark-sheet/<ref>.fixture.json` `sheet` in the model JSON shape         |
  *
  * Only the first segment call per ref is recorded, and only when its prompts are [Jobs.CUTOUT_PROMPTS]: later
@@ -41,6 +42,7 @@ class RecordingModels(
     private val segmented = HashSet<String>()
     private val outputs = HashMap<String, MutableList<String>>()
     private val scores = HashMap<String, MutableList<Float>>()
+    private val techniqueScores = HashMap<String, MutableList<Float>>()
     private val firstLatency = HashMap<String, Long>()
 
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
@@ -63,11 +65,23 @@ class RecordingModels(
 
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
         val (score, ms) = timed { inner.scoreStyle(ref, image, refs) }
-        val list = scores.getOrPut(ref) { ArrayList() }
-        list += score
-        write(Jobs.SPARK_SCORE, ref, latency(Jobs.SPARK_SCORE, ref, ms)) { it.copy(scores = list.toList()) }
+        scores.getOrPut(ref) { ArrayList() } += score
+        writeScores(ref, ms)
         return score
     }
+
+    override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
+        val (score, ms) = timed { inner.scoreTechnique(ref, image, refs) }
+        techniqueScores.getOrPut(ref) { ArrayList() } += score
+        writeScores(ref, ms)
+        return score
+    }
+
+    /** Both score lists share `spark-score/<ref>.fixture.json`, so every write carries both. */
+    private fun writeScores(ref: String, ms: Long) =
+        write(Jobs.SPARK_SCORE, ref, latency(Jobs.SPARK_SCORE, ref, ms)) {
+            it.copy(scores = scores[ref]?.toList(), techniqueScores = techniqueScores[ref]?.toList())
+        }
 
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet {
         val (sheet, ms) = timed { inner.characterSheet(ref, description, image) }

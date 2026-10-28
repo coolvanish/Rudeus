@@ -20,6 +20,12 @@ interface MetaModels {
     suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float
 
     /**
+     * Spark vision: like [scoreStyle] but technique only (line weight, fill texture, shading, shapes), ignoring the
+     * character's own colours. The gate asks it only when [scoreStyle] failed the attempt.
+     */
+    suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float
+
+    /**
      * Spark: name / personality / ability / 5 lines in kk and ru. [image] (the cutout, PNG/JPEG) lets Spark vision see
      * the character; [description] is an optional hint (blank = none). Implementations may ignore either.
      */
