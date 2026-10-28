@@ -184,7 +184,10 @@ private fun character(flags: Flags): Int {
     if (styleRefs.isEmpty()) System.err.println("warning: no style refs in $refsDir; deterministic gate half is off")
 
     // Everything that can refuse runs before the first API call.
-    if (recordDir != null) Record.preflight(recordDir, inputs, force = flags.has("force"))
+    if (recordDir != null) {
+        Record.preflight(recordDir, inputs, force = flags.has("force"))
+        if (flags.has("force")) inputs.forEach { (ref, _) -> Record.clearOutputs(recordDir, ref) }
+    }
     var bundleIndex: BundleIndex? = bundleDir?.let { dir ->
         val f = File(dir, Bundle.INDEX)
         try { Bundle.decodeIndex(f.takeIf { it.isFile }?.readText()) } catch (e: Exception) { throw CliError("${f.path}: not a bundle index (${e.message})") }

@@ -1,5 +1,6 @@
 package kz.rudy.ar.cli
 
+import kz.rudy.ar.core.io.JvmRaster
 import kz.rudy.ar.core.meta.Fixture
 import kz.rudy.ar.core.meta.FixtureApi
 import kz.rudy.ar.core.meta.FixtureWriter
@@ -17,10 +18,22 @@ internal object Record {
 
     private val RECORDED_JOBS = listOf(Jobs.SAM_CUTOUT, Jobs.MUSE_STYLIZE, Jobs.SPARK_SCORE, Jobs.SPARK_SHEET)
 
+    /**
+     * Recorded Muse outputs are stored at most this many px on the long side. The originals are 1.4-1.8k px and
+     * 2-3 MB each; replays, the matte and the gate's deterministic half work the same at 1024.
+     */
+    const val OUTPUT_MAX_SIDE = 1024
+
     fun writer(dir: File): FixtureWriter = FixtureWriter { path, bytes ->
         val f = File(dir, path)
         f.parentFile?.mkdirs()
-        f.writeBytes(bytes)
+        val isOutput = path.startsWith("${Jobs.MUSE_STYLIZE}/") && path.endsWith(".png")
+        f.writeBytes(if (isOutput) JvmRaster.downscale(bytes, OUTPUT_MAX_SIDE) else bytes)
+    }
+
+    /** With `--force`: removes [ref]'s old stylize outputs, so a shorter re-recording leaves no orphan `out-<n>.png`. */
+    fun clearOutputs(dir: File, ref: String) {
+        for (n in 1..MAX_ATTEMPTS) File(dir, "${Jobs.MUSE_STYLIZE}/$ref.out-$n.png").takeIf { it.isFile }?.delete()
     }
 
     fun inputCopy(dir: File, ref: String, input: File): File =
