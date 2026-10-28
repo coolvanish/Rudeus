@@ -262,12 +262,13 @@ class CharacterPipelineTest {
         private val meter: MetricsLog,
         private val failOn: Set<Int>,
         private val scoreUsd: Double = 0.002,
+        private val error: Throwable = MetaError.Parse("empty content, finish_reason=length"),
     ) : MetaModels by inner {
         var scoreCalls = 0
         override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {
             scoreCalls++
             meter.record(Jobs.SPARK_SCORE, ref, scoreUsd)
-            if (scoreCalls in failOn) throw MetaError.Parse("empty content, finish_reason=length")
+            if (scoreCalls in failOn) throw error
             return inner.scoreStyle(ref, image, refs)
         }
     }
@@ -295,7 +296,11 @@ class CharacterPipelineTest {
             listOf(PipelineEvent.GateScored(1, 0f, false), PipelineEvent.GateScored(2, 0.85f, true)),
             events.filterIsInstance<PipelineEvent.GateScored>(),
         )
-        assertTrue(PipelineEvent.StageFinished("gate", 1, false, gates[0].ms) in events)
+        for ((i, g) in gates.withIndex()) {
+            val scored = events.indexOf(PipelineEvent.GateScored(i + 1, if (g.ok) 0.85f else 0f, g.ok))
+            val finished = events.indexOf(PipelineEvent.StageFinished("gate", i + 1, g.ok, g.ms))
+            assertTrue(scored in 0 until finished, "attempt ${i + 1}: GateScored before StageFinished(gate)")
+        }
         assertTrue(events.last() is PipelineEvent.Finished)
 
         // Nothing metered on the failed call: the gate stage is charged 0, not the estimate.
@@ -335,6 +340,53 @@ class CharacterPipelineTest {
         assertEquals(3, det.attempts)
         assertFalse(det.gatePassed)
         assertEquals(3, log2.toRun().characters.single().stages.count { it.name == "gate" && !it.ok })
+    }
+
+    @Test
+    fun throwingListenerOnAPassingGateRecordsOneGateStage() = runTest {
+        // The listener throws on the gate's StageFinished, after metrics.stage was written: no second gate stage, no
+        // second GateScored, no retry. A throwing listener is not a model failure: the character fails.
+        val log = metrics()
+        val models = FakeModels(scores = listOf(0.9f))
+        val events = ArrayList<PipelineEvent>()
+        assertFailsWith<MetaError> {
+            CharacterPipeline(models, StyleGate(), log, onEvent = { e ->
+                events += e
+                if (e is PipelineEvent.StageFinished && e.stage == "gate") error("listener bug")
+            }).run("cat-01", image, refs, "")
+        }
+        val gates = log.toRun().characters.single().stages.filter { it.name == "gate" }
+        assertEquals(1, gates.size, "exactly one gate stage for attempt 1")
+        assertTrue(gates.single().ok)
+        assertEquals(listOf(PipelineEvent.GateScored(1, 0.9f, true)), events.filterIsInstance<PipelineEvent.GateScored>())
+        assertEquals(1, models.stylizeCalls, "a passing attempt is not retried")
+        assertTrue(events.last() is PipelineEvent.Failed)
+    }
+
+    @Test
+    fun strayCancellationInTheScoreIsAFailedAttempt() = runTest {
+        // A timeout surfacing as CancellationException while the pipeline is alive: a failed attempt, then a retry.
+        val log = metrics()
+        val stray = FlakyScore(
+            FakeModels(scores = listOf(0.85f)), log, failOn = setOf(1),
+            error = kotlinx.coroutines.CancellationException("timeout"),
+        )
+        val result = CharacterPipeline(stray, StyleGate(), log).run("cat-01", image, refs, "")
+        assertEquals(2, result.attempts)
+        assertTrue(result.gatePassed)
+        assertEquals(listOf(false, true), log.toRun().characters.single().stages.filter { it.name == "gate" }.map { it.ok })
+
+        // A real cancellation of the caller during the score call still propagates: no GateScored, no retry.
+        val slow = FakeModels(delays = mapOf("scoreStyle" to 5_000L))
+        val events = ArrayList<PipelineEvent>()
+        val job = launch { CharacterPipeline(slow, StyleGate(), metrics(), onEvent = { events += it }).run("cat-01", image, refs, "") }
+        delay(1_000L)
+        job.cancel()
+        job.join()
+        assertTrue(job.isCancelled)
+        assertEquals(1, slow.scoreCalls)
+        assertEquals(1, slow.stylizeCalls)
+        assertTrue(events.none { it is PipelineEvent.GateScored || it is PipelineEvent.Finished })
     }
 
     @Test

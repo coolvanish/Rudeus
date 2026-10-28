@@ -55,7 +55,12 @@ data class CharacterResult(
  * A gate that throws (the Spark score call, e.g. `finish_reason=length`, or the deterministic half) is a failed
  * attempt, not a dead character: the `gate` stage is recorded `ok=false` with what was metered, the attempt counts as
  * score 0 / not passed ([PipelineEvent.GateScored] `(attempt, 0, false)`), and the loop retries as for a low score.
- * When the last attempt's gate threw, the character ships with `gatePassed=false` and `gateScore=0`.
+ * When the last attempt's gate threw, the character ships with `gatePassed=false` and `gateScore=0`. A
+ * CancellationException from the gate while this coroutine is still active (a timeout surfacing as cancellation) is the
+ * same failed attempt; a real cancellation of the caller propagates.
+ *
+ * [onEvent] must not throw: a listener exception is not a model failure and is not swallowed; it fails the character
+ * (after the stage it was reporting has been recorded once).
  *
  * [imageResizer] (e.g. `JvmRaster::downscale`: keeps aspect, never upscales) bounds what each model receives: Muse
  * gets the cutout and the style refs at <= [MUSE_INPUT_MAX_SIDE], the Spark score the sprite and refs at
@@ -126,23 +131,26 @@ class CharacterPipeline(
                         emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
                         val t0 = metrics.now()
                         val gateMark = metrics.costMark(Jobs.SPARK_SCORE)
-                        try {
+                        // Only the scoring is guarded: a failed score call (e.g. Spark out of tokens) is a failed
+                        // attempt, not a dead character. The emit/record below stay outside, so a throwing listener
+                        // can never record a second gate stage for this attempt.
+                        val combined: Float? = try {
                             val scored = fit(sprite, SPARK_IMAGE_MAX_SIDE)
                             val modelScore = models.scoreStyle(ref, scored, sparkRefs)
                             val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(scored), refRasters) }
-                            score = gate.combine(modelScore, deterministic)
-                            passed = gate.passes(score)
-                            emit(PipelineEvent.GateScored(attempt, score, passed))
-                            record(STAGE_GATE, metrics.now() - t0, attempt, passed, metrics.costSince(gateMark, metrics.costs.scoreUsd))
+                            gate.combine(modelScore, deterministic)
                         } catch (e: CancellationException) {
-                            throw e
+                            // A timeout surfacing as cancellation while we are alive is a failed attempt too.
+                            if (!currentCoroutineContext().isActive) throw e
+                            null
                         } catch (e: Throwable) {
-                            // A failed score call (e.g. Spark out of tokens) is a failed attempt, not a dead character.
-                            score = 0f
-                            passed = false
-                            emit(PipelineEvent.GateScored(attempt, score, passed))
-                            record(STAGE_GATE, metrics.now() - t0, attempt, false, metrics.costSince(gateMark, 0.0))
+                            null
                         }
+                        score = combined ?: 0f
+                        passed = combined != null && gate.passes(combined)
+                        val gateCost = metrics.costSince(gateMark, if (combined != null) metrics.costs.scoreUsd else 0.0)
+                        emit(PipelineEvent.GateScored(attempt, score, passed))
+                        record(STAGE_GATE, metrics.now() - t0, attempt, passed, gateCost)
                         if (passed || attempt > maxRetries) break
                     }
                 } catch (e: CancellationException) {
@@ -248,16 +256,17 @@ class CharacterPipeline(
         emit(PipelineEvent.StageStarted(name, attempt))
         val t0 = metrics.now()
         val mark = metrics.costMark(job)
-        try {
-            val r = block()
-            record(name, metrics.now() - t0, attempt, true, metrics.costSince(mark, estimateUsd))
-            return r
+        val r = try {
+            block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
             record(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, 0.0))
             throw e
         }
+        // Outside the try: a throwing listener must not record the stage a second time as failed.
+        record(name, metrics.now() - t0, attempt, true, metrics.costSince(mark, estimateUsd))
+        return r
     }
 
     companion object {
