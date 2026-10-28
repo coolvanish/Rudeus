@@ -7,7 +7,7 @@
   "costUsd": 0.0003,
   "probedAt": "2026-10-27T23:04:25Z",
   "synthetic": false,
-  "notes": "Real probe 2026-10-28 with a 2.5 s synthesized English clip (macOS say): transcript exact, 2.9 s round trip. Decision: demo voice commands are English (Russian second); Kazakh is not an ASR language and that is accepted. $0.18 per audio hour -> ~$0.00015 per 3 s command.",
+  "notes": "Real probe 2026-10-28 with a 2.5 s synthesized English clip (macOS say): transcript exact, 2.9 s round trip. Decision: demo voice commands are English (Russian second); Kazakh is not an ASR language and that is accepted. $0.18 per audio hour -> ~$0.00015 per 3 s command; costUsd 0.0003 budgets a ~5 s clip (CostTable.voiceUsd).",
   "path": "/v1/asr/transcribe",
   "probes": [
     {

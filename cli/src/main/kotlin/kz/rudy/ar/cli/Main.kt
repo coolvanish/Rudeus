@@ -151,8 +151,10 @@ private fun character(flags: Flags): Int {
     if (!live && budgetUsd != null) System.err.println("warning: --budget-usd is unused offline (fixtures cost nothing)")
     val bundleDir = flags.get("bundle")?.let(::File)
 
-    val source = FileFixtureSource(File("."))
-    val fixtureApi = FixtureApi(source, root = fixturesDir.path, replayLatency = replayLatency)
+    // Anchored at the filesystem root with an absolute fixtures path: FileFixtureSource strips a leading '/', so a
+    // relative anchor turned `--fixtures /abs/dir` into ./abs/dir.
+    val source = FileFixtureSource(File("/"))
+    val fixtureApi = FixtureApi(source, root = fixturesDir.absolutePath, replayLatency = replayLatency)
 
     // Inputs: --ref <name>, --all (every sam-cutout fixture), or --drawings <dir> (every image file, live runs).
     val inputs: List<Pair<String, File>> = when {
@@ -184,10 +186,8 @@ private fun character(flags: Flags): Int {
     if (styleRefs.isEmpty()) System.err.println("warning: no style refs in $refsDir; deterministic gate half is off")
 
     // Everything that can refuse runs before the first API call.
-    if (recordDir != null) {
-        Record.preflight(recordDir, inputs, force = flags.has("force"))
-        if (flags.has("force")) inputs.forEach { (ref, _) -> Record.clearOutputs(recordDir, ref) }
-    }
+    val force = flags.has("force")
+    if (recordDir != null) Record.preflight(recordDir, inputs, force)
     var bundleIndex: BundleIndex? = bundleDir?.let { dir ->
         val f = File(dir, Bundle.INDEX)
         try { Bundle.decodeIndex(f.takeIf { it.isFile }?.readText()) } catch (e: Exception) { throw CliError("${f.path}: not a bundle index (${e.message})") }
@@ -224,7 +224,11 @@ private fun character(flags: Flags): Int {
                     // Upright first (EXIF orientation), so SAM masks, cutouts and replays all share one pixel grid.
                     val image = file.takeIf { it.isFile }?.readBytes()?.let(JvmRaster::upright) ?: ByteArray(0)
                     val description = description(fixturesDir, ref)
-                    if (recordDir != null) Record.copyInput(recordDir, ref, file)
+                    if (recordDir != null) {
+                        // --force replaces this ref's old recording only now, after every refusal and the budget check.
+                        if (force) Record.clearRef(recordDir, ref, file)
+                        Record.copyInput(recordDir, ref, file)
+                    }
                     val result = pipeline.run(ref, image, styleRefs, description)
                     val spriteFile = File(spritesDir, "$ref.png")
                     spriteFile.writeBytes(result.sprite)

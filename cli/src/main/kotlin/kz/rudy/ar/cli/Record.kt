@@ -31,9 +31,16 @@ internal object Record {
         f.writeBytes(if (isOutput) JvmRaster.downscale(bytes, OUTPUT_MAX_SIDE) else bytes)
     }
 
-    /** With `--force`: removes [ref]'s old stylize outputs, so a shorter re-recording leaves no orphan `out-<n>.png`. */
-    fun clearOutputs(dir: File, ref: String) {
+    /**
+     * With `--force`, right before [ref]'s paid run: removes its old recording (the four fixtures, every
+     * `out-<n>.png`, input copies with another extension than [input]'s), so the new one never mixes with the old and
+     * no fixture lists a file that is gone. Only called after [preflight], which refuses synthetic fixtures.
+     */
+    fun clearRef(dir: File, ref: String, input: File) {
+        for (job in RECORDED_JOBS) File(dir, "$job/$ref${FixtureApi.SUFFIX}").takeIf { it.isFile }?.delete()
         for (n in 1..MAX_ATTEMPTS) File(dir, "${Jobs.MUSE_STYLIZE}/$ref.out-$n.png").takeIf { it.isFile }?.delete()
+        val keep = inputCopy(dir, ref, input).name
+        File(dir, Jobs.SAM_CUTOUT).listFiles { f -> f.isFile && f.name.startsWith("$ref.input.") && f.name != keep }?.forEach { it.delete() }
     }
 
     fun inputCopy(dir: File, ref: String, input: File): File =
