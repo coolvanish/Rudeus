@@ -19,7 +19,7 @@ import kotlin.time.Instant
 
 @Serializable
 data class StageMetrics(
-    /** "cutout" | "stylize" | "matte" | "gate" | "sheet" (and "table" | "voice" when those jobs are measured). */
+    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "sheet" (and "table" | "voice" when those jobs are measured). */
     val name: String,
     val ms: Long,
     val costUsd: Double,
@@ -84,7 +84,8 @@ data class MetricsRun(
  *    the kk/ru JSON) x $4.25/M = $0.0038 -> ~$0.005;
  *  - table = 5 SAM requests = $0.0125; voice = a ~5 s clip at $0.18/audio hour = $0.00025 -> $0.0003.
  * Spark figures use the standard-tier rates, an upper bound for the contributor tier (see [Pricing]). A first-try
- * character costs 0.005 + 0.01 + 0.009 + 0.005 = $0.029, a two-retry character 0.005 + 3 * 0.019 + 0.005 = $0.067
+ * character costs 0.005 + 0.01 + 0.009 + 0.005 = $0.029 (+ $0.009 when it passes on the colour-free rescore), a
+ * two-retry character 0.005 + 3 * (0.01 + 2 * 0.009) + 0.005 = $0.094, every failed attempt having been rescored
  * (the Day 2 gate is <= $0.05 average). Keep docs/api-samples/<job>/meta.json `costUsd` in step.
  */
 data class CostTable(

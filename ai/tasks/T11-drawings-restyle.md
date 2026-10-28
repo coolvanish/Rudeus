@@ -35,11 +35,26 @@ drawing in the refs' style (not hand it back) without losing what the child drew
   (black dino, two-headed dragon, cheetah, brachiosaurus). `toy_animals.webp` is left out: the 5 plush toys touch, so
   no crop holds one toy. With the 6 jpgs that makes 11 inputs.
 
+- Colour-free rescore (user decision 2026-10-28): an attempt below 0.7 is scored again on the same sprite with
+  `Prompts.STYLE_SCORE_NO_COLOUR` + an outline-only deterministic half; the higher score counts (stage `rescore`,
+  fixtures `techniqueScores`). Commit 4f701e6, review: merge (latency +8–25 s per failed attempt; "first try" now
+  includes rescore passes; outline-only half is close to 1, so the rescore passes from Spark ≈ 0.5).
+
+## Live run 5 `runs/2026-10-28T09-11-21Z.json` (15 inputs, new prompt + rescore, $0.77)
+- Gate: first try 6/15 = 40 % FAIL; p50 116.6 s FAIL; $0.0515/character FAIL (just over). Passed at all: 10/15.
+- Toys 5/7 first try (56–72 s each); drawings 1/8 first try, 5/8 in the end. 4 of the 10 passes came from the rescore
+  (drawing_penguini on attempt 1).
+- Failures: uncoloured subjects (drawing_cowcow and horse are pencil/line drawings, toy_fox a white plush: Spark
+  0.1–0.4 on both rubrics), drawing_watermelon 0.681 (near miss), toy-car-02 0.35–0.65 for a sprite that looks
+  like the one Spark scored 0.88–0.95 last night (score noise).
+- Latency is mostly the provider today: a single-attempt toy takes 56–72 s (stylize 26–51 s, score 16–25 s) against
+  29 s last night, so p50 < 40 s is out of reach this morning even at 100 % first try.
+- `thunder.webp` (Lightning McQueen, licensed) left out of the run.
+
 ## Open (user decisions)
-- **Score rubric.** `Prompts.STYLE_SCORE` asks Spark for line weight, *palette* and shading. A ladybug has to stay red
-  and black, the refs are pastel, so palette fights "keep the child's colours". The deterministic half already measures
-  palette (ΔE, 0.4 × 0.7 of the score). Proposed: Spark rates technique only (outline weight and colour, crayon fill
-  texture, shading, simple shapes) and ignores the subject and its colours. This changes what the gate measures.
-- **The 11-input run** (≤ $0.90 worst case, `--budget-usd 1`), with `--record --force --bundle`.
+- Day 2 gate go/no-go after run 5 (all three rows FAIL).
+- Which inputs may be committed and bundled: several drawings look like pictures from the internet (`horse.jpeg` carries
+  an artist's signature); their input copies (`sam-cutout/<ref>.input.*`) and sprites would land in a public repo and
+  the app. Run 5's fixtures and bundle are uncommitted until that is answered.
 
 ## Result (filled on acceptance)
