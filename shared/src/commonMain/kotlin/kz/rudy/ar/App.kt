@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
@@ -17,6 +18,8 @@ import kz.rudy.ar.core.domain.LevelObject
 import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.Polygon
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.pipeline.CharacterResult
+import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.Strings
@@ -34,17 +37,25 @@ import kz.rudy.ar.ui.screens.ProcessingStatus
 import kz.rudy.ar.ui.screens.ScanState
 import kz.rudy.ar.ui.screens.ScanStatus
 import kz.rudy.ar.ui.screens.ScanningScreen
+import kz.rudy.ar.ui.screens.reduce
 import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusTheme
 
 enum class Screen { CAPTURE, PROCESSING, SCANNING, PLAY, METRICS }
 
 /**
- * Minimal navigation shell. :androidApp calls `App(arView = { modifier -> RudeusArView(modifier) })`.
- * Fake data for now; the pipeline, scan and physics wiring replace the LaunchedEffect stubs below.
+ * Minimal navigation shell. :androidApp calls
+ * `App(arView = { modifier, spritePng -> RudeusArView(modifier, spritePng = spritePng) }, capture = host)`.
+ *
+ * [arView]'s second argument is the PNG of the character Play should show: the captured character's matted sprite
+ * (T03), or null for the bundled default. [capture] (T03) brings the camera, the photo picker and the real pipeline;
+ * without it the Processing screen runs the fake stage loop so the shell still demos. Scan and physics are still stubs.
  */
 @Composable
-fun App(arView: @Composable (Modifier) -> Unit) {
+fun App(
+    arView: @Composable (Modifier, ByteArray?) -> Unit,
+    capture: CaptureHost? = null,
+) {
     var screen by remember { mutableStateOf(Screen.CAPTURE) }
     var lang by remember { mutableStateOf(Lang.KK) }
     var sheet by remember { mutableStateOf(DemoData.sheet) }
@@ -53,8 +64,30 @@ fun App(arView: @Composable (Modifier) -> Unit) {
     var hud by remember { mutableStateOf(HudState()) }
     var exportStatus by remember { mutableStateOf(ExportStatus.IDLE) }
     var lastScreen by remember { mutableStateOf(Screen.CAPTURE) }
+    // T03: the photo being turned into a character, the sprite Play shows (null = bundled default), and a counter
+    // that restarts the pipeline effect (ProcessingState.attempt now follows the pipeline's own retries).
+    var photo by remember { mutableStateOf<ByteArray?>(null) }
+    var spritePng by remember { mutableStateOf<ByteArray?>(null) }
+    var pipelineRun by remember { mutableStateOf(0) }
+    var pendingResult by remember { mutableStateOf<CharacterResult?>(null) }
 
     fun go(to: Screen) { lastScreen = screen; screen = to }
+    fun startPipeline(bytes: ByteArray?) {
+        if (bytes == null) return
+        photo = bytes
+        pendingResult = null
+        processing = ProcessingState()
+        pipelineRun++
+        go(Screen.PROCESSING)
+    }
+    /** Processing -> Scanning with the character that was just made (sheet + sprite), or the demo one. */
+    fun useResult() {
+        val r = pendingResult
+        sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
+        spritePng = r?.sprite
+        go(Screen.SCANNING)
+    }
+    val ar: @Composable (Modifier) -> Unit = { m -> arView(m, spritePng) }
 
     RudeusTheme {
         CompositionLocalProvider(LocalLang provides lang) {
@@ -64,28 +97,49 @@ fun App(arView: @Composable (Modifier) -> Unit) {
                     offline = false,
                     lang = lang,
                     onLangChange = { lang = it },
-                    onTakePhoto = { processing = ProcessingState(); go(Screen.PROCESSING) },
-                    onPickBundled = { sheet = it.sheet; go(Screen.SCANNING) },
+                    onTakePhoto = {
+                        if (capture != null) capture.takePhoto(::startPipeline) else startPipeline(ByteArray(0))
+                    },
+                    onPickPhoto = capture?.let { host -> { host.pickPhoto(::startPipeline) } },
+                    onPickBundled = { sheet = it.sheet; spritePng = null; go(Screen.SCANNING) },
                     onOpenMetrics = { go(Screen.METRICS) },
                 )
 
                 Screen.PROCESSING -> {
-                    // Fake pipeline: advances one stage per 900 ms. TODO(core): drive from CharacterPipeline events.
-                    LaunchedEffect(processing.attempt) {
-                        var done = emptySet<PipelineStage>()
-                        for (stage in PipelineStage.entries) {
-                            processing = processing.copy(stage = stage, completed = done, status = ProcessingStatus.RUNNING)
-                            delay(900)
-                            done = done + stage
-                            if (stage == PipelineStage.GATE) processing = processing.copy(gateScore = 0.82f)
+                    LaunchedEffect(pipelineRun) {
+                        val bytes = photo
+                        if (capture == null || bytes == null) {
+                            // Demo shell without a host: advances one stage per 900 ms.
+                            var done = emptySet<PipelineStage>()
+                            for (stage in PipelineStage.entries) {
+                                processing = processing.copy(stage = stage, completed = done, status = ProcessingStatus.RUNNING)
+                                delay(900)
+                                done = done + stage
+                                if (stage == PipelineStage.GATE) processing = processing.copy(gateScore = 0.82f)
+                            }
+                            processing = processing.copy(stage = null, completed = done, status = ProcessingStatus.DONE, sheet = DemoData.sheet)
+                        } else {
+                            // Real pipeline (T03). Events arrive on the pipeline's thread; each one is a single
+                            // snapshot-state write, so no dispatch is needed. The result is taken from the Finished
+                            // event, so it is in place before the screen shows "Next". Leaving the screen cancels the run.
+                            try {
+                                capture.makeCharacter(bytes) { event ->
+                                    if (event is PipelineEvent.Finished) pendingResult = event.result
+                                    processing = processing.reduce(event)
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                // The pipeline already emitted Failed; this covers a missing key and host errors.
+                                if (processing.status != ProcessingStatus.ERROR) processing = processing.copy(status = ProcessingStatus.ERROR)
+                            }
                         }
-                        processing = processing.copy(stage = null, completed = done, status = ProcessingStatus.DONE, sheet = DemoData.sheet)
                     }
                     ProcessingScreen(
                         state = processing,
-                        onRetry = { processing = ProcessingState(attempt = processing.attempt + 1) },
-                        onShipAnyway = { sheet = processing.sheet ?: DemoData.sheet; go(Screen.SCANNING) },
-                        onContinue = { sheet = processing.sheet ?: DemoData.sheet; go(Screen.SCANNING) },
+                        onRetry = { processing = ProcessingState(); pendingResult = null; pipelineRun++ },
+                        onShipAnyway = ::useResult,
+                        onContinue = ::useResult,
                         onBack = { go(Screen.CAPTURE) },
                     )
                 }
@@ -109,7 +163,7 @@ fun App(arView: @Composable (Modifier) -> Unit) {
                     }
                     ScanningScreen(
                         state = scan,
-                        arView = arView,
+                        arView = ar,
                         onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f) },
                         onSkip = { scan = ScanState(); go(Screen.PLAY) },
                         onBack = { scan = ScanState(); go(Screen.CAPTURE) },
@@ -117,6 +171,8 @@ fun App(arView: @Composable (Modifier) -> Unit) {
                 }
 
                 Screen.PLAY -> {
+                    // T03 gate: shutter -> Play. Logged by the host (RudeusGate capture_to_play_ms) once per entry.
+                    LaunchedEffect(Unit) { if (spritePng != null) capture?.playEntered() }
                     LaunchedEffect(hud.speech) {
                         if (hud.speech != null) { delay(RudeusMotion.BUBBLE_VISIBLE_MS); hud = hud.copy(speech = null) }
                     }
@@ -131,7 +187,7 @@ fun App(arView: @Composable (Modifier) -> Unit) {
                         }
                     }
                     PlayScreen(
-                        arView = arView,
+                        arView = ar,
                         character = DemoData.character,
                         sheet = sheet,
                         level = DemoData.level,

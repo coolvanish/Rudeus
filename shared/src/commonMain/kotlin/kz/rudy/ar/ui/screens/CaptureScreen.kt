@@ -54,6 +54,7 @@ data class BundledCharacter(
 /**
  * Capture: take a photo of the drawing/toy, or pick a bundled character.
  * [preview] is an optional camera preview slot from :androidApp; without it the screen is paper.
+ * [onPickPhoto] (T03) adds a "from gallery" button under the camera one when the host offers a photo picker.
  */
 @Composable
 fun CaptureScreen(
@@ -67,6 +68,7 @@ fun CaptureScreen(
     modifier: Modifier = Modifier,
     selectedId: String? = null,
     preview: (@Composable (Modifier) -> Unit)? = null,
+    onPickPhoto: (() -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize().background(RudeusColors.Paper)) {
         preview?.invoke(Modifier.fillMaxSize())
@@ -88,6 +90,10 @@ fun CaptureScreen(
                 onClick = onTakePhoto,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (onPickPhoto != null && !offline) {
+                Spacer(Modifier.height(RudeusSpacing.sm))
+                GhostButton(text = t(StringId.capture_pick_gallery), onClick = onPickPhoto, modifier = Modifier.fillMaxWidth())
+            }
             Spacer(Modifier.height(RudeusSpacing.xl))
             if (offline) {
                 Chip(

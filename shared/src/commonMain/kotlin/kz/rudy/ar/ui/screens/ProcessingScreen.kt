@@ -237,6 +237,7 @@ private fun ErrorSheet(onRetry: () -> Unit, onBack: () -> Unit, modifier: Modifi
         Spacer(Modifier.height(RudeusSpacing.md))
         PrimaryButton(t(StringId.retry), onClick = onRetry, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(RudeusSpacing.sm))
-        GhostButton(t(StringId.back), onClick = onBack, glyph = Glyph.BACK)
+        // T03 (f): offline / no key / HTTP error -> back to Capture, where the ready characters are.
+        GhostButton(t(StringId.processing_pick_ready), onClick = onBack, glyph = Glyph.BACK)
     }
 }
