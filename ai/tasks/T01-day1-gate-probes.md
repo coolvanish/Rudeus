@@ -41,10 +41,10 @@ Tests not required: the probe script, the recording.
 ## Result
 | Criterion | Status | Evidence |
 |---|---|---|
-| plane < 10 s | PASS | `RudeusGate plane_detected_ms=1387` on Pixel 9 Pro XL, ARCore 1.57, textured cloth (2026-10-28) |
-| drift < 1 cm / 60 s | UNTESTED | needs anchor placed + 60 s still; read `anchor t_ms=0` vs `t_ms≈60000` |
+| plane < 10 s | PASS (textured surface only) | `plane_detected_ms=1387` on textured cloth; afternoon of Oct 28 on paper next to the cup: 5503 ms, 4682 ms (one re-entered screen took 47140 ms). Bare grey desk: no plane at all (`tracking_failure=INSUFFICIENT_FEATURES`); dim light: `INSUFFICIENT_LIGHT`. `docs/evidence/t01-gate-2026-10-28.log` |
+| drift < 1 cm / 60 s | PASS (anchor placed after the map settles) | run C: 0.72 cm from placement to t=60 s, of which 0.66 cm in the first 10 s, then 0.07 cm (0.14 cm by t=90 s). Run A, anchor placed 3.7 s after the plane: 4.7 cm jump in the first 10 s, then up to 1.6 cm. Same log. T02 should wait a few seconds of plane tracking before it accepts the anchor tap |
 | quad walks to tap | UNTESTED | T02 (billboard quad not in the build yet) |
-| cup footprint 1–2 cm | UNTESTED | needs four `tap u= v=` lines on the same object edge |
+| cup footprint 1–2 cm | UNTESTED | run C has 11 taps but no record of which edge each one was or the cup's real size; repeat: left and right bottom edge twice, plus the bottom diameter with a ruler |
 | depth occlusion acceptable | SUPPORTED | `depth_supported=true depth_mode=AUTOMATIC`; visual quality judged on Day 5 |
 | SAM clean masks 5–6 objects | PARTIAL | `sam-table/table-01.fixture.json`: laptop, toy car, knife clean (c ≥ 0.92); "remote" merged remote+speaker into one mask; "speaker" absent. Latency 1.5–3.2 s per prompt, $0.0025/request. `store:false` required for full-size photos |
 | Muse style stable x3 | UNTESTED | endpoint works (`muse-stylize/drawing-01.out-1.png`, 12–19 s, $0.01, opaque background); stability x3 needs the 8 real style refs (not available yet) |
