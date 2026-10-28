@@ -1,6 +1,6 @@
 # T07 — pipeline-live-ready
 
-status: doing
+status: done
 created: 2026-10-28
 day: Day 2
 gate: ≥7/10 pass gate first try · p50 < 40 s · ≤ $0.05/character
@@ -121,6 +121,11 @@ Rules: no live API calls, never read local.properties, no new dependencies, no G
 - offline smoke run finishes with stage order cutout, stylize, matte, gate, …, sheet and non-zero costs
 
 ## Result (filled on acceptance)
-- measured: ...
-- run id: runs/<...>.json
-- cut/deferred: ...
+- (a)–(f) all done. Review (rudeus-reviewer): merge after fixes → transparent pixels are transparent WHITE (a model that
+  drops alpha would have scored the sprite on black), sheet stage recorded on the failure path, deterministic half
+  compares against matted refs, failed stages charge only what was metered, EXIF orientation (`JvmRaster.upright`),
+  stray cancellation in the sheet = fallback sheet.
+- measured (live run 2, `runs/2026-10-28T00-01-24Z.json`): matte 0.32–0.39 s per attempt, never needed the SAM
+  fallback; sheet runs alongside stylize/gate (6.6–7.8 s, off the critical path); measured Spark cost (standard-tier
+  upper bound) $0.0053–0.0062 per score call, $0.0029–0.0037 per sheet.
+- cut/deferred: none. `docs/api-samples/*/meta.json` costUsd synced to the new CostTable by the orchestrator.

@@ -1,6 +1,6 @@
 # T10 — gate-tuning-live-1
 
-status: doing
+status: done
 created: 2026-10-28
 day: Day 2
 gate: ≥7/10 pass gate first try · p50 < 40 s · ≤ $0.05/character
@@ -63,6 +63,12 @@ Rules: no live calls, never read local.properties, no new deps, no Gradle edits.
 - `scripts/verify.sh` exit 0; the orchestrator's live run 2 on the same 3 inputs completes all 3 characters.
 
 ## Result (filled on acceptance)
-- measured: ...
-- run id: runs/<...>.json
-- cut/deferred: ...
+- (a) stylize prompt names the refs' look (bold even outline, flat crayon fills, keep identity); (b) score budget
+  1024; (c) a throwing score call is a failed attempt. Review: merge as is → follow-up `428e08f` narrows the try to the
+  scoring only (a throwing listener no longer double-records a stage) and treats a stray cancellation as a failed attempt.
+- measured: live run 2 `runs/2026-10-28T00-01-24Z.json` vs run 1 on the same 3 inputs: model scores 0.62/0.32/0.68 →
+  0.88 (toy-car-01), crash → 0.95 (toy-car-02), 0.25/0.30/0.32 → 0.60/0.65 (watermelon-01); first-try pass 0/3 → 2/3;
+  p50 78.6 s → 33.0 s; $0.0455 → $0.0294 per character.
+- cut/deferred: threshold, weights, retries and the score rubric unchanged (user decisions). Spark's score is noisy
+  (0.62 vs 0.32 on near-identical outputs in run 1); averaging two calls or a rubric with anchors would steady it —
+  not done, it changes the measurement.

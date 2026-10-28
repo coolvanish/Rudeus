@@ -1,6 +1,6 @@
 # T08 — cli-live-run
 
-status: doing
+status: done
 created: 2026-10-28
 day: Day 2
 gate: run 10 drawings/toys → fixtures + bundled demo characters; ≥7/10 first try · p50 < 40 s · ≤ $0.05/character
@@ -107,6 +107,21 @@ no new dependencies, no Gradle edits.
 - `metrics gate` on a fixture run prints UNTESTED/refused, not PASS
 
 ## Result (filled on acceptance)
-- measured: ...
-- run id: runs/<...>.json
-- cut/deferred: ...
+- Review (rudeus-reviewer): merge after fixes → finite budgets (NaN disabled the cap), per-character I/O failures
+  with the run JSON always written, duplicate refs refused, protected refs dir for `refs generate`, matte in the worst
+  case, key comments stripped. Orchestrator follow-ups: `MetaConfig.toString` hides the key; inputs uprighted;
+  bundled sprites ≤ 768 px; recorded Muse outputs ≤ 1024 px; `--force` clears a ref's stale outputs.
+- live runs (3 real inputs: watermelon-01 drawing, toy-car-01/02 toy photos; refs `docs/style-refs`, provisional):
+  - run 1 `runs/2026-10-27T23-51-04Z.json`: 0/3 pass, p50 78.6 s, $0.0455/character (one character died on a
+    Spark `finish_reason=length`) → brief T10.
+  - run 2 `runs/2026-10-28T00-01-24Z.json` (after T10): 3/3 pass, 2/3 first try, p50 33.0 s, $0.0294/character.
+- Day 2 gate (`metrics gate runs/2026-10-28T00-01-24Z.json`):
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| ≥ 7/10 pass gate first try | UNTESTED (n=3; observed 2/3 = 66.7 %) | run 2026-10-28T00-01-24Z; needs 7 more real drawings/toys, see docs/drawings/README.md |
+| p50 < 40 s | PASS (n=3) | 33 015 ms, run 2026-10-28T00-01-24Z |
+| ≤ $0.05 / character | PASS (n=3) | $0.0294 measured from `usage`, Spark at standard-tier rates (upper bound) |
+
+- bundled: `docs/bundled/` — toy-car-01 "Vrum", toy-car-02 "Zippy", watermelon-01 "Қарбызбек" (all ROLL).
+- spend tonight: style-ref candidates $0.12 + run 1 $0.137 + run 2 $0.088 ≈ $0.35 (Spark priced at the upper bound).
