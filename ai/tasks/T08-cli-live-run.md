@@ -115,13 +115,15 @@ no new dependencies, no Gradle edits.
   - run 1 `runs/2026-10-27T23-51-04Z.json`: 0/3 pass, p50 78.6 s, $0.0455/character (one character died on a
     Spark `finish_reason=length`) → brief T10.
   - run 2 `runs/2026-10-28T00-01-24Z.json` (after T10): 3/3 pass, 2/3 first try, p50 33.0 s, $0.0294/character.
-- Day 2 gate (`metrics gate runs/2026-10-28T00-01-24Z.json`):
+  - run 3 `runs/2026-10-28T00-07-29Z.json` (sheet asks for a Kazakh Cyrillic name): 3/3 first try, p50 29.0 s,
+    $0.0257/character. Two of the three scored just over the line (0.719, 0.71): the Spark half is noisy.
+- Day 2 gate (`metrics gate runs/2026-10-28T00-07-29Z.json`, latest run):
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| ≥ 7/10 pass gate first try | UNTESTED (n=3; observed 2/3 = 66.7 %) | run 2026-10-28T00-01-24Z; needs 7 more real drawings/toys, see docs/drawings/README.md |
-| p50 < 40 s | PASS (n=3) | 33 015 ms, run 2026-10-28T00-01-24Z |
-| ≤ $0.05 / character | PASS (n=3) | $0.0294 measured from `usage`, Spark at standard-tier rates (upper bound) |
+| ≥ 7/10 pass gate first try | UNTESTED (n=3; observed 3/3, 5/6 over the two tuned runs) | runs 2026-10-28T00-01-24Z, 2026-10-28T00-07-29Z; needs 7 more real drawings/toys in one run, see docs/drawings/README.md |
+| p50 < 40 s | PASS (n=3) | 28 953 ms, run 2026-10-28T00-07-29Z (33 015 ms in run 2) |
+| ≤ $0.05 / character | PASS (n=3) | $0.0257 measured from `usage`, Spark at standard-tier rates (upper bound) |
 
-- bundled: `docs/bundled/` — toy-car-01 "Vrum", toy-car-02 "Zippy", watermelon-01 "Қарбызбек" (all ROLL).
-- spend tonight: style-ref candidates $0.12 + run 1 $0.137 + run 2 $0.088 ≈ $0.35 (Spark priced at the upper bound).
+- bundled: `docs/bundled/` — toy-car-01 "Көліқай", toy-car-02 "Вжик", watermelon-01 "Қарбызбек" (all ROLL), sprites ≤ 768 px.
+- spend tonight: style-ref candidates $0.12 + run 1 $0.137 + run 2 $0.088 + run 3 $0.077 ≈ $0.42 (Spark priced at the upper bound).
