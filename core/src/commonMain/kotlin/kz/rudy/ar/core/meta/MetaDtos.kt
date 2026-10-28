@@ -412,11 +412,14 @@ object Prompts {
     // lost; hence "plain white background": CharacterPipeline mattes it away (SpriteMatte, SAM pass as fallback).
     // T10 (live run 1): the old "same line weight, palette and shading" kept the character but drew thin sketchy lines
     // with hatching, so the prompt now names the refs' look explicitly. Identical to docs/api-samples/muse-stylize/request.json.tmpl.
-    const val STYLIZE = "The first image is a child's character. Redraw it as a clean sticker illustration in exactly the " +
-        "style of the reference images that follow: copy their bold, even outline (the same line weight and colour " +
-        "everywhere), flat crayon colour fills with only light crayon texture, and simple friendly shapes with few " +
-        "details. Keep the character's identity so the child recognises it: the same silhouette, pose, colours and " +
-        "features. One character only, centred on a plain pure white background with wide margins, no text, no shadow."
+    const val STYLIZE = "The first image is a child's character: a photo of a toy or a child's own drawing. Either way, redraw the " +
+        "whole character from scratch in exactly the style of the reference images that follow, as if the same " +
+        "illustrator drew it; do not keep the original's strokes, scribbles or marker colours. Copy the references' " +
+        "bold, even outline (the same line weight and colour everywhere), their soft light palette, their flat crayon " +
+        "colour fills with the same fine crayon texture, and their simple friendly shapes with few details. Keep the " +
+        "character's identity so the child recognises it: the same silhouette, pose and features, and the same colour " +
+        "for each part in the references' softer tones. One character only, centred on a plain pure white background " +
+        "with wide margins, no border, no text, no shadow."
 
     /** JSON schema for the sheet, identical to docs/api-samples/spark-sheet/request.json.tmpl. */
     val CHARACTER_SHEET_SCHEMA: JsonObject = Json.parseToJsonElement(
