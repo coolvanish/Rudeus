@@ -51,6 +51,16 @@ drawing in the refs' style (not hand it back) without losing what the child drew
   29 s last night, so p50 < 40 s is out of reach this morning even at 100 % first try.
 - `thunder.webp` (Lightning McQueen, licensed) left out of the run.
 
+## Speed pass (user decision 2026-10-28)
+- Commit 13b3be9 (+ ab0879b review follow-ups): both gate looks run in parallel on every attempt; Spark gets 3 style
+  refs (`SPARK_MAX_REFS`, cull.json order: camel, yurt, snow leopard); the colour-free call meters under
+  `Jobs.SPARK_SCORE_TECHNIQUE`. Review: merge. Known: a look that throws is not recorded in the fixture lists, so a
+  replay can drift from the live run; three Spark calls are in flight at once (no 429 backoff).
+- Probe `toy_dino` 10:09Z: first try 39.4 s, $0.0284 (run 5: 56.3 s, $0.0289); gate 11.7 s ‖ rescore 9.3 s, stylize
+  22.8 s.
+- Re-measure is scheduled (scratchpad `remeasure/remeasure.sh`, frozen CLI build): a toy probe every 90 min, at most
+  10 (≤ $0.30); the first probe ≤ 32 s triggers one run of the same 15 inputs with record + bundle, $1 cap.
+
 ## Open (user decisions)
 - Day 2 gate go/no-go after run 5 (all three rows FAIL).
 - Which inputs may be committed and bundled: several drawings look like pictures from the internet (`horse.jpeg` carries
