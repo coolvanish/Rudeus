@@ -5,8 +5,7 @@
     "synthetic": false,
     "note": "recorded by cli character --live on 2026-10-28",
     "scores": [
-        0.6,
-        0.65
+        0.62
     ],
-    "latencyMs": 7176
+    "latencyMs": 6694
 }
