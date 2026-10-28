@@ -1,7 +1,9 @@
 # docs/drawings — real inputs for the Day 2 live run
 
 Put the photos of real drawings and toys here, one character per file. `character --drawings docs/drawings` takes
-every `.png`, `.jpg` and `.jpeg` in this folder (sorted by name); other files (like this README) are ignored.
+every `.png`, `.jpg` and `.jpeg` in this folder (sorted by name). `.webp`, `.heic`/`.heif`, `.avif`, `.gif`, `.bmp`
+and `.tiff` are converted first with macOS `sips` (webp also with `dwebp`, `brew install webp`): webp to PNG, the
+rest to JPEG so an iPhone photo keeps its rotation. Other files (like this README) are ignored.
 
 ## Naming
 

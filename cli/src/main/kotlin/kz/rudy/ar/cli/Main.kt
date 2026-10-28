@@ -157,15 +157,12 @@ private fun character(flags: Flags): Int {
     val fixtureApi = FixtureApi(source, root = fixturesDir.absolutePath, replayLatency = replayLatency)
 
     // Inputs: --ref <name>, --all (every sam-cutout fixture), or --drawings <dir> (every image file, live runs).
-    val inputs: List<Pair<String, File>> = when {
+    val listed: List<Pair<String, File>> = when {
         flags.get("drawings") != null -> {
             val dir = File(flags.require("drawings"))
             if (!dir.isDirectory) throw CliError("drawings dir not found: $dir")
-            // ImageIO decodes only png/jpg; say so instead of silently running fewer characters (live run 4 lost 3 webp).
-            dir.listFiles { f -> f.isFile && f.extension.lowercase() in UNSUPPORTED_IMAGE_EXTENSIONS }.orEmpty()
-                .sortedBy { it.name }
-                .forEach { System.err.println("warning: skipped ${it.name}: convert it to png first (sips -s format png ${it.name} --out ${it.nameWithoutExtension}.png)") }
-            dir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }.orEmpty()
+            // webp/HEIC/… are converted below (ImageConvert); live run 4 silently lost 3 webp photos.
+            dir.listFiles { f -> f.isFile && (f.extension.lowercase() in IMAGE_EXTENSIONS || ImageConvert.needed(f)) }.orEmpty()
                 .sortedBy { it.name }.map { it.nameWithoutExtension to it }
         }
         flags.get("ref") != null -> {
@@ -175,12 +172,16 @@ private fun character(flags: Flags): Int {
         flags.has("all") -> fixtureApi.listRefs(Jobs.SAM_CUTOUT).map { it to inputImage(fixturesDir, it) }
         else -> throw CliError("give --ref <name>, --all or --drawings <dir>")
     }
-    if (inputs.isEmpty()) throw CliError("no inputs found")
-    inputs.forEach { requireSafeRef(it.first) }
+    if (listed.isEmpty()) throw CliError("no inputs found")
+    listed.forEach { requireSafeRef(it.first) }
     // cat-01.jpg + cat-01.png would share fixtures, sprite and bundle entry; the second would silently replace the first.
-    val duplicates = inputs.groupBy({ it.first }, { it.second.path }).filterValues { it.size > 1 }
+    val duplicates = listed.groupBy({ it.first }, { it.second.path }).filterValues { it.size > 1 }
     if (duplicates.isNotEmpty()) {
         throw CliError("several inputs map to the same ref; rename them:\n  " + duplicates.entries.joinToString("\n  ") { (ref, files) -> "$ref: ${files.joinToString()}" })
+    }
+    val inputs = listed.map { (ref, file) ->
+        if (!ImageConvert.needed(file)) return@map ref to file
+        ImageConvert.convert(file).also { println("converted ${file.name} -> ${it.extension}") }.let { ref to it }
     }
     if (live) inputs.firstOrNull { !it.second.isFile }?.let { throw CliError("${it.first}: input photo not found (${it.second.path})") }
 
@@ -281,7 +282,6 @@ private const val MUSE_DIR = "muse-stylize"
 /** Bundled sprites become a ~6 cm billboard on the table; 768 px is plenty and keeps the APK small (full size is 2-5 MB). */
 private const val BUNDLE_SPRITE_MAX_SIDE = 768
 internal val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg")
-private val UNSUPPORTED_IMAGE_EXTENSIONS = setOf("webp", "heic", "heif", "gif", "bmp", "tif", "tiff", "avif")
 
 /** `<fixtures>/sam-cutout/<ref>.input.(png|jpg|jpeg)` or `<ref>.(png|jpg)`; a missing file yields empty bytes (fixtures don't read it). */
 private fun inputImage(fixturesDir: File, ref: String): File {

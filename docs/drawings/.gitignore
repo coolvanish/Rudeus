@@ -3,3 +3,6 @@
 *.jpeg
 *.png
 *.webp
+*.heic
+*.heif
+*.avif
