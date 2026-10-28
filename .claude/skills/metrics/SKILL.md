@@ -34,9 +34,10 @@ Stage order per character: `cutout`, then per attempt `stylize`, `matte`, `gate`
 concurrently with the loop, so `totalMs` < the sum of stage `ms`; it is recorded after the loop). `matte` appears only
 when the pipeline has a sprite matter (the CLI and the app do); its cost is 0 unless it fell back to a SAM pass.
 A sheet stage with `ok: false` means the character shipped the fallback sheet.
-`rescore` (added 2026-10-28, T11) follows a `gate` that scored below the threshold: a second, colour-free Spark look at
-the same sprite (`Prompts.STYLE_SCORE_NO_COLOUR` + outline-only deterministic half). The attempt keeps the higher of
-the two scores; `gate` is then `ok: false` and `rescore.ok` is the attempt's outcome. A pass on the rescore of attempt 1
+`rescore` (added 2026-10-28, T11) is the gate's colour-free look (`Prompts.STYLE_SCORE_NO_COLOUR` + outline-only
+deterministic half), run in parallel with `gate` on every attempt (runs from 2026-10-28T09-11-21Z and earlier ran it
+only after a failed `gate`). Each stage's `ok` is its own look's verdict; the attempt keeps the higher score and passes
+if either look does, so `totalMs` < the sum of stage `ms` within an attempt too. A colour-free pass on attempt 1
 counts as a first-try pass (`retries: 0`).
 
 `measured` (added Day 2, default `false`, still `schema: 1`; older runs parse as `false`): `true` = `costUsd` is the sum

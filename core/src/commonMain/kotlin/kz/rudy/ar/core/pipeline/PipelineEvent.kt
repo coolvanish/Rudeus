@@ -6,7 +6,8 @@ package kz.rudy.ar.core.pipeline
  * UI types so ProcessingScreen (T03) can map them to its own steps.
  *
  * A first-try run reads: Started(cutout) Finished(cutout) Started(sheet) Started(stylize) Finished(stylize)
- * [Started(matte) Finished(matte)] Started(gate) GateScored Finished(gate) Finished(sheet) Finished(result).
+ * [Started(matte) Finished(matte)] Started(gate) Started(rescore) GateScored Finished(gate) Finished(rescore)
+ * Finished(sheet) Finished(result).
  * The sheet starts right after the cutout and runs alongside the loop; its Finished arrives after the last gate.
  */
 sealed interface PipelineEvent {

@@ -2,6 +2,9 @@ package kz.rudy.ar.cli
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kz.rudy.ar.core.bundle.Bundle
 import kz.rudy.ar.core.bundle.BundleIndex
 import kz.rudy.ar.core.io.FileFixtureSource
@@ -291,9 +294,22 @@ private fun inputImage(fixturesDir: File, ref: String): File {
     return candidates.map { File(dir, it) }.firstOrNull { it.isFile } ?: File(dir, "$ref.input.png")
 }
 
-private fun styleRefs(refsDir: File): List<ByteArray> =
-    refsDir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }
-        .orEmpty().sortedBy { it.name }.map { it.readBytes() }
+/**
+ * Every png/jpg in [refsDir], best first: in `cull.json`'s `kept` order when the folder has one (`refs cull` writes it),
+ * then the rest by name. The order matters: Spark sees only the first `CharacterPipeline.SPARK_MAX_REFS`.
+ */
+private fun styleRefs(refsDir: File): List<ByteArray> {
+    val rank = File(refsDir, "cull.json").takeIf { it.isFile }?.let { f ->
+        try {
+            MetaApi.json.parseToJsonElement(f.readText()).jsonObject["kept"]?.jsonArray?.map { it.jsonPrimitive.content }
+        } catch (e: Exception) {
+            throw CliError("${f.path}: not a cull report (${e.message})")
+        }
+    }.orEmpty()
+    return refsDir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }.orEmpty()
+        .sortedWith(compareBy({ rank.indexOf(it.name).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it.name }))
+        .map { it.readBytes() }
+}
 
 /** `spark-sheet/<ref>.description.txt` when present, else blank: Spark sees the cutout image instead. */
 private fun description(fixturesDir: File, ref: String): String =

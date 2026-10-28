@@ -84,9 +84,9 @@ data class MetricsRun(
  *    the kk/ru JSON) x $4.25/M = $0.0038 -> ~$0.005;
  *  - table = 5 SAM requests = $0.0125; voice = a ~5 s clip at $0.18/audio hour = $0.00025 -> $0.0003.
  * Spark figures use the standard-tier rates, an upper bound for the contributor tier (see [Pricing]). A first-try
- * character costs 0.005 + 0.01 + 0.009 + 0.005 = $0.029 (+ $0.009 when it passes on the colour-free rescore), a
- * two-retry character 0.005 + 3 * (0.01 + 2 * 0.009) + 0.005 = $0.094, every failed attempt having been rescored
- * (the Day 2 gate is <= $0.05 average). Keep docs/api-samples/<job>/meta.json `costUsd` in step.
+ * character costs 0.005 + 0.01 + 2 * 0.009 + 0.005 = $0.038 (both gate looks run on every attempt), a two-retry
+ * character 0.005 + 3 * (0.01 + 2 * 0.009) + 0.005 = $0.094 (the Day 2 gate is <= $0.05 average). The score estimate
+ * still assumes 9 images per call; Spark now gets the sprite + 3 refs, so measured score costs come in lower. Keep docs/api-samples/<job>/meta.json `costUsd` in step.
  */
 data class CostTable(
     val cutoutUsd: Double = 0.005,

@@ -52,19 +52,19 @@ data class CharacterResult(
  * A failed stage (an exception, not a gate below threshold) is charged only what was metered, else 0. When the
  * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`).
  *
- * An attempt the gate scores below the threshold gets a second, colour-free look at the same sprite before a new
- * stylize (user decision 2026-10-28; stage `rescore`): [MetaModels.scoreTechnique] (technique only, the character's own
- * colours ignored) combined with [StyleGate.techniqueScore] (outline only), same weights and threshold. The attempt
- * scores the higher of the two looks and passes if that clears the threshold. The `gate` stage is then recorded
- * `ok=false` and the `rescore` stage carries the attempt's outcome; [PipelineEvent.GateScored] comes once per attempt,
- * just before the last look's `StageFinished`. A rescore that throws leaves the first look's score (not passed).
+ * Every attempt gets two gate looks at the same sprite, run in parallel (user decision 2026-10-28): stage `gate`
+ * ([MetaModels.scoreStyle] + [StyleGate.deterministicScore]) and stage `rescore`, the colour-free one
+ * ([MetaModels.scoreTechnique], the character's own colours ignored, + [StyleGate.techniqueScore], outline only); same
+ * weights and threshold. The attempt scores the higher of the two and passes if either look clears the threshold; each
+ * stage's `ok` is its own look's verdict. Spark gets the first [SPARK_MAX_REFS] style refs, the deterministic halves
+ * all of them. Event order per attempt: Started(gate) Started(rescore) GateScored Finished(gate) Finished(rescore).
  *
- * A gate that throws (the Spark score call, e.g. `finish_reason=length`, or the deterministic half) is a failed
- * attempt, not a dead character: the `gate` stage is recorded `ok=false` with what was metered, the attempt counts as
- * score 0 / not passed ([PipelineEvent.GateScored] `(attempt, 0, false)`), and the loop retries as for a low score.
- * When the last attempt's gate threw, the character ships with `gatePassed=false` and `gateScore=0`. A
- * CancellationException from the gate while this coroutine is still active (a timeout surfacing as cancellation) is the
- * same failed attempt; a real cancellation of the caller propagates.
+ * A look that throws (its Spark score call, e.g. `finish_reason=length`, or its deterministic half) is a failed
+ * look, not a dead character: its stage is recorded `ok=false` with what was metered, and the attempt scores the other
+ * look alone. When both throw, the attempt counts as score 0 / not passed ([PipelineEvent.GateScored]
+ * `(attempt, 0, false)`) and the loop retries as for a low score; after the last attempt the character ships with
+ * `gatePassed=false`. A CancellationException from a look while this coroutine is still active (a timeout surfacing as
+ * cancellation) is the same failed look; a real cancellation of the caller propagates.
  *
  * [onEvent] must not throw: a listener exception is not a model failure and is not swallowed; it fails the character
  * (after the stage it was reporting has been recorded once).
@@ -120,6 +120,9 @@ class CharacterPipeline(
                 val museCutout = fit(cutout, MUSE_INPUT_MAX_SIDE)
                 val museRefs = styleRefs.map { fit(it, MUSE_INPUT_MAX_SIDE) }
                 val sparkRefs = styleRefs.map { fit(it, SPARK_IMAGE_MAX_SIDE) }
+                // Spark sees the first SPARK_MAX_REFS refs (callers order them best first, e.g. by cull.json); the
+                // deterministic half still compares against all of them.
+                val modelRefs = sparkRefs.take(SPARK_MAX_REFS)
                 // The deterministic half compares like with like: the sprite is matted, so the refs are matted too
                 // (same matter, once per run; a ref whose matte fails is used as is).
                 val refRasters: List<RasterImage?> = rasterDecoder?.let { d ->
@@ -135,27 +138,39 @@ class CharacterPipeline(
                             models.stylize(ref, museCutout, museRefs)
                         }
                         sprite = matte(ref, stylized, attempt)
-                        var scored: ByteArray? = null
-                        val style = look(STAGE_GATE, attempt) {
-                            val s = fit(sprite, SPARK_IMAGE_MAX_SIDE).also { scored = it }
-                            val deterministic = rasterDecoder?.let { d -> gate.deterministicScore(d(s), refRasters) }
-                            gate.combine(models.scoreStyle(ref, s, sparkRefs), deterministic)
+                        // Both looks at once (user decision 2026-10-28): the style rubric and the colour-free one
+                        // score the same sprite in parallel; the attempt keeps the higher score.
+                        emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
+                        emit(PipelineEvent.StageStarted(STAGE_RESCORE, attempt))
+                        val t0 = metrics.now()
+                        val styleMark = metrics.costMark(Jobs.SPARK_SCORE)
+                        val techniqueMark = metrics.costMark(Jobs.SPARK_SCORE_TECHNIQUE)
+                        // Only the scoring is guarded: a failed score call (e.g. Spark out of tokens) is a failed look,
+                        // not a dead character. The records below stay outside, so a throwing listener can never
+                        // record a stage twice. The calls only read the clock; metrics and events stay on this coroutine.
+                        val scored = guarded { fit(sprite, SPARK_IMAGE_MAX_SIDE) }
+                        val styleCall = async { scored?.let { s -> guarded { models.scoreStyle(ref, s, modelRefs) } } to metrics.now() }
+                        val techniqueCall = async { scored?.let { s -> guarded { models.scoreTechnique(ref, s, modelRefs) } } to metrics.now() }
+                        val (styleModel, styleEnd) = styleCall.await()
+                        val (techniqueModel, techniqueEnd) = techniqueCall.await()
+                        // Deterministic halves; a decode or half that throws fails its look (decoded once per attempt).
+                        val raster by lazy(LazyThreadSafetyMode.NONE) { scored?.let { s -> rasterDecoder?.invoke(s) } }
+                        val style = styleModel?.let { m ->
+                            guarded { gate.combine(m, rasterDecoder?.let { gate.deterministicScore(raster, refRasters) }) }
                         }
-                        // Below the threshold: a second, colour-free look at the same sprite before paying for a new
-                        // stylize. A style call that threw gets none (that attempt simply failed).
-                        val technique = if (style.score != null && !gate.passes(style.score)) {
-                            record(STAGE_GATE, style.ms, attempt, false, style.cost)
-                            look(STAGE_RESCORE, attempt) {
-                                val s = checkNotNull(scored) // set by the style look, which returned a score
-                                val outline = rasterDecoder?.let { d -> gate.techniqueScore(d(s), refRasters) }
-                                gate.combine(models.scoreTechnique(ref, s, sparkRefs), outline)
-                            }
-                        } else null
-                        score = maxOf(style.score ?: 0f, technique?.score ?: 0f)
-                        passed = gate.passes(score)
-                        val last = technique ?: style
+                        val technique = techniqueModel?.let { m ->
+                            guarded { gate.combine(m, rasterDecoder?.let { gate.techniqueScore(raster, refRasters) }) }
+                        }
+                        score = maxOf(style ?: 0f, technique ?: 0f)
+                        val stylePassed = style != null && gate.passes(style)
+                        val techniquePassed = technique != null && gate.passes(technique)
+                        passed = stylePassed || techniquePassed
+                        // A call that returned was billed; one that threw is charged only what was metered.
+                        val styleCost = metrics.costSince(styleMark, if (styleModel != null) metrics.costs.scoreUsd else 0.0)
+                        val techniqueCost = metrics.costSince(techniqueMark, if (techniqueModel != null) metrics.costs.scoreUsd else 0.0)
                         emit(PipelineEvent.GateScored(attempt, score, passed))
-                        record(if (technique != null) STAGE_RESCORE else STAGE_GATE, last.ms, attempt, passed, last.cost)
+                        record(STAGE_GATE, styleEnd - t0, attempt, stylePassed, styleCost)
+                        record(STAGE_RESCORE, techniqueEnd - t0, attempt, techniquePassed, techniqueCost)
                         if (passed || attempt > maxRetries) break
                     }
                 } catch (e: CancellationException) {
@@ -201,28 +216,18 @@ class CharacterPipeline(
         emit(PipelineEvent.StageFinished(name, attempt, ok, ms))
     }
 
-    /** One look of the gate: its combined [score] (null = the scoring threw), duration and what it cost. */
-    private class Look(val score: Float?, val ms: Long, val cost: StageCost)
-
     /**
-     * Emits [name]'s start and runs [score], the only guarded part: a score call that throws (e.g. Spark out of
-     * tokens) is a failed look, charged only what was metered, not a dead character. The caller records the stage,
-     * outside any try, so a throwing listener can never record it twice.
+     * [block]'s value, or null when it throws: a failed score call is a failed look, not a dead character. A
+     * CancellationException while this coroutine is still active (a timeout surfacing as cancellation) is a failed
+     * look too; a real cancellation of the caller propagates.
      */
-    private suspend inline fun look(name: String, attempt: Int, score: () -> Float): Look {
-        emit(PipelineEvent.StageStarted(name, attempt))
-        val t0 = metrics.now()
-        val mark = metrics.costMark(Jobs.SPARK_SCORE)
-        val combined: Float? = try {
-            score()
-        } catch (e: CancellationException) {
-            // A timeout surfacing as cancellation while we are alive is a failed look too.
-            if (!currentCoroutineContext().isActive) throw e
-            null
-        } catch (e: Throwable) {
-            null
-        }
-        return Look(combined, metrics.now() - t0, metrics.costSince(mark, if (combined != null) metrics.costs.scoreUsd else 0.0))
+    private suspend inline fun <T> guarded(block: () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        if (!currentCoroutineContext().isActive) throw e
+        null
+    } catch (e: Throwable) {
+        null
     }
 
     /** [bytes] scaled to at most [maxSide] px on the long side by [imageResizer]; unchanged without one. */
@@ -304,7 +309,7 @@ class CharacterPipeline(
         const val STAGE_MATTE = "matte"
         const val STAGE_GATE = "gate"
 
-        /** The gate's colour-free second look at an attempt that failed [STAGE_GATE]. */
+        /** The gate's colour-free look, run alongside [STAGE_GATE] on every attempt. */
         const val STAGE_RESCORE = "rescore"
         const val STAGE_SHEET = "sheet"
 
@@ -313,6 +318,12 @@ class CharacterPipeline(
 
         /** Long-side bound (px) of the sprite and style refs sent to the Spark score (~9 images per call). */
         const val SPARK_IMAGE_MAX_SIDE = 512
+
+        /**
+         * Style refs per Spark score call (user decision 2026-10-28: 3 instead of all 8, fewer image tokens per call,
+         * for latency and cost). Muse still gets every ref.
+         */
+        const val SPARK_MAX_REFS = 3
 
         /** Long-side bound (px) of the cutout the sheet call looks at. */
         const val SHEET_IMAGE_MAX_SIDE = 512

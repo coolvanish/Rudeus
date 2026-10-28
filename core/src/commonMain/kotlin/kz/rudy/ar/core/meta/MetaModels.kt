@@ -21,7 +21,7 @@ interface MetaModels {
 
     /**
      * Spark vision: like [scoreStyle] but technique only (line weight, fill texture, shading, shapes), ignoring the
-     * character's own colours. The gate asks it only when [scoreStyle] failed the attempt.
+     * character's own colours. The gate asks it alongside [scoreStyle] on every attempt.
      */
     suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float
 
@@ -35,13 +35,20 @@ interface MetaModels {
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String
 }
 
-/** Job names; they double as the fixture folder names under docs/api-samples. */
+/** Job names; they double as the fixture folder names under docs/api-samples (except [SPARK_SCORE_TECHNIQUE]). */
 object Jobs {
     const val SAM_CUTOUT = "sam-cutout"
     const val SAM_TABLE = "sam-table"
     const val SAM_RIG = "sam-rig"
     const val MUSE_STYLIZE = "muse-stylize"
     const val SPARK_SCORE = "spark-score"
+
+    /**
+     * Cost-metering key of [MetaModels.scoreTechnique] only (its fixtures stay in [SPARK_SCORE]): the two score looks
+     * run at once, so their measured costs are told apart by job.
+     */
+    const val SPARK_SCORE_TECHNIQUE = "spark-score-technique"
+
     const val SPARK_SHEET = "spark-sheet"
     const val VOICE = "voice"
 

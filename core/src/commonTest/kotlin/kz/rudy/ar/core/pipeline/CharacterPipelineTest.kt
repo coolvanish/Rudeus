@@ -32,7 +32,7 @@ class CharacterPipelineTest {
 
     @Test
     fun pipelineHappyPathSingleAttempt() = runTest {
-        val models = FakeModels(scores = listOf(0.85f))
+        val models = FakeModels(scores = listOf(0.85f), techniqueScores = listOf(0.8f))
         val log = metrics()
         val pipeline = CharacterPipeline(models, StyleGate(), log)
 
@@ -45,15 +45,19 @@ class CharacterPipelineTest {
         assertEquals(1, models.scoreCalls)
         assertNotNull(result.cutoutMask)
         assertEquals(4, result.cutoutMask.area)
-        assertEquals(listOf("segment:cat-01", "stylize:cat-01", "scoreStyle:cat-01", "characterSheet:cat-01"), models.calls)
+        assertEquals(
+            listOf("segment:cat-01", "stylize:cat-01", "characterSheet:cat-01", "scoreStyle:cat-01", "scoreTechnique:cat-01"),
+            models.calls,
+            "the sheet starts before the gate; both gate looks run on every attempt",
+        )
 
         val run = log.toRun()
         val c = run.characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
         assertTrue(c.stages.all { it.ok })
         assertEquals(0, c.retries)
         assertTrue(c.gatePassed)
-        assertEquals(0.029, c.totalCostUsd, 1e-9) // CostTable: 0.005 + 0.01 + 0.009 + 0.005
+        assertEquals(0.038, c.totalCostUsd, 1e-9) // CostTable: 0.005 + 0.01 + 2 * 0.009 (both looks) + 0.005
         assertEquals(1, run.summary.n)
         assertEquals(1f, run.summary.gatePassRateFirstTry)
     }
@@ -96,7 +100,7 @@ class CharacterPipelineTest {
         assertEquals(2, models.scoredImages.size)
         assertTrue(models.scoredImages.all { it.contentEquals(matted) }, "the gate sees the matted sprite on every attempt")
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "matte", "gate", "rescore", "stylize", "matte", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "matte", "gate", "rescore", "stylize", "matte", "gate", "rescore", "sheet"), c.stages.map { it.name })
         val mattes = c.stages.filter { it.name == "matte" }
         assertEquals(listOf(1, 2), mattes.map { it.attempt })
         assertTrue(mattes.all { it.ok && it.costUsd == 0.0 }, "deterministic matte is free")
@@ -157,7 +161,7 @@ class CharacterPipelineTest {
 
         assertEquals(2, result.attempts)
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
         val sheet = c.stages.last()
         assertEquals(6_000L, sheet.ms)
         assertTrue(sheet.ok)
@@ -169,7 +173,7 @@ class CharacterPipelineTest {
 
     @Test
     fun sheetFailureShipsFallbackSheet() = runTest {
-        val models = FakeModels(scores = listOf(0.85f), sheetError = MetaError.Http(500, "boom"))
+        val models = FakeModels(scores = listOf(0.85f), techniqueScores = listOf(0.85f), sheetError = MetaError.Http(500, "boom"))
         val log = metrics()
 
         val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat")
@@ -285,7 +289,7 @@ class CharacterPipelineTest {
         assertTrue(result.gatePassed)
         assertEquals(0.85f, result.gateScore, 1e-4f)
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "stylize", "gate", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
         val gates = c.stages.filter { it.name == "gate" }
         assertEquals(listOf(false, true), gates.map { it.ok })
         assertEquals(listOf(0.002, 0.002), gates.map { it.costUsd }, "each gate is charged what was metered, never the estimate")
@@ -406,8 +410,7 @@ class CharacterPipelineTest {
         pipeline.run("cat-01", image, listOf("r1".encodeToByteArray(), "r2".encodeToByteArray()), "")
 
         assertEquals(listOf("r1", "r2", "PNG", "PNG"), matted, "refs matted once per run, the sprite per attempt")
-        // Attempt 1 fails: its colour-free rescore decodes the same matted sprite again.
-        assertEquals(listOf("m:r1", "r2", "m:PNG", "m:PNG", "m:PNG"), decoded, "the gate decodes matted refs and matted sprites")
+        assertEquals(listOf("m:r1", "r2", "m:PNG", "m:PNG"), decoded, "matted refs once, the matted sprite once per attempt (both looks share it)")
     }
 
     @Test
@@ -457,7 +460,7 @@ class CharacterPipelineTest {
         assertEquals(
             listOf(
                 "+cutout1", "-cutout1", "+sheet1", "+stylize1", "-stylize1", "+matte1", "-matte1",
-                "+gate1", "score1", "-gate1", "-sheet1", "done",
+                "+gate1", "+rescore1", "score1", "-gate1", "-rescore1!", "-sheet1", "done",
             ),
             first.map(::label),
         )
@@ -471,8 +474,8 @@ class CharacterPipelineTest {
         assertEquals(
             listOf(
                 "+cutout1", "-cutout1", "+sheet1",
-                "+stylize1", "-stylize1", "+gate1", "-gate1!", "+rescore1", "score1!", "-rescore1!",
-                "+stylize2", "-stylize2", "+gate2", "score2", "-gate2",
+                "+stylize1", "-stylize1", "+gate1", "+rescore1", "score1!", "-gate1!", "-rescore1!",
+                "+stylize2", "-stylize2", "+gate2", "+rescore2", "score2", "-gate2", "-rescore2!",
                 "-sheet1", "done",
             ),
             retry.map(::label),
@@ -500,7 +503,7 @@ class CharacterPipelineTest {
     }
 
     @Test
-    fun colourFreeRescorePassesTheAttempt() = runTest {
+    fun colourFreeLookPassesTheAttempt() = runTest {
         // A red-and-black ladybug: the style look fails it on palette, the colour-free look passes the same sprite.
         val models = FakeModels(scores = listOf(0.3f), techniqueScores = listOf(0.9f))
         val log = metrics()
@@ -513,7 +516,6 @@ class CharacterPipelineTest {
         assertEquals(0.9f, result.gateScore)
         assertEquals(1, models.stylizeCalls)
         assertEquals(1, models.techniqueCalls)
-        assertEquals(listOf("scoreStyle:ladybug-01", "scoreTechnique:ladybug-01"), models.calls.filter { it.startsWith("score") })
         val c = log.toRun().characters.single()
         assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
         assertEquals(listOf(false, true), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.ok })
@@ -523,25 +525,42 @@ class CharacterPipelineTest {
     }
 
     @Test
-    fun rescoreOnlyAfterAFailedStyleLook() = runTest {
-        // Attempt 1: style 0.4, colour-free 0.5 -> fails with the higher (0.5) -> retry. Attempt 2: style 0.85 passes,
-        // no rescore.
-        val models = FakeModels(scores = listOf(0.4f, 0.85f), techniqueScores = listOf(0.5f))
-        val log = metrics()
+    fun bothLooksRunInParallelEveryAttempt() = runTest {
+        // Attempt 1: style 0.4, colour-free 0.5 -> fails with the higher (0.5). Attempt 2: style 0.85 passes; the
+        // colour-free look (0.5 again) ran anyway, alongside it.
+        val models = FakeModels(
+            scores = listOf(0.4f, 0.85f), techniqueScores = listOf(0.5f),
+            delays = mapOf("stylize" to 5_000L, "scoreStyle" to 2_000L, "scoreTechnique" to 3_000L),
+        )
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
         val events = ArrayList<PipelineEvent>()
 
         val result = CharacterPipeline(models, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "")
 
         assertTrue(result.gatePassed)
         assertEquals(2, result.attempts)
-        assertEquals(1, models.techniqueCalls)
+        assertEquals(2, models.techniqueCalls)
         assertEquals(
             listOf(PipelineEvent.GateScored(1, 0.5f, false), PipelineEvent.GateScored(2, 0.85f, true)),
             events.filterIsInstance<PipelineEvent.GateScored>(),
         )
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "sheet"), c.stages.map { it.name })
-        assertEquals(listOf(1, 1, 2), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.attempt })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf(2_000L, 3_000L, 2_000L, 3_000L), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.ms })
+        // Each attempt waits for the slower look (3 s), not the sum (5 s): 2 x (5 + 3) = 16 s.
+        assertEquals(16_000L, c.totalMs)
+    }
+
+    @Test
+    fun sparkSeesTheFirstThreeRefsTheDeterministicHalfAll() = runTest {
+        val models = FakeModels(scores = listOf(0.9f))
+        val seen = ArrayList<Int>()
+        val five = (1..5).map { "r$it".encodeToByteArray() }
+        CharacterPipeline(models, StyleGate(), metrics(), rasterDecoder = { b -> seen += b.size; null })
+            .run("cat-01", image, five, "")
+        assertEquals(listOf("r1", "r2", "r3"), models.scoredRefs.single().map { it.decodeToString() })
+        assertEquals(CharacterPipeline.SPARK_MAX_REFS, models.scoredRefs.single().size)
+        assertEquals(6, seen.size, "the deterministic half decodes all 5 refs and the sprite once")
     }
 
     @Test

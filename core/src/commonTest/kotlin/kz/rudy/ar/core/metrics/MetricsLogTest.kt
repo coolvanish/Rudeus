@@ -27,7 +27,7 @@ class MetricsLogTest {
         override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
             inner.scoreStyle(ref, image, refs).also { meter.record(Jobs.SPARK_SCORE, ref, 0.0031) }
         override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
-            inner.scoreTechnique(ref, image, refs).also { meter.record(Jobs.SPARK_SCORE, ref, 0.0031) }
+            inner.scoreTechnique(ref, image, refs).also { meter.record(Jobs.SPARK_SCORE_TECHNIQUE, ref, 0.0029) }
         override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet =
             inner.characterSheet(ref, description, image)
     }
@@ -50,10 +50,11 @@ class MetricsLogTest {
         val run = MetricsLog("cli", "meta", "mac", clock = { 0L })
         CharacterPipeline(MeteredModels(models, run), StyleGate(), run).run("cat-01", byteArrayOf(1), emptyList(), "")
         val stages = run.toRun().characters.single().stages
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "sheet"), stages.map { it.name })
-        assertEquals(listOf(0.005, 0.01, 0.0031, 0.0031, 0.01, 0.0031, run.costs.sheetUsd), stages.map { it.costUsd })
-        assertEquals(listOf(true, true, true, true, true, true, false), stages.map { it.measured })
-        assertEquals(0.0343 + run.costs.sheetUsd, run.toRun().characters.single().totalCostUsd, 1e-9)
+        // The two looks run at once; each stage gets its own call's cost (the colour-free one meters under its own job).
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), stages.map { it.name })
+        assertEquals(listOf(0.005, 0.01, 0.0031, 0.0029, 0.01, 0.0031, 0.0029, run.costs.sheetUsd), stages.map { it.costUsd })
+        assertEquals(listOf(true, true, true, true, true, true, true, false), stages.map { it.measured })
+        assertEquals(0.0370 + run.costs.sheetUsd, run.toRun().characters.single().totalCostUsd, 1e-9)
     }
 
     @Test
