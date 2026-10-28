@@ -55,7 +55,9 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
 
     override suspend fun makeCharacter(photo: ByteArray, onEvent: (PipelineEvent) -> Unit): CharacterResult =
         withContext(Dispatchers.IO) {
-            val ref = "app/${metrics.runId}/${++characters}"
+            // HAND-REVIEW: review fix — a plain "01", "02"… ref: SheetParser.fallback names a character from its ref
+            // ("app/<run>/1" became "App"; "01" gives the default "Dos"), and the CLI only allows refs without '/'.
+            val ref = (++characters).toString().padStart(2, '0')
             val t0 = SystemClock.elapsedRealtime()
             val pipeline = CharacterPipeline(
                 models = api,
@@ -85,7 +87,9 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
         }
 
     override fun playEntered() {
-        Log.i(TAG, "capture_to_play_ms=${SystemClock.elapsedRealtime() - intake.shutterAtMs}")
+        // Once per capture: coming back to Play from Metrics must not log a second, inflated number.
+        val shutterAt = intake.takeShutterAtMs()
+        if (shutterAt > 0L) Log.i(TAG, "capture_to_play_ms=${SystemClock.elapsedRealtime() - shutterAt}")
     }
 
     private fun logEvent(event: PipelineEvent, t0: Long) {

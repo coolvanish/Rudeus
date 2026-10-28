@@ -113,3 +113,10 @@ filled in by the human.
 - The AR slot is recreated between Scanning and Play (T02 known issue); the sprite is decoded twice, nothing else.
 - Process death while in the camera app loses the pending callback (no photo; the child retries).
 - Memory: a 12 MP photo decodes at full size (48 MB) before scaling to 2048 px; fine on the Pixel, watch on low-RAM devices.
+- Review (rudeus-reviewer, draft 1): merge after fixes → done by the orchestrator: the camera permission is asked before
+  `TakePicture` (fresh install crashed with SecurityException; no camera app → null, not a crash); phone refs are "01",
+  "02"… (a failed sheet fell back to the name "App"); `capture_to_play_ms` logged once per capture; transparent gallery
+  PNGs flattened on white before JPEG; more `configChanges` so dark mode / locale / font scale don't recreate the
+  activity mid-run. Open: a cancelled run's paid stages are not in the run JSON (no `endCharacter`); HEIC orientation
+  ignored; a 12 MP photo is decoded at full size before scaling (fine on the Pixel's memory).
+

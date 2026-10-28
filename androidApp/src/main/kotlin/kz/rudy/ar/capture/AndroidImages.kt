@@ -3,6 +3,8 @@ package kz.rudy.ar.capture
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
@@ -164,9 +166,18 @@ object AndroidImages {
     private fun pixelsOf(bmp: Bitmap): IntArray =
         IntArray(bmp.width * bmp.height).also { bmp.getPixels(it, 0, bmp.width, 0, 0, bmp.width, bmp.height) }
 
+    /**
+     * HAND-REVIEW: review fix — a gallery PNG with a transparent background would turn black in JPEG (SAM and Muse
+     * then see a black backdrop); flatten it on white first, the background the prompts ask for.
+     */
     private fun encodeJpeg(bmp: Bitmap): ByteArray {
+        val opaque = if (!bmp.hasAlpha()) bmp else {
+            Bitmap.createBitmap(bmp.width, bmp.height, Bitmap.Config.ARGB_8888).also {
+                Canvas(it).apply { drawColor(Color.WHITE); drawBitmap(bmp, 0f, 0f, null) }
+            }
+        }
         val out = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+        opaque.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
         return out.toByteArray()
     }
 
