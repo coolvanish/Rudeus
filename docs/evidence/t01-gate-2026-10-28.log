@@ -1,0 +1,49 @@
+# RudeusGate lines from scripts/device.sh log, Pixel 9 Pro XL, 2026-10-28 ~15:35-15:42 local (+05).
+# Run A: textured paper on the grey desk next to the cup. Run B: too dark. Run C: same paper, better light.
+# Earlier the same afternoon, on the bare grey desk: only tracking_failure=INSUFFICIENT_FEATURES, no plane at all.
+# --- run A
+10-28 15:35:39.305 I/RudeusGate(31020): depth_supported=true depth_mode=AUTOMATIC
+10-28 15:35:39.372 I/RudeusGate(31020): session_resumed
+10-28 15:35:47.791 I/RudeusGate(31020): depth_supported=true depth_mode=AUTOMATIC
+10-28 15:35:47.861 I/RudeusGate(31020): session_resumed
+10-28 15:35:53.364 I/RudeusGate(31020): plane_detected_ms=5503
+10-28 15:35:57.112 I/RudeusGate(31020): anchor t_ms=0 pos=(-0.0417,-0.3507,-0.6768)
+10-28 15:35:57.991 I/RudeusGate(31020): tap u=0.0200 v=0.0313 world=(-0.0173,-0.3510,-0.6492) anchorTracking=TRACKING t_ms=880
+10-28 15:36:07.127 I/RudeusGate(31020): anchor t_ms=10016 pos=(-0.0596,-0.3673,-0.7173)
+10-28 15:36:10.643 I/RudeusGate(31020): tap u=-0.1386 v=0.1088 world=(-0.1814,-0.3703,-0.5935) anchorTracking=TRACKING t_ms=13531
+10-28 15:36:17.130 I/RudeusGate(31020): anchor t_ms=20019 pos=(-0.0591,-0.3652,-0.7143)
+10-28 15:36:27.140 I/RudeusGate(31020): anchor t_ms=30028 pos=(-0.0603,-0.3709,-0.7222)
+10-28 15:36:37.159 I/RudeusGate(31020): anchor t_ms=40048 pos=(-0.0614,-0.3765,-0.7302)
+10-28 15:36:47.168 I/RudeusGate(31020): anchor t_ms=50056 pos=(-0.0582,-0.3607,-0.7080)
+# --- run B
+10-28 15:38:03.974 I/RudeusGate(31020): depth_supported=true depth_mode=AUTOMATIC
+10-28 15:38:04.025 I/RudeusGate(31020): session_resumed
+10-28 15:38:13.129 I/RudeusGate(31020): tracking_failure=INSUFFICIENT_LIGHT
+# --- run C
+10-28 15:38:53.858 I/RudeusGate(  814): depth_supported=true depth_mode=AUTOMATIC
+10-28 15:38:53.924 I/RudeusGate(  814): session_resumed
+10-28 15:38:58.607 I/RudeusGate(  814): plane_detected_ms=4682
+10-28 15:39:07.027 I/RudeusGate(  814): depth_supported=true depth_mode=AUTOMATIC
+10-28 15:39:07.078 I/RudeusGate(  814): session_resumed
+10-28 15:39:54.218 I/RudeusGate(  814): plane_detected_ms=47140
+10-28 15:40:15.732 I/RudeusGate(  814): anchor t_ms=0 pos=(0.0419,-0.2977,-0.6013)
+10-28 15:40:25.747 I/RudeusGate(  814): anchor t_ms=10016 pos=(0.0427,-0.2917,-0.5986)
+10-28 15:40:35.757 I/RudeusGate(  814): anchor t_ms=20026 pos=(0.0427,-0.2918,-0.5988)
+10-28 15:40:41.251 I/RudeusGate(  814): tap u=0.0739 v=-0.0888 world=(0.1131,-0.2919,-0.6904) anchorTracking=TRACKING t_ms=25520
+10-28 15:40:42.031 I/RudeusGate(  814): tap u=0.0620 v=-0.1028 world=(0.1006,-0.2919,-0.7041) anchorTracking=TRACKING t_ms=26300
+10-28 15:40:43.874 I/RudeusGate(  814): tap u=-0.0273 v=-0.0446 world=(0.0136,-0.2919,-0.6424) anchorTracking=TRACKING t_ms=28143
+10-28 15:40:44.687 I/RudeusGate(  814): tap u=0.0529 v=-0.0375 world=(0.0941,-0.2919,-0.6385) anchorTracking=TRACKING t_ms=28955
+10-28 15:40:45.770 I/RudeusGate(  814): anchor t_ms=30039 pos=(0.0427,-0.2919,-0.5989)
+10-28 15:40:55.777 I/RudeusGate(  814): anchor t_ms=40045 pos=(0.0427,-0.2919,-0.5989)
+10-28 15:41:00.629 I/RudeusGate(  814): tap u=-0.0342 v=-0.0695 world=(0.0057,-0.2918,-0.6670) anchorTracking=TRACKING t_ms=44897
+10-28 15:41:01.422 I/RudeusGate(  814): tap u=0.0726 v=-0.0360 world=(0.1138,-0.2918,-0.6376) anchorTracking=TRACKING t_ms=45691
+10-28 15:41:02.139 I/RudeusGate(  814): tap u=-0.0320 v=-0.0126 world=(0.0101,-0.2918,-0.6102) anchorTracking=TRACKING t_ms=46408
+10-28 15:41:04.881 I/RudeusGate(  814): tap u=-0.0789 v=-0.1991 world=(-0.0439,-0.2918,-0.7947) anchorTracking=TRACKING t_ms=49149
+10-28 15:41:05.445 I/RudeusGate(  814): tap u=0.0659 v=-0.1098 world=(0.1042,-0.2918,-0.7110) anchorTracking=TRACKING t_ms=49714
+10-28 15:41:05.783 I/RudeusGate(  814): anchor t_ms=50051 pos=(0.0427,-0.2918,-0.5988)
+10-28 15:41:15.792 I/RudeusGate(  814): anchor t_ms=60060 pos=(0.0427,-0.2914,-0.5980)
+10-28 15:41:25.804 I/RudeusGate(  814): anchor t_ms=70073 pos=(0.0427,-0.2913,-0.5979)
+10-28 15:41:35.820 I/RudeusGate(  814): anchor t_ms=80088 pos=(0.0427,-0.2912,-0.5977)
+10-28 15:41:36.920 I/RudeusGate(  814): tap u=0.0411 v=0.0066 world=(0.0840,-0.2913,-0.5929) anchorTracking=TRACKING t_ms=81188
+10-28 15:41:37.482 I/RudeusGate(  814): tap u=-0.0103 v=-0.0254 world=(0.0314,-0.2913,-0.6227) anchorTracking=TRACKING t_ms=81751
+10-28 15:41:45.825 I/RudeusGate(  814): anchor t_ms=90093 pos=(0.0427,-0.2910,-0.5974)
