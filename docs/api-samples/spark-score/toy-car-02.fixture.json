@@ -1,0 +1,11 @@
+{
+    "schema": 1,
+    "job": "spark-score",
+    "ref": "toy-car-02",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "scores": [
+        0.95
+    ],
+    "latencyMs": 6812
+}

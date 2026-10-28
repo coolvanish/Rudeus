@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy-car-01",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Vrum",
+        "personality": "Cheerful little green car who loves to race and make new friends.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Көлікпін!",
+                "Бірге ойнайық, досым!",
+                "Жылдам жүремін зуылдап!",
+                "Мен жасылмын және көңілдімін!",
+                "Кеттік қыдырып қайтайық!"
+            ],
+            "ru": [
+                "Привет! Я Машинка!",
+                "Давай играть вместе, друг!",
+                "Я еду быстро вж-ж-ж!",
+                "Я зелёный и весёлый!",
+                "Поехали кататься вместе!"
+            ]
+        }
+    },
+    "latencyMs": 7640
+}

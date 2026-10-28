@@ -1,0 +1,41 @@
+{
+    "schema": 1,
+    "characters": [
+        {
+            "ref": "toy-car-01",
+            "name": "Vrum",
+            "ability": "ROLL",
+            "gateScore": 0.789,
+            "gatePassed": true,
+            "attempts": 1,
+            "sprite": "toy-car-01/sprite.png",
+            "sheet": "toy-car-01/sheet.json",
+            "provider": "meta",
+            "runId": "2026-10-28T00-01-24Z"
+        },
+        {
+            "ref": "toy-car-02",
+            "name": "Zippy",
+            "ability": "ROLL",
+            "gateScore": 0.849,
+            "gatePassed": true,
+            "attempts": 1,
+            "sprite": "toy-car-02/sprite.png",
+            "sheet": "toy-car-02/sheet.json",
+            "provider": "meta",
+            "runId": "2026-10-28T00-01-24Z"
+        },
+        {
+            "ref": "watermelon-01",
+            "name": "Қарбызбек",
+            "ability": "ROLL",
+            "gateScore": 0.732,
+            "gatePassed": true,
+            "attempts": 2,
+            "sprite": "watermelon-01/sprite.png",
+            "sheet": "watermelon-01/sheet.json",
+            "provider": "meta",
+            "runId": "2026-10-28T00-01-24Z"
+        }
+    ]
+}

@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "job": "spark-sheet",
+    "ref": "toy-car-02",
+    "synthetic": false,
+    "note": "recorded by cli character --live on 2026-10-28",
+    "sheet": {
+        "name": "Zippy",
+        "personality": "Cheerful little racer who always helps friends.",
+        "ability": "roll",
+        "lines": {
+            "kk": [
+                "Сәлем! Мен Көлікпін!",
+                "Жүр, бірге ойнайық!",
+                "Мен өте жылдаммын!",
+                "Достарымды жақсы көремін!",
+                "Қане, жарысайық!"
+            ],
+            "ru": [
+                "Привет! Я Машинка!",
+                "Давай играть вместе!",
+                "Я очень быстрый!",
+                "Я люблю друзей!",
+                "Давай гоняться!"
+            ]
+        }
+    },
+    "latencyMs": 6606
+}
