@@ -52,6 +52,13 @@ import kotlin.math.abs
 private const val HINT_VISIBLE_MS = 1_500L
 
 /**
+ * HAND-REVIEW: after a tracking loss (camera covered, too little texture) ARCore re-localises and corrects the anchor
+ * pose over the next frames; on the Pixel the dino visibly slid ~20 cm when the hand came off the camera. Keep the
+ * character hidden this long after tracking returns, so the correction happens while it is invisible.
+ */
+private const val REAPPEAR_AFTER_TRACKING_MS = 800L
+
+/**
  * HAND-REVIEW: walk taps only count on the anchor's own surface, within this height of the anchor. Otherwise a tap
  * past the table edge hits the floor plane and the character walks off into the air (planeCoords drops the height).
  */
@@ -72,6 +79,7 @@ fun RudeusArView(
     val anchorRef = remember { arrayOfNulls<Anchor>(1) } // mirror of `anchor` for the frame callback
     val characterNode = remember { arrayOfNulls<PlaneNode>(1) }
     val loop = remember { GameLoop() }
+    val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
     val settle = remember { PlaneSettle() }
     // Texture + material instance live as long as the engine; the MaterialLoader owns the instance (SceneView docs).
     val sprite = remember(engine, materialLoader) { spriteFromAssets(engine, materialLoader, context.assets) }
@@ -119,9 +127,12 @@ fun RudeusArView(
                         a.trackingState == TrackingState.TRACKING
                     val state = loop.onFrame(now, tracking)
                     val node = characterNode[0]
+                    if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
                     // While not tracking the camera pose is meaningless and the AnchorNode hides its children.
                     if (tracking && node != null) {
                         poser.apply(node, state, planeCoords(a, frame.camera.pose), loop.walkPhaseMs)
+                        val visible = now >= reappearAtMs[0]
+                        if (node.isVisible != visible) node.isVisible = visible
                     }
                 }
             },
