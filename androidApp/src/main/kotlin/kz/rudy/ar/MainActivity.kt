@@ -22,14 +22,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import kz.rudy.ar.ar.RudeusArView
+import kz.rudy.ar.capture.rememberPhotoIntake
+import kz.rudy.ar.di.AndroidCaptureHost
 
 // HAND-REVIEW: AR host entry point. The AR view is passed into the shared App() as a slot composable.
+// HAND-REVIEW: T03 — the slot now also receives the captured character's sprite PNG (null = bundled dino), and App
+// gets the CaptureHost (camera + picker launchers, MetaApi pipeline, metrics). The launchers must be registered in
+// composition, hence rememberPhotoIntake() here; the host is remembered with them so one MetricsLog spans the session.
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            App(arView = { modifier -> WithCameraPermission(modifier) { RudeusArView(modifier) } })
+            val intake = rememberPhotoIntake()
+            val host = remember(intake) { AndroidCaptureHost(applicationContext, intake) }
+            App(
+                arView = { modifier, spritePng ->
+                    WithCameraPermission(modifier) { RudeusArView(modifier, spritePng = spritePng) }
+                },
+                capture = host,
+            )
         }
     }
 }

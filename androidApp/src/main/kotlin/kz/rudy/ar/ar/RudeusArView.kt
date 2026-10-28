@@ -64,9 +64,21 @@ private const val REAPPEAR_AFTER_TRACKING_MS = 800L
  */
 private const val WALK_TAP_HEIGHT_TOLERANCE_M = 0.03f
 
+/**
+ * HAND-REVIEW: T03 — the stylize prompt fixes no facing direction, so a generated sprite is assumed to face left like
+ * the demo dino; CharacterPoser flips it by walking direction. Check on the Pixel: a sprite drawn facing right walks
+ * backwards. Per-sprite detection is a follow-up, not a T03 item.
+ */
+internal const val GENERATED_SPRITE_FACES_RIGHT = false
+
+/**
+ * [spritePng] (T03): the captured character's matted PNG (`CharacterResult.sprite`); null shows the bundled dino.
+ * The texture is rebuilt when the bytes change (one texture per character per screen; not destroyed, same as T02).
+ */
 @Composable
 fun RudeusArView(
     modifier: Modifier = Modifier,
+    spritePng: ByteArray? = null,
     onAnchorPlaced: () -> Unit = {},
     onWalkTo: (Vec2) -> Unit = {},
 ) {
@@ -82,7 +94,10 @@ fun RudeusArView(
     val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
     val settle = remember { PlaneSettle() }
     // Texture + material instance live as long as the engine; the MaterialLoader owns the instance (SceneView docs).
-    val sprite = remember(engine, materialLoader) { spriteFromAssets(engine, materialLoader, context.assets) }
+    val sprite = remember(engine, materialLoader, spritePng) {
+        if (spritePng != null) spriteFromBytes(engine, materialLoader, spritePng, GENERATED_SPRITE_FACES_RIGHT)
+        else spriteFromAssets(engine, materialLoader, context.assets)
+    }
     val poser = remember(sprite) { CharacterPoser(sprite) }
     var anchor by remember { mutableStateOf<Anchor?>(null) }
     var showHint by remember { mutableStateOf(false) }
