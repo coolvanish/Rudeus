@@ -61,6 +61,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     scan_objects_found("Заттар", "Предметы", "Objects"),
 
     play_tap_to_walk("Түрт — ол барады", "Нажми — он пойдёт", "Tap — it walks"),
+    /** AR host: a tap before the table plane has settled (T02 anchor gate) shows this for a moment. */
+    ar_wait_table("Сәл күт — үстелді іздеп жатырмын", "Подожди — ищу стол", "Wait — finding the table"),
     rescan("Қайта скан", "Скан снова", "Rescan"),
     ability_jump("Секіру", "Прыжок", "Jump"),
     ability_fly("Ұшу", "Полёт", "Fly"),
