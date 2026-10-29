@@ -76,8 +76,37 @@ class ScanMasksTest {
         assertEquals(listOf(36, 36), partFirst.map { it.mask.count() })
         assertEquals(true, partFirst[0].mask[2, 2], "whole cup replaced its part")
 
-        // Overlap is only checked within one prompt: a book on the same pixels as a cup is a separate object.
-        val mixed = SegmentResult(listOf(rect("cup", 0, 0, 1, 1, 0.9f).copy(instances = listOf(cup)), rect("book", 0, 0, 1, 1, 0.9f).copy(instances = listOf(rect("book", 2, 2, 8, 8, 0.9f)))))
-        assertEquals(listOf("cup", "book"), ScanMasks.of(mixed).map { it.label })
+        // Across prompts the same pixels are one object: the earlier named label wins (crossLabelGenericObjectLosesToTheNamedLabel).
+        val mixed = SegmentResult(listOf(rect("cup", 0, 0, 1, 1, 0.5f).copy(instances = listOf(rect("cup", 2, 2, 8, 8, 0.5f))), rect("book", 0, 0, 1, 1, 0.9f).copy(instances = listOf(rect("book", 2, 2, 8, 8, 0.9f)))))
+        assertEquals(listOf("cup"), ScanMasks.of(mixed).map { it.label })
+    }
+
+    /** One prompt whose single detection is [inst]. */
+    private fun single(inst: MaskResult) = inst.copy(instances = listOf(inst))
+
+    @Test
+    fun crossLabelGenericObjectLosesToTheNamedLabel() {
+        val cup = rect("cup", 2, 2, 8, 8, 0.6f)
+        // "object" (listed first, higher score) on the cup's pixels: one cup, whatever the order or score.
+        val objOnCup = rect("object", 2, 2, 8, 8, 0.99f)
+        assertEquals(listOf("cup"), ScanMasks.of(SegmentResult(listOf(single(objOnCup), single(cup)))).map { it.label })
+        // A slightly larger "object" box around the cup (the cup is 36 of its 64 px: IoU 0.56) is the cup too.
+        val objAround = rect("object", 1, 1, 9, 9, 0.99f)
+        assertEquals(listOf("cup"), ScanMasks.of(SegmentResult(listOf(single(objAround), single(cup)))).map { it.label })
+
+        // "object" on its own pixels is kept as an object, after the named labels.
+        val objAlone = rect("object", 12, 2, 18, 8, 0.99f)
+        val kept = ScanMasks.of(SegmentResult(listOf(single(objAlone), single(cup))))
+        assertEquals(listOf("cup", "object"), kept.map { it.label })
+        assertEquals(true, kept[1].mask[12, 2])
+
+        // Two named labels overlapping by a third of the cup (12 of its 36 px; IoU 0.17): both kept.
+        val book = rect("book", 6, 2, 14, 8, 0.9f) // 8x6 = 48 px
+        val both = ScanMasks.of(SegmentResult(listOf(single(cup), single(book))))
+        assertEquals(listOf("cup", "book"), both.map { it.label })
+        // "hand" is named, not generic: it beats an "object" on the same pixels.
+        val hand = rect("hand", 2, 2, 8, 8, 0.9f)
+        assertEquals(listOf("hand"), ScanMasks.of(SegmentResult(listOf(single(rect("object", 2, 2, 8, 8, 0.99f)), single(hand)))).map { it.label })
+        assertEquals(setOf("object"), ScanMasks.GENERIC_LABELS)
     }
 }

@@ -38,20 +38,32 @@ object ScanMasks {
     const val MAX_CONTAINMENT = 0.8f
 
     /**
+     * Catch-all prompts that also match the named objects (the generic "object" finds the cup and the book again).
+     * They have the lowest priority across labels; every other label (including "hand") keeps the input order.
+     * Compared lower-case.
+     */
+    val GENERIC_LABELS: Set<String> = setOf("object")
+
+    /**
      * One [LabeledMask] per [MaskResult.instances] entry (label = the prompt, best score first as stored); a prompt
      * with no instances but a non-empty merged mask (fixtures recorded before T15) yields its merged mask. Empty
      * masks are dropped, and a prompt listed in [SegmentResult.failedPrompts] yields nothing. RLE masks decode with
      * [BooleanMask.fromRle]; a bbox-only mask becomes its filled box.
      *
-     * Overlapping detections of one prompt (a duplicate, or a cup and its handle) become ONE mask: an instance whose
-     * pixel IoU with an already-kept mask of the same prompt is > [MAX_IOU], or whose own pixels lie > [MAX_CONTAINMENT]
-     * inside it, is skipped (the kept one scored higher). When instead a kept mask lies > [MAX_CONTAINMENT] inside the
-     * new one (the part scored above the whole), the whole replaces the part in the part's slot. Bounding boxes are
-     * compared first; pixels only when they intersect.
+     * 1. **Within one prompt** overlapping detections (a duplicate, or a cup and its handle) become ONE mask: an
+     *    instance whose pixel IoU with an already-kept mask of the same prompt is > [MAX_IOU], or whose own pixels lie
+     *    > [MAX_CONTAINMENT] inside it, is skipped (the kept one scored higher). When instead a kept mask lies
+     *    > [MAX_CONTAINMENT] inside the new one (the part scored above the whole), the whole replaces the part in the
+     *    part's slot.
+     * 2. **Across prompts** the labels are taken in priority order: named labels in input order, then
+     *    [GENERIC_LABELS]. A mask that is the same object (same IoU / own-containment test) as an already-kept mask of
+     *    a DIFFERENT label is dropped, so the specific label wins regardless of score. The output follows that order.
+     *
+     * Bounding boxes are compared first; pixels only when they intersect.
      */
     fun of(result: SegmentResult): List<LabeledMask> {
         val failed = result.failedPrompts.toSet()
-        val out = ArrayList<LabeledMask>()
+        val groups = ArrayList<Pair<String, List<Kept>>>()
         for (m in result.masks) {
             if (m.label in failed) continue
             val kept = ArrayList<Kept>()
@@ -64,8 +76,7 @@ object ScanMasks {
                 for ((i, k) in kept.withIndex()) {
                     val inter = intersection(cand, k)
                     if (inter == 0) continue
-                    val iou = inter.toFloat() / (cand.count + k.count - inter)
-                    if (iou > MAX_IOU || inter.toFloat() / cand.count > MAX_CONTAINMENT) { drop = true; break }
+                    if (sameObject(cand, k, inter)) { drop = true; break }
                     if (inter.toFloat() / k.count > MAX_CONTAINMENT) { replaceAt = i; break }
                 }
                 when {
@@ -74,10 +85,26 @@ object ScanMasks {
                     else -> kept += cand
                 }
             }
-            for (k in kept) out += LabeledMask(m.label, k.mask)
+            if (kept.isNotEmpty()) groups += m.label to kept
         }
-        return out
+        val ordered = groups.filter { !isGeneric(it.first) } + groups.filter { isGeneric(it.first) }
+        val accepted = ArrayList<Pair<String, Kept>>()
+        for ((label, kept) in ordered) {
+            for (cand in kept) {
+                val duplicate = accepted.any { (otherLabel, k) ->
+                    otherLabel != label && intersection(cand, k).let { it > 0 && sameObject(cand, k, it) }
+                }
+                if (!duplicate) accepted += label to cand
+            }
+        }
+        return accepted.map { (label, k) -> LabeledMask(label, k.mask) }
     }
+
+    private fun isGeneric(label: String): Boolean = label.lowercase() in GENERIC_LABELS
+
+    /** [cand] is the object [k] already stands for: IoU > [MAX_IOU] or > [MAX_CONTAINMENT] of [cand] inside [k]. */
+    private fun sameObject(cand: Kept, k: Kept, inter: Int): Boolean =
+        inter.toFloat() / (cand.count + k.count - inter) > MAX_IOU || inter.toFloat() / cand.count > MAX_CONTAINMENT
 
     private class Kept(val mask: BooleanMask) {
         val box: PixelRect? = mask.boundingBox()

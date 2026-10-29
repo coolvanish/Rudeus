@@ -130,3 +130,10 @@ assertions in two existing ones).
    2 instances (165x139 at c=0.957 first, then 114x156 at c=0.766); laptop, toy car and knife carry 1 each; speaker
    is absent with no instances. The file grew from 35.6 KB to 84.9 KB. The pre-commit token regexes match nothing
    in it.
+7. Suppression across labels (2026-10-29). Within each prompt the masks are deduplicated first. Then the labels are
+   taken in priority order: named labels in input order, then `ScanMasks.GENERIC_LABELS = setOf("object")`. A mask
+   is dropped when it is the same object as an already-kept mask of a DIFFERENT label (IoU > 0.5 or own containment
+   > 0.8), so the specific label wins regardless of score; "hand" counts as specific. The output follows the
+   priority order. Test: `ScanMasksTest.crossLabelGenericObjectLosesToTheNamedLabel`. One assertion in
+   `overlappingDetectionsOfOnePromptBecomeOneMask` changed: a cup and a book on the same pixels are now one object,
+   and the earlier label (cup) wins. `:core:jvmTest`: 165 tests, 0 failures, 0 errors, 0 skipped (was 164).
