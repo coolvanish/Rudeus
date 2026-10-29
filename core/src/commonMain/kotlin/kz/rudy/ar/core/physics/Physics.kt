@@ -2,6 +2,7 @@ package kz.rudy.ar.core.physics
 
 import kotlinx.serialization.Serializable
 import kz.rudy.ar.core.domain.Ability
+import kz.rudy.ar.core.domain.CharacterFrame
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.LevelObject
@@ -23,11 +24,11 @@ import kz.rudy.ar.core.domain.Vec2
  */
 @Serializable
 data class PhysicsBody(
-    val state: CharacterState = CharacterState(),
+    override val state: CharacterState = CharacterState(),
     val verticalVelocity: Float = 0f,
     val modeBeforePause: Mode? = null,
-    val blocked: Boolean = false,
-)
+    override val blocked: Boolean = false,
+) : CharacterFrame
 
 /**
  * Pure, deterministic table physics in plane coordinates `(u, v, h)` (metres).
@@ -55,8 +56,9 @@ data class PhysicsBody(
  * - [Mode.PAUSED] freezes everything: [step] returns the body unchanged (including [PhysicsBody.blocked]).
  * - [PhysicsBody.blocked]: true after a step (`dtMs > 0`) that started on the ground walking toward a target, ended
  *   still [Mode.WALKING] toward it, and in which push-out cancelled more than half of the step's intended horizontal
- *   displacement (head-on into a cup: blocked; brushing along its side: not). False after any other step; a
- *   [walkTo] to a different target clears it.
+ *   displacement (head-on into a cup: blocked; brushing along its side: not). A `dtMs <= 0` step that ends still
+ *   walking toward a target keeps the previous value (a tracking resume must not re-announce BLOCKED). False after
+ *   any other step; a [walkTo] to a different target clears it.
  *
  * Every function returns a new value; nothing is mutated.
  */
@@ -159,8 +161,9 @@ object Physics {
         return PhysicsBody(
             state = s.copy(pos = pos, h = h, target = target, mode = mode, facing = facing),
             verticalVelocity = vv,
-            // An arrival or a fall this step is not "blocked", whatever the push-out did.
-            blocked = pushedBack && target != null && mode == Mode.WALKING,
+            // An arrival or a fall this step is not "blocked", whatever the push-out did. A zero-length step (the host's
+            // first frame after a tracking resume) measures nothing, so it keeps the previous flag.
+            blocked = target != null && mode == Mode.WALKING && (if (dt > 0f) pushedBack else body.blocked),
         )
     }
 

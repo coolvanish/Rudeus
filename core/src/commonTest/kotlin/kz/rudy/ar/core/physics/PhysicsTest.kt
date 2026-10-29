@@ -380,8 +380,11 @@ class PhysicsTest {
         // Paused while pinned: the frozen body keeps its flag (a paused step is the identity).
         val paused = Physics.pause(pinned)
         assertEquals(paused, Physics.step(paused, level, DT))
-        // A zero-length step makes no walking progress to cancel.
-        assertFalse(Physics.step(pinned, level, 0L).blocked)
+        // A zero-length step (the host's first frame after a tracking resume) keeps the flag while still walking at it,
+        // and never raises it: no progress was intended.
+        assertTrue(Physics.step(pinned, level, 0L).blocked)
+        assertFalse(Physics.step(t[50], level, 0L).blocked)
+        assertFalse(Physics.step(Physics.walkTo(pinned, Vec2(0.16f, 0f)), level, 0L).blocked, "a new target starts unblocked")
         // The target cleared (the walk stopped): standing against the cup is not blocked.
         val stopped = pinned.copy(state = pinned.state.copy(target = null, mode = Mode.IDLE))
         assertFalse(Physics.step(stopped, level, DT).blocked)

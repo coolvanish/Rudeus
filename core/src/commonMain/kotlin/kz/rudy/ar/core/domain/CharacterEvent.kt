@@ -1,7 +1,5 @@
 package kz.rudy.ar.core.domain
 
-import kz.rudy.ar.core.physics.PhysicsBody
-
 /**
  * Things the HUD reacts to (speech bubbles, hints, sounds), derived from consecutive [CharacterState]s so the AR
  * host never interprets physics itself. Produced by [CharacterEvents.between] once per physics step.
@@ -14,8 +12,8 @@ enum class CharacterEvent {
     /** WALKING -> IDLE with the target reached (cleared). */
     ARRIVED,
     /**
-     * Walking but pushed back by an obstacle: the rising edge of [PhysicsBody.blocked], once per walk target (only the
-     * [PhysicsBody] overload of [CharacterEvents.between] can see it).
+     * Walking but pushed back by an obstacle: the rising edge of [CharacterFrame.blocked], once per walk target (only
+     * the [CharacterFrame] overload of [CharacterEvents.between] can see it).
      */
     BLOCKED,
     /** Feet went up while on the ground (walked onto a platform). */
@@ -32,11 +30,23 @@ enum class CharacterEvent {
     RESUMED,
 }
 
+/**
+ * One physics frame of the character as [CharacterEvents.between] needs it: the rendered state and whether the step
+ * that produced it was blocked. Implemented by `kz.rudy.ar.core.physics.PhysicsBody`; declared here so the domain
+ * package does not depend on the physics package.
+ */
+interface CharacterFrame {
+    val state: CharacterState
+
+    /** See `PhysicsBody.blocked`: the last step walked toward a target and was mostly pushed back. */
+    val blocked: Boolean
+}
+
 object CharacterEvents {
     /**
      * Events implied by the transition [prev] -> [next] (one physics step). Deterministic; an unchanged state yields
      * nothing. Order: the mode transition (at most one event), then a step up. Never [CharacterEvent.PLACED] or
-     * [CharacterEvent.BLOCKED] (the [PhysicsBody] overload adds the latter).
+     * [CharacterEvent.BLOCKED] (the [CharacterFrame] overload adds the latter).
      *
      * Mode transitions: -> PAUSED: PAUSED; PAUSED -> any: RESUMED; -> JUMPING: JUMPED; -> FALLING: FELL;
      * -> RESPAWNING from anything but FALLING (a FLY character that came down over a cliff): FELL;
@@ -69,12 +79,13 @@ object CharacterEvents {
     }
 
     /**
-     * [between] on the states, plus [CharacterEvent.BLOCKED] (last) on the rising edge of [PhysicsBody.blocked]: once
-     * per pinned stretch of one walk, never once per step. A walk to a new target is a new walk: blocked again, it is
-     * announced again, also when [prev] was taken before the tap ([prev] blocked toward the old target, [next] toward
-     * the new one), so a host that diffs "last reported" against "now" gets it too.
+     * [between] on the states, plus [CharacterEvent.BLOCKED] (last) on the rising edge of [CharacterFrame.blocked]:
+     * once per pinned stretch of one walk, never once per step. A walk to a new target is a new walk: blocked again, it
+     * is announced again, also when [prev] was taken before the tap ([prev] blocked toward the old target, [next]
+     * toward the new one), so a host that diffs "last reported" against "now" gets it too. Called with two
+     * `PhysicsBody` values (they are [CharacterFrame]s).
      */
-    fun between(prev: PhysicsBody, next: PhysicsBody): List<CharacterEvent> {
+    fun between(prev: CharacterFrame, next: CharacterFrame): List<CharacterEvent> {
         val events = between(prev.state, next.state)
         val sameBlockedWalk = prev.blocked && prev.state.target == next.state.target
         return if (next.blocked && !sameBlockedWalk) events + CharacterEvent.BLOCKED else events

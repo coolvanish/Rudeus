@@ -4,6 +4,7 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.LevelObject
 import kz.rudy.ar.core.domain.Polygon
 import kz.rudy.ar.core.domain.Semantics
+import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.geometry.BooleanMask
 import kz.rudy.ar.core.geometry.Intrinsics
@@ -90,13 +91,14 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
         const val EXTREME_ANGLE_TOL = 2e-3f
     }
 
-    fun build(input: ScanInput, previous: Level? = null): Level {
+    /** [profile] (table or floor) only decides each object's kind ([Semantics.kindFor]); footprints and heights are metric. */
+    fun build(input: ScanInput, previous: Level? = null, profile: SurfaceProfile = SurfaceProfile.TABLE): Level {
         val candidates = ArrayList<Pair<String, Candidate>>()
         for (lm in input.masks) {
             val c = extract(lm.mask, input) ?: continue
             candidates.add(lm.label to c)
         }
-        val objects = assignIds(candidates, previous)
+        val objects = assignIds(candidates, previous, profile)
         return Level(objects = objects, boundary = input.boundary, spawn = input.spawn)
     }
 
@@ -247,7 +249,7 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
         return if (t >= 0f && u >= 0f && u <= 1f) t else null
     }
 
-    private fun assignIds(candidates: List<Pair<String, Candidate>>, previous: Level?): List<LevelObject> {
+    private fun assignIds(candidates: List<Pair<String, Candidate>>, previous: Level?, profile: SurfaceProfile): List<LevelObject> {
         val usedIds = HashSet<String>()
         previous?.objects?.forEach { usedIds.add(it.id) }
         val taken = HashSet<String>()
@@ -287,7 +289,7 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
                 LevelObject(
                     id = id,
                     label = label,
-                    kind = Semantics.kindFor(label, cand.heightM),
+                    kind = Semantics.kindFor(label, cand.heightM, profile),
                     footprint = cand.footprint,
                     heightM = cand.heightM,
                 )

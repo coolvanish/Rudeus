@@ -221,6 +221,41 @@ class CharacterEventsTest {
     }
 
     @Test
+    fun trackingBlipDoesNotReannounceBlocked() {
+        // Frames as the AR host runs them (GameLoop): not tracking -> pause; tracking -> resume, then one step whose dt
+        // is 0 on the first frame after a pause; events are diffed against the last reported body.
+        val level = Level(listOf(cup(Vec2.ZERO)))
+        var body = Physics.walkTo(idleAt(Vec2(-0.15f, 0f)), Vec2(0.15f, 0f))
+        var reported = body
+        var lastMs: Long? = null
+        val seen = ArrayList<CharacterEvent>()
+        fun frame(nowMs: Long, tracking: Boolean) {
+            if (!tracking) {
+                body = Physics.pause(body)
+                lastMs = null
+            } else {
+                body = Physics.resume(body)
+                val dt = lastMs?.let { nowMs - it } ?: 0L
+                lastMs = nowMs
+                body = Physics.step(body, level, dt)
+            }
+            seen += CharacterEvents.between(reported, body)
+            reported = body
+        }
+        var now = 0L
+        repeat(200) { frame(now, tracking = true); now += DT } // pinned from step ~101
+        assertTrue(body.blocked)
+        assertEquals(listOf(BLOCKED), seen)
+        repeat(3) { frame(now, tracking = false); now += DT } // tracking blip
+        repeat(50) { frame(now, tracking = true); now += DT } // resume: a dt = 0 step, then normal steps, still pinned
+        assertTrue(body.blocked)
+        assertEquals(listOf(BLOCKED, PAUSED, RESUMED), seen, "the blip does not re-announce BLOCKED")
+        // A dt = 0 step keeps the flag only while it still walks toward a target.
+        val stopped = body.copy(state = body.state.copy(target = null, mode = Mode.IDLE))
+        assertEquals(false, Physics.step(stopped, level, 0L).blocked)
+    }
+
+    @Test
     fun arrivedNotEmittedForIdleToIdle() {
         val armed = CharacterState(target = Vec2(0.1f, 0f), mode = Mode.IDLE)
         assertEquals(emptyList(), CharacterEvents.between(armed, armed.copy(target = null)))

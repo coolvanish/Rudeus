@@ -51,7 +51,9 @@ data class CharacterResult(
  *
  * A failed stage (an exception, not a gate below threshold) is charged only what was metered, else 0. When the
  * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`). When [run]
- * is cancelled, the character lands as aborted ([MetricsLog.abortCharacter]) with the stages recorded so far.
+ * is cancelled, the character lands as aborted ([MetricsLog.abortCharacter]) with the stages recorded so far plus the
+ * sheet if it had already come back, and no further event is emitted. A CancellationException while the caller is
+ * still active (a timeout surfacing as one) is not a cancel: the stage and the character fail as for any error.
  *
  * Every attempt gets two gate looks at the same sprite, run in parallel (user decision 2026-10-28): stage `gate`
  * ([MetaModels.scoreStyle] + [StyleGate.deterministicScore]) and stage `rescore`, the colour-free one
@@ -174,10 +176,18 @@ class CharacterPipeline(
                         record(STAGE_RESCORE, techniqueEnd - t0, attempt, techniquePassed, techniqueCost)
                         if (passed || attempt > maxRetries) break
                     }
-                } catch (e: CancellationException) {
-                    throw e
                 } catch (e: Throwable) {
-                    // The character fails, but the sheet was (or is being) paid for: record it before giving up.
+                    if (e is CancellationException && !currentCoroutineContext().isActive) {
+                        // Really cancelled (the player left): a sheet that already came back was billed, so it stays
+                        // with the aborted character; recorded silently, a cancelled run reports nothing more.
+                        if (sheetCall.isCompleted && !sheetCall.isCancelled) {
+                            val sheet = sheetCall.await()
+                            metrics.stage(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
+                        }
+                        throw e
+                    }
+                    // The character fails (a stray CancellationException, i.e. a timeout surfacing as one, included),
+                    // but the sheet was (or is being) paid for: record it before giving up.
                     // Finished -> its outcome; still running -> cancel it, charge what was metered (usually 0).
                     if (sheetCall.isCompleted) {
                         val sheet = sheetCall.await()
@@ -195,11 +205,14 @@ class CharacterPipeline(
                 metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)
                 CharacterResult(ref, sprite, sheet.sheet, score, passed, attempt, mask)
             }
-        } catch (e: CancellationException) {
-            // Cancelled (the player left, the screen closed): keep the stages already paid for, out of the summary.
-            metrics.abortCharacter(attempts = attempt)
-            throw e
         } catch (e: Throwable) {
+            if (e is CancellationException && !currentCoroutineContext().isActive) {
+                // Cancelled (the player left, the screen closed): keep the stages already paid for, out of the summary.
+                metrics.abortCharacter(attempts = attempt)
+                throw e
+            }
+            // Any other error, including a CancellationException while this coroutine is still active (a timeout
+            // surfacing as one): a failed character that counts in the summary, and Failed so the UI leaves RUNNING.
             metrics.endCharacter(gateScore = 0f, gatePassed = false, retries = (attempt - 1).coerceAtLeast(0))
             val error = if (e is MetaError) e else MetaError.Provider("$ref: ${e::class.simpleName}: ${e.message}", e)
             emit(PipelineEvent.Failed(error.message ?: error::class.simpleName.orEmpty()))
@@ -277,7 +290,8 @@ class CharacterPipeline(
             samEstimate = metrics.costs.cutoutUsd
             mask?.let { m -> cutoutComposer?.invoke(stylized, m) }?.takeUnless { it.contentEquals(stylized) }
         } catch (e: CancellationException) {
-            throw e
+            if (!currentCoroutineContext().isActive) throw e
+            null // a timeout surfacing as a cancellation: the SAM pass failed, ship the unmatted sprite
         } catch (e: Throwable) {
             null
         }
@@ -295,10 +309,11 @@ class CharacterPipeline(
         val mark = metrics.costMark(job)
         val r = try {
             block()
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Throwable) {
-            record(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, 0.0))
+            // A real cancellation records nothing; any other error (a stray CancellationException included) fails it.
+            if (e !is CancellationException || currentCoroutineContext().isActive) {
+                record(name, metrics.now() - t0, attempt, false, metrics.costSince(mark, 0.0))
+            }
             throw e
         }
         // Outside the try: a throwing listener must not record the stage a second time as failed.

@@ -2,6 +2,7 @@ package kz.rudy.ar.core.pipeline
 
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.ObjectKind
+import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.geometry.BooleanMask
 import kz.rudy.ar.core.geometry.Intrinsics
@@ -153,6 +154,18 @@ class SceneBuilderTest {
         // A tall "book" is an obstacle.
         val tall = SceneBuilder().build(scan("book" to Box(-0.05f, 0.05f, 0.1f, 0.2f, 0.08f)))
         assertEquals(ObjectKind.OBSTACLE, tall.objects[0].kind)
+    }
+
+    @Test
+    fun floorProfileMakesATwelveCmBoxAPlatform() {
+        val box = scan("box" to Box(u0 = -0.10f, u1 = 0.05f, v0 = 0.05f, v1 = 0.15f, h = 0.12f))
+        val onFloor = SceneBuilder().build(box, profile = SurfaceProfile.FLOOR).objects.single()
+        val onTable = SceneBuilder().build(box).objects.single()
+        println("box h=${onFloor.heightM}")
+        assertTrue(abs(onFloor.heightM - 0.12f) < 0.02f, "box height ${onFloor.heightM}")
+        assertEquals(ObjectKind.PLATFORM, onFloor.kind)
+        assertEquals(ObjectKind.OBSTACLE, onTable.kind)
+        assertEquals(onTable.copy(kind = ObjectKind.PLATFORM), onFloor, "only the kind depends on the profile")
     }
 
     @Test

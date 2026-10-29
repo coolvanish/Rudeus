@@ -108,7 +108,7 @@ data class Polygon(val points: List<Vec2>) {
 enum class ObjectKind {
     /** Cup, bottle: solid, taller than a step. Character is pushed out. */
     OBSTACLE,
-    /** Book, phone: walkable if its top is <= [Semantics.PLATFORM_MAX_HEIGHT_M]. */
+    /** Book, phone (a box on the floor): walkable if its top is <= the profile's platform height (table: [Semantics.PLATFORM_MAX_HEIGHT_M]). */
     PLATFORM,
     /** Hand: moves between scans; treated as an obstacle that can be re-placed. */
     DYNAMIC,
@@ -182,12 +182,18 @@ object Semantics {
     /** Height the character can step up without jumping. */
     const val STEP_UP_MAX_M = 0.04f
 
-    private val platformLabels = setOf("book", "phone", "notebook", "card", "paper")
+    /** Flat things a character can stand on when low enough. "box" is for the floor (a shoebox); the table scan never prompts it. */
+    private val platformLabels = setOf("book", "phone", "notebook", "card", "paper", "box")
     private val dynamicLabels = setOf("hand", "finger")
 
-    fun kindFor(label: String, heightM: Float): ObjectKind = when {
+    /**
+     * What a scanned object means at the scale of [profile]: a hand is [ObjectKind.DYNAMIC]; a platform label no
+     * taller than [SurfaceProfile.platformMaxHeightM] (4 cm on the table, 16 cm on the floor) is a
+     * [ObjectKind.PLATFORM]; anything else is an [ObjectKind.OBSTACLE].
+     */
+    fun kindFor(label: String, heightM: Float, profile: SurfaceProfile = SurfaceProfile.TABLE): ObjectKind = when {
         label.lowercase() in dynamicLabels -> ObjectKind.DYNAMIC
-        label.lowercase() in platformLabels && heightM <= PLATFORM_MAX_HEIGHT_M -> ObjectKind.PLATFORM
+        label.lowercase() in platformLabels && heightM <= profile.platformMaxHeightM -> ObjectKind.PLATFORM
         else -> ObjectKind.OBSTACLE
     }
 }

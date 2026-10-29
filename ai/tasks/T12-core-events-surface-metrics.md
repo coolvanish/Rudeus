@@ -1,6 +1,6 @@
 # T12 — core-events-surface-metrics
 
-status: doing
+status: done
 created: 2026-10-29
 day: Day 3 (tech debt + floor/outdoor support)
 gate: Day 3 — 60 s walking without drift; capture -> character < 60 s (this brief adds no risk to either)
@@ -137,3 +137,27 @@ CharacterPipelineTest 25 -> 26). `:cli:compileKotlin` OK. `scripts/verify.sh` le
 - A FLY character over a cliff stays JUMPING with its feet below the plane (h between -5 cm and 0) until it respawns.
   That physics quirk is unchanged; the events now say FELL.
 - `androidApp/.../GameLoop.kt` still carries the `// T12` note to switch to the PhysicsBody overload (T14).
+
+**Review fixes** (2026-10-29, on top of 7f9b33d). `:core:jvmTest` **158 tests, 0 failures** (154 + 4 new:
+`strayCancellationInStylizeFailsTheCharacter`, `trackingBlipDoesNotReannounceBlocked`, `kindForUsesTheSurfaceProfile`,
+`floorProfileMakesATwelveCmBoxAPlatform`); `:cli:compileKotlin` and `:androidApp:compileDebugKotlin` compile unchanged.
+1. Stray CancellationException = failure. `CharacterPipeline.run` aborts only when the caller is really cancelled
+   (`!currentCoroutineContext().isActive`). A CancellationException while still active (a timeout) takes the failure
+   path: `endCharacter(0, false, …)`, `Failed` emitted, `MetaError.Provider` thrown. The stage it hit is recorded
+   `ok=false` (`stage()`), the stylize loop records the sheet as for any failure, and the matte SAM fallback treats it
+   like its other errors (ships the unmatted sprite).
+2. A `dtMs <= 0` step keeps the previous `blocked` while it still ends WALKING toward a target. The host's dt = 0 step
+   after a tracking resume no longer clears the flag, so a blip while pinned emits PAUSED, RESUMED and no second BLOCKED.
+   A dt = 0 step never raises the flag, and `walkTo` to a new target still clears it.
+3. `Semantics.kindFor(label, heightM, profile = SurfaceProfile.TABLE)` compares with `profile.platformMaxHeightM`.
+   `SceneBuilder.build(input, previous, profile = TABLE)` passes it through. "box" joined the platform labels (a
+   shoebox on the floor). The table default matches the old rule for every label the table scan prompts, checked in the
+   test against the old rule written out. The one difference: a "box" of at most 4 cm is now a PLATFORM on the table
+   too; no table prompt produces "box".
+4. On a real cancel, a sheet that had already come back (it was billed) is recorded with the aborted character. It is
+   recorded silently: no StageFinished after a cancel. A sheet still running is not recorded.
+5. No more package cycle: `domain` now declares `interface CharacterFrame { val state; val blocked }`, `PhysicsBody`
+   implements it, and the overload is `CharacterEvents.between(prev: CharacterFrame, next: CharacterFrame)`. That differs
+   from the suggested extension in `physics`: an extension would have needed a new
+   `import kz.rudy.ar.core.physics.between` in androidApp's GameLoop. With the interface, the existing call
+   `CharacterEvents.between(lastReported, body)` compiles with no androidApp change.
