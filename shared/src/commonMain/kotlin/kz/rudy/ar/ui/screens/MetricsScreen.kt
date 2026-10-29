@@ -34,8 +34,12 @@ import kz.rudy.ar.ui.components.PrimaryButton
 import kz.rudy.ar.ui.components.StatusBanner
 import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.RudeusColors
+import kz.rudy.ar.ui.theme.RudeusMono
 import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
+
+/** Shown in a table cell that has no value (a cancelled character's score and retries). */
+private const val NO_VALUE = "—"
 
 enum class ExportStatus { IDLE, SAVING, SAVED, FAILED }
 
@@ -76,7 +80,7 @@ fun MetricsScreen(
                 if (exportLocation != null) {
                     Text(
                         "${t(StringId.metrics_export_where)}: $exportLocation",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = RudeusMono,
                         color = RudeusColors.InkSoft,
                     )
                 }
@@ -107,7 +111,7 @@ fun MetricsScreen(
 private fun RunBody(run: MetricsRun) {
     Text(
         "${t(StringId.metrics_run)} ${run.runId} · ${run.source} · ${run.provider} · ${run.device}",
-        style = MaterialTheme.typography.bodyMedium,
+        style = RudeusMono,
         color = RudeusColors.InkSoft,
     )
     Spacer(Modifier.height(RudeusSpacing.md))
@@ -123,17 +127,33 @@ private fun RunBody(run: MetricsRun) {
         }
         Spacer(Modifier.height(RudeusSpacing.lg))
     }
-    Text("${t(StringId.metrics_characters)} (${run.characters.size})", style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
+    // The header counts finished characters, like summary.n; cancelled ones (CharacterMetrics.aborted) are listed apart.
+    val cancelled = run.characters.count { it.aborted }
+    val finished = run.characters.size - cancelled
+    val count = if (cancelled > 0) "$finished · $cancelled ${t(StringId.metrics_cancelled)}" else "$finished"
+    Text("${t(StringId.metrics_characters)} ($count)", style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
     Spacer(Modifier.height(RudeusSpacing.sm))
     TableRow(
         listOf(t(StringId.metrics_col_input), t(StringId.metrics_col_score), t(StringId.metrics_col_retries), t(StringId.metrics_col_time), t(StringId.metrics_col_cost)),
         header = true,
     )
     run.characters.forEachIndexed { i, c ->
+        // A cancelled character has no verdict: no score, no retries, a neutral accent (not a red "failed").
         TableRow(
-            listOf(c.input.substringAfterLast('/'), formatFixed(c.gateScore, 2), c.retries.toString(), formatSeconds(c.totalMs), formatUsd(c.totalCostUsd)),
+            listOf(
+                c.input.substringAfterLast('/'),
+                if (c.aborted) NO_VALUE else formatFixed(c.gateScore, 2),
+                if (c.aborted) NO_VALUE else c.retries.toString(),
+                formatSeconds(c.totalMs),
+                formatUsd(c.totalCostUsd),
+            ),
             striped = i % 2 == 1,
-            accent = if (c.gatePassed) RudeusColors.Leaf else RudeusColors.Tomato,
+            accent = when {
+                c.aborted -> RudeusColors.InkSoft
+                c.gatePassed -> RudeusColors.Leaf
+                else -> RudeusColors.Tomato
+            },
+            muted = c.aborted,
         )
     }
     if (run.scans.isNotEmpty()) {
@@ -172,6 +192,7 @@ private fun TableRow(
     header: Boolean = false,
     striped: Boolean = false,
     accent: androidx.compose.ui.graphics.Color? = null,
+    muted: Boolean = false,
 ) {
     Row(
         Modifier
@@ -188,7 +209,7 @@ private fun TableRow(
             Text(
                 cell,
                 style = if (header) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
-                color = if (header) RudeusColors.InkSoft else RudeusColors.Ink,
+                color = if (header || muted) RudeusColors.InkSoft else RudeusColors.Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(if (i == 0) 1.6f else 1f),

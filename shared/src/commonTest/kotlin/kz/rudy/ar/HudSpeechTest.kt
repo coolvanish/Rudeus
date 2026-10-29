@@ -60,11 +60,37 @@ class HudSpeechTest {
         val fell = placed.on(CharacterEvent.FELL, 5_010)
         assertEquals(StringId.fell.kk, fell.text)
         assertEquals(2, fell.serial)
-        val back = fell.on(CharacterEvent.RESPAWNED, 5_020)
+        // RESPAWNED replaces any bubble that is not a fresh "Oops! Fell" at once.
+        val blocked = HudSpeech.State().on(CharacterEvent.BLOCKED, 7_000)
+        val back = blocked.on(CharacterEvent.RESPAWNED, 7_020)
         assertEquals(StringId.respawn.kk, back.text)
-        assertEquals(3, back.serial)
+        assertEquals(2, back.serial)
         // ...and they hold the gap for the next ordinary event.
-        assertEquals(back, back.on(CharacterEvent.JUMPED, 5_030))
+        assertEquals(back, back.on(CharacterEvent.JUMPED, 7_030))
+    }
+
+    @Test
+    fun backUpWaitsUntilOopsFellWasReadable() {
+        val fell = HudSpeech.State().on(CharacterEvent.FELL, 10_000)
+        // A cliff fall respawns ~0.26 s later: "Oops! Fell" stays, "Back up" is queued for the end of the hold.
+        val queued = fell.on(CharacterEvent.RESPAWNED, 10_260)
+        assertEquals(StringId.fell.kk, queued.text)
+        assertEquals(fell.serial, queued.serial)
+        assertEquals(StringId.respawn.kk, queued.pending)
+        assertEquals(10_000 + HudSpeech.FELL_HOLD_MS, queued.pendingAtMs)
+
+        assertEquals(queued, HudSpeech.tick(queued, 10_000 + HudSpeech.FELL_HOLD_MS - 1))
+        val shown = HudSpeech.tick(queued, 10_000 + HudSpeech.FELL_HOLD_MS)
+        assertEquals(StringId.respawn.kk, shown.text)
+        assertEquals(fell.serial + 1, shown.serial)
+        assertNull(shown.pending)
+
+        // After the hold, RESPAWNED replaces "Oops! Fell" directly.
+        val late = fell.on(CharacterEvent.RESPAWNED, 10_000 + HudSpeech.FELL_HOLD_MS)
+        assertEquals(StringId.respawn.kk, late.text)
+        assertNull(late.pending)
+        // A second fall while "Back up" is queued drops the stale line.
+        assertNull(queued.on(CharacterEvent.FELL, 10_500).pending)
     }
 
     @Test

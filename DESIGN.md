@@ -171,7 +171,7 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   kk → ru). Event-triggered (`HudSpeech`): placed -> line 1; jumped -> line 2; blocked -> "Blocked!"; fell ->
   "Oops! Fell"; respawned -> "Back up"; every 3rd arrival -> a sheet line (deterministic); the ability chip -> line 2.
   Walking, landing, stepping up, pause/resume say nothing. Bubbles are ≥ 2.5 s apart; Fell and Back up always
-  replace the current one.
+  replace the current one, except that "Back up" waits until "Oops! Fell" has been up 1.2 s.
 - Bottom: one Sun button **Scan** (eye glyph), which reads **Rescan** once a scan has run in this session. Above it
   the hint pill "Tap — it walks": appears when the character is placed, leaves 5 s after it first walks (or on Scan).
 - Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left) of the
@@ -192,6 +192,8 @@ saving); after export a Leaf toast "Saved" with "Where: Download/Rudeus/<runId>.
 - *No run yet*: display "Nothing yet", hint, Export disabled. Without a host (demo shell) a demo run is shown and
   Export is disabled.
 - *Export failed*: Tomato banner "Not saved" with Retry.
+- *Cancelled characters* (the child left Processing): listed with "—" for score and retries, a neutral InkSoft
+  accent and muted text; the header counts finished ones like the summary ("Characters (2 · 1 cancelled)").
 
 ## (e) Copy table
 
@@ -277,6 +279,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | metrics_export_where | Қайда | Где | Where |
 | metrics_run | Іске қосу | Запуск | Run |
 | metrics_characters | Кейіпкерлер | Герои | Characters |
+| metrics_cancelled | тоқтатылды | отменено | cancelled |
 | metrics_pass_rate | Бірден өтті | Прошли сразу | Passed first try |
 | metrics_p50 | p50 уақыт | p50 время | p50 time |
 | metrics_p90 | p90 уақыт | p90 время | p90 time |

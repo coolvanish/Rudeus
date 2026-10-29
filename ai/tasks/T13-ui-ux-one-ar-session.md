@@ -161,3 +161,18 @@ Walking the code for "Done when": `arView` is called at exactly one place in `Ap
    check the file in Files > Downloads > Rudeus. Before any capture: "Nothing yet", Export disabled.
 9. Capture a drawing: Processing "Done!" shows the sprite at 160 dp; Next -> Scanning.
 10. Language switch: 56 dp buttons, KK/RU/EN on Capture only.
+
+### Review fixes (after 54517e3)
+1. Play no longer gets demo physics: `character = CharacterState(ability = sheet.ability)` (the ability chip names the
+   character's own ability) and `level = null` until T04 (no fake footprints; the bottom-left shows Back). The unused
+   `DemoData.character` / `DemoData.level` are removed.
+2. Metrics: cancelled characters (`CharacterMetrics.aborted`) show "—" for score and retries, an InkSoft accent and
+   muted text; the header counts finished characters like `summary.n` ("Characters (2 · 1 cancelled)"). New StringId
+   `metrics_cancelled` (тоқтатылды / отменено / cancelled), with a DESIGN.md copy row and a Metrics state line.
+3. HudSpeech: "Back up" no longer replaces "Oops! Fell" within `FELL_HOLD_MS = 1200`. It is queued in
+   `State.pending/pendingAtMs`, and App calls `HudSpeech.tick` when the hold ends. A second FELL drops the queued line.
+   New test `backUpWaitsUntilOopsFellWasReadable`. DESIGN.md Play updated.
+4. The Metrics run id line and the export location use `RudeusMono` explicitly (it already was the `bodyMedium` mapping).
+5. Processing: the effect captures `pipelineRun`. Events (and the error fallback) from a run that Retry has superseded
+   are ignored.
+Tests: `:shared:testAndroidHostTest` 12, 0 failures, 0 errors (HudSpeechTest 5, ProcessingEventsTest 5, 2 examples).

@@ -102,6 +102,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     metrics_export_where("Қайда", "Где", "Where"),
     metrics_run("Іске қосу", "Запуск", "Run"),
     metrics_characters("Кейіпкерлер", "Герои", "Characters"),
+    /** Count suffix in the Characters header for runs the child cancelled ("2 · 1 cancelled"). */
+    metrics_cancelled("тоқтатылды", "отменено", "cancelled"),
     metrics_pass_rate("Бірден өтті", "Прошли сразу", "Passed first try"),
     metrics_p50("p50 уақыт", "p50 время", "p50 time"),
     metrics_p90("p90 уақыт", "p90 время", "p90 time"),

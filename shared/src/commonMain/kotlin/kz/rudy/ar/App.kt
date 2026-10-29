@@ -20,12 +20,7 @@ import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.CharacterState
-import kz.rudy.ar.core.domain.Level
-import kz.rudy.ar.core.domain.LevelObject
-import kz.rudy.ar.core.domain.ObjectKind
-import kz.rudy.ar.core.domain.Polygon
 import kz.rudy.ar.core.domain.Surface
-import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.metrics.CharacterMetrics
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
@@ -192,6 +187,12 @@ fun App(
     LaunchedEffect(walkedOnce) {
         if (walkedOnce) { delay(TAP_HINT_AFTER_WALK_MS); hud = hud.copy(showTapHint = false) }
     }
+    // "Back up" queued behind a fresh "Oops! Fell" (HudSpeech.FELL_HOLD_MS).
+    LaunchedEffect(speech.pendingAtMs) {
+        val at = speech.pendingAtMs ?: return@LaunchedEffect
+        delay((at - nowMs()).coerceAtLeast(0))
+        speech = HudSpeech.tick(speech, nowMs())
+    }
     LaunchedEffect(speech.serial) {
         if (speech.text != null) { delay(RudeusMotion.BUBBLE_VISIBLE_MS); speech = HudSpeech.dismissed(speech) }
     }
@@ -224,6 +225,7 @@ fun App(
 
                     Screen.PROCESSING -> {
                         LaunchedEffect(pipelineRun) {
+                            val run = pipelineRun
                             val bytes = photo
                             if (capture == null || bytes == null) {
                                 // Demo shell without a host: advances one stage per 900 ms.
@@ -241,6 +243,8 @@ fun App(
                                 // event, so it is in place before the screen shows "Next". Leaving the screen cancels the run.
                                 try {
                                     capture.makeCharacter(bytes) { event ->
+                                        // After Retry a late event of the cancelled run must not fold into the fresh state.
+                                        if (run != pipelineRun) return@makeCharacter
                                         if (event is PipelineEvent.Finished) pendingResult = event.result
                                         processing = processing.reduce(event)
                                     }
@@ -248,7 +252,7 @@ fun App(
                                     throw e
                                 } catch (e: Exception) {
                                     // The pipeline already emitted Failed; this covers a missing key and host errors.
-                                    if (processing.status != ProcessingStatus.ERROR) processing = processing.copy(status = ProcessingStatus.ERROR)
+                                    if (run == pipelineRun && processing.status != ProcessingStatus.ERROR) processing = processing.copy(status = ProcessingStatus.ERROR)
                                 }
                             }
                         }
@@ -307,9 +311,11 @@ fun App(
                         }
                         PlayScreen(
                             arView = noAr,
-                            character = DemoData.character,
+                            // Minimal until the host reports physics state: the ability is the character's own; no
+                            // level until the real scan (T04) — the fake scan found nothing, so footprints show nothing.
+                            character = CharacterState(ability = sheet.ability),
                             sheet = sheet,
-                            level = DemoData.level,
+                            level = null,
                             hud = hud.copy(speech = speech.text, surface = surface),
                             onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false) },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
@@ -375,17 +381,6 @@ internal object DemoData {
         ),
     )
 
-    val level = Level(
-        objects = listOf(
-            LevelObject("cup-1", "cup", ObjectKind.OBSTACLE, Polygon.circle(Vec2(0.12f, 0.05f), 0.04f), 0.09f),
-            LevelObject("book-1", "book", ObjectKind.PLATFORM, Polygon.rect(Vec2(-0.1f, -0.08f), 0.18f, 0.12f), 0.025f),
-            LevelObject("hand-1", "hand", ObjectKind.DYNAMIC, Polygon.rect(Vec2(0.0f, 0.18f), 0.08f, 0.14f), 0.03f),
-        ),
-        boundary = Polygon.rect(Vec2.ZERO, 0.6f, 0.5f),
-        spawn = Vec2.ZERO,
-    )
-
-    val character = CharacterState(pos = Vec2(0.02f, 0.01f), ability = Ability.JUMP)
 
     private val demoCharacters = listOf(
         CharacterMetrics("drawings/cat-01.jpg", emptyList(), 0.82f, true, 0, 31_200, 0.031),
