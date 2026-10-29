@@ -114,7 +114,9 @@ class RecordingModelsTest {
 
         // A different ref is recorded on its own first call; a table scan is never recorded.
         rec.segment("dog-01", byteArrayOf(1), listOf("cup", "book"))
+        fake.masks = listOf(MaskResult("drawing", 2, 2, rle = listOf(0, 4), instances = listOf(MaskResult("drawing", 2, 2, rle = listOf(0, 4)))))
         rec.segment("toy-01", byteArrayOf(1), Jobs.CUTOUT_PROMPTS)
+        assertTrue("instances" !in writer.source.readText("$root/sam-cutout/toy-01.fixture.json")!!, "cutout recordings drop the per-detection copies")
         assertEquals(listOf("sam-cutout/cat-01.fixture.json", "sam-cutout/toy-01.fixture.json"), writer.written)
         assertTrue(writer.source.exists("$root/sam-cutout/toy-01.fixture.json"))
     }

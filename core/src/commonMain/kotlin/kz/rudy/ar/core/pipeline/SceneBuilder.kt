@@ -9,6 +9,7 @@ import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.geometry.BooleanMask
 import kz.rudy.ar.core.geometry.Intrinsics
 import kz.rudy.ar.core.geometry.PixelPoint
+import kz.rudy.ar.core.geometry.PixelRect
 import kz.rudy.ar.core.geometry.PlaneFrame
 import kz.rudy.ar.core.geometry.Pose3
 import kz.rudy.ar.core.geometry.Vec3
@@ -30,24 +31,74 @@ data class LabeledMask(val label: String, val mask: BooleanMask)
 
 /** SAM table result -> the masks the [SceneBuilder] gets: one per detected object, not one merged blob per prompt. */
 object ScanMasks {
+    /** Two detections of one prompt are the same object when their pixel IoU exceeds this. */
+    const val MAX_IOU = 0.5f
+
+    /** ... or when this share of one detection's pixels lies inside the other (a handle inside its cup). */
+    const val MAX_CONTAINMENT = 0.8f
+
     /**
      * One [LabeledMask] per [MaskResult.instances] entry (label = the prompt, best score first as stored); a prompt
      * with no instances but a non-empty merged mask (fixtures recorded before T15) yields its merged mask. Empty
      * masks are dropped, and a prompt listed in [SegmentResult.failedPrompts] yields nothing. RLE masks decode with
      * [BooleanMask.fromRle]; a bbox-only mask becomes its filled box.
+     *
+     * Overlapping detections of one prompt (a duplicate, or a cup and its handle) become ONE mask: an instance whose
+     * pixel IoU with an already-kept mask of the same prompt is > [MAX_IOU], or whose own pixels lie > [MAX_CONTAINMENT]
+     * inside it, is skipped (the kept one scored higher). When instead a kept mask lies > [MAX_CONTAINMENT] inside the
+     * new one (the part scored above the whole), the whole replaces the part in the part's slot. Bounding boxes are
+     * compared first; pixels only when they intersect.
      */
     fun of(result: SegmentResult): List<LabeledMask> {
         val failed = result.failedPrompts.toSet()
         val out = ArrayList<LabeledMask>()
         for (m in result.masks) {
             if (m.label in failed) continue
-            val parts = m.instances.ifEmpty { listOf(m) }
-            for (part in parts) {
+            val kept = ArrayList<Kept>()
+            for (part in m.instances.ifEmpty { listOf(m) }) {
                 if (part.isEmpty || part.width <= 0 || part.height <= 0) continue
-                out += LabeledMask(m.label, toBooleanMask(part))
+                val cand = Kept(toBooleanMask(part))
+                if (cand.count == 0) continue
+                var drop = false
+                var replaceAt = -1
+                for ((i, k) in kept.withIndex()) {
+                    val inter = intersection(cand, k)
+                    if (inter == 0) continue
+                    val iou = inter.toFloat() / (cand.count + k.count - inter)
+                    if (iou > MAX_IOU || inter.toFloat() / cand.count > MAX_CONTAINMENT) { drop = true; break }
+                    if (inter.toFloat() / k.count > MAX_CONTAINMENT) { replaceAt = i; break }
+                }
+                when {
+                    drop -> Unit
+                    replaceAt >= 0 -> kept[replaceAt] = cand
+                    else -> kept += cand
+                }
             }
+            for (k in kept) out += LabeledMask(m.label, k.mask)
         }
         return out
+    }
+
+    private class Kept(val mask: BooleanMask) {
+        val box: PixelRect? = mask.boundingBox()
+        val count: Int = mask.count()
+    }
+
+    /** Shared ON pixels of [a] and [b] (same frame), counted only inside their bounding-box overlap. */
+    private fun intersection(a: Kept, b: Kept): Int {
+        val ba = a.box ?: return 0
+        val bb = b.box ?: return 0
+        if (a.mask.width != b.mask.width || a.mask.height != b.mask.height) return 0
+        val x0 = maxOf(ba.minX, bb.minX); val x1 = minOf(ba.maxX, bb.maxX)
+        val y0 = maxOf(ba.minY, bb.minY); val y1 = minOf(ba.maxY, bb.maxY)
+        if (x0 > x1 || y0 > y1) return 0
+        val w = a.mask.width
+        var n = 0
+        for (y in y0..y1) {
+            val row = y * w
+            for (x in x0..x1) if (a.mask.bits[row + x] && b.mask.bits[row + x]) n++
+        }
+        return n
     }
 
     private fun toBooleanMask(m: MaskResult): BooleanMask {
@@ -73,7 +124,15 @@ data class ScanInput(
         /**
          * The AR host's one call at scan time: the plane frame comes from the session [anchor]
          * ([PlaneFrame.fromAnchorPose]) and the detected plane polygon [planePolygonWorld] (world points) is projected
-         * into it with [PlaneFrame.toPlane] as [boundary] (null when there is no polygon or it has fewer than 3 points).
+         * into it with [PlaneFrame.toPlane] as [boundary]. The boundary is null when there is no polygon, it has fewer
+         * than 3 points, or its area is <= [MIN_BOUNDARY_AREA_M2] (a degenerate boundary would make every position a cliff).
+         *
+         * [cameraPose] must be the pose of the camera IMAGE the masks were computed on: ARCore `Camera.getPose()`
+         * (sensor frame, paired with `Camera.getImageIntrinsics()` -> [intrinsics]), NOT `getDisplayOrientedPose()`,
+         * which is rotated to the screen and would mis-project every pixel.
+         *
+         * @throws IllegalArgumentException when a mask's size differs from [intrinsics]' width x height (the masks
+         *   must be in the pixel grid of the intrinsics; scale one or the other before calling).
          */
         fun fromAnchor(
             anchor: Pose3,
@@ -83,10 +142,21 @@ data class ScanInput(
             planePolygonWorld: List<Vec3>? = null,
             spawn: Vec2 = Vec2.ZERO,
         ): ScanInput {
+            for (lm in masks) {
+                require(lm.mask.width == intrinsics.width && lm.mask.height == intrinsics.height) {
+                    "mask '${lm.label}' is ${lm.mask.width}x${lm.mask.height} but the intrinsics are " +
+                        "${intrinsics.width}x${intrinsics.height}; masks must be in the intrinsics' pixel grid"
+                }
+            }
             val plane = PlaneFrame.fromAnchorPose(anchor)
-            val boundary = planePolygonWorld?.takeIf { it.size >= 3 }?.let { pts -> Polygon(pts.map { plane.toPlane(it) }) }
+            val boundary = planePolygonWorld?.takeIf { it.size >= 3 }
+                ?.let { pts -> Polygon(pts.map { plane.toPlane(it) }) }
+                ?.takeIf { abs(it.signedArea()) > MIN_BOUNDARY_AREA_M2 }
             return ScanInput(masks, intrinsics, cameraPose, plane, boundary, spawn)
         }
+
+        /** A plane polygon at or below this area (m²) is treated as no boundary. */
+        const val MIN_BOUNDARY_AREA_M2 = 1e-4f
     }
 }
 

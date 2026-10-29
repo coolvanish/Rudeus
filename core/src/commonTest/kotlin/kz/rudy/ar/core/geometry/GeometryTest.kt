@@ -132,6 +132,11 @@ class GeometryTest {
         assertVec3(r.rotate(Vec3(1f, 0f, 0f)), frame.uAxis, 1e-5f, "u = R(+X)")
         assertVec3(r.rotate(Vec3(0f, 0f, 1f)), frame.vAxis, 1e-5f, "v = R(+Z)")
         assertVec3(r.rotate(Vec3(0f, 1f, 0f)), frame.normal, 1e-5f, "normal = R(+Y)")
+        // Hand-computed: +90° yaw about +Y maps +X -> -Z and +Z -> +X.
+        val yaw = PlaneFrame.fromAnchorPose(Pose3(Vec3.ZERO, Quat.fromAxisAngle(Vec3(0f, 1f, 0f), (PI / 2).toFloat())))
+        assertVec3(Vec3(0f, 0f, -1f), yaw.uAxis, 1e-6f, "yaw 90: u")
+        assertVec3(Vec3(1f, 0f, 0f), yaw.vAxis, 1e-6f, "yaw 90: v")
+        assertVec3(Vec3(0f, 1f, 0f), yaw.normal, 1e-6f, "yaw 90: normal")
 
         val p = frame.toPlane(anchor.copy(rotation = r).transform(Vec3(0.1f, 0f, 0f)))
         assertTrue(abs(p.u - 0.1f) < 1e-5f && abs(p.v) < 1e-5f, "10 cm along local X -> (0.1, 0), got $p")
@@ -151,5 +156,23 @@ class GeometryTest {
         for ((e, a) in local.zip(boundary)) assertTrue(e.distanceTo(a) < 1e-5f, "boundary $a vs $e")
         assertNull(ScanInput.fromAnchor(anchor, cam, intr, emptyList()).boundary, "no polygon")
         assertNull(ScanInput.fromAnchor(anchor, cam, intr, emptyList(), planePolygonWorld = world.take(2)).boundary, "< 3 points")
+    }
+
+    @Test
+    fun scanInputFromAnchorRejectsMismatchedMasksAndDegenerateBoundary() {
+        val cam = Pose3.lookAt(Vec3(0f, 0.5f, 0.5f), Vec3.ZERO)
+        val ok = kz.rudy.ar.core.pipeline.LabeledMask("cup", BooleanMask(intr.width, intr.height))
+        val small = kz.rudy.ar.core.pipeline.LabeledMask("book", BooleanMask(640, 360))
+        assertEquals(listOf(ok), ScanInput.fromAnchor(Pose3.IDENTITY, cam, intr, listOf(ok)).masks)
+        val e = kotlin.test.assertFailsWith<IllegalArgumentException> { ScanInput.fromAnchor(Pose3.IDENTITY, cam, intr, listOf(ok, small)) }
+        assertTrue("book" in e.message!! && "640x360" in e.message!! && "1280x720" in e.message!!, e.message)
+
+        // Three or more points but (almost) no area: no boundary, else every position would be a cliff.
+        val sliver = listOf(Vec3(0f, 0f, 0f), Vec3(1f, 0f, 0f), Vec3(1f, 0f, 0.00005f), Vec3(0f, 0f, 0.00005f))
+        assertNull(ScanInput.fromAnchor(Pose3.IDENTITY, cam, intr, emptyList(), planePolygonWorld = sliver).boundary)
+        val collinear = listOf(Vec3(0f, 0f, 0f), Vec3(0.5f, 0f, 0f), Vec3(1f, 0f, 0f))
+        assertNull(ScanInput.fromAnchor(Pose3.IDENTITY, cam, intr, emptyList(), planePolygonWorld = collinear).boundary)
+        val square = listOf(Vec3(0f, 0f, 0f), Vec3(0.02f, 0f, 0f), Vec3(0.02f, 0f, 0.02f), Vec3(0f, 0f, 0.02f)) // 4 cm²
+        assertNotNull(ScanInput.fromAnchor(Pose3.IDENTITY, cam, intr, emptyList(), planePolygonWorld = square).boundary)
     }
 }

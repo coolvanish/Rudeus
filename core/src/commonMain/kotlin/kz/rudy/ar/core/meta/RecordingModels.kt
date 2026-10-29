@@ -27,7 +27,8 @@ fun interface FixtureWriter {
  *
  * Only the first segment call per ref is recorded, and only when its prompts are [Jobs.CUTOUT_PROMPTS]: later
  * segment calls for the same ref (the matte fallback on the stylized sprite) and table scans pass through
- * unrecorded, so replay serves the photo's masks. [transcribe] is not recorded either.
+ * unrecorded, so replay serves the photo's masks. [transcribe] is not recorded either. Cutout recordings drop
+ * [MaskResult.instances] (cutout uses the merged mask only; keeping them would write each RLE twice).
  *
  * Files are (re)written after every call, so a character that fails half-way leaves the fixtures of the calls
  * that succeeded. `latencyMs` is the wall time of the first call of that job for the ref, measured with [clock]
@@ -49,7 +50,7 @@ class RecordingModels(
         val record = ref !in segmented && prompts.isNotEmpty() && prompts.all { it in Jobs.CUTOUT_PROMPTS }
         segmented += ref
         val (result, ms) = timed { inner.segment(ref, image, prompts) }
-        if (record) write(Jobs.SAM_CUTOUT, ref, latency(Jobs.SAM_CUTOUT, ref, ms)) { it.copy(masks = result.masks) }
+        if (record) write(Jobs.SAM_CUTOUT, ref, latency(Jobs.SAM_CUTOUT, ref, ms)) { fx -> fx.copy(masks = result.masks.map { it.copy(instances = emptyList()) }) }
         return result
     }
 

@@ -1,6 +1,6 @@
 # T15 — core-scan-detections-planeframe
 
-status: doing
+status: done
 created: 2026-10-29
 day: Day 4 prep (pure :core, done ahead of T04 so the AR host brief is small)
 gate: Day 4 — 5 objects within 2 cm, character routes around; scan < 6 s
@@ -102,3 +102,31 @@ Still needs (outside :core)
   coordinates (ARCore `Plane.getPolygon()` is plane-local x/z; transform it through `plane.centerPose` first).
 - Optional: re-run the CLI fixture convert for sam-table so the saved fixtures carry instances.
 - rudeus-reviewer pass; `scripts/verify.sh` not run (not the last step of this brief).
+
+### Review fixes (2026-10-29, after 9df8db1)
+`./gradlew :core:jvmTest` green: **164 tests, 0 failures, 0 errors, 0 skipped** (was 162; +2 new tests, plus new
+assertions in two existing ones).
+1. `ScanMasks.of` (SceneBuilder.kt:33-102) now suppresses overlapping detections of one prompt. It compares
+   bounding boxes first, then pixels. An instance is skipped when its IoU with an already-kept mask of the same label
+   is > `MAX_IOU` (0.5), or when its own pixels lie > `MAX_CONTAINMENT` (0.8) inside that mask. Beyond the review:
+   when a kept mask lies > 0.8 inside the new one (a part that scored above its whole), the whole takes the part's
+   slot. Without this the "handle first" order would still stack two cups. Other labels are never compared.
+   Test: `ScanMasksTest.overlappingDetectionsOfOnePromptBecomeOneMask` (duplicate or inner part -> one mask;
+   disjoint -> two; part first -> whole replaces it; cup vs book not suppressed).
+2. `ScanInput.fromAnchor` `require`s every mask to be intrinsics.width x height, with a message naming the label and
+   both sizes. Its KDoc now says `cameraPose` must be ARCore `Camera.getPose()` paired with `getImageIntrinsics()`,
+   not `getDisplayOrientedPose()`.
+3. A boundary whose `abs(signedArea())` is <= `ScanInput.MIN_BOUNDARY_AREA_M2` (1e-4 m²) becomes null.
+   Test for 2 and 3: `GeometryTest.scanInputFromAnchorRejectsMismatchedMasksAndDegenerateBoundary` (mismatch throws
+   IllegalArgumentException; a sliver and collinear points -> null; a 2x2 cm square kept).
+4. `GeometryTest.scanInputFromAnchorPoseBuildsOrthonormalPlaneFrame` gains a hand-computed +90° yaw case:
+   u = (0,0,-1), v = (1,0,0), n = (0,1,0).
+5. RecordingModels.kt:53 records cutout masks with `instances = emptyList()`. The recorder only ever records cutout
+   calls (table scans pass through unrecorded), so there is no table case to keep. Asserted in
+   `RecordingModelsTest.recordingSkipsSecondSegmentForSameRef`.
+6. Regenerated docs/api-samples/sam-table/table-01.fixture.json offline from its committed raw replies
+   (`./gradlew :cli:run --args="fixture --job sam-table --responses-dir docs/api-samples/sam-table --ref table-01
+   --latency-ms 2145"`). The merged masks are byte-identical and only the note's date changed. "remote" now carries
+   2 instances (165x139 at c=0.957 first, then 114x156 at c=0.766); laptop, toy car and knife carry 1 each; speaker
+   is absent with no instances. The file grew from 35.6 KB to 84.9 KB. The pre-commit token regexes match nothing
+   in it.

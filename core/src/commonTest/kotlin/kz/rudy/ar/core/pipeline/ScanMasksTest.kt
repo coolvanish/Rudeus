@@ -41,4 +41,43 @@ class ScanMasksTest {
         out.forEach { assertEquals(w to h, it.mask.width to it.mask.height) }
         assertEquals(emptyList(), ScanMasks.of(SegmentResult(emptyList())))
     }
+
+    /** A filled pixel rectangle [x0, x1) x [y0, y1) in a 20 x 10 frame. */
+    private fun rect(label: String, x0: Int, y0: Int, x1: Int, y1: Int, score: Float): MaskResult {
+        val bits = BooleanArray(20 * 10) { i -> i % 20 in x0 until x1 && i / 20 in y0 until y1 }
+        return MaskResult.fromBits(label, 20, 10, bits, score)
+    }
+
+    private fun prompt(label: String, vararg instances: MaskResult) =
+        SegmentResult(listOf(rect(label, 0, 0, 20, 10, 0.9f).copy(instances = instances.toList())))
+
+    @Test
+    fun overlappingDetectionsOfOnePromptBecomeOneMask() {
+        val cup = rect("cup", 2, 2, 8, 8, 0.9f) // 36 px
+        // A near-duplicate (IoU 30/36 > 0.5) and a part fully inside the cup: both dropped, the best (whole) cup kept.
+        val dup = rect("cup", 3, 2, 8, 8, 0.8f)
+        val handle = rect("cup", 6, 4, 9, 6, 0.7f) // 6 px, 4 of them inside the cup: IoU 4/38, containment 4/6 = 0.67
+        val inside = rect("cup", 3, 3, 5, 5, 0.6f) // fully inside: containment 1.0
+        val one = ScanMasks.of(prompt("cup", cup, dup, inside))
+        assertEquals(1, one.size)
+        assertEquals(36, one.single().mask.count())
+        // The handle is under both thresholds (it sticks out): kept as its own small mask.
+        assertEquals(2, ScanMasks.of(prompt("cup", cup, handle)).size)
+
+        // Two disjoint detections: two masks, in score order.
+        val other = rect("cup", 12, 2, 18, 8, 0.8f)
+        val two = ScanMasks.of(prompt("cup", cup, other))
+        assertEquals(listOf(36, 36), two.map { it.mask.count() })
+        assertEquals(true, two[0].mask[2, 2])
+        assertEquals(true, two[1].mask[12, 2])
+
+        // The part scored above the whole: the whole cup takes the part's slot, the far cup stays second.
+        val partFirst = ScanMasks.of(prompt("cup", rect("cup", 3, 3, 5, 5, 0.95f), other, cup))
+        assertEquals(listOf(36, 36), partFirst.map { it.mask.count() })
+        assertEquals(true, partFirst[0].mask[2, 2], "whole cup replaced its part")
+
+        // Overlap is only checked within one prompt: a book on the same pixels as a cup is a separate object.
+        val mixed = SegmentResult(listOf(rect("cup", 0, 0, 1, 1, 0.9f).copy(instances = listOf(cup)), rect("book", 0, 0, 1, 1, 0.9f).copy(instances = listOf(rect("book", 2, 2, 8, 8, 0.9f)))))
+        assertEquals(listOf("cup", "book"), ScanMasks.of(mixed).map { it.label })
+    }
 }
