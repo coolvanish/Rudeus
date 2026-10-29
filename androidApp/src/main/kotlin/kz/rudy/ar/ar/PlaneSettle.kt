@@ -38,4 +38,10 @@ internal class PlaneSettle {
 
     fun isSettled(plane: Plane, nowMs: Long): Boolean =
         (trackingAgeMs(plane, nowMs) ?: return false) >= ANCHOR_PLANE_SETTLE_MS
+
+    /** T14: true when any upward plane is settled, i.e. a tap on it would create the anchor (`ArSlot.onSurfaceReady`). */
+    fun anySettled(nowMs: Long): Boolean {
+        for (first in firstTrackingMs.values) if (nowMs - first >= ANCHOR_PLANE_SETTLE_MS) return true
+        return false
+    }
 }

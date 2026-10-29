@@ -5,15 +5,19 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
+import android.util.Log
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.meta.MaskResult
 import kz.rudy.ar.core.meta.sniffImageMime
 import kz.rudy.ar.core.pipeline.SpriteMatte
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -24,6 +28,15 @@ import kotlin.math.roundToInt
 // aspect and never upscales, JPEG stays JPEG and PNG stays PNG. Bitmaps are decoded premultiplied (alpha-0 pixels
 // come back as RGB 0), so every PNG we write goes through encodePng, which whitens them on a non-premultiplied
 // Bitmap before compressing. No Compose, no AR types: pure image glue.
+// HAND-REVIEW: T14 (f) — (1) HEIC/HEIF (the gallery picker on a Pixel; the system camera returns JPEG): the platform
+// ExifInterface(InputStream) cannot seek a HEIF container and reports no orientation, and a HEIF's authoritative
+// rotation is the `irot` box, not EXIF (Android's camera HEIC writer stores it there), so a HEIF is decoded with
+// ImageDecoder (API 28+, applies the container rotation itself) and `exifOrientation` returns 1 for it — nothing is
+// rotated twice. Below API 28 Android cannot decode HEIF at all: null, as before. (2) The first decode of a photo is
+// bounded: `inSampleSize` may now land up to 25 % under the target instead of up to 2x above it, so a 12 MP Pixel
+// photo (4080 px) decodes at 2040 px (6 MP) instead of in full (50 MB); `decode_px=` is logged per photo.
+
+private const val TAG = "RudeusGate"
 
 /** Decoded ARGB pixels of a [Bitmap], copied once (`getPixels` returns un-premultiplied colours). */
 class AndroidRaster(bitmap: Bitmap) : RasterImage {
@@ -102,12 +115,21 @@ object AndroidImages {
     fun preparePhoto(raw: ByteArray, maxSide: Int = PHOTO_MAX_SIDE): ByteArray? {
         val b = bounds(raw) ?: return null
         val bitmap = decodeBitmap(raw, sampleFor(max(b.outWidth, b.outHeight), maxSide)) ?: return null
+        Log.i(TAG, "decode_px=${bitmap.width}x${bitmap.height} photo_px=${b.outWidth}x${b.outHeight} heif=${isHeif(raw)}")
         return encodeJpeg(scaleTo(bitmap, maxSide))
     }
 
-    /** EXIF Orientation (1..8) of a JPEG; 1 for anything else or on any parse problem. Never throws. */
+    /** ISO-BMFF `ftyp` box at offset 4: HEIC/HEIF/AVIF (sniffImageMime calls everything non-PNG/WebP "jpeg"). */
+    fun isHeif(bytes: ByteArray): Boolean =
+        bytes.size >= 12 && bytes[4] == 'f'.code.toByte() && bytes[5] == 't'.code.toByte() &&
+            bytes[6] == 'y'.code.toByte() && bytes[7] == 'p'.code.toByte()
+
+    /**
+     * EXIF Orientation (1..8) of a JPEG; 1 for anything else or on any parse problem. Never throws.
+     * A HEIF answers 1 on purpose: [decodeBitmap] lets ImageDecoder apply the container rotation (see the header).
+     */
     fun exifOrientation(bytes: ByteArray): Int = try {
-        if (sniffImageMime(bytes) != "image/jpeg") 1
+        if (sniffImageMime(bytes) != "image/jpeg" || isHeif(bytes)) 1
         else ExifInterface(ByteArrayInputStream(bytes))
             .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
             .takeIf { it in 1..8 } ?: 1
@@ -123,19 +145,44 @@ object AndroidImages {
         return o.takeIf { it.outWidth > 0 && it.outHeight > 0 }
     }
 
-    /** Largest power of two that still leaves the long side >= [maxSide] after decoding. */
+    /** The decoded long side may fall this far below [PHOTO_MAX_SIDE] when that halves the decode (see the header). */
+    private const val SAMPLE_UNDERSHOOT = 0.75f
+
+    /**
+     * Largest power of two that keeps the decoded long side >= [SAMPLE_UNDERSHOOT] x [maxSide]: the decode is then
+     * below 2 x 0.75 = 1.5 x the target (< 3072 px, ~7 MP) instead of below 2 x (up to 4095 px, 16 MP).
+     */
     private fun sampleFor(longSide: Int, maxSide: Int): Int {
+        val floor = (maxSide * SAMPLE_UNDERSHOOT).toInt()
         var s = 1
-        while (longSide / (s * 2) >= maxSide) s *= 2
+        while (longSide / (s * 2) >= floor) s *= 2
         return s
     }
 
     /** Decode (ARGB_8888, premultiplied) + EXIF orientation; null when the bytes are not an image. */
     private fun decodeBitmap(bytes: ByteArray, sample: Int = 1): Bitmap? {
+        if (isHeif(bytes)) return decodeHeif(bytes, sample)
         val o = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.ARGB_8888 }
         val bmp = try { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o) } catch (e: Exception) { null } ?: return null
         val orientation = exifOrientation(bytes)
         return if (orientation == 1) bmp else orient(bmp, orientation)
+    }
+
+    /**
+     * HEIF via ImageDecoder (API 28+): software ARGB_8888 (getPixels and the Matrix copies need a non-hardware
+     * bitmap), sampled like `inSampleSize`, container rotation applied by the decoder. Null below API 28 or on failure.
+     */
+    private fun decodeHeif(bytes: ByteArray, sample: Int): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        return try {
+            ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, _, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                decoder.setTargetSampleSize(sample)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "heif decode failed: ${e.message}")
+            null
+        }
     }
 
     /** Applies EXIF orientation [o] (2..8); the same mapping as JvmRaster.orient, expressed as a Matrix. */

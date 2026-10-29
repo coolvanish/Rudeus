@@ -1,8 +1,12 @@
 package kz.rudy.ar.di
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.res.AssetManager
+import android.os.Build
+import android.os.Environment
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,11 +18,14 @@ import kz.rudy.ar.core.io.FileMetricsSink
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaConfig
 import kz.rudy.ar.core.meta.Provider
+import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.MetricsLog
+import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.pipeline.CharacterPipeline
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.core.pipeline.StyleGate
+import kz.rudy.ar.ui.screens.BundledCharacter
 import org.json.JSONObject
 import java.io.File
 
@@ -27,10 +34,17 @@ import java.io.File
 // to files/runs/<runId>.json (rewritten after each run, also on failure or cancel), source "app", device "pixel",
 // so scripts/device.sh pull-runs collects it. A blank key throws before any call -> App shows the ERROR state with
 // "pick a ready one" (the FixtureApi fallback is T06). Style refs come from assets/style-refs in cull.json order.
+// HAND-REVIEW: T14 (c)(d) — bundled characters come from assets/bundled (a copy of docs/bundled, 7.6 MB: 16 sprites +
+// sheets + index.json), parsed once on first `bundled()` call; `exportRun` writes the session run through
+// MediaStore.Downloads (API >= 29, no permission) or the app's external files dir below that.
 
 private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
 private const val RUNS_DIR = "runs"
+private const val BUNDLED_DIR = "bundled"
+
+/** Where the exported run lands on API >= 29 (relative to the primary external volume), as the player sees it in Files. */
+private const val EXPORT_RELATIVE_DIR = "Download/Rudeus"
 
 class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : CaptureHost {
     private val app = context.applicationContext
@@ -40,6 +54,15 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
 
     private val styleRefs: List<ByteArray> by lazy {
         loadStyleRefs(app.assets).also { Log.i(TAG, "style_refs=${it.size}") }
+    }
+
+    /**
+     * Loaded synchronously on the first call and cached for the session. `bundled()` is called from composition
+     * (the Capture screen), so the first call reads ~7.6 MB of assets on the main thread once (tens of ms on the
+     * Pixel); every later call is the cached list. A background preload is not worth the complexity for a one-off.
+     */
+    private val bundledList: List<BundledCharacter> by lazy {
+        loadBundled(app.assets).also { Log.i(TAG, "bundled=${it.size}") }
     }
 
     /** Built on first use; `check` fails fast (and loudly, without the key) when the build had no key. */
@@ -92,6 +115,59 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
         if (shutterAt > 0L) Log.i(TAG, "capture_to_play_ms=${SystemClock.elapsedRealtime() - shutterAt}")
     }
 
+    override fun bundled(): List<BundledCharacter> = bundledList
+
+    /** The run so far once a character was started this session (finished or failed), else null. */
+    override fun latestRun(): MetricsRun? = if (characters > 0) metrics.toRun() else null
+
+    override suspend fun exportRun(): String? = withContext(Dispatchers.IO) {
+        val run = latestRun() ?: return@withContext null
+        val name = "${run.runId}.json"
+        val json = metrics.toJson() // same run as latestRun(); :core owns the JSON (no serialization dep here)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportViaMediaStore(name, json)
+            else exportToExternalFiles(name, json)
+        } catch (e: Exception) {
+            Log.w(TAG, "export failed: ${e.message}")
+            null
+        }?.also { Log.i(TAG, "export=$it bytes=${json.length}") }
+    }
+
+    /**
+     * API >= 29: a pending row in MediaStore.Downloads under Download/Rudeus, written through the resolver, then
+     * published. No storage permission is needed for files the app creates there. A second export of the same run
+     * gets a MediaStore-unique name ("<runId> (1).json"); the returned path names the directory the player opens.
+     */
+    private fun exportViaMediaStore(name: String, json: String): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val resolver = app.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.MIME_TYPE, "application/json")
+            put(MediaStore.Downloads.RELATIVE_PATH, EXPORT_RELATIVE_DIR)
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+        try {
+            resolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } ?: return null
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null) // no half-written pending row left behind
+            throw e
+        }
+        return "$EXPORT_RELATIVE_DIR/$name"
+    }
+
+    /** API 24–28: the app's own external files dir (no permission); the returned path is the absolute file path. */
+    private fun exportToExternalFiles(name: String, json: String): String? {
+        val dir = File(app.getExternalFilesDir(null) ?: return null, RUNS_DIR)
+        if (!dir.isDirectory && !dir.mkdirs()) return null
+        if (Environment.getExternalStorageState(dir) != Environment.MEDIA_MOUNTED) return null
+        val file = File(dir, name)
+        file.writeText(json)
+        return file.absolutePath
+    }
+
     private fun logEvent(event: PipelineEvent, t0: Long) {
         val at = SystemClock.elapsedRealtime() - t0
         when (event) {
@@ -118,4 +194,34 @@ private fun loadStyleRefs(assets: AssetManager): List<ByteArray> {
     return names
         .sortedWith(compareBy({ kept.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it }))
         .map { name -> assets.open("$STYLE_REFS_DIR/$name").use { it.readBytes() } }
+}
+
+/**
+ * assets/bundled/index.json (`characters[]`: ref, sprite, sheet, gatePassed) -> [BundledCharacter]s, gate-passed
+ * ones first, then the rest, each group in index order. A character whose sprite or sheet is missing or unreadable
+ * is skipped with a log line; a missing or broken index yields an empty list. The sheet is parsed by :core's
+ * SheetParser (same normalisation as the pipeline: 5 lines kk/ru, unknown ability -> JUMP).
+ */
+private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
+    val entries = try {
+        val arr = JSONObject(assets.open("$BUNDLED_DIR/index.json").bufferedReader().use { it.readText() }).getJSONArray("characters")
+        List(arr.length()) { arr.getJSONObject(it) }
+    } catch (e: Exception) {
+        Log.w(TAG, "bundled index unreadable: ${e.message}")
+        return emptyList()
+    }
+    val loaded = entries.mapNotNull { o ->
+        val ref = o.optString("ref")
+        try {
+            val spritePath = o.optString("sprite", "$ref/sprite.png")
+            val sheetPath = o.optString("sheet", "$ref/sheet.json")
+            val sprite = assets.open("$BUNDLED_DIR/$spritePath").use { it.readBytes() }
+            val sheet = SheetParser.parse(assets.open("$BUNDLED_DIR/$sheetPath").bufferedReader().use { it.readText() })
+            Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite))
+        } catch (e: Exception) {
+            Log.w(TAG, "bundled skipped ref=$ref: ${e.message}")
+            null
+        }
+    }
+    return loaded.filter { it.first }.map { it.second } + loaded.filter { !it.first }.map { it.second }
 }

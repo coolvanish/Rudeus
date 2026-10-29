@@ -7,6 +7,7 @@ import com.google.android.filament.Engine
 import com.google.android.filament.MaterialInstance
 import com.google.android.filament.Texture
 import io.github.sceneview.loaders.MaterialLoader
+import io.github.sceneview.safeDestroyTexture
 import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
 import io.github.sceneview.node.PlaneNode
@@ -27,8 +28,13 @@ import kotlin.math.sin
 // is plane coords (u, h, v) via PlaneCoords.localPosition. Sprite source: assets/ until T03 passes
 // CharacterResult.sprite bytes to [spriteFromBytes]. Nothing here decides game state (that is :core Physics);
 // this only maps CharacterState -> node transform, once per AR frame, from the main thread.
+// HAND-REVIEW: T14 — the quad height is a parameter (SurfaceProfile.characterHeightM: 6 cm table, 24 cm floor) and a
+// sprite can be destroyed when replaced: the Texture was built by us (Engine owns it -> engine.destroyTexture via
+// SceneView's runCatching `safeDestroyTexture`), the MaterialInstance by the MaterialLoader, which tracks its
+// instances and destroys them with the scene -> `materialLoader.destroyMaterialInstance` removes it from that list
+// first, so there is no double free at scene disposal (SceneView 4.31 MaterialLoader.kt:541).
 
-/** Character height on the table, metres. Width follows the sprite's pixel aspect. */
+/** Character height on the table, metres (SurfaceProfile.TABLE.characterHeightM). Width follows the sprite's pixel aspect. */
 internal const val CHARACTER_HEIGHT_M = 0.06f
 
 /** Bundled demo sprite (copied from docs/bundled/toy_dino) until in-app capture lands. */
@@ -50,30 +56,39 @@ internal class CharacterSprite(
     val widthM: Float,
     val heightM: Float,
     val facesRight: Boolean,
-)
+) {
+    /** Releases the GPU resources. Main thread; only after no node uses [material] (RudeusArView keys the node on the sprite). */
+    fun destroy(engine: Engine, materialLoader: MaterialLoader) {
+        materialLoader.destroyMaterialInstance(material)
+        engine.safeDestroyTexture(texture)
+    }
+}
 
 /** Demo path: decode a PNG from app assets (alpha pre-multiplied, as Filament expects for colour textures). */
 internal fun spriteFromAssets(
     engine: Engine,
     materialLoader: MaterialLoader,
     assets: AssetManager,
+    heightM: Float = CHARACTER_HEIGHT_M,
     path: String = DEMO_SPRITE_ASSET,
     facesRight: Boolean = DEMO_SPRITE_FACES_RIGHT,
-): CharacterSprite = spriteFromBitmap(engine, materialLoader, ImageTexture.getBitmap(assets, path), facesRight)
+): CharacterSprite = spriteFromBitmap(engine, materialLoader, ImageTexture.getBitmap(assets, path), heightM, facesRight)
 
 /** T03 entry point: `CharacterResult.sprite` PNG bytes -> billboard material. Main thread (Filament). */
 internal fun spriteFromBytes(
     engine: Engine,
     materialLoader: MaterialLoader,
     png: ByteArray,
+    heightM: Float,
     facesRight: Boolean,
 ): CharacterSprite =
-    spriteFromBitmap(engine, materialLoader, BitmapFactory.decodeByteArray(png, 0, png.size), facesRight)
+    spriteFromBitmap(engine, materialLoader, BitmapFactory.decodeByteArray(png, 0, png.size), heightM, facesRight)
 
 private fun spriteFromBitmap(
     engine: Engine,
     materialLoader: MaterialLoader,
     bitmap: Bitmap,
+    heightM: Float,
     facesRight: Boolean,
 ): CharacterSprite {
     val texture = ImageTexture.Builder().bitmap(bitmap).build(engine)
@@ -81,8 +96,8 @@ private fun spriteFromBitmap(
     return CharacterSprite(
         texture = texture,
         material = material,
-        widthM = CHARACTER_HEIGHT_M * bitmap.width / bitmap.height,
-        heightM = CHARACTER_HEIGHT_M,
+        widthM = heightM * bitmap.width / bitmap.height,
+        heightM = heightM,
         facesRight = facesRight,
     )
 }
