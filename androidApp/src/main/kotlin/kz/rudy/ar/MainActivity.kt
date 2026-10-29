@@ -37,8 +37,8 @@ class MainActivity : ComponentActivity() {
             val intake = rememberPhotoIntake()
             val host = remember(intake) { AndroidCaptureHost(applicationContext, intake) }
             App(
-                arView = { modifier, spritePng ->
-                    WithCameraPermission(modifier) { RudeusArView(modifier, spritePng = spritePng) }
+                arView = { modifier, slot ->
+                    WithCameraPermission(modifier) { RudeusArView(modifier, spritePng = slot.spritePng) }
                 },
                 capture = host,
             )

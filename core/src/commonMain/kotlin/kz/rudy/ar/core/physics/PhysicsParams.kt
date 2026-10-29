@@ -1,6 +1,8 @@
 package kz.rudy.ar.core.physics
 
 import kotlinx.serialization.Serializable
+import kz.rudy.ar.core.domain.Surface
+import kz.rudy.ar.core.domain.SurfaceProfile
 
 /**
  * Tunable constants of the table physics. All distances are metres, speeds m/s, accelerations m/s².
@@ -33,5 +35,22 @@ data class PhysicsParams(
 ) {
     companion object {
         val DEFAULT = PhysicsParams()
+
+        /**
+         * Parameters for a [Surface]: the table defaults scaled by [SurfaceProfile.scale]. Speeds and distances scale
+         * linearly; gravity scales too, so a jump apex (v² / 2g) and its duration keep the same look at any size.
+         */
+        fun forSurface(surface: Surface): PhysicsParams = forProfile(SurfaceProfile.of(surface))
+
+        fun forProfile(profile: SurfaceProfile): PhysicsParams {
+            val k = profile.scale
+            return PhysicsParams(
+                walkSpeedMps = DEFAULT.walkSpeedMps * k,
+                gravityMps2 = DEFAULT.gravityMps2 * k,
+                jumpVelocityMps = DEFAULT.jumpVelocityMps * k,
+                arriveEpsilonM = DEFAULT.arriveEpsilonM * k,
+                respawnBelowH = DEFAULT.respawnBelowH * k,
+            )
+        }
     }
 }

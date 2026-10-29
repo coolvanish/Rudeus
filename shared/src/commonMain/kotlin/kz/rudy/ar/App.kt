@@ -17,6 +17,7 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.LevelObject
 import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.Polygon
+import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
@@ -45,15 +46,15 @@ enum class Screen { CAPTURE, PROCESSING, SCANNING, PLAY, METRICS }
 
 /**
  * Minimal navigation shell. :androidApp calls
- * `App(arView = { modifier, spritePng -> RudeusArView(modifier, spritePng = spritePng) }, capture = host)`.
+ * `App(arView = { modifier, slot -> RudeusArView(modifier, slot) }, capture = host)`.
  *
- * [arView]'s second argument is the PNG of the character Play should show: the captured character's matted sprite
- * (T03), or null for the bundled default. [capture] (T03) brings the camera, the photo picker and the real pipeline;
+ * [arView]'s second argument is the [ArSlot]: the sprite Play shows (captured or bundled, null = the host's default),
+ * the chosen [Surface], and the callbacks the AR host reports through (tracking, anchor, character events). [capture] (T03) brings the camera, the photo picker and the real pipeline;
  * without it the Processing screen runs the fake stage loop so the shell still demos. Scan and physics are still stubs.
  */
 @Composable
 fun App(
-    arView: @Composable (Modifier, ByteArray?) -> Unit,
+    arView: @Composable (Modifier, ArSlot) -> Unit,
     capture: CaptureHost? = null,
 ) {
     var screen by remember { mutableStateOf(Screen.CAPTURE) }
@@ -87,7 +88,9 @@ fun App(
         spritePng = r?.sprite
         go(Screen.SCANNING)
     }
-    val ar: @Composable (Modifier) -> Unit = { m -> arView(m, spritePng) }
+    var surface by remember { mutableStateOf(Surface.TABLE) }
+    val slot = remember(spritePng, surface) { ArSlot(spritePng = spritePng, surface = surface) }
+    val ar: @Composable (Modifier) -> Unit = { m -> arView(m, slot) }
 
     RudeusTheme {
         CompositionLocalProvider(LocalLang provides lang) {

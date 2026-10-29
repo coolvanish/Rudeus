@@ -49,6 +49,8 @@ data class BundledCharacter(
     val sheet: CharacterSheet,
     /** Optional 96 dp thumbnail slot drawn by the host (e.g. from app assets). */
     val thumbnail: (@Composable (Modifier) -> Unit)? = null,
+    /** The matted sprite PNG that Play shows for this character; null = the host's default sprite. */
+    val spritePng: ByteArray? = null,
 )
 
 /**

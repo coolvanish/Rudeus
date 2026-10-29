@@ -1,7 +1,9 @@
 package kz.rudy.ar
 
+import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
+import kz.rudy.ar.ui.screens.BundledCharacter
 
 /**
  * What :androidApp injects into [App] for T03 in-app capture. :shared never touches the camera, the network or
@@ -25,4 +27,19 @@ interface CaptureHost {
 
     /** Play is on screen with the captured character: the host logs shutter -> Play for the Day 3 gate. */
     fun playEntered()
+
+    /**
+     * Characters shipped in the APK (CLI-generated, `assets/bundled/index.json`), best first. Each carries its
+     * sprite PNG and sheet so picking one works offline. Empty = none shipped (the screen shows "Nothing yet").
+     */
+    fun bundled(): List<BundledCharacter> = emptyList()
+
+    /** The app session's metrics run so far (characters made on this phone), or null before the first one. */
+    fun latestRun(): MetricsRun? = null
+
+    /**
+     * Writes [latestRun] as `<runId>.json` somewhere the child/parent can find it (Downloads). Returns the
+     * user-visible location, or null on failure. Never throws.
+     */
+    suspend fun exportRun(): String? = null
 }
