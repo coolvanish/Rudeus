@@ -108,3 +108,9 @@ the anchor in Play; `PausedOverlay` / `trackingLost` in the HUD is not wired (ne
   30 s, then 14–25 cm at 50–80 s together with the tapped plane height (the whole world frame moved, a map
   correction while walking around), back to 3.2 cm after a tracking loss at 90 s. Run B: 0.4–0.7 cm over 30 s.
   Open: whether the dino stayed on its real spot during run A's excursion (human eye), walking to taps confirmed?
+
+### Day 3 gate verdict (orchestrator, 2026-10-29, Pixel not attached — see ai/day3-human.md)
+| Criterion | Status | Evidence |
+|---|---|---|
+| 60 s walking around a real cup without drift | UNTESTED (Pixel offline during the autonomous run; Oct 28 run A showed a 14–25 cm map correction at 50–80 s, run B 0.4–0.7 cm / 30 s) | docs/evidence/t02-pixel-2026-10-28.log; the T02 fix for the second session (one AR slot across Scanning→Play) is in 54517e3 |
+| capture → character < 60 s | UNTESTED (needs the key build on the Pixel; live latency 40–60 s for a first-try toy) | runs/ live run 5: p50 117 s with retries, 29 s first-try — gate at risk, reported not hidden |

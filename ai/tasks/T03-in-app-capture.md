@@ -120,3 +120,7 @@ filled in by the human.
   activity mid-run. Open: a cancelled run's paid stages are not in the run JSON (no `endCharacter`); HEIC orientation
   ignored; a 12 MP photo is decoded at full size before scaling (fine on the Pixel's memory).
 
+
+- 2026-10-29 (T14, 4e5191d + 4fafe57): review leftovers closed — cancelled run keeps its paid stages (`aborted: true`,
+  T12), HEIF via ImageDecoder (rotation from the container), the first decode is bounded (`decode_px=` log), bundled
+  characters ship with sprites, Export writes Download/Rudeus/<runId>.json. Still UNTESTED on the Pixel: see ai/day3-human.md.
