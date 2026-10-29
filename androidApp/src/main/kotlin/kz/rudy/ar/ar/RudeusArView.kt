@@ -36,6 +36,7 @@ import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberOnGestureListener
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kz.rudy.ar.ArSlot
 import kz.rudy.ar.core.domain.CharacterEvent
@@ -43,6 +44,7 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.scan.FootprintOverlay
+import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
 import kz.rudy.ar.scan.TableScanner
 import kz.rudy.ar.scan.footprintMaterials
@@ -74,8 +76,15 @@ import kotlin.math.abs
 // the IO half (JPEG -> SAM via the host-only TableScanner -> :core SceneBuilder). The loop keeps stepping the old
 // level meanwhile; the new Level is swapped into `loop.level` on the main thread, reported through `onLevel`, and the
 // scan is answered exactly once through `onScanned` (count, or null: no anchor, not tracking, busy, no frame, error).
-// The anchor's Plane is kept (`anchorPlane`) so the scan can read its polygon as the level boundary (cliffs). The
+// The anchor's Plane is kept (`anchorPlane`) so the scan can read its polygon as the level boundary (cliffs) — on
+// the TABLE only: a floor has no edge and ARCore's floor patches are partial, so FLOOR scans pass no plane. The
 // debug overlay (scan/FootprintOverlay.kt) lives under the AnchorNode and is composed only while `slot.debug`.
+// HAND-REVIEW: T04 review fixes — (1) every request is answered exactly once: `scanOwed` counts the requests not yet
+// answered; a request while a scan is pending or running joins it and the running scan answers all of them with its
+// result (no instant NO_PLANE during a tracking blip). (2) A frame without a camera image yet (NotYetAvailable) keeps
+// the request pending for up to GRAB_MAX_TRIES frames. (3) `scanBusy` is cleared in `finally`, so a cancelled or
+// failed scan can never leave Rescan dead for the session. (4) Walk taps outside `loop.level.boundary` are ignored:
+// the boundary is a snapshot of the plane polygon at scan time, while hit tests use the live, growing polygon.
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
@@ -127,7 +136,9 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val characterNode = remember { arrayOfNulls<PlaneNode>(1) }
     val loop = remember { GameLoop() }
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
-    val scanBusy = remember { booleanArrayOf(false) } // one scan at a time; a request meanwhile fails fast
+    val scanBusy = remember { booleanArrayOf(false) } // one scan at a time; a request meanwhile joins it
+    val scanOwed = remember { intArrayOf(0) } // requests not yet answered through onScanned
+    val scanTries = remember { intArrayOf(0) } // frames the pending request has waited for a camera image
     val scanCount = remember { intArrayOf(0) }
     val scope = rememberCoroutineScope()
     var level by remember { mutableStateOf<Level?>(null) } // written once per scan (overlay), never per frame
@@ -166,41 +177,72 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             showHint = false
         }
     }
+    /** Answers every request owed so far with [objects] (exactly one onScanned per request). Main thread. */
+    fun answerOwed(objects: Int?) {
+        val n = scanOwed[0]
+        scanOwed[0] = 0
+        repeat(n) { currentSlot.onScanned(objects) }
+    }
     // A scan request is armed here and fulfilled by the next frame (acquireCameraImage wants the current frame).
+    // Without an anchor or a host nothing can ever scan: answered at once. Otherwise the request is owed; if a scan
+    // is already pending or running it joins that one and gets its result.
     LaunchedEffect(slot.scanRequest) {
         if (slot.scanRequest == 0) return@LaunchedEffect
-        if (anchorRef[0] == null || scanner == null || scanBusy[0]) {
-            Log.i(GATE_TAG, "scan_rejected anchored=${anchorRef[0] != null} host=${scanner != null} busy=${scanBusy[0]}")
+        if (anchorRef[0] == null || scanner == null) {
+            Log.i(GATE_TAG, "scan_rejected anchored=${anchorRef[0] != null} host=${scanner != null}")
             currentSlot.onScanned(null)
-        } else {
+            return@LaunchedEffect
+        }
+        scanOwed[0]++
+        if (!scanBusy[0] && !scanPending[0]) {
             scanPending[0] = true
+            scanTries[0] = 0
         }
     }
-    /** Main thread, from onSessionUpdated: grab this frame, then build the level on IO and swap it in on return. */
-    fun startScan(frame: Frame, a: Anchor, tracking: Boolean) {
+    /**
+     * Main thread, from onSessionUpdated while a request is pending: grab this frame, then build the level on IO and
+     * swap it in on return. Returns true when the request stays pending for the next frame (no image yet).
+     */
+    fun startScan(frame: Frame, a: Anchor, tracking: Boolean): Boolean {
         val host = scanner
-        val grab = if (host != null && tracking) grabScanFrame(frame, a, anchorPlane[0]) else null
-        if (host == null || grab == null) {
+        if (host == null || !tracking) {
             Log.i(GATE_TAG, "scan_skipped tracking=$tracking host=${host != null}")
-            currentSlot.onScanned(null)
-            return
+            answerOwed(null)
+            return false
+        }
+        // The level boundary comes from the anchor plane on the table only (see the T04 header).
+        val plane = if (slotState.surface == Surface.FLOOR) null else anchorPlane[0]
+        val attempt = grabScanFrame(frame, a, plane)
+        val grab = attempt.grab
+        if (grab == null) {
+            if (attempt.retry && ++scanTries[0] < GRAB_MAX_TRIES) return true
+            Log.i(GATE_TAG, "scan_skipped no_image tries=${scanTries[0]}")
+            answerOwed(null)
+            return false
         }
         scanBusy[0] = true
         val ref = "scan-" + (++scanCount[0]).toString().padStart(2, '0')
         val previous = loop.level
         val profile = slotState.profile
         scope.launch {
-            val outcome = runTableScan(grab, host, ScanPrompts.of(profile.surface), previous, profile, ref)
-            scanBusy[0] = false
-            val built = outcome.level
-            if (built != null) {
-                loop.level = built // main thread: the next frame already steps against the new level
-                level = built
-                currentSlot.onLevel(built)
-                host.recordScan(built.objects.size, outcome.ms)
+            var answer: Int? = null
+            try {
+                val outcome = runTableScan(grab, host, ScanPrompts.of(profile.surface), previous, profile, ref)
+                val built = outcome.level
+                if (built != null) {
+                    loop.level = built // main thread: the next frame already steps against the new level
+                    level = built
+                    currentSlot.onLevel(built)
+                    answer = built.objects.size
+                    host.recordScan(built.objects.size, outcome.ms)
+                }
+            } finally {
+                scanBusy[0] = false
+                // On cancellation (the view left composition) the slot is gone with its session: nobody to answer.
+                if (isActive) answerOwed(answer)
             }
-            currentSlot.onScanned(built?.objects?.size)
         }
+        return false
     }
 
     Box(modifier.fillMaxSize()) {
@@ -239,10 +281,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         slotState.tracking = tracking
                         currentSlot.onTracking(tracking)
                     }
-                    if (scanPending[0]) {
-                        scanPending[0] = false
-                        startScan(frame, a, tracking)
-                    }
+                    if (scanPending[0]) scanPending[0] = startScan(frame, a, tracking)
                     val state = loop.onFrame(now, tracking, currentSlot.onCharacterEvent)
                     val node = characterNode[0]
                     if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
@@ -290,6 +329,13 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         s.onTracking(true)
                     } else if (hit != null) {
                         val uv = planeCoords(a, hit.hitPose)
+                        // The scanned boundary is a snapshot; the hit test used the live (grown) plane polygon. A tap
+                        // past the snapshot would send the character over a "cliff" in the middle of the table.
+                        val boundary = loop.level.boundary
+                        if (boundary != null && !boundary.contains(uv)) {
+                            Log.i(GATE_TAG, "walk_tap_outside_boundary u=${uv.u} v=${uv.v}")
+                            return@rememberOnGestureListener
+                        }
                         probe.onTap(a, hit.hitPose, uv)
                         loop.walkTo(uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
                     }

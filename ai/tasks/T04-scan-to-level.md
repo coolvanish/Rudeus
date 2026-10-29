@@ -76,23 +76,23 @@ after merging). No Gradle edits, no new dependency. The required core test
 - Hand (DYNAMIC) objects are simply rebuilt on every scan; ids re-match within 5 cm by `SceneBuilder`.
 
 ### Risks / open points
-1. **Cross-label duplicates**: `ScanMasks.of` suppresses overlaps within one prompt only. "object" will very likely
-   also match the cup/book -> two footprints for one thing, inflating the count and doubling an obstacle. Check the
-   `scan_object` lines on the Pixel; if it happens, either drop "object" from `ScanPrompts.TABLE` (one-line host
-   change) or add cross-label suppression to `ScanMasks` (core brief, tested).
+1. ~~Cross-label duplicates~~ resolved: `ScanMasks` now suppresses a generic "object" that overlaps a named label
+   (core 3fb3661, merged). Still worth a glance at the `scan_object` lines on the first Pixel run.
 2. **Scan < 6 s**: 6 prompts at `MAX_SAM_CONCURRENCY = 3` = two rounds of SAM; the floor's 10 prompts = four. If
    `segment_ms` is over budget, cut the prompt list before touching anything else.
-3. **ARCore polygon vs real table edge**: the detected polygon is usually smaller than the table, so the character
-   falls (and respawns) before the physical edge, and a small early polygon could put the current position outside
-   the boundary at the moment of the swap. If that reads badly on video, keep `boundary = null` on the table (one
-   line in ScanCapture) and use cliffs only on the floor.
+3. **ARCore polygon vs real table edge** (TABLE only; FLOOR scans pass no plane, so a floor level has no boundary):
+   the detected polygon is usually smaller than the table, so the character falls (and respawns) before the physical
+   edge. Walk taps outside the scanned boundary are now ignored (review fix 4), so a tap cannot send it over a
+   mid-table "cliff"; walking into it under its own momentum is not possible (it only walks to taps). A re-scan
+   refreshes the boundary to the grown polygon. If the early edge still reads badly on video, `plane = null` in
+   `startScan` for the table too.
 4. **Mirror check**: the overlay's v axis sign depends on SceneView's Euler handedness (derived from the source,
    not yet seen on a device). If footprints appear mirrored across the anchor's u axis, flip the sign in
    `FootprintOverlay.kt` (one character). The physics is unaffected either way; only the overlay would be wrong.
 5. **0 objects -> NO_PLANE** (the brief's rule) shows the "No table found / use a patterned cloth" banner for an
    empty-but-detected table. Copy is misleading there; a dedicated "nothing on the table" string is a Day 6 polish.
-6. `scanBusy` is only cleared when the running scan returns; a tracking loss during a scan ends the overlay (PAUSED)
-   but a Scan tap before the old call returns is rejected (-> NO_PLANE). Expected within the 30 s timeout.
+6. A Scan tap while a scan is pending or running joins it (`scanOwed`) and gets that scan's result; it does not
+   start a second SAM call. The second tap's overlay therefore ends with the first scan's answer.
 
 ### Pixel checklist (Day 4 gate: 5 objects within 2 cm, scan < 6 s)
 1. Install (`./gradlew :androidApp:installDebug && scripts/device.sh run`), bundled character, Table, place the
@@ -110,6 +110,26 @@ after merging). No Gradle edits, no new dependency. The required core test
    re-placed.
 7. Cover the camera during a scan: Paused scrim, no crash, no reset; on resume a new Scan works.
 8. Wi-Fi off, Scan: "No table found" (failed call) within the 30 s timeout, Skip appears after the second try.
+9. Portrait vs landscape A/B: scan the same 5 objects holding the phone upright and then sideways, note `objects=`
+   per scan. The JPEG SAM gets is the CPU image in SENSOR (landscape) orientation whichever way the phone is held,
+   so counts should match; a consistent drop in one orientation points at SAM, not at the geometry (the intrinsics
+   and `Camera.getPose()` are in the same sensor frame).
+
+### Review fixes (2026-10-29, same worktree; build + tests green again)
+- Blocker: `withTimeout` -> `withTimeoutOrNull(...) ?: throw IllegalStateException` (its TimeoutCancellationException
+  escaped the catch and left `scanBusy` stuck, Rescan dead); `scanBusy` now cleared in `finally` (ScanCapture.kt
+  `runTableScan`, RudeusArView.kt `startScan`).
+- Grab never throws into the frame loop: whole body in try/catch, odd width -> fail, NotYetAvailableException keeps the
+  request pending for up to `GRAB_MAX_TRIES` = 10 frames (`GrabAttempt.retry`).
+- Exactly one `onScanned` per request: `scanOwed` counts unanswered requests; one during pending/busy joins the
+  running scan and is answered with its result (no instant NO_PLANE / Skip during a tracking blip).
+- Walk taps outside `loop.level.boundary` are ignored (snapshot boundary vs live polygon).
+- FLOOR scans pass `plane = null`: no boundary on a floor.
+- Failed prompts (`SegmentResult.failedPrompts`, e.g. a 429 on "cup") carry over the previous scan's objects of that
+  label (DYNAMIC excluded); logged as `scan_carried`.
+- Play: a null/0 Rescan says "No table found" (floor variant on the floor) in the speech bubble.
+- `recordScan` appends + snapshots on Main (where `latestRun()` reads), writes the file on IO.
+- App KDoc example carries `scanner = host`; Risk 1 closed by core 3fb3661; Risk 3 and 6 rewritten above.
 
 | # | object | label/id | centroid error (cm) | height est. (cm) | real height (cm) | scan_ms | segment_ms |
 |---|---|---|---|---|---|---|---|

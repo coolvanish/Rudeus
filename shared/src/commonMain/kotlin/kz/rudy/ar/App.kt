@@ -30,6 +30,7 @@ import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.LocalLang
+import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.Strings
 import kz.rudy.ar.ui.screens.BundledCharacter
 import kz.rudy.ar.ui.screens.CaptureScreen
@@ -61,7 +62,7 @@ private const val SCAN_ARC_TICK_MS = 100L
 
 /**
  * Minimal navigation shell. :androidApp calls
- * `App(arView = { modifier, slot -> RudeusArView(modifier, slot) }, capture = host)`.
+ * `App(arView = { modifier, slot -> RudeusArView(modifier, slot, scanner = host) }, capture = host)`.
  *
  * One AR session: [arView] is composed exactly once, at one call site in a `Box` under every screen, for as long as
  * the screen is Scanning or Play (and while Metrics is opened from Play, drawn on top of it), so the ARCore session
@@ -197,7 +198,8 @@ fun App(
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
     }
     // Scanning: the real count -> DONE; a failure or an empty result -> NO_PLANE (the brief's rule; Skip appears
-    // after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends.
+    // after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends; a
+    // failed or empty rescan says so in the bubble (the same "No table found" line), so the HUD stays honest.
     val onScanned = rememberUpdatedState<(Int?) -> Unit> { objects ->
         when (screen) {
             Screen.SCANNING -> if (scan.status == ScanStatus.SCANNING) {
@@ -207,7 +209,13 @@ fun App(
                     scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = objects, failures = 0)
                 }
             }
-            else -> hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
+            else -> {
+                if (hud.scanning && (objects == null || objects == 0)) {
+                    val id = if (surface == Surface.FLOOR) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
+                    speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                }
+                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
+            }
         }
     }
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }

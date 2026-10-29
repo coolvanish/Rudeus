@@ -124,14 +124,23 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
     override suspend fun segment(ref: String, jpeg: ByteArray, prompts: List<String>): SegmentResult =
         api.segment(ref, jpeg, prompts)
 
-    /** Day 4 gate row: `withinCm` stays empty here; the human fills the ruler numbers into the brief. */
-    override suspend fun recordScan(objects: Int, ms: Long): Unit = withContext(Dispatchers.IO) {
-        metrics.recordScan(objects, ms, withinCm = emptyList())
-        scans++
-        try {
-            sink.write("${metrics.runId}.json", metrics.toJson())
-        } catch (e: Exception) {
-            Log.w(TAG, "metrics write failed: ${e.message}")
+    /**
+     * Day 4 gate row: `withinCm` stays empty here; the human fills the ruler numbers into the brief.
+     * HAND-REVIEW: review fix — the append and the JSON snapshot run on Main, where `latestRun()` reads the same
+     * lists (MetricsLog's non-cost methods are single-threaded); only the file write goes to IO.
+     */
+    override suspend fun recordScan(objects: Int, ms: Long) {
+        val json = withContext(Dispatchers.Main.immediate) {
+            metrics.recordScan(objects, ms, withinCm = emptyList())
+            scans++
+            metrics.toJson()
+        }
+        withContext(Dispatchers.IO) {
+            try {
+                sink.write("${metrics.runId}.json", json)
+            } catch (e: Exception) {
+                Log.w(TAG, "metrics write failed: ${e.message}")
+            }
         }
     }
 

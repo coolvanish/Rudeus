@@ -11,12 +11,14 @@ import com.google.ar.core.Anchor
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
 import com.google.ar.core.Pose
+import com.google.ar.core.exceptions.NotYetAvailableException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.core.domain.Level
+import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.geometry.Intrinsics
 import kz.rudy.ar.core.geometry.Pose3
@@ -63,50 +65,63 @@ internal class ScanGrab(
 
 internal class ScanOutcome(val level: Level?, val ms: Long, val error: String? = null)
 
+/** One attempt to grab the current frame: [grab], or nothing with [retry] = ARCore had no image for it yet. */
+internal class GrabAttempt(val grab: ScanGrab?, val retry: Boolean)
+
+/** How many frames a scan waits for `acquireCameraImage` (NotYetAvailableException right after resume) before failing. */
+internal const val GRAB_MAX_TRIES = 10
+
 /**
- * Main thread, on the current [frame] (camera TRACKING). Null when ARCore has no image for this frame yet
- * (`NotYetAvailableException` right after resume) or the image could not be read; the caller reports a failed scan.
+ * Main thread, on the current [frame] (camera TRACKING). Never throws into the frame loop: any failure (no image
+ * for this frame -> [GrabAttempt.retry], odd size, stride surprise, intrinsics or polygon errors) is logged and
+ * comes back as `grab = null`.
  */
-internal fun grabScanFrame(frame: Frame, anchor: Anchor, plane: Plane?, nowMs: Long = SystemClock.elapsedRealtime()): ScanGrab? {
-    val image = try {
-        frame.acquireCameraImage()
+internal fun grabScanFrame(frame: Frame, anchor: Anchor, plane: Plane?, nowMs: Long = SystemClock.elapsedRealtime()): GrabAttempt {
+    try {
+        val image = try {
+            frame.acquireCameraImage()
+        } catch (e: NotYetAvailableException) {
+            return GrabAttempt(null, retry = true)
+        }
+        val width: Int
+        val height: Int
+        val nv21: ByteArray
+        try {
+            width = image.width
+            height = image.height
+            // NV21 has no row padding: its chroma rows are exactly `width` bytes, so an odd width cannot be expressed.
+            if (image.format != ImageFormat.YUV_420_888 || width % 2 != 0 || height < 2) {
+                Log.w(TAG, "scan_grab_failed: format=${image.format} size=${width}x$height")
+                return GrabAttempt(null, retry = false)
+            }
+            nv21 = yuv420ToNv21(image)
+        } finally {
+            image.close()
+        }
+        val camera = frame.camera
+        val ci = camera.imageIntrinsics
+        val f = ci.focalLength
+        val c = ci.principalPoint
+        val d = ci.imageDimensions
+        // The intrinsics describe d[0] x d[1]; the image should be exactly that. Scale if a device disagrees.
+        val sx = width / d[0].toFloat()
+        val sy = height / d[1].toFloat()
+        val intrinsics = Intrinsics(f[0] * sx, f[1] * sy, c[0] * sx, c[1] * sy, width, height)
+        val grab = ScanGrab(
+            nv21 = nv21,
+            width = width,
+            height = height,
+            intrinsics = intrinsics,
+            cameraPose = camera.pose.toPose3(),
+            anchorPose = anchor.pose.toPose3(),
+            planePolygonWorld = plane?.let(::planePolygonWorld),
+            startedMs = nowMs,
+        )
+        return GrabAttempt(grab, retry = false)
     } catch (e: Exception) {
         Log.w(TAG, "scan_grab_failed: ${e.javaClass.simpleName} ${e.message}")
-        return null
+        return GrabAttempt(null, retry = false)
     }
-    val width: Int
-    val height: Int
-    val nv21: ByteArray
-    try {
-        if (image.format != ImageFormat.YUV_420_888) {
-            Log.w(TAG, "scan_grab_failed: format=${image.format}")
-            return null
-        }
-        width = image.width
-        height = image.height
-        nv21 = yuv420ToNv21(image)
-    } finally {
-        image.close()
-    }
-    val camera = frame.camera
-    val ci = camera.imageIntrinsics
-    val f = ci.focalLength
-    val c = ci.principalPoint
-    val d = ci.imageDimensions
-    // The intrinsics describe d[0] x d[1]; the image should be exactly that. Scale if a device disagrees.
-    val sx = width / d[0].toFloat()
-    val sy = height / d[1].toFloat()
-    val intrinsics = Intrinsics(f[0] * sx, f[1] * sy, c[0] * sx, c[1] * sy, width, height)
-    return ScanGrab(
-        nv21 = nv21,
-        width = width,
-        height = height,
-        intrinsics = intrinsics,
-        cameraPose = camera.pose.toPose3(),
-        anchorPose = anchor.pose.toPose3(),
-        planePolygonWorld = plane?.let(::planePolygonWorld),
-        startedMs = nowMs,
-    )
 }
 
 /**
@@ -128,20 +143,33 @@ internal suspend fun runTableScan(
         val jpegW = bounds.outWidth.takeIf { it > 0 } ?: grab.width
         val jpegH = bounds.outHeight.takeIf { it > 0 } ?: grab.height
         val t1 = SystemClock.elapsedRealtime()
-        val result = withTimeout(SCAN_TIMEOUT_MS) { scanner.segment(ref, jpeg, prompts) }
+        // withTimeoutOrNull, not withTimeout: its TimeoutCancellationException is a CancellationException and would
+        // escape the catch below, killing the caller's coroutine without an answer (review fix, blocker 1).
+        val result = withTimeoutOrNull(SCAN_TIMEOUT_MS) { scanner.segment(ref, jpeg, prompts) }
+            ?: throw IllegalStateException("scan timeout after $SCAN_TIMEOUT_MS ms")
         val segmentMs = SystemClock.elapsedRealtime() - t1
         val masks = ScanMasks.of(result)
         // Masks are full-frame in SAM's grid (= the JPEG's); the intrinsics follow whichever grid came back.
         val grid = masks.firstOrNull()?.mask
         val intrinsics = grab.intrinsics.scaledTo(grid?.width ?: jpegW, grid?.height ?: jpegH)
         val input = ScanInput.fromAnchor(grab.anchorPose, grab.cameraPose, intrinsics, masks, grab.planePolygonWorld)
-        val level = SceneBuilder().build(input, previous, profile)
+        val built = SceneBuilder().build(input, previous, profile)
+        // A prompt whose request failed (429, timeout) must not make its objects vanish: the previous scan's objects
+        // of that label are carried over unchanged. DYNAMIC ones (a hand) are not: they are re-placed every scan.
+        val carried = if (previous == null || result.failedPrompts.isEmpty()) emptyList() else {
+            val failed = result.failedPrompts.toSet()
+            val taken = built.objects.mapTo(HashSet()) { it.id }
+            previous.objects.filter { it.label in failed && it.kind != ObjectKind.DYNAMIC && it.id !in taken }
+        }
+        val level = if (carried.isEmpty()) built else built.copy(objects = built.objects + carried)
         val ms = SystemClock.elapsedRealtime() - grab.startedMs
         Log.i(
             TAG,
             "scan_ms=$ms segment_ms=$segmentMs objects=${level.objects.size} masks=${masks.size} prompts=${prompts.size} " +
-                "failed=${result.failedPrompts.size} jpeg=${jpegW}x$jpegH bytes=${jpeg.size} boundary=${input.boundary?.size ?: 0} ref=$ref",
+                "failed=${result.failedPrompts.size} carried=${carried.size} jpeg=${jpegW}x$jpegH bytes=${jpeg.size} " +
+                "boundary=${input.boundary?.size ?: 0} ref=$ref",
         )
+        if (carried.isNotEmpty()) Log.w(TAG, "scan_carried failed_prompts=${result.failedPrompts} ids=${carried.map { it.id }}")
         for (o in level.objects) {
             val c = o.centroid
             Log.i(TAG, "scan_object id=${o.id} kind=${o.kind} c=(%.3f,%.3f) h=%.3f n=${o.footprint.size}".format(Locale.US, c.u, c.v, o.heightM))
