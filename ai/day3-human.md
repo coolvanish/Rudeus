@@ -42,6 +42,13 @@ strategy changes (re-anchor on a large correction is the fallback; not implement
 12. Footprints toggle on → the ARCore Rec button appears at the right edge; off → gone.
 13. Language switch KK/RU/EN on Capture only; the Processing "Done!" shows the sprite at 160 dp.
 
+## 3b. Already verified on the Pixel 7 Pro emulator (Oct 29, docs/evidence/ui-2026-10-29-*.png)
+- Capture kk/ru/en, bundled cards with real sprites and full ability labels, Metrics empty state, the paper camera
+  permission screen, system Back from Metrics returns to Capture, `bundled=16 bundled_ms=465` at cold start. No crashes.
+- Not possible on the emulator: anything with ARCore (Scanning/Play), the camera, the pipeline (no key in that build).
+- Known, left as is: the language choice is not persisted across a process restart (plain state); Scanning draws its
+  chips over the permission screen until the camera is allowed.
+
 ## 4. Housekeeping only you can do
 - Two stale agent worktrees are clean and safe to delete (blocked for the agent as destructive):
   ```
