@@ -38,12 +38,17 @@ import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
 import kz.rudy.ar.ui.components.LangSwitch
 import kz.rudy.ar.ui.components.PrimaryButton
+import kz.rudy.ar.ui.components.SpriteImage
+import kz.rudy.ar.ui.components.rememberSpriteBitmap
 import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
-/** A character shipped in the APK (CLI-generated, DESIGN.md "Capture"). Sprite drawing is the host's job. */
+/**
+ * A character shipped in the APK (CLI-generated, DESIGN.md "Capture"). The card draws [spritePng] when present,
+ * else the host's [thumbnail], else a glyph.
+ */
 data class BundledCharacter(
     val id: String,
     val sheet: CharacterSheet,
@@ -137,8 +142,13 @@ private fun CharacterCard(c: BundledCharacter, selected: Boolean, onClick: () ->
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+            val sprite = rememberSpriteBitmap(c.spritePng)
             val thumb = c.thumbnail
-            if (thumb != null) thumb(Modifier.fillMaxSize()) else GlyphIcon(Glyph.HIDE, RudeusColors.InkSoft, size = 48.dp)
+            when {
+                sprite != null -> SpriteImage(sprite, contentDescription = null, modifier = Modifier.fillMaxSize())
+                thumb != null -> thumb(Modifier.fillMaxSize())
+                else -> GlyphIcon(Glyph.HIDE, RudeusColors.InkSoft, size = 48.dp)
+            }
         }
         Spacer(Modifier.height(RudeusSpacing.xs))
         Text(

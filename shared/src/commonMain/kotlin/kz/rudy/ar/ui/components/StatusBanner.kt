@@ -116,7 +116,7 @@ fun ScrimPill(text: String, modifier: Modifier = Modifier, color: Color = Rudeus
  * resumes. Physics is frozen by :core and nothing resets (CLAUDE.md).
  */
 @Composable
-fun PausedOverlay(visible: Boolean, modifier: Modifier = Modifier) {
+fun PausedOverlay(visible: Boolean, modifier: Modifier = Modifier, hint: StringId = StringId.paused_hint) {
     val reduced = LocalReducedMotion.current
     AnimatedVisibility(
         visible = visible,
@@ -133,7 +133,7 @@ fun PausedOverlay(visible: Boolean, modifier: Modifier = Modifier) {
             Spacer(Modifier.height(RudeusSpacing.md))
             Text(t(StringId.paused_title), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Paper, textAlign = TextAlign.Center)
             Spacer(Modifier.height(RudeusSpacing.sm))
-            Text(t(StringId.paused_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.Paper, textAlign = TextAlign.Center)
+            Text(t(hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.Paper, textAlign = TextAlign.Center)
         }
     }
 }

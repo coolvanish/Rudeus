@@ -113,10 +113,18 @@ loops (eyes and brackets are static, pupils centred), progress arc still animate
 
 Navigation is a single `Screen` enum in `App.kt`; screens are stateless composables fed plain data + callbacks.
 
+**One AR session.** `App` composes the AR slot exactly once, full-screen in a `Box` under every screen, while the
+screen is Scanning or Play (and while Metrics is opened from Play: Metrics is drawn on top and takes the touches).
+Scanning -> Play keeps the same ARCore session and its single anchor. Leaving to Capture (or opening Metrics from
+Capture) ends the session; the next Scanning starts again from "Look at the table". The `ArSlot` carries the sprite,
+the surface and the debug flag; the host reports surface ready, anchor placed, tracking and character events back.
+
 ### Capture — `CaptureScreen`
 Paper background (or a camera preview slot). Headline "Drawing or toy", hint "Put the drawing on the table and
 take a photo", one Sun button **Photo** (camera glyph). Below: "Or pick a ready one" and a horizontal row of
-bundled character cards (sprite + name, 96 dp, Ink outline; selected = Sun outline). Top-right: `KK / RU / EN`
+bundled character cards (sprite + name, 96 dp, Ink outline; selected = Sun outline). The card draws the
+character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a host the demo pair
+is shown. Top-right: `KK / RU / EN`
 segmented switch (the only place it exists) and a ghost **Metrics** button bottom-left.
 - *API offline*: Leaf badge "No internet — ready characters" above the row; the Photo button is disabled (50 %
   alpha, still 64 dp) and the bundled row is the primary path. Never show a spinner.
@@ -132,18 +140,27 @@ crayon outline so the child sees progress.
   **Play anyway** (Sun), ghost **Retry**. Ship anyway is the default; never block the child.
 - *Pipeline error / offline mid-way*: `ScrimStrong` bottom sheet "Didn't work" + "Check the internet and try
   again", primary **Retry**, ghost **Back** (which returns to Capture where bundled characters are offered).
-- *Done*: "Done!" display, character name, ability chip, continues automatically after 800 ms (or on tap).
+- *Done*: "Done!" display, the finished sprite at 160 dp with the crayon outline, character name, ability chip, and
+  one Sun **Next** (the child looks at their character first; no auto-advance). *Not passed* shows the sprite too.
 
 ### Scanning — `ScanningScreen`
-AR view fills the screen. Top: scrim pill "Look at the table" + hint "Move the phone slowly". Bottom-centre: one
-Sun button **Scan** (eye glyph). Scan is explicit; never per frame.
+AR view fills the screen. Top-centre: two chips **Table | Floor** (the selected one Sky-outlined with a check),
+visible until the character is placed; the choice survives Back. Bottom-centre: one Sun button **Scan** (eye glyph),
+ghost **Back** to its left. Scan is explicit; never per frame. Floor means floor, carpet or outdoors (grass,
+pavement): the same game at a bigger scale; every "table" line below has a floor variant.
+- *No surface yet*: scrim pills "Look at the table" + "Move the phone slowly"; Scan disabled.
+- *Surface found, not placed*: one pill "Tap the table — it stands there"; Scan disabled. The tap places the
+  character (the session's one anchor); it greets the child in a bubble.
+- *Placed*: pills and chips gone; Scan enabled.
 - *Scanning*: button disabled; `ScanOverlay` plays the looking-around animation for the real scan duration
   (3–5 s); label "Looking…".
 - *No plane found* (after 10 s without a plane, or scan returns nothing): Tomato-accented banner "No table
-  found" + "Use a patterned cloth and light from the side", button becomes **Scan** again. A ghost **Skip**
-  appears after the second failure (2D fallback: unbounded `Level`).
-- *Done*: Leaf banner "Table ready! · Objects 5" for 1.5 s, then Play.
-- *Tracking paused during scan*: same banner as Play; the scan is cancelled, not retried automatically.
+  found" + "Use a patterned cloth and light from the side" (floor: "No floor found" + "Try outside in daylight:
+  grass or pavement"), button becomes **Scan** again. A ghost **Skip** appears after the second failure (2D
+  fallback: unbounded `Level`).
+- *Done*: Leaf banner "Table ready!" (floor: "Floor ready!") for 1.5 s, then Play. The object count ("Objects 5")
+  is shown only when the scan found objects; until the real scan (T04) lands it finds 0 and shows no count.
+- *Tracking paused during scan*: same Paused scrim as Play; the scan is cancelled, not retried automatically.
 
 ### Play — `PlayScreen(arView, …)`
 AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
@@ -151,23 +168,30 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
 - Top-right: offline badge (Leaf, "Offline") when `offline`; `Footprints` toggle chip (debug; Sky when on);
   ghost **Metrics**.
 - Centre-bottom: `SpeechBubble` with the character's line from `CharacterSheet.lines[lang]` (falls back
-  kk → ru). Event-triggered: placed, blocked by obstacle, stepped up, fell, ability used.
-- Bottom: one Sun button **Rescan** (eye glyph). Left of it the hint pill "Tap — it walks" for the first 5 s.
+  kk → ru). Event-triggered (`HudSpeech`): placed -> line 1; jumped -> line 2; blocked -> "Blocked!"; fell ->
+  "Oops! Fell"; respawned -> "Back up"; every 3rd arrival -> a sheet line (deterministic); the ability chip -> line 2.
+  Walking, landing, stepping up, pause/resume say nothing. Bubbles are ≥ 2.5 s apart; Fell and Back up always
+  replace the current one.
+- Bottom: one Sun button **Scan** (eye glyph), which reads **Rescan** once a scan has run in this session. Above it
+  the hint pill "Tap — it walks": appears when the character is placed, leaves 5 s after it first walks (or on Scan).
 - Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left) of the
   `Level` in plane coordinates with the same tints and the character as a Sky dot.
 - *Tracking lost / `Mode.PAUSED`*: full-screen `ScrimStrong`, title "Paused", hint "Point the phone at the
-  table", pause glyph. Physics is frozen by `:core`; nothing resets. The banner leaves by itself when tracking
+  table" (floor: "…at the floor"), pause glyph. Physics is frozen by `:core`; nothing resets. The banner leaves by itself when tracking
   resumes; there is no button.
 - *Fell off the cliff*: bubble "Oops! Fell" then "Back up" on respawn.
 - *Scanning from Play*: the same `ScanOverlay`; the character keeps walking underneath.
 
 ### Metrics — `MetricsScreen`
-Paper. Title "Metrics", run id + source/provider/device in mono. Summary tiles (2 × 2): Passed first try `80 %`,
-p50 `29.8 s`, p90 `41.0 s`, Cost `$0.034`. Table of characters: input · score · retries · time · cost (rows in
-`PaperDeep` stripes). Scans table: objects · ms · accuracy cm. One Sun button **Export JSON**; after export a
-Leaf toast "Saved". Ghost **Back**.
-- *No run yet*: display "Nothing yet", hint, Export disabled.
-- *Export failed*: Tomato banner with Retry.
+Paper. Shows this phone's run (`CaptureHost.latestRun()`, core's `MetricsRun`, read when the screen opens).
+Title "Metrics", run id + source/provider/device in mono. Summary tiles (2 × 2, only when n > 0): Passed first try
+`80 %`, p50 `29.8 s`, p90 `41.0 s`, Cost `$0.034`. Table of characters: input · score · retries · time · cost (rows
+in `PaperDeep` stripes). Scans table: objects · ms · accuracy cm. One Sun button **Export JSON** (disabled while
+saving); after export a Leaf toast "Saved" with "Where: Download/Rudeus/<runId>.json" under it in mono. Ghost
+**Back** (to where Metrics was opened from).
+- *No run yet*: display "Nothing yet", hint, Export disabled. Without a host (demo shell) a demo run is shown and
+  Export is disabled.
+- *Export failed*: Tomato banner "Not saved" with Retry.
 
 ## (e) Copy table
 
@@ -189,6 +213,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | capture_title | Сурет немесе ойыншық | Рисунок или игрушка | Drawing or toy |
 | capture_hint | Суретті үстелге қой да, фотоға түсір | Положи рисунок на стол и сфотографируй | Put the drawing on the table and take a photo |
 | capture_take_photo | Фото | Фото | Photo |
+| capture_pick_gallery | Галереядан | Из галереи | From gallery |
 | capture_or_pick | Немесе дайынын таңда | Или выбери готового | Or pick a ready one |
 | capture_offline_note | Интернет жоқ — дайын кейіпкерлер | Нет интернета — готовые герои | No internet — ready characters |
 | capture_empty | Әзірге жоқ | Пока пусто | Nothing yet |
@@ -204,18 +229,29 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | gate_attempt | Әрекет | Попытка | Attempt |
 | processing_failed_title | Болмады | Не вышло | Didn't work |
 | processing_failed_hint | Интернетті тексер де, қайталап көр | Проверь интернет и попробуй ещё | Check the internet and try again |
+| processing_pick_ready | Дайынын таңда | Выбрать готового | Pick a ready one |
 | ship_anyway | Бәрібір ойнаймыз | Всё равно играем | Play anyway |
 | ship_anyway_note | Стиль сәл басқаша болуы мүмкін | Стиль может чуть отличаться | Style may look a bit different |
 | processing_done | Дайын! | Готово! | Done! |
 | scan_title | Үстелді қара | Посмотри на стол | Look at the table |
+| scan_title_floor | Еденді қара | Посмотри на пол | Look at the floor |
 | scan_hint | Телефонды баяу қозғалт | Медленно води телефоном | Move the phone slowly |
 | scan_button | Скан | Скан | Scan |
 | scanning | Қарап жатырмын… | Смотрю… | Looking… |
 | scan_no_plane_title | Үстел табылмады | Стол не найден | No table found |
 | scan_no_plane_hint | Өрнекті мата жай, жарық бүйірден түссін | Постели ткань с узором, свет сбоку | Use a patterned cloth and light from the side |
+| scan_no_plane_title_floor | Еден табылмады | Пол не найден | No floor found |
+| scan_no_plane_hint_floor | Күндіз далада көр: шөп не тротуар | Попробуй днём на улице: трава или тротуар | Try outside in daylight: grass or pavement |
+| scan_tap_to_place | Үстелді түрт — ол сонда тұрады | Нажми на стол — он встанет там | Tap the table — it stands there |
+| scan_tap_to_place_floor | Еденді түрт — ол сонда тұрады | Нажми на пол — он встанет там | Tap the floor — it stands there |
 | scan_done | Үстел дайын! | Стол готов! | Table ready! |
+| scan_done_floor | Еден дайын! | Пол готов! | Floor ready! |
+| surface_table | Үстел | Стол | Table |
+| surface_floor | Еден | Пол | Floor |
 | scan_objects_found | Заттар | Предметы | Objects |
 | play_tap_to_walk | Түрт — ол барады | Нажми — он пойдёт | Tap — it walks |
+| ar_wait_table | Сәл күт — үстелді іздеп жатырмын | Подожди — ищу стол | Wait — finding the table |
+| ar_wait_floor | Сәл күт — еденді іздеп жатырмын | Подожди — ищу пол | Wait — finding the floor |
 | rescan | Қайта скан | Скан снова | Rescan |
 | ability_jump | Секіру | Прыжок | Jump |
 | ability_fly | Ұшу | Полёт | Fly |
@@ -223,6 +259,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | ability_hide | Жасырыну | Прятки | Hide |
 | paused_title | Үзіліс | Пауза | Paused |
 | paused_hint | Телефонды үстелге бағытта | Наведи телефон на стол | Point the phone at the table |
+| paused_hint_floor | Телефонды еденге бағытта | Наведи телефон на пол | Point the phone at the floor |
 | footprints | Іздер | Следы | Footprints |
 | fell | Ой! Құлап кетті | Ой! Упал | Oops! Fell |
 | respawn | Қайта тұрды | Снова на месте | Back up |
@@ -237,6 +274,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | metrics_export | JSON экспорт | Экспорт JSON | Export JSON |
 | metrics_exported | Сақталды | Сохранено | Saved |
 | metrics_export_failed | Сақталмады | Не сохранилось | Not saved |
+| metrics_export_where | Қайда | Где | Where |
 | metrics_run | Іске қосу | Запуск | Run |
 | metrics_characters | Кейіпкерлер | Герои | Characters |
 | metrics_pass_rate | Бірден өтті | Прошли сразу | Passed first try |
@@ -251,6 +289,9 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | metrics_col_cost | Баға | Цена | Cost |
 | metrics_col_objects | Заттар | Предметы | Objects |
 | metrics_col_within_cm | Дәлдік, см | Точность, см | Accuracy, cm |
+| camera_permission_title | Камера керек | Нужна камера | Camera needed |
+| camera_permission_hint | Кейіпкерді үстелде көру үшін | Чтобы увидеть героя на столе | To see the character on the table |
+| camera_permission_button | Рұқсат беру | Разрешить | Allow |
 
 Character lines (5 per language) come from the `CharacterSheet`, not from this table. Demo fallback lines live in
 `App.kt` only.
@@ -276,6 +317,7 @@ What not to do
 - No modal dialogs for children at all; errors are banners with one action.
 - No emoji in the chrome (font-dependent rendering); glyphs are Canvas-drawn.
 - No dark theme, no gradients over the feed, no parallax, no confetti.
-- No sentences on buttons; no exclamation marks except "Done!", "Table ready!", "Oops! Fell".
+- No sentences on buttons; no exclamation marks except "Done!", "Table ready!", "Floor ready!", "Oops! Fell",
+  "Blocked!" and the character's own lines.
 - No branded characters in demo assets; bundled characters are our own drawings.
 - `:shared` never imports ARCore/SceneView/Filament; it draws HUD only and receives the AR view as a slot.

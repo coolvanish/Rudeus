@@ -18,6 +18,7 @@ import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
+import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.AbilityChip
 import kz.rudy.ar.ui.components.Chip
@@ -42,14 +43,19 @@ data class HudState(
     val scanProgress: Float = 0f,
     val showFootprints: Boolean = false,
     val offline: Boolean = false,
-    /** "Tap - it walks" pill, shown for the first seconds after placement. */
-    val showTapHint: Boolean = true,
+    /** "Tap - it walks" pill: on after `ArSlot.onAnchorPlaced`, off 5 s after the first STARTED_WALKING. */
+    val showTapHint: Boolean = false,
     /** True when the AR host reports tracking lost; the character's Mode.PAUSED also triggers the overlay. */
     val trackingLost: Boolean = false,
+    /** A scan has run in this AR session: the bottom button reads "Rescan" instead of "Scan". */
+    val scanned: Boolean = false,
+    /** Table or floor/outdoors (the Paused hint names it). */
+    val surface: Surface = Surface.TABLE,
 )
 
 /**
- * Play: the AR view (slot from :androidApp) with the HUD in a Box on top.
+ * Play: the AR view (slot from :androidApp, composed once by App underneath, so [arView] is normally a no-op here)
+ * with the HUD in a Box on top.
  * Stateless: physics lives in :core, rendering in :androidApp; this only draws chrome.
  */
 @Composable
@@ -102,7 +108,7 @@ fun PlayScreen(
                         Spacer(Modifier.height(RudeusSpacing.sm))
                     }
                     PrimaryButton(
-                        text = t(StringId.rescan),
+                        text = t(if (hud.scanned) StringId.rescan else StringId.scan_button),
                         glyph = Glyph.EYE,
                         enabled = !hud.scanning,
                         onClick = onScan,
@@ -111,6 +117,9 @@ fun PlayScreen(
                 }
             }
         }
-        PausedOverlay(visible = hud.trackingLost || character.mode == Mode.PAUSED)
+        PausedOverlay(
+            visible = hud.trackingLost || character.mode == Mode.PAUSED,
+            hint = if (hud.surface == Surface.FLOOR) StringId.paused_hint_floor else StringId.paused_hint,
+        )
     }
 }

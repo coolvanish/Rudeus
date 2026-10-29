@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +37,8 @@ import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
 import kz.rudy.ar.ui.components.PrimaryButton
+import kz.rudy.ar.ui.components.SpriteImage
+import kz.rudy.ar.ui.components.rememberSpriteBitmap
 import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.LocalReducedMotion
 import kz.rudy.ar.ui.theme.RudeusColors
@@ -52,10 +56,7 @@ enum class PipelineStage(val label: StringId) {
 
 enum class ProcessingStatus { RUNNING, GATE_FAILED, ERROR, DONE }
 
-/**
- * Plain progress snapshot for the Processing screen.
- * TODO(core): map from the pipeline's own progress events once CharacterPipeline lands in :core.
- */
+/** Plain progress snapshot for the Processing screen, folded from core's `PipelineEvent`s by [reduce]. */
 data class ProcessingState(
     val status: ProcessingStatus = ProcessingStatus.RUNNING,
     /** Stage currently running; null when finished or failed before start. */
@@ -85,7 +86,11 @@ fun ProcessingScreen(
     onContinue: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The finished character's sprite PNG (`CharacterResult.sprite`); shown at 160 dp once the run is done. */
+    sprite: ByteArray? = null,
 ) {
+    val finished = state.status == ProcessingStatus.DONE || state.status == ProcessingStatus.GATE_FAILED
+    val spriteBitmap = rememberSpriteBitmap(if (finished) sprite else null)
     val reduced = LocalReducedMotion.current
     val progress by animateFloatAsState(
         targetValue = state.fraction,
@@ -100,44 +105,50 @@ fun ProcessingScreen(
                 color = RudeusColors.Ink,
             )
             Spacer(Modifier.height(RudeusSpacing.lg))
-            state.preview?.let { preview ->
-                val shape = RoundedCornerShape(RudeusRadius.card)
-                Box(
-                    Modifier
-                        .size(160.dp)
-                        .align(Alignment.CenterHorizontally)
-                        .clip(shape)
-                        .background(RudeusColors.PaperDeep)
-                        .border(RudeusSpacing.stroke, RudeusColors.Ink, shape),
-                ) { preview(Modifier.fillMaxSize()) }
-                Spacer(Modifier.height(RudeusSpacing.lg))
-            }
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(RudeusRadius.full)),
-                color = RudeusColors.Sun,
-                trackColor = RudeusColors.PaperDeep,
-            )
-            Spacer(Modifier.height(RudeusSpacing.lg))
-            PipelineStage.entries.forEach { stage ->
-                StageRow(
-                    label = t(stage.label),
-                    done = stage in state.completed,
-                    active = stage == state.stage && state.status == ProcessingStatus.RUNNING,
-                    failed = stage == state.stage && state.status == ProcessingStatus.ERROR,
+            // Scrolls on short screens once the sprite, the score and the name are all shown.
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                val preview: (@Composable (Modifier) -> Unit)? = spriteBitmap?.let { bmp ->
+                    { m -> SpriteImage(bmp, contentDescription = state.sheet?.name, modifier = m.padding(RudeusSpacing.sm)) }
+                } ?: state.preview
+                preview?.let { content ->
+                    val shape = RoundedCornerShape(RudeusRadius.card)
+                    Box(
+                        Modifier
+                            .size(160.dp)
+                            .align(Alignment.CenterHorizontally)
+                            .clip(shape)
+                            .background(RudeusColors.PaperDeep)
+                            .border(RudeusSpacing.stroke, RudeusColors.Ink, shape),
+                    ) { content(Modifier.fillMaxSize()) }
+                    Spacer(Modifier.height(RudeusSpacing.lg))
+                }
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(RudeusRadius.full)),
+                    color = RudeusColors.Sun,
+                    trackColor = RudeusColors.PaperDeep,
                 )
-            }
-            state.gateScore?.let { score ->
                 Spacer(Modifier.height(RudeusSpacing.lg))
-                GateScore(score, passed = score >= state.gateThreshold, attempt = state.attempt, maxAttempts = state.maxAttempts)
+                PipelineStage.entries.forEach { stage ->
+                    StageRow(
+                        label = t(stage.label),
+                        done = stage in state.completed,
+                        active = stage == state.stage && state.status == ProcessingStatus.RUNNING,
+                        failed = stage == state.stage && state.status == ProcessingStatus.ERROR,
+                    )
+                }
+                state.gateScore?.let { score ->
+                    Spacer(Modifier.height(RudeusSpacing.lg))
+                    GateScore(score, passed = score >= state.gateThreshold, attempt = state.attempt, maxAttempts = state.maxAttempts)
+                }
+                if (state.status == ProcessingStatus.DONE && state.sheet != null) {
+                    Spacer(Modifier.height(RudeusSpacing.lg))
+                    Text(state.sheet.name, style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
+                    Spacer(Modifier.height(RudeusSpacing.sm))
+                    AbilityChip(state.sheet.ability)
+                }
             }
-            if (state.status == ProcessingStatus.DONE && state.sheet != null) {
-                Spacer(Modifier.height(RudeusSpacing.lg))
-                Text(state.sheet.name, style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
-                Spacer(Modifier.height(RudeusSpacing.sm))
-                AbilityChip(state.sheet.ability)
-            }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(RudeusSpacing.md))
             when (state.status) {
                 ProcessingStatus.RUNNING -> GhostButton(t(StringId.cancel), onClick = onBack, glyph = Glyph.BACK)
                 ProcessingStatus.DONE -> PrimaryButton(t(StringId.next), onClick = onContinue, modifier = Modifier.fillMaxWidth())

@@ -115,7 +115,7 @@ fun LangSwitch(lang: Lang, onChange: (Lang) -> Unit, modifier: Modifier = Modifi
             }
             Box(
                 Modifier
-                    .sizeIn(minWidth = 56.dp, minHeight = 48.dp)
+                    .sizeIn(minWidth = RudeusSpacing.touchTarget, minHeight = RudeusSpacing.touchTarget)
                     .clip(shape)
                     .background(if (selected) RudeusColors.Sun else Color.Transparent)
                     .clickable(role = Role.RadioButton) { onChange(l) }

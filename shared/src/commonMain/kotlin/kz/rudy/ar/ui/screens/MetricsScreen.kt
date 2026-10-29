@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.BannerKind
 import kz.rudy.ar.ui.components.Chip
@@ -36,48 +37,22 @@ import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
+enum class ExportStatus { IDLE, SAVING, SAVED, FAILED }
+
 /**
- * Plain view of one runs/<ts>.json (see .claude/skills/metrics).
- * TODO(core): replace with core's MetricsRun once core/metrics lands; keep the field names identical.
+ * Metrics: this phone's run (`CaptureHost.latestRun()`, core's [MetricsRun] as written to runs/<runId>.json, see
+ * .claude/skills/metrics) and Export JSON. [exportLocation] is the user-visible place the last export landed.
+ * [canExport] is false without a host (the demo shell has nowhere to write).
  */
-data class MetricsRunView(
-    val runId: String,
-    val source: String,
-    val provider: String,
-    val device: String,
-    val characters: List<CharacterRow>,
-    val scans: List<ScanRow>,
-    val summary: SummaryView?,
-) {
-    data class CharacterRow(
-        val input: String,
-        val gateScore: Float,
-        val gatePassed: Boolean,
-        val retries: Int,
-        val totalMs: Long,
-        val totalCostUsd: Double,
-    )
-
-    data class ScanRow(val objects: Int, val ms: Long, val withinCm: List<Float>)
-
-    data class SummaryView(
-        val n: Int,
-        val gatePassRateFirstTry: Double,
-        val p50Ms: Long,
-        val p90Ms: Long,
-        val costPerCharacterUsd: Double,
-    )
-}
-
-enum class ExportStatus { IDLE, SAVED, FAILED }
-
 @Composable
 fun MetricsScreen(
-    run: MetricsRunView?,
+    run: MetricsRun?,
     exportStatus: ExportStatus,
     onExportJson: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    exportLocation: String? = null,
+    canExport: Boolean = true,
 ) {
     Box(modifier.fillMaxSize().background(RudeusColors.Paper)) {
         Column(Modifier.fillMaxSize().safeDrawingPadding().padding(RudeusSpacing.md)) {
@@ -98,6 +73,13 @@ fun MetricsScreen(
                     accent = RudeusColors.Leaf,
                     contentColor = RudeusColors.Paper,
                 )
+                if (exportLocation != null) {
+                    Text(
+                        "${t(StringId.metrics_export_where)}: $exportLocation",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = RudeusColors.InkSoft,
+                    )
+                }
                 Spacer(Modifier.height(RudeusSpacing.sm))
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -111,7 +93,7 @@ fun MetricsScreen(
             PrimaryButton(
                 text = t(StringId.metrics_export),
                 glyph = Glyph.EXPORT,
-                enabled = run != null,
+                enabled = run != null && canExport && exportStatus != ExportStatus.SAVING,
                 onClick = onExportJson,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -122,16 +104,16 @@ fun MetricsScreen(
 }
 
 @Composable
-private fun RunBody(run: MetricsRunView) {
+private fun RunBody(run: MetricsRun) {
     Text(
         "${t(StringId.metrics_run)} ${run.runId} · ${run.source} · ${run.provider} · ${run.device}",
         style = MaterialTheme.typography.bodyMedium,
         color = RudeusColors.InkSoft,
     )
     Spacer(Modifier.height(RudeusSpacing.md))
-    run.summary?.let { s ->
+    run.summary.takeIf { it.n > 0 }?.let { s ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.sm)) {
-            Tile(t(StringId.metrics_pass_rate), formatPercent(s.gatePassRateFirstTry), Modifier.weight(1f))
+            Tile(t(StringId.metrics_pass_rate), formatPercent(s.gatePassRateFirstTry.toDouble()), Modifier.weight(1f))
             Tile(t(StringId.metrics_p50), formatSeconds(s.p50Ms), Modifier.weight(1f))
         }
         Spacer(Modifier.height(RudeusSpacing.sm))
