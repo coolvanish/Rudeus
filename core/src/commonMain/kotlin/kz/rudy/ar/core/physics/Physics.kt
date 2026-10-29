@@ -17,12 +17,16 @@ import kz.rudy.ar.core.domain.Vec2
  * @property verticalVelocity feet velocity along `h`, m/s (positive = up). Only meaningful while
  *   `state.mode` is [Mode.JUMPING] or [Mode.FALLING].
  * @property modeBeforePause mode to restore on [Physics.resume]; `null` when not paused.
+ * @property blocked true after a step in which the character walked toward its target but push-out cancelled more
+ *   than half of that step's intended displacement (an obstacle is in the way), see [Physics.step]. The HUD gets it
+ *   as [kz.rudy.ar.core.domain.CharacterEvent.BLOCKED] on the rising edge.
  */
 @Serializable
 data class PhysicsBody(
     val state: CharacterState = CharacterState(),
     val verticalVelocity: Float = 0f,
     val modeBeforePause: Mode? = null,
+    val blocked: Boolean = false,
 )
 
 /**
@@ -34,11 +38,13 @@ data class PhysicsBody(
  *   the character snaps to the target and goes [Mode.IDLE]. `facing` follows the movement direction.
  * - [ObjectKind.OBSTACLE] / [ObjectKind.DYNAMIC] footprints push the collision circle out, but only while the feet
  *   are below the object's top (`h < heightM`): a jump clears a 2 cm object but not a 9 cm cup.
- * - [ObjectKind.PLATFORM]: entering the footprint with `heightM - h <= Semantics.STEP_UP_MAX_M` lifts the feet to
- *   `heightM`. Ground height under the character is the tallest standable object containing `pos`, else 0.
- *   Walking off a platform switches to [Mode.FALLING] (vertical velocity 0) and gravity brings the feet down.
- * - Objects no taller than [Semantics.PLATFORM_MAX_HEIGHT_M] can also be landed on from above (feet at or above
- *   the top): that is how a jump "clears" a low obstacle. Taller objects are never stood on.
+ * - [ObjectKind.PLATFORM]: entering the footprint with `heightM - h <= PhysicsParams.stepUpMaxM` lifts the feet to
+ *   `heightM`; a taller platform blocks like an obstacle. Ground height under the character is the tallest standable
+ *   object containing `pos`, else 0. Walking off a platform switches to [Mode.FALLING] (vertical velocity 0) and
+ *   gravity brings the feet down.
+ * - Objects no taller than [PhysicsParams.platformMaxHeightM] can also be landed on from above (feet at or above
+ *   the top): that is how a jump "clears" a low obstacle. Taller objects are never stood on. Both heights come from
+ *   the params ([Semantics] values on the table, [PhysicsParams.forSurface] scales them for the floor).
  * - Cliff: `pos` outside `level.boundary` (or inside a [ObjectKind.CLIFF] footprint) has no ground. On the ground
  *   that means [Mode.FALLING]; airborne non-[Ability.FLY] characters also start falling. Horizontal motion stops
  *   while falling off a cliff. When `h < respawnBelowH` the mode becomes [Mode.RESPAWNING]; the next step puts
@@ -46,7 +52,11 @@ data class PhysicsBody(
  * - [Mode.JUMPING]: vertical velocity integrates gravity (× [PhysicsParams.flyGravityScale] for [Ability.FLY]),
  *   horizontal motion continues toward the target, landing happens when the feet reach the ground height.
  *   A FLY character airborne over a cliff keeps flying; it only falls if it comes down over the cliff.
- * - [Mode.PAUSED] freezes everything: [step] returns the body unchanged.
+ * - [Mode.PAUSED] freezes everything: [step] returns the body unchanged (including [PhysicsBody.blocked]).
+ * - [PhysicsBody.blocked]: true after a step (`dtMs > 0`) that started on the ground walking toward a target, ended
+ *   still [Mode.WALKING] toward it, and in which push-out cancelled more than half of the step's intended horizontal
+ *   displacement (head-on into a cup: blocked; brushing along its side: not). False after any other step; a
+ *   [walkTo] to a different target clears it.
  *
  * Every function returns a new value; nothing is mutated.
  */
@@ -77,14 +87,15 @@ object Physics {
         // A JUMPING body resting on the ground with no vertical velocity was produced by the
         // CharacterState-only `jump` overload: launch it now.
         if (s.mode == Mode.JUMPING && vv == 0f) {
-            val g0 = groundHeight(level, s.pos, s.h)
+            val g0 = groundHeight(level, s.pos, s.h, params)
             if (g0 != null && s.h <= g0 + H_EPS) vv = params.jumpVelocityMps
         }
 
         val airborne = s.mode == Mode.JUMPING || s.mode == Mode.FALLING
         val fallingOffCliff = s.mode == Mode.FALLING && isOverCliff(level, s.pos)
 
-        // 1. Horizontal motion toward the target.
+        // 1. Horizontal motion toward the target. `walking` = on the ground with somewhere to go (BLOCKED candidates).
+        val walking = !airborne && s.target != null
         var pos = s.pos
         var target = s.target
         var facing = s.facing
@@ -107,7 +118,13 @@ object Physics {
         }
 
         // 2. Push the collision circle out of blocking objects (feet height before vertical integration).
+        val moved = pos
         pos = resolveCollisions(level, pos, s.h, s.radiusM, params)
+        // Blocked: the push-out took back more than half of the intended step. With d = intended, p = moved - pos
+        // (what the push-out undid), the cancelled length along d is p·d / |d|; compare without a square root.
+        val intended = moved - s.pos
+        val pushedBack = walking && dt > 0f && intended.lengthSquared > Vec2.EPS * Vec2.EPS &&
+            (moved - pos).dot(intended) > 0.5f * intended.lengthSquared
 
         // 3. Arrival check after collisions so a blocked character never "arrives"; snap onto the target.
         if (target != null && (target - pos).length <= params.arriveEpsilonM) {
@@ -118,7 +135,7 @@ object Physics {
 
         // 4. Vertical motion, landing, step-up, cliff.
         var h = s.h
-        val ground = groundHeight(level, pos, s.h)
+        val ground = groundHeight(level, pos, s.h, params)
         if (airborne) {
             val g = params.gravityMps2 * if (s.ability == Ability.FLY) params.flyGravityScale else 1f
             vv -= g * dt
@@ -142,6 +159,8 @@ object Physics {
         return PhysicsBody(
             state = s.copy(pos = pos, h = h, target = target, mode = mode, facing = facing),
             verticalVelocity = vv,
+            // An arrival or a fall this step is not "blocked", whatever the push-out did.
+            blocked = pushedBack && target != null && mode == Mode.WALKING,
         )
     }
 
@@ -154,8 +173,14 @@ object Physics {
         return state.copy(target = target, mode = mode)
     }
 
-    /** [walkTo] on a [PhysicsBody]. */
-    fun walkTo(body: PhysicsBody, target: Vec2): PhysicsBody = body.copy(state = walkTo(body.state, target))
+    /**
+     * [walkTo] on a [PhysicsBody]. A new target clears [PhysicsBody.blocked], so walking into the obstacle again
+     * announces it again; the current target again changes nothing (a host re-sending it every frame stays quiet).
+     */
+    fun walkTo(body: PhysicsBody, target: Vec2): PhysicsBody {
+        val next = walkTo(body.state, target)
+        return if (next == body.state) body else body.copy(state = next, blocked = false)
+    }
 
     /**
      * Start a jump. No-op for [Ability.ROLL], while airborne, while paused or respawning.
@@ -204,15 +229,15 @@ object Physics {
     /**
      * Ground height under `pos` for a character whose feet are at `feetH`, or `null` over a cliff.
      * Candidates are objects whose footprint contains `pos` and that are standable from `feetH`:
-     * platforms within [Semantics.STEP_UP_MAX_M], or objects no taller than [Semantics.PLATFORM_MAX_HEIGHT_M]
+     * platforms within [PhysicsParams.stepUpMaxM], or objects no taller than [PhysicsParams.platformMaxHeightM]
      * whose top is at or below the feet. The tallest candidate wins; no candidate means the table (0).
      */
-    fun groundHeight(level: Level, pos: Vec2, feetH: Float): Float? {
+    fun groundHeight(level: Level, pos: Vec2, feetH: Float, params: PhysicsParams = PhysicsParams.DEFAULT): Float? {
         if (isOverCliff(level, pos)) return null
         var ground = 0f
         for (o in level.objects) {
             if (o.kind == ObjectKind.CLIFF || !o.footprint.contains(pos)) continue
-            if (isStandable(o, feetH) && o.heightM > ground) ground = o.heightM
+            if (isStandable(o, feetH, params) && o.heightM > ground) ground = o.heightM
         }
         return ground
     }
@@ -224,17 +249,17 @@ object Physics {
         return level.objects.any { it.kind == ObjectKind.CLIFF && it.footprint.contains(pos) }
     }
 
-    /** True when [o] blocks a character whose feet are at `feetH`. */
-    fun blocks(o: LevelObject, feetH: Float): Boolean = when (o.kind) {
+    /** True when [o] blocks a character whose feet are at `feetH` (a platform taller than [PhysicsParams.stepUpMaxM] does). */
+    fun blocks(o: LevelObject, feetH: Float, params: PhysicsParams = PhysicsParams.DEFAULT): Boolean = when (o.kind) {
         ObjectKind.CLIFF -> false
-        ObjectKind.PLATFORM -> o.heightM - feetH > Semantics.STEP_UP_MAX_M + H_EPS
+        ObjectKind.PLATFORM -> o.heightM - feetH > params.stepUpMaxM + H_EPS
         ObjectKind.OBSTACLE, ObjectKind.DYNAMIC -> feetH < o.heightM - H_EPS
     }
 
-    private fun isStandable(o: LevelObject, feetH: Float): Boolean = when (o.kind) {
-        ObjectKind.PLATFORM -> o.heightM - feetH <= Semantics.STEP_UP_MAX_M + H_EPS
+    private fun isStandable(o: LevelObject, feetH: Float, params: PhysicsParams): Boolean = when (o.kind) {
+        ObjectKind.PLATFORM -> o.heightM - feetH <= params.stepUpMaxM + H_EPS
         ObjectKind.OBSTACLE, ObjectKind.DYNAMIC ->
-            o.heightM <= Semantics.PLATFORM_MAX_HEIGHT_M + H_EPS && o.heightM <= feetH + H_EPS
+            o.heightM <= params.platformMaxHeightM + H_EPS && o.heightM <= feetH + H_EPS
         ObjectKind.CLIFF -> false
     }
 
@@ -252,7 +277,7 @@ object Physics {
         repeat(params.pushOutPasses) {
             var moved = false
             for (o in level.objects) {
-                if (!blocks(o, feetH)) continue
+                if (!blocks(o, feetH, params)) continue
                 val push = circlePolygonPushOut(pos, radius, o.footprint) ?: continue
                 pos += push
                 moved = true

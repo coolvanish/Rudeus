@@ -21,7 +21,7 @@ p50 < 40 s, <= $0.05 per character.
     {
       "input": "drawings/cat-01.jpg",
       "stages": [ { "name": "cutout|stylize|matte|gate|sheet", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
-      "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031
+      "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031, "aborted": false
     }
   ],
   "scans": [ { "objects": 5, "ms": 4800, "withinCm": [1.2, 0.8, 2.1, 1.5, 0.9] } ],
@@ -46,6 +46,13 @@ of what the provider's replies reported for that stage (`MetricsLog` is `MetaApi
 model call. A stage that failed with an error (not a gate below threshold) is charged only what was metered, else 0.
 When a character fails, its sheet stage is still recorded (outcome if done, else `ok: false` after cancelling it).
 Spark costs use the standard-tier rates, an upper bound for the contributor tier we call.
+
+`aborted` (added Day 3, T12, default `false`, still `schema: 1`; older runs parse as `false`): `true` = the pipeline was
+cancelled before the character was done (the player left the processing screen). `MetricsLog.abortCharacter()` writes it
+from the `CancellationException` path of `CharacterPipeline.run`: the stages recorded so far with their cost (the money
+was spent, so it stays in the file), `gateScore: 0`, `gatePassed: false`, `retries` = attempts started − 1. The stage in
+flight at the cancel is not recorded, nor is the concurrent sheet. The `summary` (and so `metrics summarise` / `metrics
+gate`) leaves aborted characters out of `n`, the pass rate, p50/p90 and cost per character.
 
 ## Produce
 ```

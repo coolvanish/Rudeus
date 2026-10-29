@@ -15,6 +15,8 @@ import kz.rudy.ar.core.pipeline.StyleGate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MetricsLogTest {
@@ -153,5 +155,95 @@ class MetricsLogTest {
         val back = MetricsLog.fromJson(json)
         assertEquals(run, back)
         assertEquals(run.summary, MetricsLog.summaryOf(back.characters))
+    }
+
+    /** Two finished characters (20 s first-try pass, 40 s failed gate) and one cancelled mid-retry after 25 s. */
+    private fun runWithAbort(): Pair<MetricsLog, CharacterMetrics> {
+        var t = 1_793_196_202_000L
+        val log = MetricsLog("app", "meta", "Pixel 8", clock = { t })
+        for ((input, totalMs, passed) in listOf(Triple("a.png", 20_000L, true), Triple("b.png", 40_000L, false))) {
+            log.startCharacter(input)
+            log.stage("cutout", 900, 1, true, 0.005)
+            log.stage("stylize", 9_000, 1, true, 0.01)
+            log.stage("gate", 3_000, 1, passed, 0.009)
+            log.stage("sheet", 4_000, 1, true, 0.005)
+            t += totalMs
+            log.endCharacter(gateScore = if (passed) 0.8f else 0.6f, gatePassed = passed, retries = 0)
+        }
+        log.startCharacter("c.png")
+        log.stage("cutout", 900, 1, true, 0.005)
+        log.stage("stylize", 9_000, 1, true, 0.01, measured = true)
+        log.stage("gate", 3_000, 1, false, 0.0031, measured = true)
+        log.stage("stylize", 9_000, 2, true, 0.01)
+        t += 25_000
+        return log to assertNotNull(log.abortCharacter())
+    }
+
+    @Test
+    fun abortedCharacterKeepsStagesAndIsExcludedFromSummary() {
+        val (log, c) = runWithAbort()
+        assertTrue(c.aborted)
+        assertEquals("c.png", c.input)
+        assertEquals(listOf("cutout", "stylize", "gate", "stylize"), c.stages.map { it.name })
+        assertEquals(listOf(1, 1, 1, 2), c.stages.map { it.attempt })
+        assertEquals(listOf(false, true, true, false), c.stages.map { it.measured })
+        assertEquals(0f, c.gateScore)
+        assertFalse(c.gatePassed)
+        assertEquals(1, c.retries, "attempt 2 had started: one retry")
+        assertEquals(25_000L, c.totalMs)
+        assertEquals(0.0281, c.totalCostUsd, 1e-9) // the money spent stays in the file
+        assertNull(log.abortCharacter(), "nothing in progress: a second abort is a no-op")
+
+        val run = log.toRun()
+        assertEquals(listOf("a.png", "b.png", "c.png"), run.characters.map { it.input })
+        assertEquals(listOf(false, false, true), run.characters.map { it.aborted })
+        // Summary over the two finished characters only (with the aborted one p50 would be 25 s, n 3, cost 0.0287).
+        assertEquals(Summary(n = 2, gatePassRateFirstTry = 0.5f, p50Ms = 20_000L, p90Ms = 40_000L, costPerCharacterUsd = 0.029), run.summary)
+        assertEquals(MetricsLog.summaryOf(run.characters.filterNot { it.aborted }), run.summary)
+        assertEquals(Summary(0, 0f, 0, 0, 0.0), MetricsLog.summaryOf(listOf(c)), "only aborted characters: nothing measured")
+        assertTrue(MetricsLog.summarise(listOf(run)).contains("| 2 | 50.0% | 20000 | 40000 | $0.0290 |"))
+
+        // The next character starts clean; abort without a stage counts no retry; the caller may pass its attempt count.
+        log.startCharacter("d.png")
+        assertEquals(CharacterMetrics("d.png", emptyList(), 0f, false, 0, 0L, 0.0, aborted = true), log.abortCharacter())
+        log.startCharacter("e.png")
+        log.stage("cutout", 900, 1, true, 0.005)
+        assertEquals(0, assertNotNull(log.abortCharacter()).retries)
+        log.startCharacter("f.png")
+        log.stage("cutout", 900, 1, true, 0.005)
+        assertEquals(2, assertNotNull(log.abortCharacter(attempts = 3)).retries)
+        log.startCharacter("g.png")
+        log.stage("cutout", 900, 1, true, 0.005)
+        val done = log.endCharacter(0.9f, true, 0)
+        assertEquals(listOf("cutout"), done.stages.map { it.name })
+        assertFalse(done.aborted)
+        assertEquals(3, log.toRun().summary.n)
+    }
+
+    @Test
+    fun abortedFieldRoundTripsThroughJson() {
+        val (log, _) = runWithAbort()
+        val run = log.toRun()
+        val json = log.toJson()
+        assertTrue(json.contains("\"aborted\": true"), json)
+        assertTrue(json.contains("\"aborted\": false"), json)
+        // Last field of a character, after the totals.
+        val third = json.indexOf("\"input\": \"c.png\"")
+        assertTrue(json.indexOf("\"totalCostUsd\"", third) < json.indexOf("\"aborted\"", third))
+        val back = MetricsLog.fromJson(json)
+        assertEquals(run, back)
+        assertTrue(back.characters.last().aborted)
+        assertEquals(run.summary, MetricsLog.summaryOf(back.characters))
+    }
+
+    @Test
+    fun runsWithoutTheAbortedFieldParseAsFinished() {
+        val old = """{"schema":1,"runId":"r","source":"app","provider":"meta","device":"Pixel 8",
+            "characters":[{"input":"a","stages":[{"name":"cutout","ms":1,"costUsd":0.005,"attempt":1,"ok":true,"measured":true}],
+            "gateScore":0.8,"gatePassed":true,"retries":0,"totalMs":1,"totalCostUsd":0.005}],"scans":[],
+            "summary":{"n":1,"gatePassRateFirstTry":1.0,"p50Ms":1,"p90Ms":1,"costPerCharacterUsd":0.005}}"""
+        val run = MetricsLog.fromJson(old)
+        assertFalse(run.characters.single().aborted)
+        assertEquals(run.summary, MetricsLog.summaryOf(run.characters))
     }
 }

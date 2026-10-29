@@ -50,7 +50,8 @@ data class CharacterResult(
  * by the same matter (once per run), so the sprite and the refs are both measured over the character only.
  *
  * A failed stage (an exception, not a gate below threshold) is charged only what was metered, else 0. When the
- * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`).
+ * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`). When [run]
+ * is cancelled, the character lands as aborted ([MetricsLog.abortCharacter]) with the stages recorded so far.
  *
  * Every attempt gets two gate looks at the same sprite, run in parallel (user decision 2026-10-28): stage `gate`
  * ([MetaModels.scoreStyle] + [StyleGate.deterministicScore]) and stage `rescore`, the colour-free one
@@ -195,6 +196,8 @@ class CharacterPipeline(
                 CharacterResult(ref, sprite, sheet.sheet, score, passed, attempt, mask)
             }
         } catch (e: CancellationException) {
+            // Cancelled (the player left, the screen closed): keep the stages already paid for, out of the summary.
+            metrics.abortCharacter(attempts = attempt)
             throw e
         } catch (e: Throwable) {
             metrics.endCharacter(gateScore = 0f, gatePassed = false, retries = (attempt - 1).coerceAtLeast(0))

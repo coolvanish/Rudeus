@@ -1,5 +1,6 @@
 package kz.rudy.ar.core.pipeline
 
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -411,6 +412,58 @@ class CharacterPipelineTest {
 
         assertEquals(listOf("r1", "r2", "PNG", "PNG"), matted, "refs matted once per run, the sprite per attempt")
         assertEquals(listOf("m:r1", "r2", "m:PNG", "m:PNG"), decoded, "matted refs once, the matted sprite once per attempt (both looks share it)")
+    }
+
+    @Test
+    fun cancelDuringStylizeRecordsAbortedCharacter() = runTest {
+        // The child leaves the processing screen while Muse is working: the job is cancelled, the paid cutout stays.
+        val fake = FakeModels()
+        val stuck = object : MetaModels by fake {
+            override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
+                fake.calls += "stylize:$ref"
+                awaitCancellation()
+            }
+        }
+        val log = MetricsLog(source = "app", provider = "meta", device = "test", clock = { testScheduler.currentTime })
+        val events = ArrayList<PipelineEvent>()
+        val job = launch { CharacterPipeline(stuck, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "a cat") }
+        delay(5_000L)
+        assertTrue(job.isActive, "stylize never returns on its own")
+        job.cancel()
+        job.join()
+        assertTrue(job.isCancelled)
+
+        val run = log.toRun()
+        val c = run.characters.single()
+        assertTrue(c.aborted)
+        assertEquals(listOf("cutout"), c.stages.map { it.name })
+        assertTrue(c.stages.single().ok)
+        assertEquals(log.costs.cutoutUsd, c.totalCostUsd, 1e-9)
+        assertEquals(0f, c.gateScore)
+        assertFalse(c.gatePassed)
+        assertEquals(0, c.retries)
+        assertEquals(5_000L, c.totalMs)
+        assertEquals(0, run.summary.n, "a cancelled character is not part of the summary")
+        assertTrue(events.none { it is PipelineEvent.Failed || it is PipelineEvent.Finished }, "a cancel is not a failure")
+        assertEquals(run, MetricsLog.fromJson(log.toJson()))
+
+        // Cancelled in the retry's stylize: attempt 2 had started, so one retry; attempt 1 stays in the file.
+        var stylizes = 0
+        val retryStuck = object : MetaModels by FakeModels(scores = listOf(0.3f)) {
+            override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
+                if (++stylizes == 2) awaitCancellation()
+                return byteArrayOf(0x50, 0x4E, 0x47)
+            }
+        }
+        val log2 = metrics()
+        val job2 = launch { CharacterPipeline(retryStuck, StyleGate(), log2).run("dog-02", image, refs, "") }
+        delay(5_000L)
+        job2.cancel()
+        job2.join()
+        val c2 = log2.toRun().characters.single()
+        assertTrue(c2.aborted)
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore"), c2.stages.map { it.name })
+        assertEquals(1, c2.retries)
     }
 
     @Test

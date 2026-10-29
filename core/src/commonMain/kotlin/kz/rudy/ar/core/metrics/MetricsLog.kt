@@ -42,6 +42,12 @@ data class CharacterMetrics(
     val retries: Int,
     val totalMs: Long,
     val totalCostUsd: Double,
+    /**
+     * true = the run was cancelled before the character was done ([MetricsLog.abortCharacter]): [stages] holds what was
+     * recorded (and paid) so far, the gate fields are 0 / false, and [MetricsLog.summaryOf] leaves it out. Runs written
+     * before the field existed parse as false.
+     */
+    val aborted: Boolean = false,
 )
 
 @Serializable
@@ -108,8 +114,9 @@ data class StageCost(val usd: Double, val measured: Boolean) {
 }
 
 /**
- * Collects one run. Usage: `startCharacter(input)` -> `stage(...)`* -> `endCharacter(...)`, any number of
- * times, plus `recordScan(...)`; then `toRun()` / `toJson()`. The summary is always computed, never written by hand.
+ * Collects one run. Usage: `startCharacter(input)` -> `stage(...)`* -> `endCharacter(...)` (or `abortCharacter()` when
+ * the run is cancelled), any number of times, plus `recordScan(...)`; then `toRun()` / `toJson()`. The summary is
+ * always computed, never written by hand.
  *
  * As a [CostMeter] (pass it to `MetaApi`), it accumulates the measured cost of every model call per job, from any
  * thread: an immutable map of per-job tallies in nano-USD behind one atomic reference, updated by compare-and-set,
@@ -163,6 +170,7 @@ class MetricsLog(
 
     fun now(): Long = clock()
 
+    /** Characters in the run so far, aborted ones included. */
     val characterCount: Int get() = characters.size
 
     fun startCharacter(input: String) {
@@ -181,6 +189,22 @@ class MetricsLog(
 
     fun endCharacter(gateScore: Float, gatePassed: Boolean, retries: Int): CharacterMetrics {
         val input = checkNotNull(currentInput) { "endCharacter without startCharacter" }
+        return finish(input, gateScore, gatePassed, retries, aborted = false)
+    }
+
+    /**
+     * Ends the in-progress character as cancelled (the player left the processing screen, the job was cancelled): it
+     * is appended with the stages recorded so far (their cost stays in the JSON, honestly), `gateScore = 0`,
+     * `gatePassed = false`, `retries = attempts - 1` (>= 0) and `aborted = true`, and [summaryOf] leaves it out.
+     * [attempts] defaults to the highest attempt among the recorded stages; `CharacterPipeline` passes the attempts it
+     * had started. With no character in progress it does nothing and returns null, so any cancellation path may call it.
+     */
+    fun abortCharacter(attempts: Int = currentStages.maxOfOrNull { it.attempt } ?: 0): CharacterMetrics? {
+        val input = currentInput ?: return null
+        return finish(input, gateScore = 0f, gatePassed = false, retries = (attempts - 1).coerceAtLeast(0), aborted = true)
+    }
+
+    private fun finish(input: String, gateScore: Float, gatePassed: Boolean, retries: Int, aborted: Boolean): CharacterMetrics {
         val c = CharacterMetrics(
             input = input,
             stages = currentStages.toList(),
@@ -189,6 +213,7 @@ class MetricsLog(
             retries = retries,
             totalMs = now() - currentStart,
             totalCostUsd = round4(currentStages.sumOf { it.costUsd }),
+            aborted = aborted,
         )
         characters += c
         currentInput = null
@@ -223,17 +248,22 @@ class MetricsLog(
 
         fun fromJson(text: String): MetricsRun = json.decodeFromString(MetricsRun.serializer(), text)
 
+        /**
+         * Summary over the finished characters: aborted ones ([CharacterMetrics.aborted]) count in neither `n`, the
+         * pass rate, p50/p90 nor the cost per character (their cost is still in the JSON, under the character).
+         */
         fun summaryOf(characters: List<CharacterMetrics>): Summary {
-            val n = characters.size
+            val finished = characters.filterNot { it.aborted }
+            val n = finished.size
             if (n == 0) return Summary(0, 0f, 0, 0, 0.0)
-            val firstTry = characters.count { it.gatePassed && it.retries == 0 }
-            val sorted = characters.map { it.totalMs }.sorted()
+            val firstTry = finished.count { it.gatePassed && it.retries == 0 }
+            val sorted = finished.map { it.totalMs }.sorted()
             return Summary(
                 n = n,
                 gatePassRateFirstTry = round3(firstTry.toFloat() / n),
                 p50Ms = percentile(sorted, 0.5),
                 p90Ms = percentile(sorted, 0.9),
-                costPerCharacterUsd = round4(characters.sumOf { it.totalCostUsd } / n),
+                costPerCharacterUsd = round4(finished.sumOf { it.totalCostUsd } / n),
             )
         }
 

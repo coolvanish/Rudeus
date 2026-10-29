@@ -357,6 +357,70 @@ class PhysicsTest {
     }
 
     @Test
+    fun blockedIsSetWhenWalkingIntoAnObstacle() {
+        val cup = cup(Vec2.ZERO)
+        val level = Level(listOf(cup))
+        val target = Vec2(0.15f, 0f)
+        val t = trace(Physics.walkTo(body(Vec2(-0.15f, 0f)), target), level, 300)
+        val first = t.indexOfFirst { it.blocked }
+        // Contact at u = -0.07 (cup 4 cm + character 3 cm): 8 cm from the start = 100 walk steps of 0.8 mm.
+        assertTrue(first in 100..102, "first blocked step $first")
+        for (i in 1 until first) {
+            assertFalse(t[i].blocked, "free walk step $i")
+            assertEquals(P.walkSpeedMps * DT / 1000f, t[i].state.pos.distanceTo(t[i - 1].state.pos), 1e-5f)
+        }
+        // Pinned: blocked on every step from contact on, still WALKING toward the target, not moving.
+        for (b in t.subList(first, t.size)) {
+            assertTrue(b.blocked)
+            assertEquals(Mode.WALKING, b.state.mode)
+            assertEquals(target, b.state.target)
+            assertEquals(-0.07f, b.state.pos.u, 1e-4f)
+        }
+        val pinned = t.last()
+        // Paused while pinned: the frozen body keeps its flag (a paused step is the identity).
+        val paused = Physics.pause(pinned)
+        assertEquals(paused, Physics.step(paused, level, DT))
+        // A zero-length step makes no walking progress to cancel.
+        assertFalse(Physics.step(pinned, level, 0L).blocked)
+        // The target cleared (the walk stopped): standing against the cup is not blocked.
+        val stopped = pinned.copy(state = pinned.state.copy(target = null, mode = Mode.IDLE))
+        assertFalse(Physics.step(stopped, level, DT).blocked)
+        // A new target away from the cup: the flag drops at walkTo and stays down all the way there.
+        val away = Physics.walkTo(pinned, Vec2(-0.15f, 0f))
+        assertFalse(away.blocked)
+        val back = stepUntil(away, level, 2000) { it.state.mode == Mode.IDLE }
+        assertTrue(back.none { it.blocked })
+        assertEquals(Vec2(-0.15f, 0f), back.last().state.pos)
+        // Jumping into the cup is not walking: pushed out, but never blocked.
+        val jumpTrace = trace(Physics.jump(pinned), level, 30)
+        assertTrue(jumpTrace.drop(1).all { it.state.mode == Mode.JUMPING && !it.blocked })
+    }
+
+    @Test
+    fun blockedIsFalseWhenPushOutIsSmall() {
+        // A wall face at u = 0.1; one 100 ms step is 5 mm. The character starts `gap` short of touching it.
+        val wall = LevelObject("box", "object", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.15f, 0f), 0.1f, 0.2f), 0.09f)
+        val level = Level(listOf(wall))
+        fun firstStep(gap: Float): PhysicsBody =
+            Physics.step(Physics.walkTo(body(Vec2(0.1f - 0.03f - gap, 0f)), Vec2(0.5f, 0f)), level, 100L)
+        val small = firstStep(0.0035f) // overlaps 1.5 mm: push-out cancels 30 % of the step
+        assertEquals(0.07f, small.state.pos.u, 1e-5f)
+        assertFalse(small.blocked)
+        val large = firstStep(0.0015f) // overlaps 3.5 mm: 70 % cancelled
+        assertEquals(0.07f, large.state.pos.u, 1e-5f)
+        assertTrue(large.blocked)
+
+        // Brushing past a cup: pushed sideways all along, never blocked, and the walk still arrives.
+        val cup = cup(Vec2(0f, 0.065f))
+        val brush = stepUntil(Physics.walkTo(body(Vec2(-0.15f, 0f)), Vec2(0.15f, 0f)), Level(listOf(cup)), 2000) {
+            it.state.mode == Mode.IDLE
+        }
+        assertTrue(brush.any { it.state.pos.v < -1e-3f }, "the cup pushed the character aside")
+        assertTrue(brush.none { it.blocked })
+        assertEquals(Vec2(0.15f, 0f), brush.last().state.pos)
+    }
+
+    @Test
     fun stepIsDeterministic() {
         val level = Level(
             listOf(cup(Vec2(0.05f, 0f)), book(Vec2(0.0f, 0.08f)), lowObstacle(Vec2(-0.05f, 0f))),
