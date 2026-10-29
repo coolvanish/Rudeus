@@ -1,6 +1,7 @@
 package kz.rudy.ar
 
 import kz.rudy.ar.core.domain.CharacterEvent
+import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 
 /**
@@ -26,6 +27,19 @@ data class ArSlot(
     val onTracking: (Boolean) -> Unit = {},
     /** Physics transitions from `CharacterEvents.between`, once per step; drives speech bubbles. */
     val onCharacterEvent: (CharacterEvent) -> Unit = {},
+    /**
+     * T04: the explicit Scan button. Each increment asks the host for ONE table scan (never per frame): it grabs the
+     * next camera frame, runs segmentation on IO and swaps the new `Level` in. 0 = nothing requested yet. A request
+     * while a scan is still running, or before the anchor exists, is answered with `onScanned(null)`.
+     */
+    val scanRequest: Int = 0,
+    /**
+     * The scan finished: the number of objects it found (0 = an empty table is still a level with a boundary), or
+     * null when it failed (no frame, network, missing key, timeout). Exactly one call per [scanRequest].
+     */
+    val onScanned: (objects: Int?) -> Unit = {},
+    /** The level now driving physics (after every successful scan); the HUD's FootprintMiniMap draws it. */
+    val onLevel: (Level) -> Unit = {},
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other

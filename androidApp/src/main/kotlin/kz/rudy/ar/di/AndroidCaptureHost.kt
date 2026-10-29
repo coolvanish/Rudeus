@@ -19,6 +19,7 @@ import kz.rudy.ar.core.io.FileMetricsSink
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaConfig
 import kz.rudy.ar.core.meta.Provider
+import kz.rudy.ar.core.meta.SegmentResult
 import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
@@ -26,6 +27,7 @@ import kz.rudy.ar.core.pipeline.CharacterPipeline
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.core.pipeline.StyleGate
+import kz.rudy.ar.scan.TableScanner
 import kz.rudy.ar.ui.screens.BundledCharacter
 import org.json.JSONObject
 import java.io.File
@@ -38,6 +40,9 @@ import java.io.File
 // HAND-REVIEW: T14 (c)(d) — bundled characters come from assets/bundled (a copy of docs/bundled, 7.6 MB: 16 sprites +
 // sheets + index.json), parsed once on first `bundled()` call; `exportRun` writes the session run through
 // MediaStore.Downloads (API >= 29, no permission) or the app's external files dir below that.
+// HAND-REVIEW: T04 — also the AR view's TableScanner: the scan's SAM call goes through the same MetaApi (metered
+// under Jobs.SAM_TABLE) and a successful scan lands in the same run file (`scans[]`), so a bundled-character session
+// with only scans now has a run to show/export (`latestRun` counts scans too).
 
 private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
@@ -47,11 +52,12 @@ private const val BUNDLED_DIR = "bundled"
 /** Where the exported run lands on API >= 29 (relative to the primary external volume), as the player sees it in Files. */
 private const val EXPORT_RELATIVE_DIR = "Download/Rudeus"
 
-class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : CaptureHost {
+class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : CaptureHost, TableScanner {
     private val app = context.applicationContext
     private val metrics = MetricsLog(source = "app", provider = Provider.META.metricsName, device = "pixel")
     private val sink = FileMetricsSink(File(app.filesDir, RUNS_DIR))
     @Volatile private var characters = 0 // written on IO (makeCharacter), read on main (latestRun)
+    @Volatile private var scans = 0 // written on IO (recordScan), read on main (latestRun)
 
     private val styleRefs: List<ByteArray> by lazy {
         loadStyleRefs(app.assets).also { Log.i(TAG, "style_refs=${it.size}") }
@@ -110,8 +116,24 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
     /** Process-level cache, preloaded by MainActivity.onCreate; the first call blocks only for what is left. */
     override fun bundled(): List<BundledCharacter> = BundledAssets.get(app)
 
-    /** The run so far once a character was started this session (finished or failed), else null. */
-    override fun latestRun(): MetricsRun? = if (characters > 0) metrics.toRun() else null
+    /** The run so far once a character was started or a scan recorded this session, else null. */
+    override fun latestRun(): MetricsRun? = if (characters > 0 || scans > 0) metrics.toRun() else null
+
+    // ---- TableScanner (T04): the AR view's scan goes through the same MetaApi and MetricsLog. ----
+
+    override suspend fun segment(ref: String, jpeg: ByteArray, prompts: List<String>): SegmentResult =
+        api.segment(ref, jpeg, prompts)
+
+    /** Day 4 gate row: `withinCm` stays empty here; the human fills the ruler numbers into the brief. */
+    override suspend fun recordScan(objects: Int, ms: Long): Unit = withContext(Dispatchers.IO) {
+        metrics.recordScan(objects, ms, withinCm = emptyList())
+        scans++
+        try {
+            sink.write("${metrics.runId}.json", metrics.toJson())
+        } catch (e: Exception) {
+            Log.w(TAG, "metrics write failed: ${e.message}")
+        }
+    }
 
     /** Never throws (CaptureHost contract): everything, the JSON encoding included, is inside the try. */
     override suspend fun exportRun(): String? = withContext(Dispatchers.IO) {

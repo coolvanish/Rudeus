@@ -34,11 +34,20 @@ import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberOnGestureListener
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kz.rudy.ar.ArSlot
 import kz.rudy.ar.core.domain.CharacterEvent
+import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
+import kz.rudy.ar.scan.FootprintOverlay
+import kz.rudy.ar.scan.ScanPrompts
+import kz.rudy.ar.scan.TableScanner
+import kz.rudy.ar.scan.footprintMaterials
+import kz.rudy.ar.scan.grabScanFrame
+import kz.rudy.ar.scan.runTableScan
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.ScrimPill
 import kz.rudy.ar.ui.t
@@ -59,6 +68,14 @@ import kotlin.math.abs
 // rememberUpdatedState so a new slot never recreates the ARSceneView; they are edge-triggered from plain holders.
 // (3) A new sprite (bytes or surface) re-keys the character node, so the old node is detached before the old
 // Texture/MaterialInstance are destroyed in the DisposableEffect (Compose forgets deeper slots first).
+// HAND-REVIEW: T04 — scan-to-level. `slot.scanRequest` (one increment = one scan, from the Scan/Rescan button, never
+// per frame) sets a plain `scanPending` flag; the NEXT onSessionUpdated grabs that frame (scan/ScanCapture.kt:
+// camera image, Camera.getPose, image intrinsics, anchor pose, anchor plane polygon) on the main thread and launches
+// the IO half (JPEG -> SAM via the host-only TableScanner -> :core SceneBuilder). The loop keeps stepping the old
+// level meanwhile; the new Level is swapped into `loop.level` on the main thread, reported through `onLevel`, and the
+// scan is answered exactly once through `onScanned` (count, or null: no anchor, not tracking, busy, no frame, error).
+// The anchor's Plane is kept (`anchorPlane`) so the scan can read its polygon as the level boundary (cliffs). The
+// debug overlay (scan/FootprintOverlay.kt) lives under the AnchorNode and is composed only while `slot.debug`.
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
@@ -94,9 +111,10 @@ private class SlotState(var surface: Surface) {
  * `onSurfaceReady` once a settled upward plane exists (false again if it goes away before the anchor),
  * `onAnchorPlaced` + `onCharacterEvent(PLACED)` on the first accepted tap, `onTracking` on every change after that,
  * `onCharacterEvent` for each physics transition. The ARSceneView, the session and the anchor survive slot changes.
+ * [scanner] (T04) runs the SAM call and records the scan; null (no host) answers every scan request with failure.
  */
 @Composable
-fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
+fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScanner? = null) {
     val context = LocalContext.current
     val engine = rememberEngine()
     val modelLoader = rememberModelLoader(engine)
@@ -105,8 +123,15 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
     // Plain holders, not state: a Frame arrives every ~16 ms and must not recompose the tree.
     val latestFrame = remember { arrayOfNulls<Frame>(1) }
     val anchorRef = remember { arrayOfNulls<Anchor>(1) } // mirror of `anchor` for the frame callback
+    val anchorPlane = remember { arrayOfNulls<Plane>(1) } // the plane the anchor was created on (scan boundary)
     val characterNode = remember { arrayOfNulls<PlaneNode>(1) }
     val loop = remember { GameLoop() }
+    val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
+    val scanBusy = remember { booleanArrayOf(false) } // one scan at a time; a request meanwhile fails fast
+    val scanCount = remember { intArrayOf(0) }
+    val scope = rememberCoroutineScope()
+    var level by remember { mutableStateOf<Level?>(null) } // written once per scan (overlay), never per frame
+    val footprintMaterials = remember(materialLoader) { footprintMaterials(materialLoader) }
     val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
     val settle = remember { PlaneSettle() }
     val slotState = remember { SlotState(slot.surface) }
@@ -139,6 +164,42 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
             showHint = true
             delay(HINT_VISIBLE_MS)
             showHint = false
+        }
+    }
+    // A scan request is armed here and fulfilled by the next frame (acquireCameraImage wants the current frame).
+    LaunchedEffect(slot.scanRequest) {
+        if (slot.scanRequest == 0) return@LaunchedEffect
+        if (anchorRef[0] == null || scanner == null || scanBusy[0]) {
+            Log.i(GATE_TAG, "scan_rejected anchored=${anchorRef[0] != null} host=${scanner != null} busy=${scanBusy[0]}")
+            currentSlot.onScanned(null)
+        } else {
+            scanPending[0] = true
+        }
+    }
+    /** Main thread, from onSessionUpdated: grab this frame, then build the level on IO and swap it in on return. */
+    fun startScan(frame: Frame, a: Anchor, tracking: Boolean) {
+        val host = scanner
+        val grab = if (host != null && tracking) grabScanFrame(frame, a, anchorPlane[0]) else null
+        if (host == null || grab == null) {
+            Log.i(GATE_TAG, "scan_skipped tracking=$tracking host=${host != null}")
+            currentSlot.onScanned(null)
+            return
+        }
+        scanBusy[0] = true
+        val ref = "scan-" + (++scanCount[0]).toString().padStart(2, '0')
+        val previous = loop.level
+        val profile = slotState.profile
+        scope.launch {
+            val outcome = runTableScan(grab, host, ScanPrompts.of(profile.surface), previous, profile, ref)
+            scanBusy[0] = false
+            val built = outcome.level
+            if (built != null) {
+                loop.level = built // main thread: the next frame already steps against the new level
+                level = built
+                currentSlot.onLevel(built)
+                host.recordScan(built.objects.size, outcome.ms)
+            }
+            currentSlot.onScanned(built?.objects?.size)
         }
     }
 
@@ -178,6 +239,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
                         slotState.tracking = tracking
                         currentSlot.onTracking(tracking)
                     }
+                    if (scanPending[0]) {
+                        scanPending[0] = false
+                        startScan(frame, a, tracking)
+                    }
                     val state = loop.onFrame(now, tracking, currentSlot.onCharacterEvent)
                     val node = characterNode[0]
                     if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
@@ -213,6 +278,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
                         }
                         val created = hit.createAnchor()
                         anchorRef[0] = created
+                        anchorPlane[0] = plane
                         anchor = created
                         slotState.anchored = true // the surface is now locked (sprite, physics, tolerance)
                         slotState.tracking = true
@@ -248,6 +314,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
                             },
                         )
                     }
+                    // Debug chrome only: tinted footprints + boundary loop on the plane (scan/FootprintOverlay.kt).
+                    if (slot.debug) level?.let { FootprintOverlay(it, footprintMaterials) }
                 }
             }
         }

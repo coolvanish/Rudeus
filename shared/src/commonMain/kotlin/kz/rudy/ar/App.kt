@@ -20,6 +20,7 @@ import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.CharacterState
+import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.metrics.CharacterMetrics
 import kz.rudy.ar.core.metrics.MetricsLog
@@ -54,6 +55,10 @@ enum class Screen { CAPTURE, PROCESSING, SCANNING, PLAY, METRICS }
 /** How long the "Tap — it walks" pill stays after the first walk (DESIGN.md "Play"). */
 private const val TAP_HINT_AFTER_WALK_MS = 5000L
 
+/** The scan arc fills to here over SCAN_DEFAULT_MS and then holds: the real duration is the host's, not a timer's. */
+private const val SCAN_ARC_HOLD = 0.95f
+private const val SCAN_ARC_TICK_MS = 100L
+
 /**
  * Minimal navigation shell. :androidApp calls
  * `App(arView = { modifier, slot -> RudeusArView(modifier, slot) }, capture = host)`.
@@ -68,7 +73,13 @@ private const val TAP_HINT_AFTER_WALK_MS = 5000L
  * anchor, tracking, character events). The slot is remembered on (sprite, surface, debug); its callbacks read the
  * latest handlers through `rememberUpdatedState`, so HUD changes never re-create it. [capture] (T03) brings the
  * camera, the photo picker, the real pipeline, bundled characters and the metrics run; without it the Processing
- * screen runs the fake stage loop so the shell still demos. Scan (T04) is still a fake timer that finds 0 objects.
+ * screen runs the fake stage loop so the shell still demos.
+ *
+ * Scan (T04): the Scan / Rescan button bumps `ArSlot.scanRequest`; the host grabs one camera frame, segments it on
+ * IO, swaps the new `Level` into physics and answers once through `onScanned` (count, or null on failure) and
+ * `onLevel`. The overlay's arc runs toward [SCAN_ARC_HOLD] over `SCAN_DEFAULT_MS` and holds until that answer, so it
+ * animates for the real duration. Without a host the shell has no AR view to answer, so the scan ends after
+ * `SCAN_DEFAULT_MS` with an honest 0.
  *
  * [backHandler] wires the system back gesture: :androidApp passes
  * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
@@ -102,6 +113,9 @@ fun App(
     var selectedBundled by remember { mutableStateOf<String?>(null) }
     var speech by remember { mutableStateOf(HudSpeech.State()) }
     var walkedOnce by remember { mutableStateOf(false) }
+    // T04: one scan per increment (ArSlot.scanRequest); the level the host last built (for the mini-map).
+    var scanRequest by remember { mutableStateOf(0) }
+    var level by remember { mutableStateOf<Level?>(null) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -182,8 +196,23 @@ fun App(
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
     }
+    // Scanning: the real count -> DONE; a failure or an empty result -> NO_PLANE (the brief's rule; Skip appears
+    // after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends.
+    val onScanned = rememberUpdatedState<(Int?) -> Unit> { objects ->
+        when (screen) {
+            Screen.SCANNING -> if (scan.status == ScanStatus.SCANNING) {
+                scan = if (objects == null || objects == 0) {
+                    scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
+                } else {
+                    scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = objects, failures = 0)
+                }
+            }
+            else -> hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
+        }
+    }
+    val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
-    val slot = remember(spritePng, surface, debug) {
+    val slot = remember(spritePng, surface, debug, scanRequest) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
@@ -192,6 +221,9 @@ fun App(
             onAnchorPlaced = { onAnchorPlaced.value() },
             onTracking = { onTracking.value(it) },
             onCharacterEvent = { onCharacterEvent.value(it) },
+            scanRequest = scanRequest,
+            onScanned = { onScanned.value(it) },
+            onLevel = { onLevel.value(it) },
         )
     }
     val arOn = screen == Screen.SCANNING || screen == Screen.PLAY || (screen == Screen.METRICS && lastScreen == Screen.PLAY)
@@ -204,6 +236,8 @@ fun App(
             hud = HudState(showFootprints = hud.showFootprints)
             speech = HudSpeech.State()
             walkedOnce = false
+            level = null
+            scanRequest = 0 // a new session's first composition must not see a stale request
         }
     }
     LaunchedEffect(walkedOnce) {
@@ -292,15 +326,20 @@ fun App(
                     }
 
                     Screen.SCANNING -> {
-                        // Fake scan until T04: the looking-around animation runs SCAN_DEFAULT_MS and honestly finds 0 objects.
+                        // The arc runs while the host scans (its answer arrives through onScanned); the host-less
+                        // shell has nobody to answer, so it ends after SCAN_DEFAULT_MS with an honest 0.
                         LaunchedEffect(scan.status) {
                             if (scan.status == ScanStatus.SCANNING) {
-                                val steps = 40
-                                repeat(steps) { i ->
-                                    delay((RudeusMotion.SCAN_DEFAULT_MS / steps).toLong())
-                                    scan = scan.copy(progress = (i + 1) / steps.toFloat())
+                                val t0 = nowMs()
+                                while (true) {
+                                    delay(SCAN_ARC_TICK_MS)
+                                    val elapsed = nowMs() - t0
+                                    scan = scan.copy(progress = (elapsed.toFloat() / RudeusMotion.SCAN_DEFAULT_MS).coerceAtMost(SCAN_ARC_HOLD))
+                                    if (capture == null && elapsed >= RudeusMotion.SCAN_DEFAULT_MS) {
+                                        scan = scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = 0)
+                                        break
+                                    }
                                 }
-                                scan = scan.copy(status = ScanStatus.DONE, objectsFound = 0)
                             } else if (scan.status == ScanStatus.DONE) {
                                 delay(1500)
                                 // The AR session continues into Play: keep surfaceReady/anchored, only the scan ends.
@@ -312,7 +351,7 @@ fun App(
                         ScanningScreen(
                             state = scan.copy(surface = surface),
                             arView = noAr,
-                            onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f) },
+                            onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f); scanRequest++ },
                             onSkip = { scan = scan.copy(status = ScanStatus.IDLE, progress = 0f); go(Screen.PLAY) },
                             onBack = ::back,
                             onSurfaceChange = { surface = it },
@@ -324,25 +363,30 @@ fun App(
                         // T03 gate: shutter -> Play. Logged by the host (RudeusGate capture_to_play_ms) once per entry
                         // from Scanning (coming back from Metrics is not a new entry).
                         LaunchedEffect(Unit) { if (spritePng != null && lastScreen == Screen.SCANNING) capture?.playEntered() }
+                        // Rescan: same arc as Scanning, ended by the host's onScanned (or the timer without a host).
                         LaunchedEffect(hud.scanning) {
                             if (hud.scanning) {
-                                val steps = 40
-                                repeat(steps) { i ->
-                                    delay((RudeusMotion.SCAN_DEFAULT_MS / steps).toLong())
-                                    hud = hud.copy(scanProgress = (i + 1) / steps.toFloat())
+                                val t0 = nowMs()
+                                while (true) {
+                                    delay(SCAN_ARC_TICK_MS)
+                                    val elapsed = nowMs() - t0
+                                    hud = hud.copy(scanProgress = (elapsed.toFloat() / RudeusMotion.SCAN_DEFAULT_MS).coerceAtMost(SCAN_ARC_HOLD))
+                                    if (capture == null && elapsed >= RudeusMotion.SCAN_DEFAULT_MS) {
+                                        hud = hud.copy(scanning = false, scanProgress = 0f, scanned = true)
+                                        break
+                                    }
                                 }
-                                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = true)
                             }
                         }
                         PlayScreen(
                             arView = noAr,
-                            // Minimal until the host reports physics state: the ability is the character's own; no
-                            // level until the real scan (T04) — the fake scan found nothing, so footprints show nothing.
+                            // Minimal until the host reports physics state: the ability is the character's own. The
+                            // level is the host's last scan (ArSlot.onLevel); the mini-map draws it with footprints on.
                             character = CharacterState(ability = sheet.ability),
                             sheet = sheet,
-                            level = null,
+                            level = level,
                             hud = hud.copy(speech = speech.text, surface = surface),
-                            onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false) },
+                            onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
                             onAbilityTap = {
                                 val lines = Strings.sheetLines(sheet.lines, lang)

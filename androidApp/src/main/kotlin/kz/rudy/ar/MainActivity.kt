@@ -29,6 +29,8 @@ import kz.rudy.ar.ui.screens.PermissionScreen
 // MetricsLog spans the session.
 // HAND-REVIEW: T14 — the slot composable receives the whole ArSlot (sprite, surface, HUD callbacks); the permission
 // gate shows the shared PermissionScreen (paper + one button) instead of a bare Material button.
+// HAND-REVIEW: T04 — the same host object is the AR view's TableScanner (SAM call + scan metrics stay in :androidApp;
+// :shared only sees ArSlot.scanRequest / onScanned / onLevel).
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -41,7 +43,7 @@ class MainActivity : ComponentActivity() {
             val host = remember(intake) { AndroidCaptureHost(applicationContext, intake) }
             App(
                 arView = { modifier, slot ->
-                    WithCameraPermission(modifier) { RudeusArView(modifier, slot) }
+                    WithCameraPermission(modifier) { RudeusArView(modifier, slot, scanner = host) }
                 },
                 // HAND-REVIEW: system/predictive Back goes through App's one back() rule (Metrics -> where it came
                 // from, Play/Scanning/Processing -> Capture); :shared has no activity-compose, so the host lends it.
