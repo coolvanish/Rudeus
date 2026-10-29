@@ -34,7 +34,8 @@ import kotlin.math.roundToInt
 // ImageDecoder (API 28+, applies the container rotation itself) and `exifOrientation` returns 1 for it — nothing is
 // rotated twice. Below API 28 Android cannot decode HEIF at all: null, as before. (2) The first decode of a photo is
 // bounded: `inSampleSize` may now land up to 25 % under the target instead of up to 2x above it, so a 12 MP Pixel
-// photo (4080 px) decodes at 2040 px (6 MP) instead of in full (50 MB); `decode_px=` is logged per photo.
+// photo (4080 px) decodes at 2040 px (6 MP) instead of in full (50 MB); `decode_px=` is logged per photo. Only
+// `preparePhoto` does that; `downscale` (pipeline) still lands on `maxSide` exactly, as the JVM does.
 
 private const val TAG = "RudeusGate"
 
@@ -114,7 +115,7 @@ object AndroidImages {
     /** Photo intake: decode with downsampling to <= [maxSide] on the long side, EXIF upright, JPEG out. */
     fun preparePhoto(raw: ByteArray, maxSide: Int = PHOTO_MAX_SIDE): ByteArray? {
         val b = bounds(raw) ?: return null
-        val bitmap = decodeBitmap(raw, sampleFor(max(b.outWidth, b.outHeight), maxSide)) ?: return null
+        val bitmap = decodeBitmap(raw, sampleFor(max(b.outWidth, b.outHeight), maxSide, PHOTO_SAMPLE_UNDERSHOOT)) ?: return null
         Log.i(TAG, "decode_px=${bitmap.width}x${bitmap.height} photo_px=${b.outWidth}x${b.outHeight} heif=${isHeif(raw)}")
         return encodeJpeg(scaleTo(bitmap, maxSide))
     }
@@ -145,15 +146,20 @@ object AndroidImages {
         return o.takeIf { it.outWidth > 0 && it.outHeight > 0 }
     }
 
-    /** The decoded long side may fall this far below [PHOTO_MAX_SIDE] when that halves the decode (see the header). */
-    private const val SAMPLE_UNDERSHOOT = 0.75f
+    /**
+     * HAND-REVIEW: review fix — photo intake only. The decoded long side may fall this far below [PHOTO_MAX_SIDE]
+     * when that halves the decode (see the header). [downscale] (the pipeline's imageResizer) keeps undershoot 1:
+     * it must hand the models exactly `maxSide` like JvmRaster.downscale, which the 0.7 gate was tuned on.
+     */
+    private const val PHOTO_SAMPLE_UNDERSHOOT = 0.75f
 
     /**
-     * Largest power of two that keeps the decoded long side >= [SAMPLE_UNDERSHOOT] x [maxSide]: the decode is then
-     * below 2 x 0.75 = 1.5 x the target (< 3072 px, ~7 MP) instead of below 2 x (up to 4095 px, 16 MP).
+     * Largest power of two that keeps the decoded long side >= [undershoot] x [maxSide]. With 1 (default) the decode
+     * is below 2 x the target and [scaleTo] reaches `maxSide` exactly; with 0.75 (photos) it is below 1.5 x the
+     * target (< 3072 px, ~7 MP) and may end up to 25 % under it.
      */
-    private fun sampleFor(longSide: Int, maxSide: Int): Int {
-        val floor = (maxSide * SAMPLE_UNDERSHOOT).toInt()
+    private fun sampleFor(longSide: Int, maxSide: Int, undershoot: Float = 1f): Int {
+        val floor = (maxSide * undershoot).toInt()
         var s = 1
         while (longSide / (s * 2) >= floor) s *= 2
         return s

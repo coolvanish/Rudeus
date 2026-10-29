@@ -16,7 +16,8 @@ import kz.rudy.ar.core.physics.PhysicsParams
 // No game rule lives here: every transition is a Physics.* call from :core. This file only measures dt and
 // maps "camera + anchor TRACKING" to Physics.pause / Physics.resume (locked decision: PAUSED freezes, never resets).
 // HAND-REVIEW: T14 — (1) `params` and the body's collision radius come from the SurfaceProfile (table or floor);
-// `configure` is called from composition before the anchor exists and ignored after it (RudeusArView).
+// `configure` is called from a LaunchedEffect keyed on the locked surface, so it runs before the anchor exists and is
+// simply not called again after it (the lock lives in RudeusArView; there is no guard here).
 // (2) `onFrame` reports the CharacterEvents of everything since the last report (a walkTo from the tap handler, this
 // frame's pause/resume/step) — the diff is against `lastReported`, not the previous frame's body, so a transition
 // made by the tap handler between two frames is never lost.

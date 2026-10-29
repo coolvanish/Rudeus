@@ -3,6 +3,7 @@ package kz.rudy.ar.di
 import android.content.ContentValues
 import android.content.Context
 import android.content.res.AssetManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
@@ -50,19 +51,10 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
     private val app = context.applicationContext
     private val metrics = MetricsLog(source = "app", provider = Provider.META.metricsName, device = "pixel")
     private val sink = FileMetricsSink(File(app.filesDir, RUNS_DIR))
-    private var characters = 0
+    @Volatile private var characters = 0 // written on IO (makeCharacter), read on main (latestRun)
 
     private val styleRefs: List<ByteArray> by lazy {
         loadStyleRefs(app.assets).also { Log.i(TAG, "style_refs=${it.size}") }
-    }
-
-    /**
-     * Loaded synchronously on the first call and cached for the session. `bundled()` is called from composition
-     * (the Capture screen), so the first call reads ~7.6 MB of assets on the main thread once (tens of ms on the
-     * Pixel); every later call is the cached list. A background preload is not worth the complexity for a one-off.
-     */
-    private val bundledList: List<BundledCharacter> by lazy {
-        loadBundled(app.assets).also { Log.i(TAG, "bundled=${it.size}") }
     }
 
     /** Built on first use; `check` fails fast (and loudly, without the key) when the build had no key. */
@@ -115,28 +107,33 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
         if (shutterAt > 0L) Log.i(TAG, "capture_to_play_ms=${SystemClock.elapsedRealtime() - shutterAt}")
     }
 
-    override fun bundled(): List<BundledCharacter> = bundledList
+    /** Process-level cache, preloaded by MainActivity.onCreate; the first call blocks only for what is left. */
+    override fun bundled(): List<BundledCharacter> = BundledAssets.get(app)
 
     /** The run so far once a character was started this session (finished or failed), else null. */
     override fun latestRun(): MetricsRun? = if (characters > 0) metrics.toRun() else null
 
+    /** Never throws (CaptureHost contract): everything, the JSON encoding included, is inside the try. */
     override suspend fun exportRun(): String? = withContext(Dispatchers.IO) {
-        val run = latestRun() ?: return@withContext null
-        val name = "${run.runId}.json"
-        val json = metrics.toJson() // same run as latestRun(); :core owns the JSON (no serialization dep here)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportViaMediaStore(name, json)
+            val run = latestRun() ?: return@withContext null
+            val name = "${run.runId}.json"
+            val json = metrics.toJson() // same run as latestRun(); :core owns the JSON (no serialization dep here)
+            val where = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) exportViaMediaStore(name, json)
             else exportToExternalFiles(name, json)
+            where?.also { Log.i(TAG, "export=$it bytes=${json.length}") }
         } catch (e: Exception) {
             Log.w(TAG, "export failed: ${e.message}")
             null
-        }?.also { Log.i(TAG, "export=$it bytes=${json.length}") }
+        }
     }
 
     /**
      * API >= 29: a pending row in MediaStore.Downloads under Download/Rudeus, written through the resolver, then
      * published. No storage permission is needed for files the app creates there. A second export of the same run
-     * gets a MediaStore-unique name ("<runId> (1).json"); the returned path names the directory the player opens.
+     * gets a MediaStore-unique name ("<runId> (1).json"), so the returned path carries the DISPLAY_NAME queried back.
+     * HAND-REVIEW: review fix — a missing stream or a failed publish throws into the catch, which deletes the pending
+     * row; before, a null stream returned null and left an invisible pending row behind.
      */
     private fun exportViaMediaStore(name: String, json: String): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
@@ -149,13 +146,17 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
         }
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
         try {
-            resolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) } ?: return null
-            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+            val os = resolver.openOutputStream(uri) ?: error("no output stream for $uri")
+            os.use { it.write(json.toByteArray()) }
+            val published = resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+            check(published == 1) { "publish updated $published rows" }
         } catch (e: Exception) {
             resolver.delete(uri, null, null) // no half-written pending row left behind
             throw e
         }
-        return "$EXPORT_RELATIVE_DIR/$name"
+        val actualName = resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: name
+        return "$EXPORT_RELATIVE_DIR/$actualName"
     }
 
     /** API 24–28: the app's own external files dir (no permission); the returned path is the absolute file path. */
@@ -197,6 +198,30 @@ private fun loadStyleRefs(assets: AssetManager): List<ByteArray> {
 }
 
 /**
+ * Process-level cache of the bundled characters. [preload] starts the parse on a background thread (MainActivity
+ * .onCreate, before setContent); [get] from composition then blocks only for what is still left, since `lazy` is
+ * synchronized. One instance per process: the assets never change.
+ */
+object BundledAssets {
+    @Volatile private var cache: Lazy<List<BundledCharacter>>? = null
+
+    private fun lazyFor(app: Context): Lazy<List<BundledCharacter>> =
+        cache ?: synchronized(this) {
+            cache ?: lazy {
+                val t0 = SystemClock.elapsedRealtime()
+                loadBundled(app.assets).also { Log.i(TAG, "bundled=${it.size} bundled_ms=${SystemClock.elapsedRealtime() - t0}") }
+            }.also { cache = it }
+        }
+
+    fun preload(context: Context) {
+        val l = lazyFor(context.applicationContext)
+        if (!l.isInitialized()) Thread({ l.value }, "rudeus-bundled").start()
+    }
+
+    fun get(context: Context): List<BundledCharacter> = lazyFor(context.applicationContext).value
+}
+
+/**
  * assets/bundled/index.json (`characters[]`: ref, sprite, sheet, gatePassed) -> [BundledCharacter]s, gate-passed
  * ones first, then the rest, each group in index order. A character whose sprite or sheet is missing or unreadable
  * is skipped with a log line; a missing or broken index yields an empty list. The sheet is parsed by :core's
@@ -216,6 +241,10 @@ private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
             val spritePath = o.optString("sprite", "$ref/sprite.png")
             val sheetPath = o.optString("sheet", "$ref/sheet.json")
             val sprite = assets.open("$BUNDLED_DIR/$spritePath").use { it.readBytes() }
+            // A sprite BitmapFactory cannot size is skipped here, not discovered as a decode failure on the table.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(sprite, 0, sprite.size, bounds)
+            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "sprite undecodable: $spritePath" }
             val sheet = SheetParser.parse(assets.open("$BUNDLED_DIR/$sheetPath").bufferedReader().use { it.readText() })
             Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite))
         } catch (e: Exception) {

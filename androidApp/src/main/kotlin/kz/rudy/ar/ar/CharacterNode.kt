@@ -3,6 +3,7 @@ package kz.rudy.ar.ar
 import android.content.res.AssetManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import com.google.android.filament.Engine
 import com.google.android.filament.MaterialInstance
 import com.google.android.filament.Texture
@@ -74,15 +75,26 @@ internal fun spriteFromAssets(
     facesRight: Boolean = DEMO_SPRITE_FACES_RIGHT,
 ): CharacterSprite = spriteFromBitmap(engine, materialLoader, ImageTexture.getBitmap(assets, path), heightM, facesRight)
 
-/** T03 entry point: `CharacterResult.sprite` PNG bytes -> billboard material. Main thread (Filament). */
+/**
+ * T03 entry point: `CharacterResult.sprite` PNG bytes -> billboard material. Main thread (Filament).
+ * HAND-REVIEW: review fix — undecodable bytes (a corrupt sprite) fall back to the bundled dino from [assets] with a
+ * log line instead of an NPE inside composition.
+ */
 internal fun spriteFromBytes(
     engine: Engine,
     materialLoader: MaterialLoader,
+    assets: AssetManager,
     png: ByteArray,
     heightM: Float,
     facesRight: Boolean,
-): CharacterSprite =
-    spriteFromBitmap(engine, materialLoader, BitmapFactory.decodeByteArray(png, 0, png.size), heightM, facesRight)
+): CharacterSprite {
+    val bitmap = BitmapFactory.decodeByteArray(png, 0, png.size)
+    if (bitmap == null) {
+        Log.w(GATE_TAG, "sprite_undecodable bytes=${png.size}: showing the demo sprite")
+        return spriteFromAssets(engine, materialLoader, assets, heightM)
+    }
+    return spriteFromBitmap(engine, materialLoader, bitmap, heightM, facesRight)
+}
 
 private fun spriteFromBitmap(
     engine: Engine,

@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import kz.rudy.ar.ar.RudeusArView
 import kz.rudy.ar.capture.rememberPhotoIntake
 import kz.rudy.ar.di.AndroidCaptureHost
+import kz.rudy.ar.di.BundledAssets
 import kz.rudy.ar.ui.screens.PermissionScreen
 
 // HAND-REVIEW: AR host entry point. The AR view is passed into the shared App() as a slot composable.
@@ -31,6 +32,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // HAND-REVIEW: review fix — the 7.6 MB bundled set is parsed on a background thread from here on, so the
+        // first composition's `bundled()` only waits for whatever is left (BundledAssets' lazy is synchronized).
+        BundledAssets.preload(applicationContext)
         setContent {
             val intake = rememberPhotoIntake()
             val host = remember(intake) { AndroidCaptureHost(applicationContext, intake) }

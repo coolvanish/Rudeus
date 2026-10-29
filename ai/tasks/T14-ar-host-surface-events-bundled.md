@@ -1,6 +1,6 @@
 # T14 — ar-host-surface-events-bundled
 
-status: doing
+status: review
 created: 2026-10-29
 day: Day 3 (AR host side of the Day 3 contract; floor/outdoor; T03 leftovers)
 gate: Day 3 — 60 s walking around a real cup without drift; capture -> character < 60 s
@@ -127,10 +127,26 @@ status: draft for hand-review (compiles, `:androidApp:assembleDebug` green on 20
    `ALLOCATOR_SOFTWARE`, `setTargetSampleSize` = the same power of two), which applies the container rotation itself,
    and `exifOrientation` returns 1 for HEIF so nothing is rotated twice. Below API 28 Android cannot decode HEIF at all
    (null, as before). Only the gallery picker can deliver HEIC; the system camera returns JPEG.
-7. **Decode bound (f)(2).** `sampleFor` now accepts a decode up to 25 % *under* the 2048 target when that halves the
-   decode: a 4080 px Pixel photo decodes at 2040 px (6 MP, ~25 MB) instead of in full (12.5 MP, ~50 MB); worst case is
-   now < 3072 px (~7 MP) instead of < 4096 px (16 MP). Output is ≥ 1536 px on the long side; SAM masks at that size
-   are fine and the sprite's quality comes from Muse, not the photo. `decode_px=WxH photo_px=WxH heif=` is logged.
+7. **Decode bound (f)(2).** `preparePhoto` (photo intake only) accepts a decode up to 25 % *under* the 2048 target
+   when that halves the decode: a 4080 px Pixel photo decodes at 2040 px (6 MP, ~25 MB) instead of in full (12.5 MP,
+   ~50 MB); worst case is now < 3072 px (~7 MP) instead of < 4096 px (16 MP). Output is ≥ 1536 px on the long side;
+   SAM masks at that size are fine and the sprite's quality comes from Muse, not the photo. `downscale` (the
+   pipeline's imageResizer) keeps the exact-`maxSide` rule the JVM uses. `decode_px=WxH photo_px=WxH heif=` is logged.
+
+### Review fixes (2026-10-29, after rudeus-reviewer; `:androidApp:assembleDebug` green again)
+1. `sampleFor(longSide, maxSide, undershoot = 1f)`: the 0.75 undershoot now applies only from `preparePhoto`;
+   `downscale` is back to the old rule, so Spark/Muse get exactly `maxSide` like the CLI (the gate was tuned on that).
+2. `BundledAssets` (process-level `object`, synchronized `lazy`): `MainActivity.onCreate` calls `preload()` on a
+   background thread before `setContent`; `bundled()` from composition blocks only for what is left; `bundled_ms=` logged.
+3. `spriteFromBytes` takes `assets` and falls back to the demo sprite with a `sprite_undecodable` log line when
+   `BitmapFactory` returns null; `loadBundled` skips a sprite that fails an `inJustDecodeBounds` check.
+4. `exportViaMediaStore`: a null output stream or a publish update that did not touch exactly one row throws into
+   the catch that deletes the pending row; the returned path carries the `DISPLAY_NAME` queried back from the row
+   (a second export of the same run is `<runId> (1).json`).
+5. `exportRun`: `latestRun()` and `metrics.toJson()` moved inside the try ("never throws" holds); `characters` is
+   `@Volatile` (written on IO, read on main).
+6. `GameLoop` header now says `configure` is simply not called after the anchor (the lock is in RudeusArView, no
+   guard here). `PlaneSettle.anySettled` is surface-agnostic by design; see Pixel step 5.
 
 ### 7.6 MB asset note
 `androidApp/src/main/assets/bundled/` adds 7.6 MB (16 sprites, 180–800 KB each) to the APK; debug APK is now 61 MB.
@@ -141,7 +157,8 @@ or PNG-quantize; both are a one-line change in the copy step, not code.
 - ImageDecoder orientation for HEIC is verified from the platform sources' behaviour, not on the device yet — Pixel
   checklist step 9 is the proof. If a HEIC shows rotated, flip back to the ExifInterface-via-temp-file route.
 - `onCharacterEvent` fires on the AR frame thread (main) up to once per transition; the HUD must be cheap (contract).
-- The first `bundled()` call blocks the main thread for the asset read (tens of ms, once).
+- `bundled()` is preloaded on a background thread from `onCreate`; on a very fast first composition it may still
+  block briefly for the remainder (`bundled_ms=` in the log says how long the parse took).
 - `slot.debug` hides the Rec button; the Day 1 gate recordings now need the debug toggle on.
 - T12/T13 landing: `GameLoop.onFrame` → swap to the `PhysicsBody` overload for BLOCKED; nothing else depends on them.
 
@@ -155,6 +172,8 @@ or PNG-quantize; both are a one-line change in the copy step, not code.
    reappears ≤ 1 s later at the same spot, continues the walk if one was pending. Never resets.
 5. Floor mode (restart the app, pick Floor on Scanning): the "finding the floor" pill; character ~24 cm tall, walks
    ~20 cm/s; taps on the floor up to ~12 cm height difference accepted; a tap on a table top from floor mode rejected.
+   Note: `onSurfaceReady` fires for *any* settled upward plane (a table top in view counts in floor mode) — the
+   anchor still goes wherever the first accepted tap lands, so check the chip timing, not the surface.
 6. Surface chip after the anchor (if the HUD still shows it): no change in size/speed, one `surface_change_ignored` line.
 7. Capture → pick a bundled character (one with gatePassed first in the list) → Scanning → place: its own sprite is on
    the table, not the dino; its name/lines in the HUD bubbles.

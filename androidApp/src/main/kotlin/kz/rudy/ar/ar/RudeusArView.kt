@@ -121,7 +121,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot) {
     LaunchedEffect(surface) { loop.configure(profile) } // main thread, same as the frame callback
     val sprite = remember(engine, materialLoader, slot.spritePng, surface) {
         val png = slot.spritePng
-        if (png != null) spriteFromBytes(engine, materialLoader, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
+        if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
         else spriteFromAssets(engine, materialLoader, context.assets, profile.characterHeightM)
     }
     // Never destroys the sprite in use: the effect for the previous one runs only when a new sprite was remembered,
