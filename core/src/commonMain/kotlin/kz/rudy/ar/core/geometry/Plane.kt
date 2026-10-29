@@ -48,6 +48,22 @@ data class PlaneFrame(
             uAxis = Vec3(1f, 0f, 0f),
             vAxis = Vec3(0f, 0f, 1f),
         )
+
+        /**
+         * Frame of an anchor whose pose follows the ARCore plane-local convention (local X = u, local Z = v,
+         * local Y = h, see Model.kt): origin = [anchor] position, `uAxis = R·(+X)`, `vAxis = R·(+Z)`,
+         * `normal = R·(+Y)`, each normalised (the rotation is normalised first, so a slightly off-unit quaternion
+         * from the AR host still gives an orthonormal frame). As with [horizontal], `uAxis × vAxis == −normal`.
+         */
+        fun fromAnchorPose(anchor: Pose3): PlaneFrame {
+            val r = anchor.rotation.normalized()
+            return PlaneFrame(
+                origin = anchor.position,
+                normal = r.rotate(Vec3(0f, 1f, 0f)).normalized(),
+                uAxis = r.rotate(Vec3(1f, 0f, 0f)).normalized(),
+                vAxis = r.rotate(Vec3(0f, 0f, 1f)).normalized(),
+            )
+        }
     }
 }
 

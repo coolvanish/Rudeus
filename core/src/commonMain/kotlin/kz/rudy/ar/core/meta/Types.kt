@@ -1,5 +1,7 @@
 package kz.rudy.ar.core.meta
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
 /** Axis-aligned box in pixel coordinates of the segmented image. */
@@ -14,7 +16,13 @@ data class BBox(val x: Int, val y: Int, val w: Int, val h: Int) {
  * [rle] is COCO-style *uncompressed* RLE over the row-major pixel grid: alternating run lengths
  * starting with an OFF run (`[off, on, off, on, ...]`), summing to `width * height`.
  * Either [rle] or [bbox] (or both) is present; a mask with neither is "object absent".
+ *
+ * [instances]: one entry per SAM detection of this prompt (its own rle/bbox/score, same frame size, best score first,
+ * `instances` empty on each entry, `label` = the prompt). The top-level mask stays the merge of all of them, so cutout
+ * (`SegmentResult.largest()`) is unchanged; the level builder uses the instances (`pipeline.ScanMasks`). Empty for an
+ * absent object and for fixtures recorded before T15; an empty list is not written to JSON.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class MaskResult(
     val label: String,
@@ -24,6 +32,9 @@ data class MaskResult(
     val bbox: BBox? = null,
     /** Provider confidence in 0..1 when available. */
     val score: Float? = null,
+    /** Per-detection masks of this prompt, best score first; see the class doc. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val instances: List<MaskResult> = emptyList(),
 ) {
     /** Number of ON pixels (RLE) or the bbox area, or 0 when empty. */
     val area: Int

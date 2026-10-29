@@ -22,6 +22,10 @@ package kz.rudy.ar.core.meta
  * **Merge rule** (several matches for one prompt, e.g. two cups): the masks are OR-ed into one frame-sized mask,
  * `bbox` is the union of the boxes and `score` the highest confidence. The pipeline then takes the largest
  * connected component where it needs a single object (cutout), so nothing is lost by merging.
+ *
+ * **Instances** (T15): [maskResult] also keeps every detection as its own [MaskResult] in
+ * [MaskResult.instances] (best score first), so the level builder gets one footprint per object instead of one
+ * merged blob (the Day 1 "remote" prompt matched the remote and the speaker: one 438x223 merged bbox).
  */
 object SamTokenParser {
 
@@ -177,13 +181,21 @@ object SamTokenParser {
      * With [strict] a malformed line or a payload that does not decode throws [MetaError.Parse] (the CLI fixture
      * converter); without it malformed lines are skipped and an undecodable detection falls back to its filled box,
      * so a protocol or codec problem degrades to fewer/boxier masks instead of losing the prompt on the phone.
+     *
+     * The result is the [merge] of all detections with [MaskResult.instances] = one single-detection [merge] per
+     * detection (same [strict] rule each), sorted best score first (no score last; ties keep the reply's order).
      */
-    fun maskResult(label: String, text: String, strict: Boolean = true, emptyWidth: Int = 0, emptyHeight: Int = 0): MaskResult =
-        merge(label, parse(text, strict), strict, emptyWidth, emptyHeight)
+    fun maskResult(label: String, text: String, strict: Boolean = true, emptyWidth: Int = 0, emptyHeight: Int = 0): MaskResult {
+        val detections = parse(text, strict)
+        val merged = merge(label, detections, strict, emptyWidth, emptyHeight)
+        if (detections.isEmpty()) return merged
+        val instances = detections
+            .map { merge(label, listOf(it), strict, emptyWidth, emptyHeight) }
+            .sortedByDescending { it.score ?: -1f }
+        return merged.copy(instances = instances)
+    }
 
-    // TODO(T04): merging is wrong for the level builder: the real Day 1 "remote" prompt matched the remote AND the
-    //  speaker and merged them into one 438x223 bbox. Keep each detection as its own footprint (label + index, its own
-    //  rle/bbox/score; best score first) and derive this merged mask from them only where one object is wanted (cutout).
+    /** All [detections] OR-ed into one mask (see the class doc's merge rule); [MaskResult.instances] stays empty. */
     fun merge(label: String, detections: List<Detection>, strict: Boolean = true, emptyWidth: Int = 0, emptyHeight: Int = 0): MaskResult {
         if (detections.isEmpty()) return MaskResult(label = label, width = emptyWidth, height = emptyHeight)
         val fw = detections[0].box.frameWidth

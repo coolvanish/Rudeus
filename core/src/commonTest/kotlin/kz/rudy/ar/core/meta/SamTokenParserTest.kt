@@ -176,4 +176,44 @@ class SamTokenParserTest {
         assertEquals(setOf(126 to 20, 127 to 20, 127 to 21), on(m))
         assertEquals(0.9452055f, m.score)
     }
+
+    @Test
+    fun instancesKeepEachDetectionSeparate() {
+        // The real Day 1 "remote" reply (docs/api-samples/sam-table): it matched the remote AND the speaker.
+        val raw = DiskFixtureSource.repoRoot().readText("docs/api-samples/sam-table/table-01.input.remote.response.json")!!
+        val m = parseSamResponse("remote", MetaApi.json.decodeFromString(ResponsesResponse.serializer(), raw), strict = true)
+        assertEquals(900 to 1600, m.width to m.height)
+        assertEquals(BBox(133, 866, 438, 223), m.bbox, "merged bbox is the union (the 438x223 blob)")
+        assertEquals(2, m.instances.size)
+        val (best, other) = m.instances
+        assertEquals(BBox(406, 950, 165, 139), best.bbox, "best score first")
+        assertEquals(BBox(133, 866, 114, 156), other.bbox)
+        assertTrue(best.score!! > other.score!!)
+        assertEquals(m.score, best.score, "merged score is the best instance's")
+        for (inst in m.instances) {
+            assertEquals("remote", inst.label)
+            assertEquals(m.width to m.height, inst.width to inst.height)
+            assertTrue(inst.instances.isEmpty())
+            assertTrue(inst.area > 0)
+        }
+        assertEquals(m.area, best.area + other.area, "disjoint detections: the merge is their union")
+        assertEquals(on(m), on(best) + on(other))
+
+        // Synthetic: order follows the score, not the reply; lenient decoding falls back to the box per detection.
+        val bad = "1<|box;x1=6;y1=0;x2=7;y2=1;w=10;h=4;c=0.9|><|mask;x=0;y=0;data=2,2,!!!!!(QO(0lu8?|>"
+        val text = "<0f>" + record(0, 0, 0, listOf("11", "01"), 10, 4, c = "0.6") + "," + bad
+        assertFailsWith<MetaError.Parse> { SamTokenParser.maskResult("cup", text, strict = true) }
+        val lenient = SamTokenParser.maskResult("cup", text, strict = false)
+        assertEquals(listOf(0.9f, 0.6f), lenient.instances.map { it.score })
+        assertEquals(setOf(6 to 0, 7 to 0, 6 to 1, 7 to 1), on(lenient.instances[0]))
+        assertEquals(setOf(0 to 0, 1 to 0, 1 to 1), on(lenient.instances[1]))
+        assertTrue(SamTokenParser.maskResult("cup", "", emptyWidth = 10, emptyHeight = 4).instances.isEmpty(), "absent: no instances")
+
+        // Fixture JSON: instances round-trip; an empty list is not written and old fixtures parse as empty.
+        val json = FixtureApi.json
+        assertEquals(m, json.decodeFromString(MaskResult.serializer(), json.encodeToString(MaskResult.serializer(), m)))
+        val plain = MaskResult("cup", 2, 1, rle = listOf(1, 1))
+        assertTrue("instances" !in json.encodeToString(MaskResult.serializer(), plain))
+        assertEquals(plain, json.decodeFromString(MaskResult.serializer(), """{"label":"cup","width":2,"height":1,"rle":[1,1]}"""))
+    }
 }

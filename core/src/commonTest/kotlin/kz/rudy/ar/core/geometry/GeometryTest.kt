@@ -1,12 +1,14 @@
 package kz.rudy.ar.core.geometry
 
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.pipeline.ScanInput
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GeometryTest {
@@ -110,5 +112,44 @@ class GeometryTest {
         // Single pixel and empty masks are handled.
         assertEquals(1, traceContour(BooleanMask.generate(3, 3) { x, y -> x == 1 && y == 1 }).size)
         assertTrue(traceContour(BooleanMask(3, 3)).isEmpty())
+    }
+
+    @Test
+    fun scanInputFromAnchorPoseBuildsOrthonormalPlaneFrame() {
+        // A tilted, yawed anchor with a slightly off-unit quaternion (as a host might hand it over).
+        val q = Quat.fromAxisAngle(Vec3(0f, 1f, 0f), 0.8f) * Quat.fromAxisAngle(Vec3(1f, 0f, 0.3f), 0.25f)
+        val anchor = Pose3(Vec3(0.3f, -0.7f, -1.2f), Quat(q.x * 1.01f, q.y * 1.01f, q.z * 1.01f, q.w * 1.01f))
+        val frame = PlaneFrame.fromAnchorPose(anchor)
+        for ((name, axis) in listOf("u" to frame.uAxis, "v" to frame.vAxis, "n" to frame.normal)) {
+            assertTrue(abs(axis.length - 1f) < 1e-5f, "$name unit length: ${axis.length}")
+        }
+        assertTrue(abs(frame.uAxis.dot(frame.vAxis)) < 1e-5f)
+        assertTrue(abs(frame.uAxis.dot(frame.normal)) < 1e-5f)
+        assertTrue(abs(frame.vAxis.dot(frame.normal)) < 1e-5f)
+        assertVec3(-frame.normal, frame.uAxis.cross(frame.vAxis), 1e-5f, "u x v == -normal (Plane.kt)")
+        assertEquals(anchor.position, frame.origin)
+        val r = anchor.rotation.normalized()
+        assertVec3(r.rotate(Vec3(1f, 0f, 0f)), frame.uAxis, 1e-5f, "u = R(+X)")
+        assertVec3(r.rotate(Vec3(0f, 0f, 1f)), frame.vAxis, 1e-5f, "v = R(+Z)")
+        assertVec3(r.rotate(Vec3(0f, 1f, 0f)), frame.normal, 1e-5f, "normal = R(+Y)")
+
+        val p = frame.toPlane(anchor.copy(rotation = r).transform(Vec3(0.1f, 0f, 0f)))
+        assertTrue(abs(p.u - 0.1f) < 1e-5f && abs(p.v) < 1e-5f, "10 cm along local X -> (0.1, 0), got $p")
+        assertEquals(PlaneFrame.horizontal(0f), PlaneFrame.fromAnchorPose(Pose3.IDENTITY), "identity anchor = horizontal table")
+
+        // ScanInput.fromAnchor: the frame above, the world polygon projected into it, the rest passed through.
+        val cam = Pose3.lookAt(Vec3(0f, 0.5f, 0.5f), Vec3.ZERO)
+        val local = listOf(Vec2(-0.4f, -0.3f), Vec2(0.5f, -0.3f), Vec2(0.5f, 0.2f), Vec2(-0.4f, 0.2f))
+        val world = local.map { frame.fromPlane(it) }
+        val input = ScanInput.fromAnchor(anchor, cam, intr, emptyList(), planePolygonWorld = world, spawn = Vec2(0.05f, 0f))
+        assertEquals(frame, input.plane)
+        assertEquals(cam, input.cameraPose)
+        assertEquals(intr, input.intrinsics)
+        assertEquals(Vec2(0.05f, 0f), input.spawn)
+        val boundary = assertNotNull(input.boundary).points
+        assertEquals(local.size, boundary.size)
+        for ((e, a) in local.zip(boundary)) assertTrue(e.distanceTo(a) < 1e-5f, "boundary $a vs $e")
+        assertNull(ScanInput.fromAnchor(anchor, cam, intr, emptyList()).boundary, "no polygon")
+        assertNull(ScanInput.fromAnchor(anchor, cam, intr, emptyList(), planePolygonWorld = world.take(2)).boundary, "< 3 points")
     }
 }

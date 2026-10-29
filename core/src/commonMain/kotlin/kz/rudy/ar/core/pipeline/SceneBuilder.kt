@@ -11,10 +11,13 @@ import kz.rudy.ar.core.geometry.Intrinsics
 import kz.rudy.ar.core.geometry.PixelPoint
 import kz.rudy.ar.core.geometry.PlaneFrame
 import kz.rudy.ar.core.geometry.Pose3
+import kz.rudy.ar.core.geometry.Vec3
 import kz.rudy.ar.core.geometry.douglasPeucker
 import kz.rudy.ar.core.geometry.pixelRay
 import kz.rudy.ar.core.geometry.pixelToPlane
 import kz.rudy.ar.core.geometry.traceContour
+import kz.rudy.ar.core.meta.MaskResult
+import kz.rudy.ar.core.meta.SegmentResult
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -24,6 +27,36 @@ import kotlin.math.sin
 /** One SAM mask with the prompt that produced it. */
 @Serializable
 data class LabeledMask(val label: String, val mask: BooleanMask)
+
+/** SAM table result -> the masks the [SceneBuilder] gets: one per detected object, not one merged blob per prompt. */
+object ScanMasks {
+    /**
+     * One [LabeledMask] per [MaskResult.instances] entry (label = the prompt, best score first as stored); a prompt
+     * with no instances but a non-empty merged mask (fixtures recorded before T15) yields its merged mask. Empty
+     * masks are dropped, and a prompt listed in [SegmentResult.failedPrompts] yields nothing. RLE masks decode with
+     * [BooleanMask.fromRle]; a bbox-only mask becomes its filled box.
+     */
+    fun of(result: SegmentResult): List<LabeledMask> {
+        val failed = result.failedPrompts.toSet()
+        val out = ArrayList<LabeledMask>()
+        for (m in result.masks) {
+            if (m.label in failed) continue
+            val parts = m.instances.ifEmpty { listOf(m) }
+            for (part in parts) {
+                if (part.isEmpty || part.width <= 0 || part.height <= 0) continue
+                out += LabeledMask(m.label, toBooleanMask(part))
+            }
+        }
+        return out
+    }
+
+    private fun toBooleanMask(m: MaskResult): BooleanMask {
+        val rle = m.rle
+        if (rle != null) return BooleanMask.fromRle(m.width, m.height, rle.toIntArray())
+        val box = m.bbox ?: return BooleanMask(m.width, m.height)
+        return BooleanMask.generate(m.width, m.height) { x, y -> x >= box.x && x < box.x + box.w && y >= box.y && y < box.y + box.h }
+    }
+}
 
 /** Everything a scan saves: masks + the camera geometry of the frame they were computed on + the table plane. */
 @Serializable
@@ -35,7 +68,27 @@ data class ScanInput(
     /** Detected plane polygon in plane coordinates; passed through to [Level.boundary]. */
     val boundary: Polygon? = null,
     val spawn: Vec2 = Vec2.ZERO,
-)
+) {
+    companion object {
+        /**
+         * The AR host's one call at scan time: the plane frame comes from the session [anchor]
+         * ([PlaneFrame.fromAnchorPose]) and the detected plane polygon [planePolygonWorld] (world points) is projected
+         * into it with [PlaneFrame.toPlane] as [boundary] (null when there is no polygon or it has fewer than 3 points).
+         */
+        fun fromAnchor(
+            anchor: Pose3,
+            cameraPose: Pose3,
+            intrinsics: Intrinsics,
+            masks: List<LabeledMask>,
+            planePolygonWorld: List<Vec3>? = null,
+            spawn: Vec2 = Vec2.ZERO,
+        ): ScanInput {
+            val plane = PlaneFrame.fromAnchorPose(anchor)
+            val boundary = planePolygonWorld?.takeIf { it.size >= 3 }?.let { pts -> Polygon(pts.map { plane.toPlane(it) }) }
+            return ScanInput(masks, intrinsics, cameraPose, plane, boundary, spawn)
+        }
+    }
+}
 
 @Serializable
 data class SceneParams(

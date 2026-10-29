@@ -57,3 +57,48 @@ Tests not required: MetaApi network path, CLI.
 - `./gradlew :core:jvmTest` green (was 158); `:cli:compileKotlin` compiles; no public signature removed.
 
 ## Result
+Implemented 2026-10-29 (opus-high). `./gradlew :core:jvmTest` green: **162 tests, 0 failures, 0 errors, 0 skipped**
+(was 158; +4, from core/build/test-results/jvmTest/*.xml). `./gradlew :cli:compileKotlin` compiles. No public
+signature removed or changed; no new dependency; no Gradle file touched.
+
+Files changed
+- core/src/commonMain/kotlin/kz/rudy/ar/core/meta/Types.kt: `MaskResult.instances` (last field).
+- core/src/commonMain/kotlin/kz/rudy/ar/core/meta/SamTokenParser.kt: `maskResult` fills `instances`; TODO(T04) removed.
+- core/src/commonMain/kotlin/kz/rudy/ar/core/geometry/Plane.kt: `PlaneFrame.fromAnchorPose`.
+- core/src/commonMain/kotlin/kz/rudy/ar/core/pipeline/SceneBuilder.kt: `ScanMasks` object, `ScanInput.fromAnchor`.
+- Tests: meta/SamTokenParserTest.kt (+instancesKeepEachDetectionSeparate), pipeline/ScanMasksTest.kt (new,
+  oneLabeledMaskPerInstanceAndMergedFallback), geometry/GeometryTest.kt (+scanInputFromAnchorPoseBuildsOrthonormalPlaneFrame),
+  pipeline/SceneBuilderTest.kt (+twoCupsFromOnePromptGetDistinctStableIds).
+- Not touched: MetaApi.kt, FixtureApi.kt, FixtureConverter.kt (see below), CharacterPipeline, androidApp, shared, cli, docs.
+
+Public API added
+- `MaskResult.instances: List<MaskResult> = emptyList()` with `@EncodeDefault(NEVER)`: an empty list is not written,
+  old JSON without the key parses as empty.
+- `SamTokenParser.maskResult(...)`: same signature; result = `merge(all)` with `instances` = one single-detection
+  `merge` per detection, sorted by score descending (null score last, ties keep reply order). `merge` unchanged.
+- `PlaneFrame.Companion.fromAnchorPose(anchor: Pose3): PlaneFrame`.
+- `ScanInput.Companion.fromAnchor(anchor, cameraPose, intrinsics, masks, planePolygonWorld: List<Vec3>? = null, spawn = Vec2.ZERO)`.
+- `object ScanMasks { fun of(result: SegmentResult): List<LabeledMask> }` (pipeline package).
+
+Notes and deviations
+- Fixtures store serialised `MaskResult`s, and FixtureConverter/MetaApi both go through `parseSamResponse` ->
+  `SamTokenParser.maskResult`, so `instances` flow through with no change to FixtureApi/FixtureConverter/MetaApi.
+  The committed docs/api-samples/sam-table/*.fixture.json were NOT regenerated (docs/ is outside this brief):
+  until the CLI convert is re-run, `FixtureApi.segment` returns no instances and `ScanMasks.of` falls back to the
+  merged mask (one object per prompt, today's behaviour). Re-converting adds the instances (same mask data, so
+  redaction is unaffected).
+- Side effect: RecordingModels' cutout recordings (sam-cutout masks) now also carry `instances` (one per
+  detection), so a recorded single-detection cutout writes its RLE twice. Harmless; the cutout path still uses
+  the merged mask via `largest()`.
+- `fromAnchorPose` normalises the quaternion before rotating (an off-unit quaternion would scale the axes), then
+  normalises each axis.
+- `ScanMasks` lives in SceneBuilder.kt (the owned file) rather than a new ScanMasks.kt. `failedPrompts` match by
+  exact label (failed prompts carry an empty mask anyway). A mask with width or height <= 0 is dropped.
+- The parser test uses the real Day 1 remote reply (docs/api-samples/sam-table/table-01.input.remote.response.json):
+  2 instances, merged bbox 438x223 = union, best (c=0.957, the 165x139 detection) first.
+
+Still needs (outside :core)
+- T04: androidApp calls `ScanInput.fromAnchor(...)` with `ScanMasks.of(segmentResult)` and the plane polygon in world
+  coordinates (ARCore `Plane.getPolygon()` is plane-local x/z; transform it through `plane.centerPose` first).
+- Optional: re-run the CLI fixture convert for sam-table so the saved fixtures carry instances.
+- rudeus-reviewer pass; `scripts/verify.sh` not run (not the last step of this brief).

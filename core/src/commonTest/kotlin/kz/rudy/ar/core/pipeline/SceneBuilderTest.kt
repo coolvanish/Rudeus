@@ -11,6 +11,8 @@ import kz.rudy.ar.core.geometry.Pose3
 import kz.rudy.ar.core.geometry.Vec3
 import kz.rudy.ar.core.geometry.pixelRay
 import kz.rudy.ar.core.geometry.projectToPixel
+import kz.rudy.ar.core.meta.MaskResult
+import kz.rudy.ar.core.meta.SegmentResult
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -190,5 +192,39 @@ class SceneBuilderTest {
         assertNotEquals("cup-2", movedCup.id)
         assertEquals("cup-3", movedCup.id)
         assertEquals("book-1", third.objects.first { it.label == "book" }.id)
+    }
+
+    /** One SAM "cup" prompt that found every solid in [cups] (instances in the given order = best score first). */
+    private fun onePrompt(label: String, vararg cups: Solid): SegmentResult {
+        val instances = cups.mapIndexed { i, c ->
+            val m = rasterise(c)
+            MaskResult.fromBits(label, m.width, m.height, m.bits, score = 0.9f - 0.1f * i)
+        }
+        val rasters = instances.map { it.toBooleanArray() }
+        val merged = BooleanArray(intr.width * intr.height) { px -> rasters.any { it[px] } }
+        return SegmentResult(listOf(MaskResult.fromBits(label, intr.width, intr.height, merged, 0.9f).copy(instances = instances)))
+    }
+
+    private fun scanOf(result: SegmentResult) = ScanInput(ScanMasks.of(result), intr, pose, plane)
+
+    @Test
+    fun twoCupsFromOnePromptGetDistinctStableIds() {
+        val builder = SceneBuilder()
+        val first = builder.build(scanOf(onePrompt("cup", Cylinder(0.10f, 0.20f, 0.04f, 0.09f), Cylinder(-0.15f, 0.10f, 0.03f, 0.08f))))
+        assertEquals(listOf("cup-1", "cup-2"), first.objects.map { it.id }, "one object per detection, distinct ids")
+        assertTrue(first.objects[0].centroid.distanceTo(Vec2(0.10f, 0.20f)) < 0.02f)
+        assertTrue(first.objects[1].centroid.distanceTo(Vec2(-0.15f, 0.10f)) < 0.02f)
+
+        // Re-scan: both cups moved ~3 cm and SAM now ranks them the other way round; ids follow the centroid.
+        val second = builder.build(
+            scanOf(onePrompt("cup", Cylinder(-0.13f, 0.12f, 0.03f, 0.08f), Cylinder(0.13f, 0.20f, 0.04f, 0.09f))),
+            previous = first,
+        )
+        assertEquals(listOf("cup-2", "cup-1"), second.objects.map { it.id })
+
+        // Before T15 the merged mask was all the level builder saw: one cup for two.
+        val mergedOnly = onePrompt("cup", Cylinder(0.10f, 0.20f, 0.04f, 0.09f), Cylinder(-0.15f, 0.10f, 0.03f, 0.08f))
+            .let { r -> SegmentResult(r.masks.map { it.copy(instances = emptyList()) }) }
+        assertEquals(1, builder.build(scanOf(mergedOnly)).objects.size)
     }
 }
