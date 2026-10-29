@@ -128,12 +128,18 @@ fun CaptureScreen(
     }
 }
 
+/**
+ * Bundled card width. The compact ability chip needs ~8 + 86 + 8 dp for the longest label ("Жасырыну", 16 sp bold
+ * + tracking) plus the 3 dp outline; 144 dp leaves 128 dp inside the card's 8 dp padding.
+ */
+private val CARD_WIDTH = 144.dp
+
 @Composable
 private fun CharacterCard(c: BundledCharacter, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(RudeusRadius.card)
     Column(
         Modifier
-            .width(120.dp)
+            .width(CARD_WIDTH)
             .clip(shape)
             .background(RudeusColors.PaperDeep)
             .border(RudeusSpacing.stroke, if (selected) RudeusColors.Sun else RudeusColors.Ink, shape)
@@ -160,7 +166,7 @@ private fun CharacterCard(c: BundledCharacter, selected: Boolean, onClick: () ->
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(RudeusSpacing.xs))
-        AbilityChip(c.sheet.ability)
+        AbilityChip(c.sheet.ability, compact = true)
     }
 }
 

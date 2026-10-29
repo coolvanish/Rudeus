@@ -43,6 +43,8 @@ fun Chip(
     container: Color = RudeusColors.Paper,
     contentColor: Color = RudeusColors.Ink,
     onClick: (() -> Unit)? = null,
+    /** Tighter side padding (8 dp instead of 16) for chips inside cards. */
+    compact: Boolean = false,
 ) {
     val shape = RoundedCornerShape(RudeusRadius.full)
     Box(
@@ -57,7 +59,7 @@ fun Chip(
                 .clip(shape)
                 .background(container)
                 .border(RudeusSpacing.stroke, accent, shape)
-                .padding(horizontal = RudeusSpacing.md),
+                .padding(horizontal = if (compact) RudeusSpacing.sm else RudeusSpacing.md),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -70,15 +72,19 @@ fun Chip(
     }
 }
 
-/** The character's one ability, shown top-left during play. Tapping it makes the character say its line. */
+/**
+ * The character's one ability, shown top-left during play. Tapping it makes the character say its line.
+ * [compact] (bundled character cards): label only, tight padding, so the longest label ("Жасырыну") fits a card.
+ */
 @Composable
-fun AbilityChip(ability: Ability, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+fun AbilityChip(ability: Ability, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, compact: Boolean = false) {
     Chip(
         text = t(Strings.abilityName(ability)),
-        glyph = ability.glyph(),
+        glyph = if (compact) null else ability.glyph(),
         accent = RudeusColors.Sky,
         modifier = modifier,
         onClick = onClick,
+        compact = compact,
     )
 }
 

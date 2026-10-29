@@ -69,11 +69,17 @@ private const val TAP_HINT_AFTER_WALK_MS = 5000L
  * latest handlers through `rememberUpdatedState`, so HUD changes never re-create it. [capture] (T03) brings the
  * camera, the photo picker, the real pipeline, bundled characters and the metrics run; without it the Processing
  * screen runs the fake stage loop so the shell still demos. Scan (T04) is still a fake timer that finds 0 objects.
+ *
+ * [backHandler] wires the system back gesture: :androidApp passes
+ * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
+ * no back API of its own on Android without a new dependency (CMP's `ui-backhandler` is not on its classpath).
+ * Back rule: Metrics -> where it came from; Play / Scanning / Processing -> Capture; Capture -> system (exit).
  */
 @Composable
 fun App(
     arView: @Composable (Modifier, ArSlot) -> Unit,
     capture: CaptureHost? = null,
+    backHandler: @Composable (enabled: Boolean, onBack: () -> Unit) -> Unit = { _, _ -> },
 ) {
     var screen by remember { mutableStateOf(Screen.CAPTURE) }
     var lang by remember { mutableStateOf(Lang.KK) }
@@ -118,6 +124,22 @@ fun App(
         sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
         spritePng = r?.sprite
         go(Screen.SCANNING)
+    }
+    /**
+     * The one Back rule, shared by the on-screen Back buttons and the system back gesture: Metrics -> where it was
+     * opened from; Play / Scanning / Processing -> Capture (leaves the AR session, cancels a running pipeline);
+     * Capture -> not handled (the system exits).
+     */
+    fun back() {
+        when (screen) {
+            Screen.CAPTURE -> Unit
+            Screen.METRICS -> {
+                exportStatus = ExportStatus.IDLE
+                screen = if (lastScreen == Screen.METRICS) Screen.CAPTURE else lastScreen
+            }
+            Screen.SCANNING -> { scan = ScanState(surface = surface); go(Screen.CAPTURE) }
+            Screen.PROCESSING, Screen.PLAY -> go(Screen.CAPTURE)
+        }
     }
     fun openMetrics() {
         metricsRun = if (capture != null) capture.latestRun() else DemoData.metrics
@@ -197,6 +219,9 @@ fun App(
         if (speech.text != null) { delay(RudeusMotion.BUBBLE_VISIBLE_MS); speech = HudSpeech.dismissed(speech) }
     }
 
+    // System back / predictive back gesture: same rule as the Back buttons; on Capture the system handles it (exit).
+    backHandler(screen != Screen.CAPTURE, ::back)
+
     RudeusTheme {
         CompositionLocalProvider(LocalLang provides lang) {
             Box(Modifier.fillMaxSize()) {
@@ -261,7 +286,7 @@ fun App(
                             onRetry = { processing = ProcessingState(); pendingResult = null; pipelineRun++ },
                             onShipAnyway = ::useResult,
                             onContinue = ::useResult,
-                            onBack = { go(Screen.CAPTURE) },
+                            onBack = ::back,
                             sprite = pendingResult?.sprite,
                         )
                     }
@@ -289,7 +314,7 @@ fun App(
                             arView = noAr,
                             onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f) },
                             onSkip = { scan = scan.copy(status = ScanStatus.IDLE, progress = 0f); go(Screen.PLAY) },
-                            onBack = { scan = ScanState(surface = surface); go(Screen.CAPTURE) },
+                            onBack = ::back,
                             onSurfaceChange = { surface = it },
                             speech = speech.text,
                         )
@@ -325,7 +350,7 @@ fun App(
                                 if (line != null) speech = HudSpeech.say(speech, line, nowMs())
                             },
                             onOpenMetrics = ::openMetrics,
-                            onBack = { go(Screen.CAPTURE) },
+                            onBack = ::back,
                         )
                     }
 
@@ -336,10 +361,7 @@ fun App(
                         exportLocation = exportLocation,
                         canExport = capture != null,
                         onExportJson = ::exportRun,
-                        onBack = {
-                            exportStatus = ExportStatus.IDLE
-                            screen = if (lastScreen == Screen.METRICS) Screen.CAPTURE else lastScreen
-                        },
+                        onBack = ::back,
                         modifier = Modifier.swallowTouches(),
                     )
                 }

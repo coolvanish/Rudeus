@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +43,9 @@ class MainActivity : ComponentActivity() {
                 arView = { modifier, slot ->
                     WithCameraPermission(modifier) { RudeusArView(modifier, slot) }
                 },
+                // HAND-REVIEW: system/predictive Back goes through App's one back() rule (Metrics -> where it came
+                // from, Play/Scanning/Processing -> Capture); :shared has no activity-compose, so the host lends it.
+                backHandler = { enabled, onBack -> BackHandler(enabled = enabled, onBack = onBack) },
                 capture = host,
             )
         }

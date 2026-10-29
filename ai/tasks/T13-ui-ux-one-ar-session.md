@@ -176,3 +176,14 @@ Walking the code for "Done when": `arView` is called at exactly one place in `Ap
 5. Processing: the effect captures `pipelineRun`. Events (and the error fallback) from a run that Retry has superseded
    are ignored.
 Tests: `:shared:testAndroidHostTest` 12, 0 failures, 0 errors (HudSpeechTest 5, ProcessingEventsTest 5, 2 examples).
+
+### Emulator fixes (Pixel 7 Pro screenshots)
+- Bundled cards: `AbilityChip(…, compact = true)` (label only, 8 dp side padding) and the card is 144 dp wide (was 120),
+  so "Жасырыну"/"Домалау" fit. The 96 dp sprite is unchanged. The Play HUD and Processing chips are unchanged.
+- System back: `App(…, backHandler: @Composable (enabled, onBack) -> Unit = { _, _ -> })` and a single `back()` rule,
+  shared with the on-screen Back buttons: Metrics -> where it came from; Play / Scanning / Processing -> Capture; on
+  Capture it is disabled, so the system exits. CMP's common `androidx.compose.ui.backhandler.BackHandler` (ui-backhandler
+  1.12.2, deprecated there for NavigationEventHandler) is NOT on `:shared`'s Android compile classpath, so no new
+  dependency was added. MainActivity must pass
+  `backHandler = { enabled, onBack -> BackHandler(enabled = enabled, onBack = onBack) }` with
+  `import androidx.activity.compose.BackHandler` (activity-compose is already an androidApp dependency; predictive-back safe).
