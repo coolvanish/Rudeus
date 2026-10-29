@@ -60,3 +60,11 @@ strategy changes (re-anchor on a large correction is the fallback; not implement
 - Scan is still fake (0 objects) until T04 (Day 4). Floor platforms need `Semantics.kindFor` to take the surface
   (T04 owner; noted in T12's Result).
 - A cancelled capture now lands in the run JSON as `aborted: true` (sheet cost in flight is not metered).
+
+## 6. Day 4 is drafted ahead on branch `day4/scan` (worktree .claude/worktrees/T04, commit 038cfd6)
+Real scan: camera frame → SAM (6 table prompts, +4 on the floor) → `ScanInput.fromAnchor` → `SceneBuilder` → the
+character routes around the cup; footprint overlay under the Footprints toggle. Reviewed, builds, untested on the
+Pixel. Order of work for you: (1) test Day 3 on `day3/table-gate` (sections 2–3 above); (2) if the anchor holds,
+`git checkout day4/scan` (it already contains day3) and run the T04 checklist in ai/tasks/T04-scan-to-level.md —
+its gate is 5 objects within 2 cm and scan < 6 s; the first thing to watch is `scan_ms=` / `segment_ms=` in logcat and
+whether the footprints sit on the real objects (a mirrored overlay = flip the v sign in FootprintOverlay.kt).
