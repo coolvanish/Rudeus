@@ -1,6 +1,6 @@
 # T17 — scan-empty-copy
 
-status: doing
+status: done
 created: 2026-10-31
 day: Day 4
 gate: 5 objects within 2 cm, character routes around; scan < 6 s (this brief keeps the HUD honest around that gate)
@@ -63,4 +63,11 @@ Tests not required: Scanning screen layout, the bubble text timing.
 
 ## Result (filled on acceptance)
 - measured: n/a (copy + state)
-- cut/deferred: ...
+- done: `ScanStatus.EMPTY` + card (INFO banner, Eye glyph; scan button stays enabled as "scan again", ghost
+  `scan_play_anyway` -> the old `onSkip`); `onScanned(0)` -> EMPTY with `failures` unchanged, `null` -> NO_PLANE and
+  the Skip-after-two rule untouched; Play rescan bubble says "Table is empty" for 0, "No table found" for null
+  (floor variants on FLOOR). New ids: scan_empty_title, scan_empty_hint, scan_empty_title_floor,
+  scan_empty_hint_floor, scan_play_anyway (kk/ru/en).
+- note: the host-less shell used to end its honest 0 in DONE ("Table ready!" -> Play after 1.5 s), not NO_PLANE as
+  the brief assumed; per the contract it now lands on EMPTY, so the demo reaches Play through "Play anyway".
+- cut/deferred: none
