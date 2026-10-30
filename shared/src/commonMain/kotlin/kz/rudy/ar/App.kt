@@ -293,6 +293,7 @@ fun App(
                     val floor = surface == Surface.FLOOR
                     val id = when {
                         objects == 0 -> if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title
+                        offline -> StringId.scan_offline_title
                         else -> if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
                     }
                     speech = HudSpeech.say(speech, id.get(lang), nowMs())

@@ -59,6 +59,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     scan_button("Скан", "Скан", "Scan"),
     scanning("Қарап жатырмын…", "Смотрю…", "Looking…"),
     scan_no_plane_title("Үстел табылмады", "Стол не найден", "No table found"),
+    /** The scan failed while the host is offline: the network, not the table, is the problem. */
+    scan_offline_title("Интернет жоқ", "Нет интернета", "No internet"),
     scan_no_plane_hint("Өрнекті мата жай, жарық бүйірден түссін", "Постели ткань с узором, свет сбоку", "Use a patterned cloth and light from the side"),
     scan_no_plane_title_floor("Еден табылмады", "Пол не найден", "No floor found"),
     scan_no_plane_hint_floor("Күндіз далада көр: шөп не тротуар", "Попробуй днём на улице: трава или тротуар", "Try outside in daylight: grass or pavement"),

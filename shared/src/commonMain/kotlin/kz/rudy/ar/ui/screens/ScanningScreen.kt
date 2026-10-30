@@ -92,8 +92,8 @@ fun ScanningScreen(
             }
             StatusBanner(
                 visible = state.status == ScanStatus.NO_PLANE,
-                title = t(if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title),
-                hint = t(if (state.offline) StringId.capture_offline_note else if (floor) StringId.scan_no_plane_hint_floor else StringId.scan_no_plane_hint),
+                title = t(if (state.offline) StringId.scan_offline_title else if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title),
+                hint = t(if (state.offline) StringId.processing_failed_hint else if (floor) StringId.scan_no_plane_hint_floor else StringId.scan_no_plane_hint),
                 kind = BannerKind.ERROR,
                 glyph = Glyph.CROSS,
             )

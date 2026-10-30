@@ -230,7 +230,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     // T21 (b): the ability is state, applied whenever it changes (before the anchor too); a jump is edge-triggered.
     LaunchedEffect(slot.ability) { loop.setAbility(slot.ability) }
     LaunchedEffect(slot.jumpRequest) {
-        if (slot.jumpRequest > 0 && !loop.jump()) {
+        if (slot.jumpRequest == 0) return@LaunchedEffect
+        // Review fix: before the anchor the body is IDLE, so a jump would fire on the frame the anchor appears.
+        if (anchorRef[0] == null) {
+            Log.i(GATE_TAG, "jump_ignored anchored=false")
+        } else if (!loop.jump()) {
             Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability}")
         }
     }
@@ -328,6 +332,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 // T21 (a): Plan A = the depth-aware camera stream; Plan B = Occluders under the AnchorNode (Occluders.kt).
                 val chosen = occlusionFor(depthSupported)
                 cameraStream.isDepthOcclusionEnabled = chosen == Occlusion.DEPTH
+                // HAND-REVIEW: T21 review fix — in BOXES mode the camera quad must be drawn BEFORE the depth-only
+                // occluders (its default priority 7 draws after their 4 and is depth-tested, which would leave black
+                // cup/book shapes). Priority 0 = first; SceneView's depth setter only touches it when enabling depth.
+                if (chosen == Occlusion.BOXES) cameraStream.setPriority(0)
                 if (occlusion != chosen) occlusion = chosen
                 Log.i(GATE_TAG, "occlusion=${chosen.name.lowercase()} depth_supported=$depthSupported")
             },
@@ -353,25 +361,28 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         currentSlot.onTracking(tracking)
                     }
                     if (scanPending[0]) scanPending[0] = startScan(frame, a, tracking)
-                    // T21 (c): scripted taps due on the simulated clock go to the loop like real taps; the step is below.
+                    // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
+                    // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
                     val player = scenario[0]
-                    if (player != null && tracking) {
-                        val first = player.issued
-                        player.due(loop.simMs).forEachIndexed { i, step ->
-                            when (step) {
-                                is ScenarioStep.WalkTo -> loop.walkTo(step.target)
-                                is ScenarioStep.Jump -> if (!loop.jump()) {
-                                    Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
+                    val scripted: (() -> Unit)? = if (player == null) null else {
+                        {
+                            val first = player.issued
+                            player.due(loop.simMs).forEachIndexed { i, step ->
+                                when (step) {
+                                    is ScenarioStep.WalkTo -> loop.walkTo(step.target)
+                                    is ScenarioStep.Jump -> if (!loop.jump()) {
+                                        Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
+                                    }
                                 }
+                                Log.i(GATE_TAG, "scenario_step idx=${first + i} at_ms=${step.atMs}")
                             }
-                            Log.i(GATE_TAG, "scenario_step idx=${first + i} at_ms=${step.atMs}")
-                        }
-                        if (player.finished) {
-                            scenario[0] = null
-                            Log.i(GATE_TAG, "scenario_done ms=${loop.simMs - scenarioStartMs[0]}")
+                            if (player.finished) {
+                                scenario[0] = null
+                                Log.i(GATE_TAG, "scenario_done ms=${loop.simMs - scenarioStartMs[0]}")
+                            }
                         }
                     }
-                    val state = loop.onFrame(now, tracking, currentSlot.onCharacterEvent)
+                    val state = loop.onFrame(now, tracking, currentSlot.onCharacterEvent, beforeStep = scripted)
                     val node = characterNode[0]
                     if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
                     // While not tracking the camera pose is meaningless and the AnchorNode hides its children.

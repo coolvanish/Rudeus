@@ -191,9 +191,9 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   (brief T24: a round hold target, its pills are the label); accessibility label `voice_hold`.
 - *Offline* (`CaptureHost.offline`): the Leaf badge shows and the hint row shows the pill "No internet — ready
   characters" (`capture_offline_note`) instead of "Tap — it walks", so the child sees why. Scan / Rescan stays
-  enabled: a tap is the retry, a failure says "Table is empty" / "No table found" as today. The character keeps
-  walking and jumping on the last level. On Scanning, a failed scan while offline shows the NO_PLANE card with the
-  offline note as its hint; Skip / Play anyway still work.
+  enabled: a tap is the retry, a failure says "Table is empty" or, while offline, "No internet". The character keeps
+  walking and jumping on the last level. On Scanning, a failed scan while offline shows the error card as "No
+  internet" / "Check the internet and try again"; Skip / Play anyway still work.
 - Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left) of the
   `Level` in plane coordinates with the same tints and the character as a Sky dot.
 - *Tracking lost / `Mode.PAUSED`*: full-screen `ScrimStrong`, title "Paused", hint "Point the phone at the
@@ -271,6 +271,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | surface_table | Үстел | Стол | Table |
 | surface_floor | Еден | Пол | Floor |
 | scan_objects_found | Заттар | Предметы | Objects |
+| scan_offline_title | Интернет жоқ | Нет интернета | No internet |
 | play_tap_to_walk | Түрт — ол барады | Нажми — он пойдёт | Tap — it walks |
 | play_jump | Секір | Прыгай | Jump |
 | play_fly | Ұш | Лети | Fly |

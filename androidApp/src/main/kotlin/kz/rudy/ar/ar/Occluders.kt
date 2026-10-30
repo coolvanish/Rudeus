@@ -25,7 +25,9 @@ import kotlin.math.sqrt
 // shipped one is used. ONE instance shared by every node (MaterialLoader destroys it with the scene).
 // Geometry: nodes live directly in the anchor frame (local X = u, Y = h, Z = v; PlaneCoords.kt), so unlike
 // FootprintOverlay no rotation and no v sign flip is needed. A round footprint (area / bbox area >= CUP_ROUNDNESS)
-// becomes a CylinderNode of equal area; anything else a CubeNode on the footprint's bounding box. Base on the plane
+// becomes a CylinderNode of equal area; anything else a CubeNode on the footprint's AXIS-ALIGNED bounding box (a
+// book rotated against u/v gets a box up to 2x its area: known limit, the sprite's feet are clipped beside it; an
+// extruded polygon is the Day 6 polish if the Pixel shows it). Base on the plane
 // (center y = heightM / 2), keyed on (id, footprint, heightM) like the overlay, so a re-scan rebuilds instead of
 // resizing. The character quad is TRANSPARENT blending, drawn after the opaque pass and depth-tested against it:
 // no render priorities are touched. PIXEL CHECK: with boxes on, the debug footprints (2 mm above the plane) sit
@@ -37,8 +39,12 @@ internal const val FORCE_OCCLUDER_BOXES = false
 /** Without depth support fall back to occluder boxes (true) or to no occlusion at all (false). */
 internal const val OCCLUDER_BOXES_WHEN_NO_DEPTH = true
 
-/** `footprint.area / bboxArea` at or above this is "a cup": a cylinder, not a box. */
-internal const val CUP_ROUNDNESS = 0.7f
+/**
+ * Circularity `4·π·area / perimeter²` at or above this is "a cup": a cylinder, not a box. A circle is 1.0, a square
+ * 0.785, the Day 5 book (15 x 10 cm) 0.754, a Douglas-Peucker cup contour ~0.9. (Review fix: the brief's bbox fill
+ * ratio was 1.0 for every axis-aligned rectangle, so books became cylinders.)
+ */
+internal const val CUP_ROUNDNESS = 0.85f
 
 /** Cylinder facets for a cup occluder. */
 internal const val OCCLUDER_SIDES = 16
@@ -67,8 +73,8 @@ internal fun NodeScope.Occluders(level: Level, material: MaterialInstance) {
             val maxU = pts.maxOf { it.u }
             val minV = pts.minOf { it.v }
             val maxV = pts.maxOf { it.v }
-            val bboxArea = (maxU - minU) * (maxV - minV)
-            val round = bboxArea > 0f && o.footprint.area / bboxArea >= CUP_ROUNDNESS
+            val perimeter = o.footprint.edges().sumOf { (p, q) -> (q - p).length.toDouble() }.toFloat()
+            val round = perimeter > 0f && 4f * PI.toFloat() * o.footprint.area / (perimeter * perimeter) >= CUP_ROUNDNESS
             if (round) {
                 val c = o.footprint.centroid()
                 CylinderNode(

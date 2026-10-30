@@ -31,6 +31,9 @@ import kz.rudy.ar.core.physics.PhysicsParams
 // beat window. `restartAtSpawn` is the debug scenario replay putting the body back at `level.spawn` (every run starts
 // the same); it is NOT the tracking path — PAUSED still freezes and never resets (locked decision, untouched).
 
+/** `landedAtMs` before any landing: far in the past, but `now - NEVER_LANDED` cannot overflow. */
+internal const val NEVER_LANDED = Long.MIN_VALUE / 2
+
 /** Frame-to-frame dt is clamped so a hitch (GC, app switch, slow frame) cannot teleport the character. */
 internal const val MAX_STEP_DT_MS = 50L
 
@@ -71,8 +74,8 @@ internal class GameLoop(
         body = Physics.walkTo(body, target)
     }
 
-    /** Host clock (`SystemClock.elapsedRealtime`) of the last [CharacterEvent.LANDED]; `Long.MIN_VALUE` before any. */
-    var landedAtMs: Long = Long.MIN_VALUE
+    /** Host clock (`SystemClock.elapsedRealtime`) of the last [CharacterEvent.LANDED]; [NEVER_LANDED] before any (safe to subtract). */
+    var landedAtMs: Long = NEVER_LANDED
         private set
 
     /** The Jump button: `Physics.jump`. Returns false when physics ignored it (ROLL, airborne, paused, respawning). */
@@ -100,6 +103,8 @@ internal class GameLoop(
             verticalVelocity = 0f,
             modeBeforePause = if (paused) Mode.IDLE else null,
         )
+        // HAND-REVIEW: T21 review fix — the teleport is not a transition: no LANDED / RESPAWNED for the HUD or the poser.
+        lastReported = body
     }
 
     /**
@@ -108,12 +113,19 @@ internal class GameLoop(
      * simulated: the first step after resume uses dt = 0. Every [CharacterEvent] implied since the previous
      * frame's report (including a tap's walkTo) goes to [onEvent], in order, before this returns.
      */
-    fun onFrame(nowMs: Long, tracking: Boolean, onEvent: (CharacterEvent) -> Unit = {}): CharacterState {
+    fun onFrame(
+        nowMs: Long,
+        tracking: Boolean,
+        onEvent: (CharacterEvent) -> Unit = {},
+        /** HAND-REVIEW: T21 review fix — scripted taps run here, AFTER resume and BEFORE the step, so a Jump due on the first frame back from a pause is not dropped by `canJump`. */
+        beforeStep: (() -> Unit)? = null,
+    ): CharacterState {
         if (!tracking) {
             body = Physics.pause(body)
             lastStepMs = null
         } else {
             body = Physics.resume(body) // no-op unless paused
+            beforeStep?.invoke()
             val dt = lastStepMs?.let { (nowMs - it).coerceIn(0L, MAX_STEP_DT_MS) } ?: 0L
             lastStepMs = nowMs
             body = Physics.step(body, level, dt, params)
