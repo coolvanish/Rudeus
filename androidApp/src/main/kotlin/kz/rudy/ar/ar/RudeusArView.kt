@@ -26,6 +26,7 @@ import com.google.ar.core.Plane
 import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.recording.rememberARRecorder
+import io.github.sceneview.ar.rememberARCameraStream
 import io.github.sceneview.math.Direction
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Size
@@ -43,6 +44,9 @@ import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
+import kz.rudy.ar.core.scenario.ScenarioPlayer
+import kz.rudy.ar.core.scenario.ScenarioStep
+import kz.rudy.ar.core.scenario.Scenarios
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -85,6 +89,20 @@ import kotlin.math.abs
 // the request pending for up to GRAB_MAX_TRIES frames. (3) `scanBusy` is cleared in `finally`, so a cancelled or
 // failed scan can never leave Rescan dead for the session. (4) Walk taps outside `loop.level.boundary` are ignored:
 // the boundary is a snapshot of the plane polygon at scan time, while hit tests use the live, growing polygon.
+// HAND-REVIEW: T21 — (a) occlusion: `sessionConfiguration` decides ONCE per session from `isDepthModeSupported`
+// (Occluders.kt `occlusionFor`): DEPTH turns on SceneView's depth-aware camera stream (`rememberARCameraStream` +
+// `ARCameraStream.isDepthOcclusionEnabled`, 4.31.0), BOXES composes invisible depth-writing nodes per LevelObject
+// under the AnchorNode (Occluders.kt), NONE does nothing; logged as `occlusion=... depth_supported=...`.
+// (b) jump + ability: `slot.ability` -> loop.setAbility; each `slot.jumpRequest` increment -> loop.jump() (one
+// Physics.jump; ignored by physics while PAUSED / airborne / ROLL -> `jump_ignored`). The poser gets the body's
+// vertical velocity and the time since LANDED for the squash-stretch. (c) scenario replay (debug HUD): each
+// `slot.scenarioRequest` increment puts the body back at `level.spawn` (`GameLoop.restartAtSpawn`, a debug replay,
+// not a tracking reset: PAUSED still never resets) and starts a :core ScenarioPlayer over `Scenarios.DAY5` (scaled by
+// the locked surface profile) on the SIMULATED clock `GameLoop.simMs` (the clamped dt physics actually stepped), so a
+// tracking stall or a frame hitch cannot move a scripted tap out of its 0.2-0.3 s beat window; onSessionUpdated feeds
+// the due steps to the loop while tracking (`scenario_step`, `scenario_done ms=` in simulated time). The player is a
+// plain holder; a scan meanwhile just swaps the level, the script goes on. A request before the anchor exists is
+// dropped (`scenario_rejected`).
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
@@ -169,6 +187,13 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     var hintTaps by remember { mutableIntStateOf(0) } // each premature tap restarts the hint timer
     val probe = remember { GateProbe() }
     val recorder = rememberARRecorder()
+    // T21 (a): the camera stream is ours so `sessionConfiguration` can flip depth occlusion once depth support is known.
+    val cameraStream = rememberARCameraStream(materialLoader)
+    var occlusion by remember { mutableStateOf(Occlusion.NONE) } // written once per session, never per frame
+    val occluderMaterial = remember(materialLoader) { materialLoader.createOcclusionInstance() }
+    // T21 (c): the running scenario, plain holders (main thread: the LaunchedEffect below and the frame callback).
+    val scenario = remember { arrayOfNulls<ScenarioPlayer>(1) }
+    val scenarioStartMs = remember { longArrayOf(0L) }
 
     LaunchedEffect(hintTaps) {
         if (hintTaps > 0) {
@@ -198,6 +223,27 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             scanPending[0] = true
             scanTries[0] = 0
         }
+    }
+    // T21 (b): the ability is state, applied whenever it changes (before the anchor too); a jump is edge-triggered.
+    LaunchedEffect(slot.ability) { loop.setAbility(slot.ability) }
+    LaunchedEffect(slot.jumpRequest) {
+        if (slot.jumpRequest > 0 && !loop.jump()) {
+            Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability}")
+        }
+    }
+    // T21 (c): one increment = one replay from spawn (restartAtSpawn); a replay in progress is restarted.
+    LaunchedEffect(slot.scenarioRequest) {
+        if (slot.scenarioRequest == 0) return@LaunchedEffect
+        if (anchorRef[0] == null) {
+            Log.i(GATE_TAG, "scenario_rejected anchored=false")
+            return@LaunchedEffect
+        }
+        val script = Scenarios.DAY5.scaled(slotState.profile.scale)
+        loop.restartAtSpawn() // every run starts at spawn: a FLY run ends past the gap and would skip the cup beat
+        val startMs = loop.simMs // simulated time, see the T21 header
+        scenario[0] = ScenarioPlayer(script, startMs)
+        scenarioStartMs[0] = startMs
+        Log.i(GATE_TAG, "scenario_start id=${script.id} steps=${script.steps.size} surface=${slotState.surface} sim_ms=$startMs")
     }
     /**
      * Main thread, from onSessionUpdated while a request is pending: grab this frame, then build the level on IO and
@@ -251,6 +297,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             engine = engine,
             modelLoader = modelLoader,
             materialLoader = materialLoader,
+            cameraStream = cameraStream,
             planeRenderer = anchor == null,
             sessionConfiguration = { session, config ->
                 config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
@@ -259,6 +306,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 config.depthMode = if (depthSupported) Config.DepthMode.AUTOMATIC else Config.DepthMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
                 probe.onDepthConfigured(depthSupported, config.depthMode)
+                // T21 (a): Plan A = the depth-aware camera stream; Plan B = Occluders under the AnchorNode (Occluders.kt).
+                val chosen = occlusionFor(depthSupported)
+                cameraStream.isDepthOcclusionEnabled = chosen == Occlusion.DEPTH
+                if (occlusion != chosen) occlusion = chosen
+                Log.i(GATE_TAG, "occlusion=${chosen.name.lowercase()} depth_supported=$depthSupported")
             },
             onSessionResumed = { probe.onSessionResumed() },
             onSessionUpdated = { session, frame ->
@@ -282,12 +334,34 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         currentSlot.onTracking(tracking)
                     }
                     if (scanPending[0]) scanPending[0] = startScan(frame, a, tracking)
+                    // T21 (c): scripted taps due on the simulated clock go to the loop like real taps; the step is below.
+                    val player = scenario[0]
+                    if (player != null && tracking) {
+                        val first = player.issued
+                        player.due(loop.simMs).forEachIndexed { i, step ->
+                            when (step) {
+                                is ScenarioStep.WalkTo -> loop.walkTo(step.target)
+                                is ScenarioStep.Jump -> if (!loop.jump()) {
+                                    Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
+                                }
+                            }
+                            Log.i(GATE_TAG, "scenario_step idx=${first + i} at_ms=${step.atMs}")
+                        }
+                        if (player.finished) {
+                            scenario[0] = null
+                            Log.i(GATE_TAG, "scenario_done ms=${loop.simMs - scenarioStartMs[0]}")
+                        }
+                    }
                     val state = loop.onFrame(now, tracking, currentSlot.onCharacterEvent)
                     val node = characterNode[0]
                     if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
                     // While not tracking the camera pose is meaningless and the AnchorNode hides its children.
                     if (tracking && node != null) {
-                        poser.apply(node, state, planeCoords(a, frame.camera.pose), loop.walkPhaseMs)
+                        poser.apply(
+                            node, state, planeCoords(a, frame.camera.pose), loop.walkPhaseMs,
+                            verticalVelocity = loop.body.verticalVelocity,
+                            sinceLandedMs = now - loop.landedAtMs,
+                        )
                         val visible = now >= reappearAtMs[0]
                         if (node.isVisible != visible) node.isVisible = visible
                     }
@@ -360,6 +434,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                             },
                         )
                     }
+                    // T21 (a) Plan B: invisible depth-writing cup cylinders / book boxes (Occluders.kt).
+                    if (occlusion == Occlusion.BOXES) level?.let { Occluders(it, occluderMaterial) }
                     // Debug chrome only: tinted footprints + boundary loop on the plane (scan/FootprintOverlay.kt).
                     if (slot.debug) level?.let { FootprintOverlay(it, footprintMaterials) }
                 }

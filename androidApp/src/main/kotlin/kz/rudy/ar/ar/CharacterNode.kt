@@ -48,6 +48,17 @@ private const val WALK_BOB_PERIOD_MS = 400L
 private const val WALK_BOB_STRETCH = 0.08f
 private const val WALK_BOB_SQUASH = 0.05f
 
+// HAND-REVIEW: T21 — jump squash-stretch, the minimal cut of the DESIGN.md motion table (no anticipation: the jump
+// starts on the frame of the tap). Rising (JUMPING, vertical velocity > 0): (0.85, 1.15). Falling (JUMPING with
+// vv <= 0, or FALLING): (1, 1). For JUMP_LAND_MS after the LANDED event: (1.25, 0.75) easing back to 1 (ease-out
+// cubic, no overshoot). The quad's origin is at the feet, so every scale keeps the feet on the plane. The landing
+// squash wins over the walk bob while it lasts (a landing mid-walk).
+private const val JUMP_RISE_SX = 0.85f
+private const val JUMP_RISE_SY = 1.15f
+private const val JUMP_LAND_SX = 1.25f
+private const val JUMP_LAND_SY = 0.75f
+private const val JUMP_LAND_MS = 120L
+
 /** |facing · right| below this keeps the previous flip, so walking straight at/away from the camera cannot flicker. */
 private const val FLIP_DEADBAND = 0.15f
 
@@ -124,8 +135,17 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
     /**
      * @param cameraLocal camera position in plane coords: `planeCoords(anchor, frame.camera.pose)`.
      * @param walkPhaseMs time spent walking, from [GameLoop.walkPhaseMs].
+     * @param verticalVelocity feet velocity along h, m/s (`PhysicsBody.verticalVelocity`); only read while JUMPING.
+     * @param sinceLandedMs host clock minus [GameLoop.landedAtMs]; drives the landing squash while < JUMP_LAND_MS.
      */
-    fun apply(node: PlaneNode, state: CharacterState, cameraLocal: Vec2, walkPhaseMs: Long) {
+    fun apply(
+        node: PlaneNode,
+        state: CharacterState,
+        cameraLocal: Vec2,
+        walkPhaseMs: Long,
+        verticalVelocity: Float = 0f,
+        sinceLandedMs: Long = Long.MAX_VALUE,
+    ) {
         node.position = localPosition(state.pos, state.h)
 
         // Y-only billboard. After a yaw of θ about Y the node's +Z (the quad's front) is (sin θ, 0, cos θ) in
@@ -146,7 +166,15 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         // The quad's origin is at the feet (center = height/2), so scaling keeps the feet on the table.
         var sx = 1f
         var sy = 1f
-        if (state.mode == Mode.WALKING) {
+        if (sinceLandedMs in 0 until JUMP_LAND_MS && (state.mode == Mode.IDLE || state.mode == Mode.WALKING)) {
+            val t = 1f - sinceLandedMs.toFloat() / JUMP_LAND_MS // 1 at touchdown -> 0
+            val k = t * t * t // ease-out: the squash relaxes fast, then settles
+            sx = 1f + (JUMP_LAND_SX - 1f) * k
+            sy = 1f + (JUMP_LAND_SY - 1f) * k
+        } else if (state.mode == Mode.JUMPING && verticalVelocity > 0f) {
+            sx = JUMP_RISE_SX
+            sy = JUMP_RISE_SY
+        } else if (state.mode == Mode.WALKING) {
             val s = sin(2.0 * PI * (walkPhaseMs % WALK_BOB_PERIOD_MS) / WALK_BOB_PERIOD_MS).toFloat()
             sy = 1f + WALK_BOB_STRETCH * s
             sx = 1f - WALK_BOB_SQUASH * s
