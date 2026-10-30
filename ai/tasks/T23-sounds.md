@@ -1,6 +1,6 @@
 # T23 — sounds
 
-status: review
+status: done
 created: 2026-10-31
 day: Day 6
 gate: fresh install -> character -> full scenario with Wi-Fi off halfway, no crash (sounds must never crash or block)

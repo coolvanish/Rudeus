@@ -1,6 +1,6 @@
 # T22 — core-offline-guard
 
-status: review
+status: done
 created: 2026-10-31
 day: Day 6
 gate: fresh install -> character -> full scenario with Wi-Fi off halfway, no crash

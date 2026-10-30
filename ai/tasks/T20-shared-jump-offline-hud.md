@@ -1,6 +1,6 @@
 # T20 — shared-jump-offline-hud
 
-status: review
+status: done
 created: 2026-10-31
 day: Day 5 (jump / affordances) + Day 6 (offline badge, honest offline copy)
 gate: Day 5 — scenario runs 3x (the HUD must offer Jump and a debug "Scenario" replay); Day 6 — Wi-Fi off halfway, no crash

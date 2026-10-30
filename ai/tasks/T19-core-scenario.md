@@ -1,6 +1,6 @@
 # T19 — core-scenario
 
-status: review
+status: done
 created: 2026-10-31
 day: Day 5
 gate: scripted 30 s scenario runs 3x in a row without code changes (this brief is the JVM half: the script, its
