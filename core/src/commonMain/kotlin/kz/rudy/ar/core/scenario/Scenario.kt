@@ -122,6 +122,10 @@ object Scenarios {
 /**
  * Incremental player for the AR host: call [due] once per frame with the host clock; each step is returned exactly
  * once, in list order, as soon as `startedAtMs + atMs <= nowMs`. A clock that jumps past several steps gets them all.
+ *
+ * `nowMs` must be a SIMULATED clock: the accumulated physics dt the host actually stepped, frozen while paused or not
+ * tracking, never the wall clock (otherwise taps fire while the character is frozen and the replay diverges from
+ * [ScenarioRunner]). The host starts each replay from `level.spawn` (IDLE, h = 0), the state the runner starts from.
  */
 class ScenarioPlayer(val scenario: Scenario, private val startedAtMs: Long) {
     /** Number of steps returned so far. */
