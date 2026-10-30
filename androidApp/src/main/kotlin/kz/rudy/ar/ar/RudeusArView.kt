@@ -103,6 +103,9 @@ import kotlin.math.abs
 // the due steps to the loop while tracking (`scenario_step`, `scenario_done ms=` in simulated time). The player is a
 // plain holder; a scan meanwhile just swaps the level, the script goes on. A request before the anchor exists is
 // dropped (`scenario_rejected`).
+// HAND-REVIEW: T24 — voice "go": each `slot.walkForwardRequest` increment is one loop.walkTo 10 cm x profile.scale
+// along the character's `facing`, from where it stands; a target outside `loop.level.boundary` (the scanned snapshot,
+// same rule as walk taps) is skipped and logged `voice_walk_outside_boundary`; before the anchor it is dropped.
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
@@ -230,6 +233,22 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         if (slot.jumpRequest > 0 && !loop.jump()) {
             Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability}")
         }
+    }
+    // T24: one voice "go" = one short step forward (the mic only shows once the character is placed).
+    LaunchedEffect(slot.walkForwardRequest) {
+        if (slot.walkForwardRequest == 0) return@LaunchedEffect
+        if (anchorRef[0] == null) {
+            Log.i(GATE_TAG, "voice_walk_rejected anchored=false")
+            return@LaunchedEffect
+        }
+        val s = loop.state
+        val target = s.pos + s.facing * (0.10f * slotState.profile.scale)
+        val boundary = loop.level.boundary
+        if (boundary != null && !boundary.contains(target)) {
+            Log.i(GATE_TAG, "voice_walk_outside_boundary u=${target.u} v=${target.v}")
+            return@LaunchedEffect
+        }
+        loop.walkTo(target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
     }
     // T21 (c): one increment = one replay from spawn (restartAtSpawn); a replay in progress is restarted.
     LaunchedEffect(slot.scenarioRequest) {

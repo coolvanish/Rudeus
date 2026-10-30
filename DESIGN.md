@@ -180,6 +180,15 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   outline, Sky text and the ability glyph, 64 dp tall (hit area ≥ 56 dp). **Jump** ("Секір") for JUMP and HIDE,
   **Fly** ("Ұш") for FLY; ROLL has no button (it rolls fast on its own). Each tap is one jump
   (`ArSlot.jumpRequest`); physics ignores it in the air. Disabled while tracking is lost.
+- *Voice* (T24, only with a `CaptureHost.voice` and once the character is placed): a round 56 dp mic control under
+  the ability chip — Paper fill, Sky outline and mic glyph; Sky-filled with a Paper glyph while held. Hold = record
+  (pill "Listening…" beside it, `voice_listening`); release = transcribe (pill "Thinking…", `voice_thinking`), then
+  "jump" / "прыгай" / "секір" jumps (`ArSlot.jumpRequest`) and "go" / "иди" / "жүр" walks one short step forward
+  (10 cm × surface scale, `ArSlot.walkForwardRequest`). What was heard shows for 2 s in the speech bubble with a mic
+  glyph beside it; no command word -> "Didn't catch that" (`voice_unknown`). The first press without the microphone
+  permission opens the system dialog. English is the demo language. Disabled while offline (the offline pill already
+  says why), while tracking is lost and while the last phrase is still being transcribed. The one icon-only control
+  (brief T24: a round hold target, its pills are the label); accessibility label `voice_hold`.
 - *Offline* (`CaptureHost.offline`): the Leaf badge shows and the hint row shows the pill "No internet — ready
   characters" (`capture_offline_note`) instead of "Tap — it walks", so the child sees why. Scan / Rescan stays
   enabled: a tap is the retry, a failure says "Table is empty" / "No table found" as today. The character keeps
@@ -266,6 +275,10 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | play_jump | Секір | Прыгай | Jump |
 | play_fly | Ұш | Лети | Fly |
 | play_scenario | Сценарий | Сценарий | Scenario |
+| voice_listening | Тыңдап тұрмын… | Слушаю… | Listening… |
+| voice_thinking | Ойланып тұрмын… | Думаю… | Thinking… |
+| voice_unknown | Түсінбедім | Не понял | Didn't catch that |
+| voice_hold | Ұстап тұрып айт | Держи и говори | Hold and talk |
 | ar_wait_table | Сәл күт — үстелді іздеп жатырмын | Подожди — ищу стол | Wait — finding the table |
 | ar_wait_floor | Сәл күт — еденді іздеп жатырмын | Подожди — ищу пол | Wait — finding the floor |
 | rescan | Қайта скан | Скан снова | Rescan |

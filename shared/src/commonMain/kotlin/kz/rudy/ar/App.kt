@@ -30,6 +30,8 @@ import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.metrics.ScanMetrics
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
+import kz.rudy.ar.core.voice.VoiceCommand
+import kz.rudy.ar.core.voice.VoiceCommands
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
@@ -48,6 +50,7 @@ import kz.rudy.ar.ui.screens.ProcessingStatus
 import kz.rudy.ar.ui.screens.ScanState
 import kz.rudy.ar.ui.screens.ScanStatus
 import kz.rudy.ar.ui.screens.ScanningScreen
+import kz.rudy.ar.ui.screens.VoicePhase
 import kz.rudy.ar.ui.screens.reduce
 import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusTheme
@@ -61,6 +64,9 @@ private const val TAP_HINT_AFTER_WALK_MS = 5000L
 /** The scan arc fills to here over SCAN_DEFAULT_MS and then holds: the real duration is the host's, not a timer's. */
 private const val SCAN_ARC_HOLD = 0.95f
 private const val SCAN_ARC_TICK_MS = 100L
+
+/** T24: a voice transcript bubble stays this long (shorter than a character line: it only confirms what was heard). */
+private const val VOICE_BUBBLE_MS = 2000L
 
 /**
  * Minimal navigation shell. :androidApp calls
@@ -89,6 +95,13 @@ private const val SCAN_ARC_TICK_MS = 100L
  * with `scanRequest` when the AR session ends. Offline (T20, review fix): [CaptureHost.offline] feeds the HUD badge, Capture's
  * note and the Scanning NO_PLANE hint; no button is disabled by it, because the guard only goes back online after a
  * successful call, so a tap must stay the retry.
+ *
+ * Voice (T24): with a [CaptureHost.voice] and the character placed, Play shows the hold-to-talk mic. Press ->
+ * `startListening` (or `requestPermission` without RECORD_AUDIO); release -> `stopAndTranscribe(lang.code)`, then
+ * `VoiceCommands.parse`: JUMP bumps `ArSlot.jumpRequest`, WALK bumps `ArSlot.walkForwardRequest` (reset with the
+ * other counters). The transcript (or "Didn't catch that") shows for [VOICE_BUBBLE_MS] with a mic glyph. A result that
+ * arrives after Play was left is dropped. The mic is the one control offline disables: a voice phrase is not a retry
+ * (Scan is), and without the network it can only fail.
  *
  * [backHandler] wires the system back gesture: :androidApp passes
  * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
@@ -128,6 +141,10 @@ fun App(
     // T20: one Physics.jump / one Scenarios.DAY5 replay per increment (ArSlot.jumpRequest / scenarioRequest).
     var jumpRequest by remember { mutableStateOf(0) }
     var scenarioRequest by remember { mutableStateOf(0) }
+    // T24: push-to-talk phase, one walk step per increment (ArSlot.walkForwardRequest), the voice bubble's serial.
+    var voicePhase by remember { mutableStateOf(VoicePhase.IDLE) }
+    var walkForwardRequest by remember { mutableStateOf(0) }
+    var voiceSerial by remember { mutableStateOf(-1) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -135,6 +152,7 @@ fun App(
     val bundled = remember(capture) { capture?.bundled()?.takeIf { it.isNotEmpty() } ?: DemoData.bundled }
     val offlineFlow = remember(capture) { capture?.offline ?: MutableStateFlow(false) }
     val offline by offlineFlow.collectAsState()
+    val voice = remember(capture) { capture?.voice }
 
     fun go(to: Screen) { lastScreen = screen; screen = to }
     fun startPipeline(bytes: ByteArray?) {
@@ -174,6 +192,52 @@ fun App(
         exportStatus = ExportStatus.IDLE
         exportLocation = null
         go(Screen.METRICS)
+    }
+    /** T24 mic pressed: record, or ask for RECORD_AUDIO (the next press records). Never throws into the gesture. */
+    fun voiceDown() {
+        val v = voice ?: return
+        if (voicePhase != VoicePhase.IDLE) return
+        try {
+            if (!v.hasPermission()) { v.requestPermission(); return }
+            if (v.startListening()) voicePhase = VoicePhase.LISTENING
+        } catch (e: Exception) {
+            voicePhase = VoicePhase.IDLE // the contract says never throws; a host bug only leaves the mic idle
+        }
+    }
+    /** T24 mic released: transcribe, parse, show what was heard, and bump the matching slot request. */
+    fun voiceUp() {
+        val v = voice ?: return
+        if (voicePhase != VoicePhase.LISTENING) return
+        voicePhase = VoicePhase.THINKING
+        val spoken = lang
+        scope.launch {
+            val text = try {
+                v.stopAndTranscribe(spoken.code)
+            } catch (e: CancellationException) {
+                voicePhase = VoicePhase.IDLE
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            voicePhase = VoicePhase.IDLE
+            if (screen != Screen.PLAY) return@launch // Play was left meanwhile: no stale jump in the next session
+            val command = text?.let(VoiceCommands::parse)
+            // A network failure already shows the offline pill and disables the mic; everything else gets an answer.
+            val line = when {
+                command != null && text != null -> text.trim()
+                text == null && offlineFlow.value -> null
+                else -> StringId.voice_unknown.get(lang)
+            }
+            if (line != null) {
+                speech = HudSpeech.say(speech, line, nowMs())
+                voiceSerial = speech.serial
+            }
+            when (command) {
+                VoiceCommand.JUMP -> jumpRequest++
+                VoiceCommand.WALK -> walkForwardRequest++
+                null -> Unit
+            }
+        }
     }
     fun exportRun() {
         val host = capture ?: return
@@ -240,7 +304,7 @@ fun App(
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
     val ability = sheet.ability
-    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, ability) {
+    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
@@ -255,6 +319,7 @@ fun App(
             ability = ability,
             jumpRequest = jumpRequest,
             scenarioRequest = scenarioRequest,
+            walkForwardRequest = walkForwardRequest,
         )
     }
     val arOn = screen == Screen.SCANNING || screen == Screen.PLAY || (screen == Screen.METRICS && lastScreen == Screen.PLAY)
@@ -271,6 +336,7 @@ fun App(
             scanRequest = 0 // a new session's first composition must not see a stale request
             jumpRequest = 0
             scenarioRequest = 0
+            walkForwardRequest = 0
         }
     }
     LaunchedEffect(walkedOnce) {
@@ -283,7 +349,10 @@ fun App(
         speech = HudSpeech.tick(speech, nowMs())
     }
     LaunchedEffect(speech.serial) {
-        if (speech.text != null) { delay(RudeusMotion.BUBBLE_VISIBLE_MS); speech = HudSpeech.dismissed(speech) }
+        if (speech.text != null) {
+            delay(if (speech.serial == voiceSerial) VOICE_BUBBLE_MS else RudeusMotion.BUBBLE_VISIBLE_MS)
+            speech = HudSpeech.dismissed(speech)
+        }
     }
 
     // System back / predictive back gesture: same rule as the Back buttons; on Capture the system handles it (exit).
@@ -424,7 +493,13 @@ fun App(
                             character = CharacterState(ability = sheet.ability),
                             sheet = sheet,
                             level = level,
-                            hud = hud.copy(speech = speech.text, surface = surface, offline = offline),
+                            hud = hud.copy(
+                                speech = speech.text,
+                                surface = surface,
+                                offline = offline,
+                                voice = voicePhase,
+                                speechFromVoice = speech.text != null && speech.serial == voiceSerial,
+                            ),
                             onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ },
                             onJump = { jumpRequest++ },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
@@ -436,6 +511,8 @@ fun App(
                             onOpenMetrics = ::openMetrics,
                             onBack = ::back,
                             onScenario = if (hud.showFootprints) ({ scenarioRequest++ }) else null,
+                            onVoiceDown = if (voice != null && scan.anchored) ::voiceDown else null,
+                            onVoiceUp = ::voiceUp,
                         )
                     }
 

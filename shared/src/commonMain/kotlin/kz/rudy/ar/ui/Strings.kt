@@ -82,6 +82,14 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     play_fly("Ұш", "Лети", "Fly"),
     /** T20 debug (footprints on): replays the Day 5 scenario script. */
     play_scenario("Сценарий", "Сценарий", "Scenario"),
+    /** T24: the pill beside the mic while it is held (recording). */
+    voice_listening("Тыңдап тұрмын…", "Слушаю…", "Listening…"),
+    /** T24: the pill after release, while the phrase is transcribed. */
+    voice_thinking("Ойланып тұрмын…", "Думаю…", "Thinking…"),
+    /** T24: the bubble when the phrase had no command word (or nothing was heard). */
+    voice_unknown("Түсінбедім", "Не понял", "Didn't catch that"),
+    /** T24: the mic button's accessibility label (the button itself shows only the mic glyph). */
+    voice_hold("Ұстап тұрып айт", "Держи и говори", "Hold and talk"),
     /** AR host: a tap before the table plane has settled (T02 anchor gate) shows this for a moment. */
     ar_wait_table("Сәл күт — үстелді іздеп жатырмын", "Подожди — ищу стол", "Wait — finding the table"),
     /** AR host: the same, on the floor / outdoors (`Surface.FLOOR`). */
