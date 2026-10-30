@@ -197,21 +197,27 @@ fun App(
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
     }
-    // Scanning: the real count -> DONE; a failure or an empty result -> NO_PLANE (the brief's rule; Skip appears
-    // after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends; a
-    // failed or empty rescan says so in the bubble (the same "No table found" line), so the HUD stays honest.
+    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); null -> NO_PLANE
+    // (Skip appears after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan
+    // overlay ends; an empty rescan says "Table is empty", a failed one "No table found", so the HUD stays honest.
     val onScanned = rememberUpdatedState<(Int?) -> Unit> { objects ->
         when (screen) {
             Screen.SCANNING -> if (scan.status == ScanStatus.SCANNING) {
-                scan = if (objects == null || objects == 0) {
+                scan = if (objects == null) {
                     scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
+                } else if (objects == 0) {
+                    scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
                 } else {
                     scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = objects, failures = 0)
                 }
             }
             else -> {
                 if (hud.scanning && (objects == null || objects == 0)) {
-                    val id = if (surface == Surface.FLOOR) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
+                    val floor = surface == Surface.FLOOR
+                    val id = when {
+                        objects == 0 -> if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title
+                        else -> if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
+                    }
                     speech = HudSpeech.say(speech, id.get(lang), nowMs())
                 }
                 hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
@@ -344,7 +350,7 @@ fun App(
                                     val elapsed = nowMs() - t0
                                     scan = scan.copy(progress = (elapsed.toFloat() / RudeusMotion.SCAN_DEFAULT_MS).coerceAtMost(SCAN_ARC_HOLD))
                                     if (capture == null && elapsed >= RudeusMotion.SCAN_DEFAULT_MS) {
-                                        scan = scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = 0)
+                                        scan = scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
                                         break
                                     }
                                 }

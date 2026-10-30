@@ -30,14 +30,15 @@ import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
-enum class ScanStatus { IDLE, SCANNING, NO_PLANE, DONE, PAUSED }
+/** [NO_PLANE] = the scan failed (no table found); [EMPTY] = the table was found but nothing is on it. */
+enum class ScanStatus { IDLE, SCANNING, NO_PLANE, EMPTY, DONE, PAUSED }
 
 /** Plain state for the Scanning screen. [progress] is 0..1 over the real scan duration (3-5 s). */
 data class ScanState(
     val status: ScanStatus = ScanStatus.IDLE,
     val progress: Float = 0f,
     val objectsFound: Int = 0,
-    /** Consecutive "no plane" results; the Skip (2D fallback) button appears from the second one. */
+    /** Consecutive "no plane" results; the Skip (2D fallback) button appears from the second one. An EMPTY table is not a failure. */
     val failures: Int = 0,
     /** The AR host has a settled horizontal plane: a tap would place the character (`ArSlot.onSurfaceReady`). */
     val surfaceReady: Boolean = false,
@@ -95,6 +96,13 @@ fun ScanningScreen(
                 glyph = Glyph.CROSS,
             )
             StatusBanner(
+                visible = state.status == ScanStatus.EMPTY,
+                title = t(if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title),
+                hint = t(if (floor) StringId.scan_empty_hint_floor else StringId.scan_empty_hint),
+                kind = BannerKind.INFO,
+                glyph = Glyph.EYE,
+            )
+            StatusBanner(
                 visible = state.status == ScanStatus.DONE,
                 title = t(if (floor) StringId.scan_done_floor else StringId.scan_done),
                 // Honest: no count until the real scan (T04) finds objects.
@@ -113,11 +121,15 @@ fun ScanningScreen(
                 PrimaryButton(
                     text = t(StringId.scan_button),
                     glyph = Glyph.EYE,
-                    enabled = state.anchored && (state.status == ScanStatus.IDLE || state.status == ScanStatus.NO_PLANE),
+                    enabled = state.anchored && (state.status == ScanStatus.IDLE || state.status == ScanStatus.NO_PLANE || state.status == ScanStatus.EMPTY),
                     onClick = onScan,
                     modifier = Modifier.weight(1f),
                 )
-                if (state.failures >= 2) {
+                // EMPTY: the table is real, so "Play anyway" is offered at once; otherwise Skip after two failures.
+                if (state.status == ScanStatus.EMPTY) {
+                    Spacer(Modifier.width(RudeusSpacing.md))
+                    GhostButton(t(StringId.scan_play_anyway), onClick = onSkip)
+                } else if (state.failures >= 2) {
                     Spacer(Modifier.width(RudeusSpacing.md))
                     GhostButton(t(StringId.skip), onClick = onSkip)
                 }
