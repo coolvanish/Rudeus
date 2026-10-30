@@ -1,5 +1,8 @@
 package kz.rudy.ar
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
@@ -42,4 +45,14 @@ interface CaptureHost {
      * user-visible location, or null on failure. Never throws.
      */
     suspend fun exportRun(): String? = null
+
+    /**
+     * T20: true while the host's last model call failed on the network (and until one succeeds). App collects it:
+     * the Play HUD shows the Leaf "Offline" badge and disables Scan, Capture disables Photo and shows the note.
+     * The default (never offline) is one shared flow, so collecting it is stable across recompositions.
+     */
+    val offline: StateFlow<Boolean> get() = NeverOffline
 }
+
+/** The default [CaptureHost.offline] for hosts that do not track the network (and for the demo shell). */
+private val NeverOffline: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()

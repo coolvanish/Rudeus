@@ -1,6 +1,6 @@
 # T20 — shared-jump-offline-hud
 
-status: todo
+status: review
 created: 2026-10-31
 day: Day 5 (jump / affordances) + Day 6 (offline badge, honest offline copy)
 gate: Day 5 — scenario runs 3x (the HUD must offer Jump and a debug "Scenario" replay); Day 6 — Wi-Fi off halfway, no crash
@@ -88,5 +88,18 @@ Tests not required: button layout, the badge.
 - Every new string id has kk, ru, en. The slot's new fields default so `androidApp` compiles unchanged.
 
 ## Result (filled on acceptance)
-- done: ...
-- cut/deferred: ...
+- done: `ArSlot` + `ability` / `jumpRequest` / `scenarioRequest` (defaults; documented like `scanRequest`).
+  `CaptureHost.offline` defaults to one shared never-offline `StateFlow` (stable to collect; kotlinx-coroutines-core
+  is already `implementation` in :shared, no new dependency). `PlayScreen(onJump, onScenario = null)`: Jump / Fly
+  button right of Scan (GhostButton with a new optional `accent` param = Sky, height 64 dp, enabled while
+  `!trackingLost`, hidden for ROLL); debug Scenario ghost under Metrics; offline disables Scan and shows the
+  `capture_offline_note` pill in the hint row. `App`: counters (reset with `scanRequest` when `arOn` goes false),
+  `collectAsState` of `capture?.offline` into `HudState.offline` and `CaptureScreen(offline)`, slot remembered on
+  `(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, sheet.ability)`, offline Scan on Scanning
+  says `capture_offline_note` and stays IDLE. Strings `play_jump`, `play_fly`, `play_scenario` (kk/ru/en).
+  DESIGN.md Play section updated. HudSpeech unchanged (uses `HudSpeech.say`).
+- verified: `:shared:compileAndroidMain` + `:shared:testAndroidHostTest` green (HudSpeechTest 5, ProcessingEventsTest 5,
+  SharedCommonTest 1, SharedLogicAndroidHostTest 1; 0 failures); `:androidApp:compileDebugKotlin` green unchanged.
+- cut/deferred: the host side (T21) must read `ability`, `jumpRequest`, `scenarioRequest` and implement
+  `CaptureHost.offline`. The DESIGN.md copy table (section e) does not yet list the three new ids (outside this
+  brief's Play-section scope).

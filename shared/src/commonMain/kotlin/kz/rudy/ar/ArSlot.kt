@@ -1,5 +1,6 @@
 package kz.rudy.ar
 
+import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
@@ -40,6 +41,21 @@ data class ArSlot(
     val onScanned: (objects: Int?) -> Unit = {},
     /** The level now driving physics (after every successful scan); the HUD's FootprintMiniMap draws it. */
     val onLevel: (Level) -> Unit = {},
+    /**
+     * T20: the character's ability from its sheet. The host sets `CharacterState.ability` before the anchor and again
+     * when it changes (a new character), so physics knows how the character moves (ROLL rolls fast, FLY hovers).
+     */
+    val ability: Ability = Ability.JUMP,
+    /**
+     * T20: the Play HUD's Jump / Fly button. Each increment = one `Physics.jump` on the host (physics ignores it while
+     * airborne and for ROLL). 0 = none yet; like [scanRequest] it resets to 0 when the AR session ends.
+     */
+    val jumpRequest: Int = 0,
+    /**
+     * T20 debug (footprints on): each increment replays `Scenarios.DAY5` from the character's current position.
+     * 0 = none yet; resets to 0 with the session like [scanRequest].
+     */
+    val scenarioRequest: Int = 0,
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other

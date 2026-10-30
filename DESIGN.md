@@ -166,7 +166,8 @@ pavement): the same game at a bigger scale; every "table" line below has a floor
 AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
 - Top-left: `AbilityChip` (glyph + "Jump"), Paper with Ink outline. Tapping it says the ability line in a bubble.
 - Top-right: offline badge (Leaf, "Offline") when `offline`; `Footprints` toggle chip (debug; Sky when on);
-  ghost **Metrics**.
+  ghost **Metrics**. Footprints on (debug only): a ghost **Scenario** button under Metrics (`play_scenario`) replays
+  the Day 5 script from where the character stands (`ArSlot.scenarioRequest`).
 - Centre-bottom: `SpeechBubble` with the character's line from `CharacterSheet.lines[lang]` (falls back
   kk → ru). Event-triggered (`HudSpeech`): placed -> line 1; jumped -> line 2; blocked -> "Blocked!"; fell ->
   "Oops! Fell"; respawned -> "Back up"; every 3rd arrival -> a sheet line (deterministic); the ability chip -> line 2.
@@ -174,6 +175,14 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   replace the current one, except that "Back up" waits until "Oops! Fell" has been up 1.2 s.
 - Bottom: one Sun button **Scan** (eye glyph), which reads **Rescan** once a scan has run in this session. Above it
   the hint pill "Tap — it walks": appears when the character is placed, leaves 5 s after it first walks (or on Scan).
+- Bottom, right of Scan: the ability's action button, secondary so Scan stays the one Sun button — Paper fill, Sky
+  outline, Sky text and the ability glyph, 64 dp tall (hit area ≥ 56 dp). **Jump** ("Секір") for JUMP and HIDE,
+  **Fly** ("Ұш") for FLY; ROLL has no button (it rolls fast on its own). Each tap is one jump
+  (`ArSlot.jumpRequest`); physics ignores it in the air. Disabled while tracking is lost.
+- *Offline* (`CaptureHost.offline`): the Leaf badge shows, Scan / Rescan is disabled and the hint row shows the
+  pill "No internet — ready characters" (`capture_offline_note`) instead of "Tap — it walks", so the child sees why.
+  The character keeps walking and jumping on the last level. On Scanning, an offline Scan tap says the same line in
+  the bubble and does not start a scan; Skip / Play anyway still work.
 - Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left) of the
   `Level` in plane coordinates with the same tints and the character as a Sky dot.
 - *Tracking lost / `Mode.PAUSED`*: full-screen `ScrimStrong`, title "Paused", hint "Point the phone at the
