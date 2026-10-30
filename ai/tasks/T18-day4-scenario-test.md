@@ -75,6 +75,43 @@ Tests not required: rendering, overlay, CLI, the host.
 - Result lists the real-fixture objects (id, label, kind, u/v/h in cm) and any core fix made.
 
 ## Result (filled on acceptance)
-- real fixture objects: ...
-- core fixes: none | ...
-- cut/deferred: ...
+2026-10-31, worktree `task/T18-day4-scenario-test`. `:core:jvmTest` green: 168 tests, 0 failures, 0 errors (XML);
+`Day4ScenarioTest` 3/3. Each test was sanity-checked once by flipping one assertion (centroid bound 0.6 -> 0.1 m,
+BLOCKED count 1 -> 2, rescanned cup id `cup-1` -> `cup-2`): all three failed, then restored.
+
+Files: `core/src/commonTest/.../pipeline/Day4ScenarioTest.kt` (the three tests),
+`core/src/commonTest/.../pipeline/ScenarioFixtures.kt` (the `SceneBuilderTest` ray-cast rasteriser, parameterised by
+camera; `SceneBuilderTest`'s solids are private and it is not owned here).
+
+- real fixture objects (`table-01`, prompts.json order, `ScanMasks.of` -> 5 masks; anchor = identity, camera at
+  (0, 0.5, 0.5) looking at the anchor = 0.5 m up, 45° down; no boundary). `id label kind u_cm v_cm h_cm`:
+  ```
+  laptop-1 laptop OBSTACLE 8.4 2.1 13.8
+  remote-1 remote OBSTACLE 1.6 13.7 0.7
+  remote-2 remote OBSTACLE -11.9 9.1 0.2
+  toy car-1 toy car OBSTACLE 10.7 -44.6 2.4
+  knife-1 knife OBSTACLE 16.7 -25.5 0.3
+  ```
+  The pose is synthetic (the photo was not taken from it), so these are not ruler-comparable to the real table; they
+  prove the chain runs end to end, deterministically, with distinct `<label>-<n>` ids (the two `remote` detections,
+  remote + speaker per meta.json, become `remote-1` / `remote-2`). Every label in this fixture is a non-platform,
+  non-dynamic label, so all kinds are OBSTACLE by `Semantics.kindFor`.
+- test deviation (FOV): the contract says `Intrinsics.fromFov(60°, w, h)`. table-01 is a 900 x 1600 PORTRAIT photo;
+  60° across the 900 px side makes the vertical FOV ~91°, and the top rows graze the table: with the literal call the
+  toy car landed at (29.1, -122.6) cm, 1.26 m from the anchor, failing the 0.6 m bound (knife 0.67 m). The test now
+  applies 60° across the frame's LONG side (`hFovForLongSide`), which is exactly `fromFov(60°, w, h)` for a landscape
+  frame (the sensor-oriented image the phone sends). Not a core bug: the projection is correct, the pose/FOV pair was
+  just not one a phone would produce for this photo.
+- test 2 (synthetic level, kinds from `Semantics.kindFor`, `PhysicsParams.forSurface(TABLE)`, radius from
+  `SurfaceProfile.TABLE`): BLOCKED exactly once walking at the cup over 10 s and never closer than 6.9 cm to its
+  centre; steps onto the 2 cm book and ends within 5 mm of (0, 0.15) at h 0.02 (STEPPED_UP, no BLOCKED); off the
+  corner toward (0.40, 0.40): FALLING over the cliff, RESPAWNING entered once, IDLE at the spawn with h = 0 within 3 s
+  of leaving the ground, one RESPAWNED, no BLOCKED; paused mid-walk for 2 s the body is unchanged and resume walks on
+  to the book; paused while pinned on the cup, 2 s, resume: events are exactly [PAUSED, RESUMED], no second BLOCKED.
+- test 3: what the `SceneBuilder` KDoc promises and nothing more. Cup moved 3 cm keeps `cup-1` (centroid moved
+  3 ± 1 cm); moved 8 cm -> `cup-2`. The hand is DYNAMIC and is simply rebuilt from each scan's mask: moved 15 cm it is
+  one object at the new place with a fresh id (`hand-2`, same rematch rule as any label); a rescan without a hand mask
+  has no hand (carrying objects over for failed prompts is the host's job, T04 review fixes, not the builder's).
+- core fixes: none. No test exposed a bug in `physics/**` or `SceneBuilder.kt`.
+- cut/deferred: nothing cut. Still for the human on the Pixel (T04 checklist): ruler accuracy (5 objects within
+  2 cm) and scan wall time (< 6 s); a JVM cannot measure either.
