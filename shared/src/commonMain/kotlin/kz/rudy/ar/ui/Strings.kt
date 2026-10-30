@@ -76,6 +76,12 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     scan_objects_found("Заттар", "Предметы", "Objects"),
 
     play_tap_to_walk("Түрт — ол барады", "Нажми — он пойдёт", "Tap — it walks"),
+    /** T20: the Play HUD's action button for JUMP and HIDE characters. */
+    play_jump("Секір", "Прыгай", "Jump"),
+    /** T20: the same button for FLY characters. */
+    play_fly("Ұш", "Лети", "Fly"),
+    /** T20 debug (footprints on): replays the Day 5 scenario script. */
+    play_scenario("Сценарий", "Сценарий", "Scenario"),
     /** AR host: a tap before the table plane has settled (T02 anchor gate) shows this for a moment. */
     ar_wait_table("Сәл күт — үстелді іздеп жатырмын", "Подожди — ищу стол", "Wait — finding the table"),
     /** AR host: the same, on the floor / outdoors (`Surface.FLOOR`). */

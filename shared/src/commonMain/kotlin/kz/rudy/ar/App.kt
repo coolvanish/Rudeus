@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
@@ -71,8 +73,8 @@ private const val SCAN_ARC_TICK_MS = 100L
  *
  * [arView]'s second argument is the [ArSlot]: the sprite Play shows (captured or bundled, null = the host's default),
  * the chosen [Surface], the debug flag (footprints on), and the callbacks the AR host reports through (surface ready,
- * anchor, tracking, character events). The slot is remembered on (sprite, surface, debug); its callbacks read the
- * latest handlers through `rememberUpdatedState`, so HUD changes never re-create it. [capture] (T03) brings the
+ * anchor, tracking, character events). The slot is remembered on (sprite, surface, debug, the request counters,
+ * ability); its callbacks read the latest handlers through `rememberUpdatedState`, so HUD changes never re-create it. [capture] (T03) brings the
  * camera, the photo picker, the real pipeline, bundled characters and the metrics run; without it the Processing
  * screen runs the fake stage loop so the shell still demos.
  *
@@ -81,6 +83,11 @@ private const val SCAN_ARC_TICK_MS = 100L
  * `onLevel`. The overlay's arc runs toward [SCAN_ARC_HOLD] over `SCAN_DEFAULT_MS` and holds until that answer, so it
  * animates for the real duration. Without a host the shell has no AR view to answer, so the scan ends after
  * `SCAN_DEFAULT_MS` with an honest 0.
+ *
+ * Jump / Scenario (T20): the Play HUD's Jump / Fly button bumps `ArSlot.jumpRequest`, the debug Scenario button
+ * (footprints on) bumps `ArSlot.scenarioRequest`; the slot also carries the sheet's ability. Both counters reset to 0
+ * with `scanRequest` when the AR session ends. Offline (T20): [CaptureHost.offline] feeds the HUD badge, Capture's
+ * note, a disabled Scan on Play, and a "No internet" line instead of a scan request on Scanning.
  *
  * [backHandler] wires the system back gesture: :androidApp passes
  * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
@@ -117,11 +124,16 @@ fun App(
     // T04: one scan per increment (ArSlot.scanRequest); the level the host last built (for the mini-map).
     var scanRequest by remember { mutableStateOf(0) }
     var level by remember { mutableStateOf<Level?>(null) }
+    // T20: one Physics.jump / one Scenarios.DAY5 replay per increment (ArSlot.jumpRequest / scenarioRequest).
+    var jumpRequest by remember { mutableStateOf(0) }
+    var scenarioRequest by remember { mutableStateOf(0) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
     fun nowMs(): Long = clock.elapsedNow().inWholeMilliseconds
     val bundled = remember(capture) { capture?.bundled()?.takeIf { it.isNotEmpty() } ?: DemoData.bundled }
+    val offlineFlow = remember(capture) { capture?.offline ?: MutableStateFlow(false) }
+    val offline by offlineFlow.collectAsState()
 
     fun go(to: Screen) { lastScreen = screen; screen = to }
     fun startPipeline(bytes: ByteArray?) {
@@ -226,7 +238,8 @@ fun App(
     }
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
-    val slot = remember(spritePng, surface, debug, scanRequest) {
+    val ability = sheet.ability
+    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, ability) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
@@ -238,6 +251,9 @@ fun App(
             scanRequest = scanRequest,
             onScanned = { onScanned.value(it) },
             onLevel = { onLevel.value(it) },
+            ability = ability,
+            jumpRequest = jumpRequest,
+            scenarioRequest = scenarioRequest,
         )
     }
     val arOn = screen == Screen.SCANNING || screen == Screen.PLAY || (screen == Screen.METRICS && lastScreen == Screen.PLAY)
@@ -252,6 +268,8 @@ fun App(
             walkedOnce = false
             level = null
             scanRequest = 0 // a new session's first composition must not see a stale request
+            jumpRequest = 0
+            scenarioRequest = 0
         }
     }
     LaunchedEffect(walkedOnce) {
@@ -279,7 +297,7 @@ fun App(
                 when (screen) {
                     Screen.CAPTURE -> CaptureScreen(
                         bundled = bundled,
-                        offline = false,
+                        offline = offline,
                         lang = lang,
                         onLangChange = { lang = it },
                         onTakePhoto = {
@@ -365,7 +383,14 @@ fun App(
                         ScanningScreen(
                             state = scan.copy(surface = surface),
                             arView = noAr,
-                            onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f); scanRequest++ },
+                            onScan = {
+                                if (offline) {
+                                    // The scan needs the network: say so and stay IDLE (Skip / Play anyway still work).
+                                    speech = HudSpeech.say(speech, StringId.capture_offline_note.get(lang), nowMs())
+                                } else {
+                                    scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f); scanRequest++
+                                }
+                            },
                             onSkip = {
                                 // "Play anyway" after a real empty scan: the table was scanned, so Play says "Rescan".
                                 if (scan.status == ScanStatus.EMPTY) hud = hud.copy(scanned = true)
@@ -403,8 +428,12 @@ fun App(
                             character = CharacterState(ability = sheet.ability),
                             sheet = sheet,
                             level = level,
-                            hud = hud.copy(speech = speech.text, surface = surface),
-                            onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ },
+                            hud = hud.copy(speech = speech.text, surface = surface, offline = offline),
+                            onScan = {
+                                // Disabled while offline; the guard only covers a tap racing the state change.
+                                if (!offline) { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ }
+                            },
+                            onJump = { jumpRequest++ },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
                             onAbilityTap = {
                                 val lines = Strings.sheetLines(sheet.lines, lang)
@@ -413,6 +442,7 @@ fun App(
                             },
                             onOpenMetrics = ::openMetrics,
                             onBack = ::back,
+                            onScenario = if (hud.showFootprints) ({ scenarioRequest++ }) else null,
                         )
                     }
 

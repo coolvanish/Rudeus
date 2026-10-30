@@ -71,7 +71,10 @@ fun PrimaryButton(
     }
 }
 
-/** Secondary, low-emphasis action: paper outline, Ink text. Readable over the feed because it is paper. */
+/**
+ * Secondary, low-emphasis action: paper fill, Ink outline and text. Readable over the feed because it is paper.
+ * [accent] recolours the outline, text and glyph (Sky for Play's Jump / Fly action); the fill stays Paper.
+ */
 @Composable
 fun GhostButton(
     text: String,
@@ -79,6 +82,7 @@ fun GhostButton(
     modifier: Modifier = Modifier,
     glyph: Glyph? = null,
     enabled: Boolean = true,
+    accent: androidx.compose.ui.graphics.Color = RudeusColors.Ink,
 ) {
     Button(
         onClick = onClick,
@@ -86,15 +90,15 @@ fun GhostButton(
         shape = RoundedCornerShape(RudeusRadius.full),
         colors = ButtonDefaults.buttonColors(
             containerColor = RudeusColors.Paper,
-            contentColor = RudeusColors.Ink,
+            contentColor = accent,
             disabledContainerColor = RudeusColors.Paper.copy(alpha = 0.6f),
             disabledContentColor = RudeusColors.InkSoft,
         ),
-        border = BorderStroke(RudeusSpacing.stroke, RudeusColors.Ink),
+        border = BorderStroke(RudeusSpacing.stroke, accent),
         contentPadding = PaddingValues(horizontal = RudeusSpacing.md, vertical = 0.dp),
         modifier = modifier.heightIn(min = RudeusSpacing.touchTarget),
     ) {
-        ButtonContent(text, glyph, RudeusColors.Ink)
+        ButtonContent(text, glyph, accent)
     }
 }
 
