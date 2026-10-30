@@ -1,0 +1,40 @@
+{
+    "schema": 1,
+    "job": "sam-table",
+    "ref": "table1-day4",
+    "synthetic": false,
+    "note": "recorded by cli scan --live on 2026-10-31; 6 prompts at concurrency 3; input table1-day4.input.jpg 720x1280 q90",
+    "masks": [
+        {
+            "label": "cup",
+            "width": 0,
+            "height": 0
+        },
+        {
+            "label": "book",
+            "width": 0,
+            "height": 0
+        },
+        {
+            "label": "phone",
+            "width": 0,
+            "height": 0
+        },
+        {
+            "label": "bottle",
+            "width": 0,
+            "height": 0
+        },
+        {
+            "label": "hand",
+            "width": 0,
+            "height": 0
+        },
+        {
+            "label": "object",
+            "width": 0,
+            "height": 0
+        }
+    ],
+    "latencyMs": 4089
+}

@@ -47,6 +47,11 @@ import kotlin.system.exitProcess
  *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>] [--force]   (live, $0.01/image)
  *   refs cull --from <dir> [--keep 8] --out <dir> [--force]
+ *   scan --image <jpg> [--prompts a,b,c | --floor] [--live [--provider meta|fireworks] [--budget-usd 0.30]
+ *        [--record <fixturesDir> [--force]] [--ref <name>] | --fixtures <dir> --ref <ref>] [--concurrency 3]
+ *        [--camera-height-m 0.5] [--pitch-deg 45] [--hfov-deg 60] [--out runs] [--repeat 1]
+ *       the phone's Day 4 scan path (ScanCommand.kt): prints segment_ms, scan_ms, one line per level object and
+ *       writes <out>/<runId>.json with scans[]; --record writes sam-table/<ref>.fixture.json + <ref>.input.jpg.
  *   metrics summarise <runsDir>
  *   metrics gate <run.json>        Day 2 gate table; exit 0 only on PASS
  */
@@ -58,6 +63,7 @@ fun main(args: Array<String>) {
             "fixture" -> fixture(parseFlags(args.drop(1)))
             "refs" -> refs(args.drop(1))
             "metrics" -> metrics(args.drop(1))
+            "scan" -> scan(parseFlags(args.drop(1)))
             "help", "--help", "-h" -> usage()
             else -> usage("unknown command: ${args[0]}")
         }
@@ -83,6 +89,9 @@ internal fun usage(error: String? = null): Int {
                   [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
           refs generate --prompt <text | @file> --n <1..10> --out <dir> [--size WxH] [--budget-usd <x>] [--force]
           refs cull --from <dir> [--keep 8] --out <dir> [--force]
+          scan --image <jpg> [--prompts a,b,c | --floor] [--live [--provider meta|fireworks] [--budget-usd 0.30]
+               [--record <fixturesDir> [--force]] [--ref <name>] | --fixtures <dir> --ref <ref>] [--concurrency 3]
+               [--camera-height-m 0.5] [--pitch-deg 45] [--hfov-deg 60] [--out runs] [--repeat 1]
           metrics summarise <runsDir>
           metrics gate <run.json>
         """.trimIndent(),

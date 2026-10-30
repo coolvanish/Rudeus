@@ -44,8 +44,13 @@ data class MetaConfig(
     val voiceKeywords: List<String> = emptyList(),
     val connectTimeoutMs: Long = 10_000,
     val requestTimeoutMs: Long = 120_000,
+    /** SAM requests in flight per [MetaModels.segment] call (one per prompt); the CLI scan bench varies it (T16). */
+    val samConcurrency: Int = MetaApi.MAX_SAM_CONCURRENCY,
 ) {
-    init { require(apiKey.isNotBlank()) { "MetaConfig.apiKey is blank" } }
+    init {
+        require(apiKey.isNotBlank()) { "MetaConfig.apiKey is blank" }
+        require(samConcurrency > 0) { "MetaConfig.samConcurrency must be positive" }
+    }
 
     /** The generated data-class `toString` would print [apiKey]; this one never does. */
     override fun toString(): String =

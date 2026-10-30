@@ -1,0 +1,22 @@
+{
+    "schema": 1,
+    "runId": "2026-10-30T19-11-55Z",
+    "source": "cli",
+    "provider": "meta",
+    "device": "mac",
+    "characters": [],
+    "scans": [
+        {
+            "objects": 5,
+            "ms": 4740,
+            "withinCm": []
+        }
+    ],
+    "summary": {
+        "n": 0,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 0,
+        "p90Ms": 0,
+        "costPerCharacterUsd": 0.0
+    }
+}

@@ -62,7 +62,7 @@ class MetaApi(
         val mime = sniffImageMime(image)
         val b64 = Base64.encode(image)
         val job = Jobs.segmentJob(prompts)
-        return segmentEach(prompts, MAX_SAM_CONCURRENCY) { prompt ->
+        return segmentEach(prompts, config.samConcurrency) { prompt ->
             val req = SegmentRequest.of(config.samModel, prompt, mime, b64, config.samMaskEncoding)
             val resp: ResponsesResponse = postJson(ref, "segment[$prompt]", config.segmentPath, req)
             meter(job, ref, Pricing.samUsd(Usage.of(resp.usage)))
@@ -202,7 +202,7 @@ class MetaApi(
     }
 
     companion object {
-        /** At most this many SAM requests in flight per scan (rate limits are undocumented). */
+        /** Default SAM requests in flight per scan ([MetaConfig.samConcurrency]; rate limits are undocumented). */
         const val MAX_SAM_CONCURRENCY = 3
 
         /** Muse Image edit takes 1..10 images: the cutout plus at most 9 style references. */

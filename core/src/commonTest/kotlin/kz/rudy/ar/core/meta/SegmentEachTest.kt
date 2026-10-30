@@ -50,4 +50,23 @@ class SegmentEachTest {
         assertEquals(prompts, result.masks.map { it.label })
         assertTrue(result.failedPrompts.isEmpty())
     }
+
+    @Test
+    fun aConfiguredLimitCapsTheRequestsInFlight() = runTest {
+        assertEquals(3, MetaConfig(apiKey = "k").samConcurrency, "default stays 3")
+        val prompts = (1..8).map { "p$it" }
+        for (limit in listOf(1, 2, 6, 10)) {
+            var inFlight = 0
+            var peak = 0
+            val result = segmentEach(prompts, MetaConfig(apiKey = "k", samConcurrency = limit).samConcurrency) { p ->
+                inFlight++; peak = maxOf(peak, inFlight)
+                delay(100)
+                inFlight--
+                mask(p)
+            }
+            assertEquals(minOf(limit, prompts.size), peak, "limit $limit")
+            assertEquals(prompts, result.masks.map { it.label })
+        }
+        assertFailsWith<IllegalArgumentException> { MetaConfig(apiKey = "k", samConcurrency = 0) }
+    }
 }
