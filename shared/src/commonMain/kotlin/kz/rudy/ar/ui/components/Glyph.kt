@@ -20,7 +20,7 @@ import kz.rudy.ar.core.domain.Ability
  * Canvas-drawn glyphs (DESIGN.md: no icon dependency, no emoji in the chrome).
  * Every glyph sits next to a text label; the glyph itself is decorative.
  */
-enum class Glyph { CAMERA, EYE, JUMP, FLY, ROLL, HIDE, BACK, PAUSE, FOOTPRINTS, EXPORT, CHECK, CROSS, METRICS }
+enum class Glyph { CAMERA, EYE, JUMP, FLY, ROLL, HIDE, BACK, PAUSE, FOOTPRINTS, EXPORT, CHECK, CROSS, METRICS, MIC }
 
 fun Ability.glyph(): Glyph = when (this) {
     Ability.JUMP -> Glyph.JUMP
@@ -121,6 +121,17 @@ fun DrawScope.drawGlyph(glyph: Glyph, tint: Color) {
             drawLine(tint, p(0.2f, 0.85f), p(0.2f, 0.5f), s.width, StrokeCap.Round)
             drawLine(tint, p(0.5f, 0.85f), p(0.5f, 0.2f), s.width, StrokeCap.Round)
             drawLine(tint, p(0.8f, 0.85f), p(0.8f, 0.4f), s.width, StrokeCap.Round)
+        }
+        Glyph.MIC -> {
+            // T24 push-to-talk: capsule, the cradle under it, the stand and its foot.
+            drawRoundRect(tint, p(0.36f, 0.08f), Size(w * 0.28f, h * 0.46f), androidx.compose.ui.geometry.CornerRadius(w * 0.14f), s)
+            val cradle = Path().apply {
+                moveTo(w * 0.2f, h * 0.42f)
+                quadraticTo(w * 0.5f, h * 0.88f, w * 0.8f, h * 0.42f)
+            }
+            drawPath(cradle, tint, style = s)
+            drawLine(tint, p(0.5f, 0.66f), p(0.5f, 0.88f), s.width, StrokeCap.Round)
+            drawLine(tint, p(0.32f, 0.88f), p(0.68f, 0.88f), s.width, StrokeCap.Round)
         }
     }
 }

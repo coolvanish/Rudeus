@@ -1,7 +1,9 @@
 package kz.rudy.ar.di
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.AssetManager
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -9,10 +11,14 @@ import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kz.rudy.ar.BuildConfig
 import kz.rudy.ar.CaptureHost
+import kz.rudy.ar.VoiceHost
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.capture.PhotoIntake
 import kz.rudy.ar.core.io.FileMetricsSink
@@ -33,6 +39,7 @@ import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.core.pipeline.StyleGate
 import kz.rudy.ar.scan.TableScanner
 import kz.rudy.ar.ui.screens.BundledCharacter
+import kz.rudy.ar.voice.VoiceRecorder
 import org.json.JSONObject
 import java.io.File
 
@@ -47,6 +54,10 @@ import java.io.File
 // HAND-REVIEW: T04 — also the AR view's TableScanner: the scan's SAM call goes through the same MetaApi (metered
 // under Jobs.SAM_TABLE) and a successful scan lands in the same run file (`scans[]`), so a bundled-character session
 // with only scans now has a run to show/export (`latestRun` counts scans too).
+// HAND-REVIEW: T24 — also the Play HUD's VoiceHost (push-to-talk). VoiceRecorder records <= 5 s of 16 kHz mono PCM;
+// `stopAndTranscribe` sends it through the same `guard` (so a network failure flips the offline badge) on IO within
+// VOICE_TIMEOUT_MS, and logs only `voice_ms=` and `text_len=` — never the key, never the transcript. Under
+// MIN_VOICE_BYTES (a tap, not a phrase) nothing is sent. `requestMic` is MainActivity's RECORD_AUDIO launcher.
 
 private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
@@ -56,12 +67,23 @@ private const val BUNDLED_DIR = "bundled"
 /** Where the exported run lands on API >= 29 (relative to the primary external volume), as the player sees it in Files. */
 private const val EXPORT_RELATIVE_DIR = "Download/Rudeus"
 
-class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : CaptureHost, TableScanner {
+/** T24: a phrase shorter than 0.25 s is a tap, not speech: no request is spent on it. */
+private const val MIN_VOICE_BYTES = VoiceRecorder.SAMPLE_RATE * 2 / 4
+private const val VOICE_TIMEOUT_MS = 10_000L
+
+class AndroidCaptureHost(
+    context: Context,
+    private val intake: PhotoIntake,
+    /** T24: launches the RECORD_AUDIO system dialog (MainActivity's launcher). */
+    private val requestMic: () -> Unit = {},
+) : CaptureHost, TableScanner, VoiceHost {
     private val app = context.applicationContext
     private val metrics = MetricsLog(source = "app", provider = Provider.META.metricsName, device = "pixel")
     private val sink = FileMetricsSink(File(app.filesDir, RUNS_DIR))
     @Volatile private var characters = 0 // written on IO (makeCharacter), read on main (latestRun)
     @Volatile private var scans = 0 // written on IO (recordScan), read on main (latestRun)
+    private val recorder = VoiceRecorder()
+    private val voiceCalls = java.util.concurrent.atomic.AtomicInteger(0)
 
     private val styleRefs: List<ByteArray> by lazy {
         loadStyleRefs(app.assets).also { Log.i(TAG, "style_refs=${it.size}") }
@@ -88,6 +110,41 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
     override fun takePhoto(onPhoto: (ByteArray?) -> Unit) = intake.takePhoto(onPhoto)
 
     override fun pickPhoto(onPhoto: (ByteArray?) -> Unit) = intake.pickPhoto(onPhoto)
+
+    // ---- VoiceHost (T24) ----
+
+    override val voice: VoiceHost get() = this
+
+    override fun hasPermission(): Boolean =
+        ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    override fun requestPermission() = requestMic()
+
+    override fun startListening(): Boolean = hasPermission() && recorder.start()
+
+    override suspend fun stopAndTranscribe(lang: String): String? {
+        val pcm = withContext(Dispatchers.IO) { recorder.stop() } ?: return null
+        if (pcm.size < MIN_VOICE_BYTES) {
+            Log.i(TAG, "voice_too_short bytes=${pcm.size}")
+            return null
+        }
+        val ref = "voice-${voiceCalls.incrementAndGet()}"
+        val t0 = SystemClock.elapsedRealtime()
+        val text = withContext(Dispatchers.IO) {
+            withTimeoutOrNull(VOICE_TIMEOUT_MS) {
+                try {
+                    guard.transcribe(ref, pcm, lang)
+                } catch (e: CancellationException) {
+                    throw e // the timeout -> null; a cancelled caller stays cancelled
+                } catch (e: Exception) {
+                    Log.w(TAG, "voice_failed ref=$ref error=${e::class.simpleName}")
+                    null
+                }
+            }
+        }
+        Log.i(TAG, "voice_ms=${SystemClock.elapsedRealtime() - t0} text_len=${text?.length ?: -1} audio_bytes=${pcm.size} ref=$ref")
+        return text
+    }
 
     override suspend fun makeCharacter(photo: ByteArray, onEvent: (PipelineEvent) -> Unit): CharacterResult =
         withContext(Dispatchers.IO) {

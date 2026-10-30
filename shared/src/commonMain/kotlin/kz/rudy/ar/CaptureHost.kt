@@ -52,6 +52,9 @@ interface CaptureHost {
      * The default (never offline) is one shared flow, so collecting it is stable across recompositions.
      */
     val offline: StateFlow<Boolean> get() = NeverOffline
+
+    /** T24: push-to-talk on Play (hold the mic, say "jump" / "go"). Null = no mic button (demo shell, tests). */
+    val voice: VoiceHost? get() = null
 }
 
 /** The default [CaptureHost.offline] for hosts that do not track the network (and for the demo shell). */

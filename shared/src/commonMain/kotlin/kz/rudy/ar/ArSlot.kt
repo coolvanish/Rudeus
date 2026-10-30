@@ -56,6 +56,11 @@ data class ArSlot(
      * 0 = none yet; resets to 0 with the session like [scanRequest].
      */
     val scenarioRequest: Int = 0,
+    /**
+     * T24: the voice command "go". Each increment = walk 10 cm x `SurfaceProfile.scale` along the character's
+     * `facing` (skipped when the target is outside the scanned boundary). 0 = none yet; resets with [scanRequest].
+     */
+    val walkForwardRequest: Int = 0,
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other

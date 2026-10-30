@@ -33,6 +33,8 @@ import kz.rudy.ar.ui.screens.PermissionScreen
 // gate shows the shared PermissionScreen (paper + one button) instead of a bare Material button.
 // HAND-REVIEW: T04 — the same host object is the AR view's TableScanner (SAM call + scan metrics stay in :androidApp;
 // :shared only sees ArSlot.scanRequest / onScanned / onLevel).
+// HAND-REVIEW: T24 — a RECORD_AUDIO RequestPermission launcher, registered in composition like the photo ones, is
+// handed to the host as its `requestMic`; the host is the Play HUD's VoiceHost (the mic button asks on first press).
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -42,7 +44,12 @@ class MainActivity : ComponentActivity() {
         BundledAssets.preload(applicationContext)
         setContent {
             val intake = rememberPhotoIntake()
-            val host = remember(intake) { AndroidCaptureHost(applicationContext, intake) }
+            val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                android.util.Log.i("RudeusGate", "record_audio_granted=$granted")
+            }
+            val host = remember(intake) {
+                AndroidCaptureHost(applicationContext, intake, requestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) })
+            }
             val sounds = remember { Sounds(applicationContext) }
             DisposableEffect(Unit) { onDispose { sounds.release() } }
             App(

@@ -1,6 +1,6 @@
 # T24 — voice-commands
 
-status: todo
+status: review
 created: 2026-10-31
 day: Day 6
 gate: Day 6 — fresh install -> character -> full scenario with Wi-Fi off halfway, no crash (voice must fail silently offline)
@@ -77,4 +77,21 @@ Tests not required: audio, the HUD, the host.
 - Result lists the Pixel checks: hold-say-release "jump" -> JUMPED within ~3 s; "go" -> one step; Wi-Fi off -> button disabled, no crash.
 
 ## Result (filled on acceptance)
-- ...
+- Files (new): core/src/commonMain/kotlin/kz/rudy/ar/core/voice/VoiceCommands.kt,
+  core/src/commonTest/kotlin/kz/rudy/ar/core/voice/VoiceCommandsTest.kt, shared/src/commonMain/kotlin/kz/rudy/ar/VoiceHost.kt,
+  androidApp/src/main/kotlin/kz/rudy/ar/voice/VoiceRecorder.kt.
+- Files (changed): shared CaptureHost.kt (`voice`), ArSlot.kt (`walkForwardRequest`), App.kt (voiceDown/voiceUp, counters
+  reset with the session, 2 s voice bubble), ui/screens/PlayScreen.kt (`VoicePhase`, HudState.voice / speechFromVoice,
+  MicButton, mic glyph beside the bubble), ui/Strings.kt, ui/components/Glyph.kt (`Glyph.MIC`, added at the caller's
+  request), DESIGN.md (Play bullet + 4 copy rows); androidApp di/AndroidCaptureHost.kt, MainActivity.kt,
+  ar/RudeusArView.kt (one LaunchedEffect) — all `// HAND-REVIEW: T24`. No Gradle/manifest edit, no new dependency.
+- Matching: whole words after lowercase + punctuation strip + `ё`->`е`; first keyword wins. Extra string `voice_hold`
+  (mic accessibility label: the control is icon-only). A press under 0.25 s sends nothing (`voice_too_short`).
+- Tests: `:core:jvmTest` 184 tests, 0 failures (VoiceCommandsTest 5/5: englishJumpAndGo, russianAndKazakhKeywords,
+  firstKeywordWins, punctuationAndCaseIgnored, unknownIsNull); `:shared:testAndroidHostTest` 12, 0 failures;
+  `:shared:compileAndroidMain` and `:androidApp:assembleDebug` pass. `scripts/verify.sh` left to the orchestrator.
+- Pixel checks (human): (1) first mic press -> RECORD_AUDIO dialog (`record_audio_granted=true`); (2) hold, say "jump",
+  release -> "Thinking…", then the bubble "jump" with the mic glyph and JUMPED within ~3 s (`voice_ms=` < 3000);
+  (3) "go" -> one ~10 cm step along facing (`voice_walk_outside_boundary` when it would leave the table);
+  (4) Wi-Fi off, then a voice phrase or Scan -> Offline badge + pill, mic disabled, no crash; Wi-Fi on + Rescan ->
+  mic enabled again; (5) logcat RudeusGate shows only `voice_ms=` / `text_len=`, never the transcript or the key.
