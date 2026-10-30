@@ -1,6 +1,6 @@
 # T22 — core-offline-guard
 
-status: todo
+status: review
 created: 2026-10-31
 day: Day 6
 gate: fresh install -> character -> full scenario with Wi-Fi off halfway, no crash
@@ -62,5 +62,20 @@ Tests not required: the Android host wiring, UI.
   scanner's `segment` through the guard, `override val offline get() = guard.offline`).
 
 ## Result (filled on acceptance)
-- done: ...
-- host wiring (for the orchestrator): ...
+- done: `OfflineGuard.kt` (MetaModels decorator; all six calls go through one private inline `track {}`; the flag
+  flips by `MutableStateFlow.compareAndSet`, and only the winner bumps a `MutableStateFlow<Int>` counter via `update`,
+  so `transitions` counts real changes only, thread-safe, no new dependency). `OfflineGuardTest`: 5/5 green;
+  `:core:jvmTest` 174 tests, 27 suites, 0 failures / 0 errors / 0 skipped (from the XML).
+  Note: `reset()` while online is not a transition; a repeated Network error is not a transition.
+- host wiring (for the orchestrator, `androidApp/.../di/AndroidCaptureHost.kt`, hand-review zone; needs T20's
+  `CaptureHost.offline` first; import `kz.rudy.ar.core.meta.OfflineGuard`):
+  ```kotlin
+  private val guard: OfflineGuard by lazy { OfflineGuard(api) }          // new, below `api`; CharacterPipeline(models = guard, ...)
+  override suspend fun segment(ref: String, jpeg: ByteArray, prompts: List<String>): SegmentResult = guard.segment(ref, jpeg, prompts)
+  override val offline get() = guard.offline
+  ```
+  Caveat: `guard` is lazy over `api`, whose `check` throws on a blank key before any call; that path is not a
+  Network error, so the badge stays off for a key-less build (correct: it is not offline). Reading `offline` before
+  the first call builds the guard (and `api`) - if T20 collects it at startup, a blank-key build would throw there;
+  in that case make it `private val guard = lazy {...}` and expose a host-owned flow, or construct the guard eagerly
+  around a lazy delegate. Human still needs: the Wi-Fi-off-halfway run on the Pixel (Day 6 gate).
