@@ -67,7 +67,10 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
     private val api: MetaApi by lazy {
         val key = BuildConfig.META_API_KEY
         check(key.isNotBlank()) { "META_API_KEY missing: put it in local.properties and rebuild" }
-        MetaApi(MetaConfig(apiKey = key), costMeter = metrics)
+        // HAND-REVIEW: T16 measured the six table prompts from the Mac at 4.1-5.3 s with 3 SAM requests in flight
+        // (two rounds) and 2.5 s with 6 (one round); the Day 4 gate is scan < 6 s including the frame grab and the
+        // mobile link. 6 is the proposal; if the Pixel sees 429s on "segment[...]", go back to the default (3).
+        MetaApi(MetaConfig(apiKey = key, samConcurrency = 6), costMeter = metrics)
     }
 
     override fun takePhoto(onPhoto: (ByteArray?) -> Unit) = intake.takePhoto(onPhoto)
