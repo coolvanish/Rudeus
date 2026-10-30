@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import kz.rudy.ar.ar.RudeusArView
+import kz.rudy.ar.audio.Sounds
 import kz.rudy.ar.capture.rememberPhotoIntake
 import kz.rudy.ar.di.AndroidCaptureHost
 import kz.rudy.ar.di.BundledAssets
@@ -41,9 +43,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             val intake = rememberPhotoIntake()
             val host = remember(intake) { AndroidCaptureHost(applicationContext, intake) }
+            val sounds = remember { Sounds(applicationContext) }
+            DisposableEffect(Unit) { onDispose { sounds.release() } }
             App(
                 arView = { modifier, slot ->
-                    WithCameraPermission(modifier) { RudeusArView(modifier, slot, scanner = host) }
+                    // HAND-REVIEW: T23 — sounds ride on the slot's event callback; the AR view is unchanged.
+                    val withSound = remember(slot) {
+                        slot.copy(onCharacterEvent = { e -> sounds.play(e); slot.onCharacterEvent(e) })
+                    }
+                    WithCameraPermission(modifier) { RudeusArView(modifier, withSound, scanner = host) }
                 },
                 // HAND-REVIEW: system/predictive Back goes through App's one back() rule (Metrics -> where it came
                 // from, Play/Scanning/Processing -> Capture); :shared has no activity-compose, so the host lends it.
