@@ -16,7 +16,11 @@ import kz.rudy.ar.CaptureHost
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.capture.PhotoIntake
 import kz.rudy.ar.core.io.FileMetricsSink
+import kotlinx.coroutines.flow.StateFlow
+import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.meta.MetaApi
+import kz.rudy.ar.core.meta.MetaModels
+import kz.rudy.ar.core.meta.OfflineGuard
 import kz.rudy.ar.core.meta.MetaConfig
 import kz.rudy.ar.core.meta.Provider
 import kz.rudy.ar.core.meta.SegmentResult
@@ -73,6 +77,14 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
         MetaApi(MetaConfig(apiKey = key, samConcurrency = 6), costMeter = metrics)
     }
 
+    // HAND-REVIEW: T22 — every model call (pipeline and table scan) goes through one OfflineGuard, whose flag feeds
+    // `CaptureHost.offline` (badge, disabled Photo/Scan). The guard is built eagerly around a LAZY delegate: App
+    // collects `offline` at startup, and a build without a key must show the ERROR sheet on the first call, not crash
+    // in composition when `api`'s key check runs.
+    private val guard = OfflineGuard(DeferredModels { api })
+
+    override val offline: StateFlow<Boolean> get() = guard.offline
+
     override fun takePhoto(onPhoto: (ByteArray?) -> Unit) = intake.takePhoto(onPhoto)
 
     override fun pickPhoto(onPhoto: (ByteArray?) -> Unit) = intake.pickPhoto(onPhoto)
@@ -84,7 +96,7 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
             val ref = (++characters).toString().padStart(2, '0')
             val t0 = SystemClock.elapsedRealtime()
             val pipeline = CharacterPipeline(
-                models = api,
+                models = guard,
                 gate = StyleGate(),
                 metrics = metrics,
                 rasterDecoder = AndroidImages::decode,
@@ -125,7 +137,7 @@ class AndroidCaptureHost(context: Context, private val intake: PhotoIntake) : Ca
     // ---- TableScanner (T04): the AR view's scan goes through the same MetaApi and MetricsLog. ----
 
     override suspend fun segment(ref: String, jpeg: ByteArray, prompts: List<String>): SegmentResult =
-        api.segment(ref, jpeg, prompts)
+        guard.segment(ref, jpeg, prompts)
 
     /**
      * Day 4 gate row: `withinCm` stays empty here; the human fills the ruler numbers into the brief.
@@ -287,4 +299,15 @@ private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
         }
     }
     return loaded.filter { it.first }.map { it.second } + loaded.filter { !it.first }.map { it.second }
+}
+
+/** Forwards to [make]'s instance, created on the first call (so constructing the host never touches the key). */
+private class DeferredModels(make: () -> MetaModels) : MetaModels {
+    private val delegate: MetaModels by lazy(make)
+    override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult = delegate.segment(ref, image, prompts)
+    override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = delegate.stylize(ref, cutout, refs)
+    override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreStyle(ref, image, refs)
+    override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreTechnique(ref, image, refs)
+    override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet = delegate.characterSheet(ref, description, image)
+    override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String = delegate.transcribe(ref, pcm16kMono, lang)
 }
