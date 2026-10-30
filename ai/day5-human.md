@@ -1,7 +1,7 @@
 # Day 5 + Day 6 — what only a human can do (Oct 31, 2026)
 
 Everything is on branch **`day5/play`** in the main checkout (= `day4/table-level` + T19–T24). `scripts/verify.sh` is green
-(core 179+, shared 12, APK 60 MB). The Pixel was online but **locked** during the autonomous run, so the device QA
+(core 184, shared 12, APK 60 MB). The Pixel was online but **locked** during the autonomous run, so the device QA
 agent could only install and launch (no crash at start); every on-device criterion below is UNTESTED.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 454553e..HEAD`)
@@ -12,13 +12,14 @@ agent could only install and launch (no crash at start); every on-device criteri
 | T21 `ar-host-occlusion-jump-scenario` | depth occlusion (Plan A) with occluder cylinders/boxes behind a constant (Plan B), `GameLoop.jump`, scenario replay on simulated time from spawn, jump squash-stretch | needs your Pixel run (hand-review) |
 | T22 `core-offline-guard` | `OfflineGuard` decorator: Network error -> offline, next success -> online; wired around every model call in `AndroidCaptureHost` | done |
 | T23 `sounds` | five generated CC0 WAVs (44 KB) on place / jump / land / fall / blocked via SoundPool, wired in `MainActivity` | needs your ears |
-| T24 `voice-commands` | push-to-talk mic on Play: "jump" / "go" (en, ru, kk keywords) -> jump / one step; English is the demo language | see §4 |
+| T24 `voice-commands` | push-to-talk mic on Play: "jump" / "go" (en, ru, kk keywords) -> jump / one step; English is the demo language; `VoiceCommandsTest` 5/5 | needs your Pixel run (hand-review); see §4 |
 
 Review: wave 1 reviewer said FIX FIRST on two gate-relevant findings, both fixed: (1) the offline flag used to lock
 Photo / Scan forever because the guard only clears on a successful call — now no button is disabled by offline, a tap
 is the retry and the NO_PLANE card names the network; (2) a FLY scenario replay from the end position skipped the cup
 beat — the host now restarts at spawn and drives the script on simulated physics time (a tracking stall pauses the
-script instead of bunching taps).
+script instead of bunching taps). The T21 host review (second reviewer) found Plan B drawing the camera after the
+occluders (black cup shapes) and every rectangle counted as a cup; both fixed before you see the side-by-side.
 
 ## 2. Install and log
 ```
@@ -47,7 +48,9 @@ Plan B side-by-side: set `FORCE_OCCLUDER_BOXES = true` in `Occluders.kt`, rebuil
 | Wi-Fi off halfway, no crash | UNTESTED on device; JVM: `OfflineGuardTest` 5/5 | offline badge + note appear after the first failed call; Photo / Scan stay tappable (retry); sounds and voice fail silently |
 | metrics JSON with `source: "app"` | PASS (device, Oct 28) | `runs/2026-10-28T12-31-11Z.json` pulled from the Pixel today; `latestRun` / Export unchanged |
 Pixel: uninstall, install, capture a character (Wi-Fi on), Scanning -> Scan -> Play, turn Wi-Fi off, play the
-scenario, Rescan (expect "No table found" + offline badge, no crash), Metrics -> Export JSON.
+scenario, Rescan (expect "No internet" + offline badge, no crash; the mic is disabled), Metrics -> Export JSON.
+Voice (Wi-Fi on, language EN): first mic press -> permission dialog; hold, say "jump", release -> JUMPED within ~3 s;
+"go" -> one step; logcat shows `voice_ms=` / `text_len=` and never the transcript.
 
 ## 4. Decisions only you can make
 1. **Occlusion**: depth (default on the Pixel) vs boxes, from the two screenshots.

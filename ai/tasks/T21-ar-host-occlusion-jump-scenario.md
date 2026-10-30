@@ -146,3 +146,10 @@ under `// HAND-REVIEW: T21`. No core/, shared/, Gradle or manifest change; no ne
    STEPPED_UP (book), JUMPED/LANDED (hop), then JUMPED/FELL/RESPAWNED (JUMP) or a landing past the gap (FLY). Cover the
    camera for ~1 s mid-run: the script must pause with the character and continue in step afterwards, not fire bunched
    taps. Gate = three `scenario_done` lines without a rebuild, FLY included.
+
+### Independent review (rudeus-reviewer, 2026-10-31): FIX FIRST -> fixed by the orchestrator (commit after 17a7ab4)
+- major: BOXES mode left the camera quad at priority 7, drawn after and depth-tested against the priority-4 occluders -> black cup/book shapes. Fixed: `cameraStream.setPriority(0)` when BOXES is chosen.
+- major: the bbox fill-ratio "roundness" was 1.0 for every axis-aligned rectangle (the book became a cylinder). Fixed: circularity 4πA/P² >= 0.85.
+- minor, fixed: scripted taps now run inside `GameLoop.onFrame` after `Physics.resume` (a Jump due on the first frame back from a pause is no longer dropped); `restartAtSpawn` sets `lastReported` (no spurious LANDED/RESPAWNED); `landedAtMs` sentinel is `Long.MIN_VALUE / 2`; a Jump before the anchor logs `jump_ignored anchored=false`; offline scan failures say "No internet" (`scan_offline_title`).
+- left as known limits: non-round footprints get an axis-aligned bbox box (a rotated book over-covers; extruded polygon is Day 6 polish); under Plan A the 2 mm debug footprints and the sprite's feet are depth-tested against depth-from-motion (watch on the Pixel).
+Status stays `review`: the Pixel run is the human's.
