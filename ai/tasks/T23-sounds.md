@@ -1,6 +1,6 @@
 # T23 — sounds
 
-status: todo
+status: review
 created: 2026-10-31
 day: Day 6
 gate: fresh install -> character -> full scenario with Wi-Fi off halfway, no crash (sounds must never crash or block)
@@ -77,5 +77,12 @@ Tests not required: SoundPool, timing.
 - `:androidApp:assembleDebug` green in the worktree; five WAVs <= 300 KB total; `LICENSES/README.md` names them CC0.
 
 ## Result (filled on acceptance)
-- done: ...
-- pixel check (human): a sound on place / jump / land / fall / blocked; no stutter in the AR frame.
+- done: `scripts/gen-sounds.py` (stdlib, deterministic: two runs are byte-identical; noise from a fixed-seed LCG) wrote
+  place 240 ms / 10628 B, jump 180 ms / 7982 B, land 160 ms / 7100 B, fall 350 ms / 15478 B, blocked 90 ms / 4012 B
+  = 45200 B (44.1 KB) added to the APK. All 16-bit PCM mono 22050 Hz, peak <= 23197 (-3 dBFS), first/last sample 0.
+  The APK stores them uncompressed (`unzip -v`: Stored), so `AssetManager.openFd` works. `Sounds.kt` per contract
+  (RESPAWNED plays place at 0.4 = "soft"); MainActivity wraps the slot with `remember(slot)`; `LICENSES/README.md`
+  created (it did not exist) naming the five WAVs CC0. `:androidApp:assembleDebug` green in the worktree.
+- pixel check (human): a sound on place / jump / land / fall / blocked; respawn plays a quiet chime; re-tapping into an
+  obstacle does not machine-gun the bonk; no stutter in the AR frame; Back to Capture and re-enter Play still has sound
+  (the pool lives for the Activity, released on dispose).
