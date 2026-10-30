@@ -61,7 +61,7 @@ strategy changes (re-anchor on a large correction is the fallback; not implement
   (T04 owner; noted in T12's Result).
 - A cancelled capture now lands in the run JSON as `aborted: true` (sheet cost in flight is not metered).
 
-## 6. Day 4 is drafted ahead on branch `day4/scan` (worktree .claude/worktrees/T04, commit 038cfd6)
+## 6. Day 4 lives on branch `day4/table-level` (main checkout; supersedes `day4/scan`) — see ai/day4-human.md
 Real scan: camera frame → SAM (6 table prompts, +4 on the floor) → `ScanInput.fromAnchor` → `SceneBuilder` → the
 character routes around the cup; footprint overlay under the Footprints toggle. Reviewed, builds, untested on the
 Pixel. Order of work for you: (1) test Day 3 on `day3/table-gate` (sections 2–3 above); (2) if the anchor holds,

@@ -47,7 +47,7 @@ internal const val SCAN_MAX_SIDE = 1280
 
 private const val SCAN_JPEG_QUALITY = 90
 
-/** Upper bound on the whole scan (6 prompts, 3 at a time); the overlay would otherwise hold forever on a dead link. */
+/** Upper bound on the whole scan (6 prompts, `MetaConfig.samConcurrency` at a time); the overlay would otherwise hold forever on a dead link. */
 internal const val SCAN_TIMEOUT_MS = 30_000L
 
 /** Everything taken from one AR frame on the main thread, before anything slow happens. */

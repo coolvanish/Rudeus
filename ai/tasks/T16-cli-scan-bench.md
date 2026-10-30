@@ -1,6 +1,6 @@
 # T16 — cli-scan-bench
 
-status: review
+status: done
 created: 2026-10-31
 day: Day 4
 gate: scan < 6 s (measured from the Mac before the Pixel run); 5 objects within 2 cm is the human's half

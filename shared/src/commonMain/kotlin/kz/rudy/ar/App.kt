@@ -366,7 +366,11 @@ fun App(
                             state = scan.copy(surface = surface),
                             arView = noAr,
                             onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f); scanRequest++ },
-                            onSkip = { scan = scan.copy(status = ScanStatus.IDLE, progress = 0f); go(Screen.PLAY) },
+                            onSkip = {
+                                // "Play anyway" after a real empty scan: the table was scanned, so Play says "Rescan".
+                                if (scan.status == ScanStatus.EMPTY) hud = hud.copy(scanned = true)
+                                scan = scan.copy(status = ScanStatus.IDLE, progress = 0f); go(Screen.PLAY)
+                            },
                             onBack = ::back,
                             onSurfaceChange = { surface = it },
                             speech = speech.text,

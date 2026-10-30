@@ -34,6 +34,7 @@ import java.util.Locale
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
+import kotlin.math.atan
 import kotlin.math.tan
 
 /*
@@ -123,10 +124,11 @@ internal fun scan(flags: Flags): Int {
     val scanMs = ArrayList<Long>()
     var failures = 0
     var skipped = 0
+    var recorded = false
     try {
         runBlocking {
             for (i in 1..repeat) {
-                if (budgetUsd != null && metrics.measuredUsd(Jobs.SAM_TABLE) + worstUsd > budgetUsd) { skipped = repeat - i + 1; break }
+                if (budgetUsd != null && metrics.measuredUsd(Jobs.segmentJob(prompts)) + worstUsd > budgetUsd) { skipped = repeat - i + 1; break }
                 try {
                     val t0 = System.nanoTime()
                     val result = models.segment(ref, jpeg, prompts)
@@ -134,7 +136,12 @@ internal fun scan(flags: Flags): Int {
                     val masks = ScanMasks.of(result)
                     // As on the phone: masks come back in SAM's grid (= the JPEG's); intrinsics follow that grid.
                     val grid = masks.firstOrNull()?.mask
-                    val intrinsics = Intrinsics.fromFov(hfovRad, grid?.width ?: jpegW, grid?.height ?: jpegH)
+                    val w = grid?.width ?: jpegW
+                    val h = grid?.height ?: jpegH
+                    // --hfov-deg spans the frame's LONG side (the phone sends landscape sensor frames, where that is the
+                    // width); the same rule as Day4ScenarioTest, so both print the same geometry for a portrait photo.
+                    val fovRad = if (w >= h) hfovRad else 2f * atan(tan(hfovRad / 2f) * w / h)
+                    val intrinsics = Intrinsics.fromFov(fovRad, w, h)
                     val input = ScanInput.fromAnchor(Pose3.IDENTITY, camera, intrinsics, masks, planePolygonWorld = null)
                     val level = SceneBuilder(SceneParams()).build(input, previous = null, profile = profile)
                     val totalMs = msSince(t0)
@@ -146,7 +153,15 @@ internal fun scan(flags: Flags): Int {
                             "failed=${result.failedPrompts.joinToString(",").ifEmpty { "-" }}",
                     )
                     if (i == 1) printScan(result, level)
-                    if (recordDir != null && i == 1) writeScanFixture(recordDir, ref, jpeg, jpegW, jpegH, result, segMs, concurrency)
+                    if (recordDir != null && !recorded) {
+                        // A scan with a failed prompt (429, timeout) is not a fixture: replayed, it would read as "nothing found".
+                        if (result.failedPrompts.isEmpty()) {
+                            writeScanFixture(recordDir, ref, jpeg, jpegW, jpegH, result, segMs, concurrency)
+                            recorded = true
+                        } else {
+                            println("not recorded: failed prompts ${result.failedPrompts.joinToString(",")}; the next clean repeat is")
+                        }
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -159,7 +174,7 @@ internal fun scan(flags: Flags): Int {
         println("wrote ${FileMetricsSink(outDir).write("${metrics.runId}.json", metrics.toJson())}")
     }
     if (segmentMs.size > 1) println("median segment_ms=${median(segmentMs)} scan_ms=${median(scanMs)} over ${segmentMs.size} runs")
-    if (live) println("spent $${fmtUsd(metrics.measuredUsd(Jobs.SAM_TABLE))}" + (budgetUsd?.let { " of $${fmtUsd(it)}" } ?: ""))
+    if (live) println("spent $${fmtUsd(metrics.measuredUsd(Jobs.segmentJob(prompts)))}" + (budgetUsd?.let { " of $${fmtUsd(it)}" } ?: ""))
     if (skipped > 0) println("budget: skipped $skipped repeat(s); each scan may cost $${fmtUsd(worstUsd)}")
     return if (failures == 0 && skipped == 0) 0 else 1
 }
@@ -231,7 +246,11 @@ private fun scanFixtureFile(dir: File, ref: String) = File(dir, "${Jobs.SAM_TABL
 private fun scanInputFile(dir: File, ref: String) = File(dir, "${Jobs.SAM_TABLE}/$ref.input.jpg")
 
 /** Before any call: a synthetic fixture is never replaced; a real one, or an input copy, only with --force. */
+/** Fixtures the core tests load; `--record` never touches them, with or without --force. */
+private val PROTECTED_SCAN_REFS = setOf("table-01", "sample-01", "sample-02")
+
 private fun preflightScanRecord(dir: File, ref: String, force: Boolean) {
+    if (ref in PROTECTED_SCAN_REFS) throw CliError("--record must not touch $ref (core tests load it); pick another --ref")
     val fx = scanFixtureFile(dir, ref)
     if (fx.isFile) {
         val synthetic = runCatching { FixtureApi.json.decodeFromString(Fixture.serializer(), fx.readText()).synthetic }.getOrDefault(false)

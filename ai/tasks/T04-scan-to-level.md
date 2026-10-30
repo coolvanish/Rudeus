@@ -138,3 +138,14 @@ after merging). No Gradle edits, no new dependency. The required core test
 | 3 | book | | | | | | |
 | 4 | phone | | | | | | |
 | 5 | hand / toy | | | | | | |
+
+### Day 4 gate verdict (orchestrator, 2026-10-31, branch `day4/table-level`; Pixel offline, so device criteria are UNTESTED)
+| Criterion | Status | Evidence |
+|---|---|---|
+| 5 objects within 2 cm | UNTESTED (no device) | JVM: `Day4ScenarioTest.realSamTableFixtureBuildsALevelWithStableObjects` builds 5 objects with stable ids from the real `table-01` SAM fixture (synthetic camera, so no ruler number). Ruler table above is yours to fill. |
+| character routes around | UNTESTED on device; PASS on the JVM | `Day4ScenarioTest.characterIsBlockedByCupStepsOntoBookAndRespawnsOffTheEdge` (BLOCKED once, step-up onto a 2 cm book, cliff → respawn at spawn, PAUSED freezes) — `./gradlew :core:jvmTest`, 169/0 |
+| scan < 6 s | UNTESTED on device; from the Mac: 4.1–5.3 s at concurrency 3, 2.5 s at 6 | T16 `runs/2026-10-30T19-10-46Z.json` (3), `runs/2026-10-30T19-11-02Z.json` (6); phone set to 6 in `AndroidCaptureHost` (hand-review) |
+
+Prompt-list note (T16): the generic `object` prompt matched nothing in 7/7 live scans (laptop, remote, toy car, knife, pastry on the
+table); the default list cup/book/phone/bottle/hand/object found 0 objects on every saved table photo because none shows those
+things. For the Pixel gate, put real cups/books/phones/bottles on the table, or decide whether `toy` should replace `object`.
