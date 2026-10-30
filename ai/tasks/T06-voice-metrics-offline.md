@@ -38,3 +38,9 @@ Tests not required: audio, assets.
 - Sounds: T23 (five generated CC0 WAVs, SoundPool wrapper, Activity-level wiring).
 - Voice (cut line 1): not started; T01 proved English ASR on a 16 kHz clip. Candidate brief T24 after the Day 5 host draft; manifest already declares RECORD_AUDIO.
 - `metricsExportMatchesCliSchema`: the app writes `MetricsLog.toJson()` and the CLI reads `MetricsLog.fromJson`, both in `:core` (`MetricsLogTest` covers the round trip); no separate test added.
+
+### Day 6 gate verdict (orchestrator, 2026-10-31, JVM + build only; the Pixel was locked)
+| Criterion | Status | Evidence |
+|---|---|---|
+| fresh install -> character -> full scenario with Wi-Fi off halfway, no crash | UNTESTED on device; JVM `OfflineGuardTest` 5/5 | offline flag + badge (T22/T20); no button locks (review fix d0c5477); sounds/voice never throw into the frame loop |
+| `runs/` has a run with `source: "app"` | PASS | `runs/2026-10-28T12-31-11Z.json` (pulled from the Pixel 2026-10-31) |

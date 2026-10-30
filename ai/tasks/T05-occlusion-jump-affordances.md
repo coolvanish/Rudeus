@@ -36,3 +36,9 @@ This umbrella brief is executed as three disjoint briefs so agents can run in pa
 - T20 `shared-jump-offline-hud` — `ArSlot.ability/jumpRequest/scenarioRequest`, Jump/Fly button (hidden for ROLL), debug Scenario button.
 - T21 `ar-host-occlusion-jump-scenario` — depth occlusion (Plan A) with occluder boxes behind a constant (Plan B), `GameLoop.jump`, scenario replay from the frame loop.
 The hand = stretch (plan) is not attempted. Gate evidence lands in those briefs' Result sections; the Pixel run is the human's.
+
+### Day 5 gate verdict (orchestrator, 2026-10-31, JVM + build only; the Pixel was locked)
+| Criterion | Status | Evidence |
+|---|---|---|
+| scripted 30 s scenario runs 3x in a row without code changes | UNTESTED on device; PASS on the JVM | `ScenarioTest.day5RunsThreeTimesIdentically`, `day5JumpVariantHitsEveryBeat`, `day5FlyVariantCrossesTheGap` (core 179/0); host replay T21 builds (`assembleDebug`), `scenario_done` lines are the device evidence |
+Cut lines applied: none. Occlusion defaults to depth (Plan A); boxes are one constant away (Plan B). Affordances: jump / fly / roll all wired (HIDE acts as jump).
