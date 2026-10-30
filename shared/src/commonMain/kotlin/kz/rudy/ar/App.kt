@@ -86,8 +86,9 @@ private const val SCAN_ARC_TICK_MS = 100L
  *
  * Jump / Scenario (T20): the Play HUD's Jump / Fly button bumps `ArSlot.jumpRequest`, the debug Scenario button
  * (footprints on) bumps `ArSlot.scenarioRequest`; the slot also carries the sheet's ability. Both counters reset to 0
- * with `scanRequest` when the AR session ends. Offline (T20): [CaptureHost.offline] feeds the HUD badge, Capture's
- * note, a disabled Scan on Play, and a "No internet" line instead of a scan request on Scanning.
+ * with `scanRequest` when the AR session ends. Offline (T20, review fix): [CaptureHost.offline] feeds the HUD badge, Capture's
+ * note and the Scanning NO_PLANE hint; no button is disabled by it, because the guard only goes back online after a
+ * successful call, so a tap must stay the retry.
  *
  * [backHandler] wires the system back gesture: :androidApp passes
  * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
@@ -381,16 +382,11 @@ fun App(
                             }
                         }
                         ScanningScreen(
-                            state = scan.copy(surface = surface),
+                            state = scan.copy(surface = surface, offline = offline),
                             arView = noAr,
-                            onScan = {
-                                if (offline) {
-                                    // The scan needs the network: say so and stay IDLE (Skip / Play anyway still work).
-                                    speech = HudSpeech.say(speech, StringId.capture_offline_note.get(lang), nowMs())
-                                } else {
-                                    scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f); scanRequest++
-                                }
-                            },
+                            // Offline is never a lock: the request still goes out (a success flips the flag back) and a
+                            // failure lands on the NO_PLANE card, which names the network while offline.
+                            onScan = { scan = scan.copy(status = ScanStatus.SCANNING, progress = 0f); scanRequest++ },
                             onSkip = {
                                 // "Play anyway" after a real empty scan: the table was scanned, so Play says "Rescan".
                                 if (scan.status == ScanStatus.EMPTY) hud = hud.copy(scanned = true)
@@ -429,10 +425,7 @@ fun App(
                             sheet = sheet,
                             level = level,
                             hud = hud.copy(speech = speech.text, surface = surface, offline = offline),
-                            onScan = {
-                                // Disabled while offline; the guard only covers a tap racing the state change.
-                                if (!offline) { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ }
-                            },
+                            onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ },
                             onJump = { jumpRequest++ },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
                             onAbilityTap = {

@@ -52,7 +52,7 @@ data class ArSlot(
      */
     val jumpRequest: Int = 0,
     /**
-     * T20 debug (footprints on): each increment replays `Scenarios.DAY5` from the character's current position.
+     * T20 debug (footprints on): each increment replays `Scenarios.DAY5` from spawn (the body is put back at `level.spawn`, IDLE, before the first step; the clock is simulated physics time).
      * 0 = none yet; resets to 0 with the session like [scanRequest].
      */
     val scenarioRequest: Int = 0,

@@ -126,8 +126,9 @@ bundled character cards (sprite + name, 96 dp, Ink outline; selected = Sun outli
 character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a host the demo pair
 is shown. Top-right: `KK / RU / EN`
 segmented switch (the only place it exists) and a ghost **Metrics** button bottom-left.
-- *API offline*: Leaf badge "No internet — ready characters" above the row; the Photo button is disabled (50 %
-  alpha, still 64 dp) and the bundled row is the primary path. Never show a spinner.
+- *API offline*: Leaf badge "No internet — ready characters" above the row; the bundled row is the primary path.
+  Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call succeeds). A
+  failed attempt lands on the Processing error sheet as today. Never show a spinner.
 - *No bundled characters* (should not happen; assets ship in the APK): row shows an empty paper card "Nothing yet".
 
 ### Processing — `ProcessingScreen`
@@ -179,10 +180,11 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   outline, Sky text and the ability glyph, 64 dp tall (hit area ≥ 56 dp). **Jump** ("Секір") for JUMP and HIDE,
   **Fly** ("Ұш") for FLY; ROLL has no button (it rolls fast on its own). Each tap is one jump
   (`ArSlot.jumpRequest`); physics ignores it in the air. Disabled while tracking is lost.
-- *Offline* (`CaptureHost.offline`): the Leaf badge shows, Scan / Rescan is disabled and the hint row shows the
-  pill "No internet — ready characters" (`capture_offline_note`) instead of "Tap — it walks", so the child sees why.
-  The character keeps walking and jumping on the last level. On Scanning, an offline Scan tap says the same line in
-  the bubble and does not start a scan; Skip / Play anyway still work.
+- *Offline* (`CaptureHost.offline`): the Leaf badge shows and the hint row shows the pill "No internet — ready
+  characters" (`capture_offline_note`) instead of "Tap — it walks", so the child sees why. Scan / Rescan stays
+  enabled: a tap is the retry, a failure says "Table is empty" / "No table found" as today. The character keeps
+  walking and jumping on the last level. On Scanning, a failed scan while offline shows the NO_PLANE card with the
+  offline note as its hint; Skip / Play anyway still work.
 - Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left) of the
   `Level` in plane coordinates with the same tints and the character as a Sky dot.
 - *Tracking lost / `Mode.PAUSED`*: full-screen `ScrimStrong`, title "Paused", hint "Point the phone at the
@@ -261,6 +263,9 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | surface_floor | Еден | Пол | Floor |
 | scan_objects_found | Заттар | Предметы | Objects |
 | play_tap_to_walk | Түрт — ол барады | Нажми — он пойдёт | Tap — it walks |
+| play_jump | Секір | Прыгай | Jump |
+| play_fly | Ұш | Лети | Fly |
+| play_scenario | Сценарий | Сценарий | Scenario |
 | ar_wait_table | Сәл күт — үстелді іздеп жатырмын | Подожди — ищу стол | Wait — finding the table |
 | ar_wait_floor | Сәл күт — еденді іздеп жатырмын | Подожди — ищу пол | Wait — finding the floor |
 | rescan | Қайта скан | Скан снова | Rescan |

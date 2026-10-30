@@ -93,11 +93,11 @@ fun CaptureScreen(
             PrimaryButton(
                 text = t(StringId.capture_take_photo),
                 glyph = Glyph.CAMERA,
-                enabled = !offline,
+                enabled = true, // offline: still enabled, a tap is the retry (the note below says why)
                 onClick = onTakePhoto,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (onPickPhoto != null && !offline) {
+            if (onPickPhoto != null) {
                 Spacer(Modifier.height(RudeusSpacing.sm))
                 GhostButton(text = t(StringId.capture_pick_gallery), onClick = onPickPhoto, modifier = Modifier.fillMaxWidth())
             }

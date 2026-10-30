@@ -44,7 +44,7 @@ data class HudState(
     val scanning: Boolean = false,
     val scanProgress: Float = 0f,
     val showFootprints: Boolean = false,
-    /** The host's model calls fail on the network: Leaf badge, Scan disabled, the offline note above it. */
+    /** The host's last model call failed on the network: Leaf badge + the offline note above Scan (Scan stays enabled: a tap is the retry). */
     val offline: Boolean = false,
     /** "Tap - it walks" pill: on after `ArSlot.onAnchorPlaced`, off 5 s after the first STARTED_WALKING. */
     val showTapHint: Boolean = false,
@@ -125,7 +125,7 @@ fun PlayScreen(
                     PrimaryButton(
                         text = t(if (hud.scanned) StringId.rescan else StringId.scan_button),
                         glyph = Glyph.EYE,
-                        enabled = !hud.scanning && !hud.offline,
+                        enabled = !hud.scanning,
                         onClick = onScan,
                         modifier = Modifier.fillMaxWidth(),
                     )

@@ -46,6 +46,8 @@ data class ScanState(
     val anchored: Boolean = false,
     /** Table or floor/outdoors; chosen with the chips until the anchor is placed. */
     val surface: Surface = Surface.TABLE,
+    /** The host's last model call failed on the network: the NO_PLANE card names the network, not the table. */
+    val offline: Boolean = false,
 )
 
 /**
@@ -91,7 +93,7 @@ fun ScanningScreen(
             StatusBanner(
                 visible = state.status == ScanStatus.NO_PLANE,
                 title = t(if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title),
-                hint = t(if (floor) StringId.scan_no_plane_hint_floor else StringId.scan_no_plane_hint),
+                hint = t(if (state.offline) StringId.capture_offline_note else if (floor) StringId.scan_no_plane_hint_floor else StringId.scan_no_plane_hint),
                 kind = BannerKind.ERROR,
                 glyph = Glyph.CROSS,
             )
