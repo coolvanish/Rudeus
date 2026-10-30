@@ -1,6 +1,6 @@
 # T18 — day4-scenario-test
 
-status: doing
+status: done
 created: 2026-10-31
 day: Day 4
 gate: 5 objects within 2 cm, character routes around; scan < 6 s (this brief is the JVM-side evidence for "routes around")
