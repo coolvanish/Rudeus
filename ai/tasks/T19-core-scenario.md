@@ -1,6 +1,6 @@
 # T19 — core-scenario
 
-status: todo
+status: review
 created: 2026-10-31
 day: Day 5
 gate: scripted 30 s scenario runs 3x in a row without code changes (this brief is the JVM half: the script, its
@@ -97,5 +97,39 @@ Tests not required: rendering, the host player loop, CLI.
 - Result lists the per-beat timestamps and the final JSON of `DAY5` (short).
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: ...
+- measured: `:core:jvmTest` green, 174 tests / 0 failures / 0 errors; `ScenarioTest` 5/5. Each assertion flipped once
+  (traces equal, BLOCKED count, FLY landing u, player `finished`, JSON `jump` kind): each failed, then restored.
+- JUMP trace (`run(DAY5, day5Level(), JUMP)`, dt 16 ms, stamp = tick start):
+
+  | ms | event | pos (u, v) | h |
+  |---|---|---|---|
+  | 0 | STARTED_WALKING | (0.001, 0) | 0 |
+  | 1600 | BLOCKED | (0.080, 0) | 0 |
+  | 6256 | STEPPED_UP | (0.027, 0.100) | 0.02 |
+  | 7296 | ARRIVED | (0, 0.15) | 0.02 |
+  | 9008 | STARTED_WALKING | (-0.001, 0.150) | 0.02 |
+  | 10400 | JUMPED (hop off the book) | (-0.064, 0.118) | 0.028 |
+  | 11088 | LANDED | (-0.125, 0.087) | 0 |
+  | 11408 | JUMPED (at the gap) | (-0.140, 0.080) | 0.008 |
+  | 11520 | FELL | (-0.150, 0.075) | 0.050 |
+  | 12160 | RESPAWNED | (0, 0) | 0 |
+- FLY trace: same up to 9008; JUMPED 10400; LANDED 12640 at u = -0.264 (v 0.018); ARRIVED 13360 at (-0.30, 0). No
+  FELL / RESPAWNED. Airtime 2.24 s, ~22 cm of path. The 11.4 s Jump is a no-op for FLY (still airborne).
+- Tuning (scenario only, no physics change): the gap jump launches 1.0 cm (u) / ~1.1 cm of path before the gap
+  edge, 0.24 s before the walk would reach it; JUMP airtime ~0.11 s before it is over the gap and falls. Windows:
+  hop 10.2 s (earlier: FLY comes down in the gap) .. 10.68 s (later: walked off the book); gap jump 11.1 s (JUMP
+  landing) .. 11.64 s (at the edge). Chosen 10.4 s / 11.4 s.
+- Deviation from the beat sheet: a step off the 2 cm book is a FELL (`ground < h` -> FALLING), which would break the
+  FLY "no FELL" beat. So the script adds a hop off the book (Jump at 10.4 s, 7 cm along the walk; the book edge is at
+  8.4 cm). For FLY that hop is the gap crossing (its slow arc covers book edge -> far side); for JUMP it lands on the
+  table and the second Jump at the gap edge falls in. `durationMs = 25_000` (> 20 s so the player test's 20 s call is
+  not yet `finished`; the last beat is at 13.4 s, ~12 s idle tail for the phone).
+- Final DAY5 JSON: `{"id":"day5","durationMs":25000,"steps":[{"type":"walk","atMs":0,"target":{"u":0.3,"v":0.0}},
+  {"type":"walk","atMs":4000,"target":{"u":0.0,"v":0.15}},{"type":"walk","atMs":9000,"target":{"u":-0.3,"v":0.0}},
+  {"type":"jump","atMs":10400},{"type":"jump","atMs":11400}]}`
+- Extra (not in the contract): `Scenario.scaled(k)` scales WalkTo targets for a FLOOR level (times unchanged, the
+  speeds in `PhysicsParams.forProfile` scale by the same k). Not covered by a test.
+- Runner semantics for T21: per tick, issue `due(t)` (clock 0, dt, 2dt, ..., last tick clamped to `durationMs`),
+  apply taps, `Physics.step`, then `CharacterEvents.between(before taps, after step)`, stamped with the tick time.
+- cut/deferred: FLOOR replay of DAY5 not tested; 12 s idle tail could be shortened if T21 wants (durationMs must stay
+  > 20 s only for the player test's clock values).
