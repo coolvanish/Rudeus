@@ -35,7 +35,7 @@ class ScenarioTest {
         val trace = ScenarioRunner.run(Scenarios.DAY5, level, Ability.JUMP, dtMs = dtMs)
         println("T19 JUMP trace:\n" + describe(trace))
         val names = trace.eventNames()
-        assertInOrder(listOf(STARTED_WALKING, BLOCKED, STEPPED_UP, JUMPED, FELL, RESPAWNED), names)
+        assertInOrder(listOf(STARTED_WALKING, BLOCKED, STEPPED_UP, JUMPED, LANDED, JUMPED, FELL, RESPAWNED), names)
         assertEquals(1, names.count { it == BLOCKED }, "BLOCKED: $names")
 
         val (upAt, _) = trace.events.single { it.second == STEPPED_UP }
@@ -44,6 +44,11 @@ class ScenarioTest {
         assertTrue(book.footprint.contains(onBook.state.pos), "stepped up at ${onBook.state.pos}")
         assertEquals(0.02f, onBook.state.h, 0.002f)
 
+        val (fellAt, _) = trace.events.single { it.second == FELL }
+        val fell = bodyAt(trace, fellAt)
+        assertTrue(Physics.isOverCliff(level, fell.state.pos), "FELL at ${fell.state.pos} is not over the cliff (hop mistimed)")
+
+        assertTrue(bodyAt(trace, Scenarios.DAY5.durationMs) === trace.final)
         val end = trace.final.state
         assertEquals(Mode.IDLE, end.mode)
         assertEquals(level.spawn, end.pos)
@@ -91,8 +96,9 @@ class ScenarioTest {
 
     // ---------------------------------------------------------------- helpers
 
-    /** The body produced by the tick that started at [tMs] (ticks are `i * dtMs` until the clamped last one). */
-    private fun bodyAt(trace: ScenarioTrace, tMs: Long): PhysicsBody = trace.bodies[(tMs / dtMs).toInt()]
+    /** The body produced by the tick that started at [tMs] (ticks are `i * dtMs`; the last tick is clamped to `durationMs`). */
+    private fun bodyAt(trace: ScenarioTrace, tMs: Long): PhysicsBody =
+        if (tMs >= Scenarios.DAY5.durationMs) trace.bodies.last() else trace.bodies[(tMs / dtMs).toInt()]
 
     /** [expected] appears in [actual] as a subsequence (other events may sit in between). */
     private fun assertInOrder(expected: List<CharacterEvent>, actual: List<CharacterEvent>) {
