@@ -1,6 +1,6 @@
 # T06 — voice-metrics-offline
 
-status: todo
+status: doing (2026-10-31: bubbles + Metrics/Export shipped in T13/T14; offline -> T22 + T20; sounds -> T23; voice open, cut line 1)
 created: 2026-10-28
 day: Day 6
 gate: fresh install -> character -> full scenario with Wi-Fi off halfway, no crash
@@ -30,3 +30,11 @@ Tests not required: audio, assets.
 - Wi-Fi-off run completes; `runs/` has a run with `source: "app"`.
 
 ## Result
+
+### Status (orchestrator, 2026-10-31)
+- Speech bubbles: done in T13 (`HudSpeech`, event-triggered, sheet lines, kk/ru/en).
+- Metrics screen + Export JSON: done in T13/T14 (`MetricsScreen`, `AndroidCaptureHost.exportRun` via MediaStore Downloads).
+- Offline: T22 (`OfflineGuard` in `:core`) + T20 (badge, Capture note, honest Scan copy). Decision: no fixture fallback for live capture/scan (see T22 Goal); bundled characters are the offline content.
+- Sounds: T23 (five generated CC0 WAVs, SoundPool wrapper, Activity-level wiring).
+- Voice (cut line 1): not started; T01 proved English ASR on a 16 kHz clip. Candidate brief T24 after the Day 5 host draft; manifest already declares RECORD_AUDIO.
+- `metricsExportMatchesCliSchema`: the app writes `MetricsLog.toJson()` and the CLI reads `MetricsLog.fromJson`, both in `:core` (`MetricsLogTest` covers the round trip); no separate test added.

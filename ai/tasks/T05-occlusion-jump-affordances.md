@@ -1,6 +1,6 @@
 # T05 — occlusion-jump-affordances
 
-status: todo
+status: doing (split 2026-10-31: T19 core scenario script, T20 Jump/Fly HUD + ArSlot, T21 AR host occlusion/jump/replay)
 created: 2026-10-28
 day: Day 5
 gate: scripted 30 s scenario runs 3x in a row without code changes
@@ -29,3 +29,10 @@ Tests not required: rendering, occluders.
 - The scenario runs 3x consecutively on the real table; screenshots in docs/evidence/ (committed, small).
 
 ## Result
+
+### Split (orchestrator, 2026-10-31)
+This umbrella brief is executed as three disjoint briefs so agents can run in parallel:
+- T19 `core-scenario` — `Scenario` / `ScenarioRunner` / `ScenarioPlayer` in `:core`, Day 5 beat sheet, 3x determinism test (JVM half of the gate).
+- T20 `shared-jump-offline-hud` — `ArSlot.ability/jumpRequest/scenarioRequest`, Jump/Fly button (hidden for ROLL), debug Scenario button.
+- T21 `ar-host-occlusion-jump-scenario` — depth occlusion (Plan A) with occluder boxes behind a constant (Plan B), `GameLoop.jump`, scenario replay from the frame loop.
+The hand = stretch (plan) is not attempted. Gate evidence lands in those briefs' Result sections; the Pixel run is the human's.
