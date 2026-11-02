@@ -122,6 +122,9 @@ object Physics {
         // 2. Push the collision circle out of blocking objects (feet height before vertical integration).
         val moved = pos
         pos = resolveCollisions(level, pos, s.h, s.radiusM, params)
+        // A character standing still overlaps only after a spawn, a resize or a rescan. Shoving it over a cliff for that
+        // would respawn it into the same overlap, forever, so it stays where it is until it walks.
+        if (target == null && !airborne && isOverCliff(level, pos) && !isOverCliff(level, moved)) pos = moved
         // Blocked: the push-out took back more than half of the intended step. With d = intended, p = moved - pos
         // (what the push-out undid), the cancelled length along d is p·d / |d|; compare without a square root.
         val intended = moved - s.pos

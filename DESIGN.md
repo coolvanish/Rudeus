@@ -180,6 +180,10 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   outline, Sky text and the ability glyph, 64 dp tall (hit area ≥ 56 dp). **Jump** ("Секір") for JUMP and HIDE,
   **Fly** ("Ұш") for FLY; ROLL has no button (it rolls fast on its own). Each tap is one jump
   (`ArSlot.jumpRequest`); physics ignores it in the air. Disabled while tracking is lost.
+- *Size* (T25): two round 56 dp buttons stacked at the left edge, plus over minus — Paper fill, Ink outline and glyph.
+  Each tap is one `CharacterSize` step (0.5× to 3×, 1× = 6 cm on the table); the character, its collision circle and
+  its walking speed follow, while jump height stays the same. Disabled at the ends and while tracking is lost. Kept
+  across Back. Icon-only like the mic; accessibility labels `play_bigger`, `play_smaller`.
 - *Voice* (T24, only with a `CaptureHost.voice` and once the character is placed): a round 56 dp mic control under
   the ability chip — Paper fill, Sky outline and mic glyph; Sky-filled with a Paper glyph while held. Hold = record
   (pill "Listening…" beside it, `voice_listening`); release = transcribe (pill "Thinking…", `voice_thinking`), then

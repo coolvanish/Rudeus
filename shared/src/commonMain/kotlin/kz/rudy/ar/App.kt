@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
@@ -80,7 +81,7 @@ private const val VOICE_BUBBLE_MS = 2000L
  * [arView]'s second argument is the [ArSlot]: the sprite Play shows (captured or bundled, null = the host's default),
  * the chosen [Surface], the debug flag (footprints on), and the callbacks the AR host reports through (surface ready,
  * anchor, tracking, character events). The slot is remembered on (sprite, surface, debug, the request counters,
- * ability); its callbacks read the latest handlers through `rememberUpdatedState`, so HUD changes never re-create it. [capture] (T03) brings the
+ * ability, character size); its callbacks read the latest handlers through `rememberUpdatedState`, so HUD changes never re-create it. [capture] (T03) brings the
  * camera, the photo picker, the real pipeline, bundled characters and the metrics run; without it the Processing
  * screen runs the fake stage loop so the shell still demos.
  *
@@ -145,6 +146,8 @@ fun App(
     var voicePhase by remember { mutableStateOf(VoicePhase.IDLE) }
     var walkForwardRequest by remember { mutableStateOf(0) }
     var voiceSerial by remember { mutableStateOf(-1) }
+    // T25: Bigger / Smaller. A choice, not a request, so it is kept across Back like the surface.
+    var characterSize by remember { mutableStateOf(CharacterSize.DEFAULT) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -309,7 +312,7 @@ fun App(
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
     val ability = sheet.ability
-    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability) {
+    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
@@ -325,6 +328,7 @@ fun App(
             jumpRequest = jumpRequest,
             scenarioRequest = scenarioRequest,
             walkForwardRequest = walkForwardRequest,
+            characterSize = characterSize,
         )
     }
     val arOn = screen == Screen.SCANNING || screen == Screen.PLAY || (screen == Screen.METRICS && lastScreen == Screen.PLAY)
@@ -504,9 +508,12 @@ fun App(
                                 offline = offline,
                                 voice = voicePhase,
                                 speechFromVoice = speech.text != null && speech.serial == voiceSerial,
+                                characterSize = characterSize,
                             ),
                             onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ },
                             onJump = { jumpRequest++ },
+                            onBigger = { characterSize = CharacterSize.bigger(characterSize) },
+                            onSmaller = { characterSize = CharacterSize.smaller(characterSize) },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
                             onAbilityTap = {
                                 val lines = Strings.sheetLines(sheet.lines, lang)

@@ -2,6 +2,7 @@ package kz.rudy.ar.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
@@ -75,6 +77,8 @@ data class HudState(
     val voice: VoicePhase = VoicePhase.IDLE,
     /** T24: the bubble on screen is a voice transcript (or "Didn't catch that"): a mic glyph sits beside it. */
     val speechFromVoice: Boolean = false,
+    /** T25: the character's size step; the Bigger / Smaller buttons go disabled at the ends of [CharacterSize.STEPS]. */
+    val characterSize: Float = CharacterSize.DEFAULT,
 )
 
 /**
@@ -88,6 +92,9 @@ data class HudState(
  * T24: [onVoiceDown], when given (a `VoiceHost` exists and the character is placed), adds the round hold-to-talk mic
  * under the ability chip: press = [onVoiceDown], release (or the press being cancelled) = [onVoiceUp]. Disabled while
  * offline (the offline pill already says why), while tracking is lost, and while the last phrase is still THINKING.
+ *
+ * T25: [onBigger] / [onSmaller] back the round plus / minus buttons at the left edge (the host's debug Rec button owns
+ * the right edge). Disabled while tracking is lost, like Jump, and at the ends of [CharacterSize.STEPS].
  */
 @Composable
 fun PlayScreen(
@@ -98,6 +105,8 @@ fun PlayScreen(
     hud: HudState,
     onScan: () -> Unit,
     onJump: () -> Unit,
+    onBigger: () -> Unit,
+    onSmaller: () -> Unit,
     onToggleFootprints: () -> Unit,
     onAbilityTap: () -> Unit,
     onOpenMetrics: () -> Unit,
@@ -199,10 +208,35 @@ fun PlayScreen(
                 }
             }
         }
+        Column(
+            Modifier.align(Alignment.CenterStart).safeDrawingPadding().padding(start = RudeusSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+        ) {
+            SizeButton(Glyph.PLUS, t(StringId.play_bigger), !hud.trackingLost && hud.characterSize < CharacterSize.MAX, onBigger)
+            SizeButton(Glyph.MINUS, t(StringId.play_smaller), !hud.trackingLost && hud.characterSize > CharacterSize.MIN, onSmaller)
+        }
         PausedOverlay(
             visible = hud.trackingLost || character.mode == Mode.PAUSED,
             hint = if (hud.surface == Surface.FLOOR) StringId.paused_hint_floor else StringId.paused_hint,
         )
+    }
+}
+
+/** T25: one round size button, GhostButton-styled (Paper fill, Ink outline and glyph); [label] is for accessibility. */
+@Composable
+private fun SizeButton(glyph: Glyph, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val tint = if (enabled) RudeusColors.Ink else RudeusColors.InkSoft
+    Box(
+        Modifier
+            .size(RudeusSpacing.touchTarget)
+            .semantics { contentDescription = label }
+            .clip(CircleShape)
+            .background(if (enabled) RudeusColors.Paper else RudeusColors.Paper.copy(alpha = 0.6f))
+            .border(RudeusSpacing.stroke, tint, CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(glyph, tint)
     }
 }
 

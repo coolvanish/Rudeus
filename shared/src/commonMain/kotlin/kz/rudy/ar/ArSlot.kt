@@ -2,6 +2,7 @@ package kz.rudy.ar
 
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
+import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 
@@ -61,6 +62,11 @@ data class ArSlot(
      * `facing` (skipped when the target is outside the scanned boundary). 0 = none yet; resets with [scanRequest].
      */
     val walkForwardRequest: Int = 0,
+    /**
+     * T25: the Play HUD's Bigger / Smaller choice, a [CharacterSize] step on top of the surface's character. State, not
+     * a request: the host applies it to the billboard, the collision circle and the walking speed whenever it changes.
+     */
+    val characterSize: Float = CharacterSize.DEFAULT,
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other
