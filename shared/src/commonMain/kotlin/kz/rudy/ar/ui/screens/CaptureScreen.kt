@@ -1,20 +1,22 @@
 package kz.rudy.ar.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,28 +24,37 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kz.rudy.ar.core.domain.CharacterSheet
-import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.StringId
-import kz.rudy.ar.ui.components.AbilityChip
-import kz.rudy.ar.ui.components.Chip
+import kz.rudy.ar.ui.components.CharacterCard
 import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
-import kz.rudy.ar.ui.components.LangSwitch
+import kz.rudy.ar.ui.components.Pill
 import kz.rudy.ar.ui.components.PrimaryButton
 import kz.rudy.ar.ui.components.SpriteImage
+import kz.rudy.ar.ui.components.drawCornerBrackets
+import kz.rudy.ar.ui.components.hitArea
 import kz.rudy.ar.ui.components.rememberSpriteBitmap
 import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
+import kz.rudy.ar.ui.theme.rudeusWordmark
+import org.jetbrains.compose.resources.painterResource
+import rudeus.shared.generated.resources.Res
+import rudeus.shared.generated.resources.capture_example
 
 /**
  * A character shipped in the APK (CLI-generated, DESIGN.md "Capture"). The card draws [spritePng] when present,
@@ -58,127 +69,147 @@ data class BundledCharacter(
     val spritePng: ByteArray? = null,
 )
 
+/** The hero's viewfinder corner: 32 dp, 4 dp stroke, on a dp grid. */
+private val VIEWFINDER by lazy { PathParser().parsePathString("M2 32V12A10 10 0 0 1 12 2H32").toPath() }
+
 /**
- * Capture: take a photo of the drawing/toy, or pick a bundled character.
- * [preview] is an optional camera preview slot from :androidApp; without it the screen is paper.
+ * Capture: take a photo of the drawing/toy, or pick a bundled character. The "Rudeus ⌄" wordmark opens the Settings
+ * sheet, where the language switch and Metrics live.
  * [onPickPhoto] (T03) adds a "from gallery" button under the camera one when the host offers a photo picker.
  */
 @Composable
 fun CaptureScreen(
     bundled: List<BundledCharacter>,
     offline: Boolean,
-    lang: Lang,
-    onLangChange: (Lang) -> Unit,
+    onOpenSettings: () -> Unit,
     onTakePhoto: () -> Unit,
     onPickBundled: (BundledCharacter) -> Unit,
-    onOpenMetrics: () -> Unit,
     modifier: Modifier = Modifier,
     selectedId: String? = null,
-    preview: (@Composable (Modifier) -> Unit)? = null,
     onPickPhoto: (() -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize().background(RudeusColors.Paper)) {
-        preview?.invoke(Modifier.fillMaxSize())
-        Column(
-            Modifier.fillMaxSize().safeDrawingPadding().padding(RudeusSpacing.md),
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                LangSwitch(lang, onLangChange)
+        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(bottom = RudeusSpacing.smd)) {
+            Column(Modifier.weight(1f).padding(horizontal = RudeusSpacing.screenEdge)) {
+                Wordmark(onOpenSettings)
+                Spacer(Modifier.height(RudeusSpacing.xs))
+                Text(t(StringId.capture_title), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
+                Spacer(Modifier.height(6.dp))
+                Text(t(StringId.capture_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
+                Spacer(Modifier.height(RudeusSpacing.screenEdge))
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(RudeusRadius.hero))
+                        .background(RudeusColors.Cream)
+                        .padding(RudeusSpacing.smd),
+                    verticalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+                ) {
+                    ExampleWell(Modifier.weight(1f).heightIn(min = 96.dp).fillMaxWidth())
+                    PrimaryButton(
+                        text = t(StringId.capture_take_photo),
+                        glyph = Glyph.CAMERA,
+                        enabled = true, // offline: still enabled, a tap is the retry (the note below says why)
+                        onClick = onTakePhoto,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (onPickPhoto != null) {
+                        GhostButton(
+                            text = t(StringId.capture_pick_gallery),
+                            glyph = Glyph.GALLERY,
+                            onClick = onPickPhoto,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+                if (offline) {
+                    Pill(t(StringId.capture_offline_note), dot = RudeusColors.Leaf)
+                    Spacer(Modifier.height(RudeusSpacing.sm))
+                }
+                Text(t(StringId.capture_or_pick), style = MaterialTheme.typography.titleMedium, color = RudeusColors.Ink)
+                Spacer(Modifier.height(RudeusSpacing.smd))
             }
-            Spacer(Modifier.height(RudeusSpacing.lg))
-            Text(t(StringId.capture_title), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
-            Spacer(Modifier.height(RudeusSpacing.sm))
-            Text(t(StringId.capture_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
-            Spacer(Modifier.height(RudeusSpacing.lg))
-            PrimaryButton(
-                text = t(StringId.capture_take_photo),
-                glyph = Glyph.CAMERA,
-                enabled = true, // offline: still enabled, a tap is the retry (the note below says why)
-                onClick = onTakePhoto,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (onPickPhoto != null) {
-                Spacer(Modifier.height(RudeusSpacing.sm))
-                GhostButton(text = t(StringId.capture_pick_gallery), onClick = onPickPhoto, modifier = Modifier.fillMaxWidth())
-            }
-            Spacer(Modifier.height(RudeusSpacing.xl))
-            if (offline) {
-                Chip(
-                    text = t(StringId.capture_offline_note),
-                    container = RudeusColors.Leaf,
-                    accent = RudeusColors.Leaf,
-                    contentColor = RudeusColors.Paper,
-                )
-                Spacer(Modifier.height(RudeusSpacing.sm))
-            }
-            Text(t(StringId.capture_or_pick), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
-            Spacer(Modifier.height(RudeusSpacing.md))
             if (bundled.isEmpty()) {
-                EmptyCard(t(StringId.capture_empty))
+                EmptyCard(t(StringId.capture_empty), modifier = Modifier.padding(horizontal = RudeusSpacing.screenEdge))
             } else {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.md)) {
+                // Bleeds off the right edge so the row reads as "there is more".
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(horizontal = RudeusSpacing.screenEdge),
+                ) {
                     items(bundled, key = { it.id }) { c ->
-                        CharacterCard(c, selected = c.id == selectedId, onClick = { onPickBundled(c) })
+                        BundledCard(c, selected = c.id == selectedId, onClick = { onPickBundled(c) })
                     }
                 }
             }
-            Spacer(Modifier.weight(1f))
-            GhostButton(text = t(StringId.metrics_button), glyph = Glyph.METRICS, onClick = onOpenMetrics)
         }
     }
 }
 
-/**
- * Bundled card width. The compact ability chip needs ~8 + 86 + 8 dp for the longest label ("Жасырыну", 16 sp bold
- * + tracking) plus the 3 dp outline; 144 dp leaves 128 dp inside the card's 8 dp padding.
- */
-private val CARD_WIDTH = 144.dp
+private val WORDMARK_HEIGHT = 52.dp
 
+/** "Rudeus ⌄": the one way into Settings. The -10 dp keeps the word on the screen edge while its hit area spills out. */
 @Composable
-private fun CharacterCard(c: BundledCharacter, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(RudeusRadius.card)
-    Column(
-        Modifier
-            .width(CARD_WIDTH)
-            .clip(shape)
-            .background(RudeusColors.PaperDeep)
-            .border(RudeusSpacing.stroke, if (selected) RudeusColors.Sun else RudeusColors.Ink, shape)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(RudeusSpacing.sm),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
-            val sprite = rememberSpriteBitmap(c.spritePng)
-            val thumb = c.thumbnail
-            when {
-                sprite != null -> SpriteImage(sprite, contentDescription = null, modifier = Modifier.fillMaxSize())
-                thumb != null -> thumb(Modifier.fillMaxSize())
-                else -> GlyphIcon(Glyph.HIDE, RudeusColors.InkSoft, size = 48.dp)
-            }
+private fun Wordmark(onClick: () -> Unit) {
+    val label = t(StringId.settings_title)
+    Box(Modifier.height(WORDMARK_HEIGHT), contentAlignment = Alignment.CenterStart) {
+        Row(
+            Modifier
+                .offset(x = (-10).dp)
+                .height(WORDMARK_HEIGHT)
+                .hitArea(WORDMARK_HEIGHT)
+                .clip(RoundedCornerShape(14.dp))
+                .semantics { contentDescription = label }
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(t(StringId.app_name), style = rudeusWordmark(), color = RudeusColors.Ink)
+            GlyphIcon(Glyph.DOWN, RudeusColors.Ink, Modifier.padding(top = 3.dp), size = 20.dp, strokeWidth = 2.8f)
         }
-        Spacer(Modifier.height(RudeusSpacing.xs))
-        Text(
-            c.sheet.name,
-            style = MaterialTheme.typography.labelLarge,
-            color = RudeusColors.Ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+    }
+}
+
+/** An example drawing under Paper viewfinder brackets: shows what "take a photo" means. */
+@Composable
+private fun ExampleWell(modifier: Modifier) {
+    Box(modifier.clip(RoundedCornerShape(RudeusRadius.card))) {
+        Image(
+            painterResource(Res.drawable.capture_example),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            alignment = BiasAlignment(0f, -0.56f),
         )
-        Spacer(Modifier.height(RudeusSpacing.xs))
-        AbilityChip(c.sheet.ability, compact = true)
+        Canvas(Modifier.fillMaxSize()) {
+            drawCornerBrackets(VIEWFINDER, 14.dp.toPx(), 1.dp.toPx(), RudeusColors.Paper, 4f, StrokeCap.Butt)
+        }
     }
 }
 
 @Composable
-internal fun EmptyCard(text: String, hint: String? = null) {
-    val shape = RoundedCornerShape(RudeusRadius.card)
+private fun BundledCard(c: BundledCharacter, selected: Boolean, onClick: () -> Unit) {
+    CharacterCard(name = c.sheet.name, ability = c.sheet.ability, selected = selected, onClick = onClick) {
+        val sprite = rememberSpriteBitmap(c.spritePng)
+        val thumb = c.thumbnail
+        when {
+            sprite != null -> SpriteImage(sprite, contentDescription = null, modifier = Modifier.fillMaxSize())
+            thumb != null -> thumb(Modifier.fillMaxSize())
+            else -> GlyphIcon(Glyph.HIDE, RudeusColors.InkMuted, size = 48.dp)
+        }
+    }
+}
+
+@Composable
+internal fun EmptyCard(text: String, modifier: Modifier = Modifier, hint: String? = null) {
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(RudeusColors.PaperDeep)
-            .border(RudeusSpacing.stroke, RudeusColors.InkSoft, shape)
+            .clip(RoundedCornerShape(RudeusRadius.card))
+            .background(RudeusColors.Cream)
             .padding(RudeusSpacing.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

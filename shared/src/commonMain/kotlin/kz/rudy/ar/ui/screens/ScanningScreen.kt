@@ -10,24 +10,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.BannerKind
-import kz.rudy.ar.ui.components.Chip
-import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.PausedOverlay
+import kz.rudy.ar.ui.components.Pill
 import kz.rudy.ar.ui.components.PrimaryButton
 import kz.rudy.ar.ui.components.ScanOverlay
-import kz.rudy.ar.ui.components.ScrimPill
+import kz.rudy.ar.ui.components.SecondaryButton
+import kz.rudy.ar.ui.components.SegmentedControl
 import kz.rudy.ar.ui.components.SpeechBubble
 import kz.rudy.ar.ui.components.StatusBanner
 import kz.rudy.ar.ui.t
-import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
 /** [NO_PLANE] = the scan failed (no table found); [EMPTY] = the table was found but nothing is on it. */
@@ -38,13 +37,13 @@ data class ScanState(
     val status: ScanStatus = ScanStatus.IDLE,
     val progress: Float = 0f,
     val objectsFound: Int = 0,
-    /** Consecutive "no plane" results; the Skip (2D fallback) button appears from the second one. An EMPTY table is not a failure. */
+    /** Consecutive "no plane" results; Skip (2D fallback) appears in the banner from the second one. An EMPTY table is not a failure. */
     val failures: Int = 0,
     /** The AR host has a settled horizontal plane: a tap would place the character (`ArSlot.onSurfaceReady`). */
     val surfaceReady: Boolean = false,
     /** The session anchor exists and the character stands on the surface (`ArSlot.onAnchorPlaced`). */
     val anchored: Boolean = false,
-    /** Table or floor/outdoors; chosen with the chips until the anchor is placed. */
+    /** Table or floor/outdoors; chosen with the segmented control until the anchor is placed. */
     val surface: Surface = Surface.TABLE,
     /** The host's last model call failed on the network: the NO_PLANE card names the network, not the table. */
     val offline: Boolean = false,
@@ -71,22 +70,29 @@ fun ScanningScreen(
     Box(modifier.fillMaxSize()) {
         arView(Modifier.fillMaxSize())
         ScanOverlay(active = state.status == ScanStatus.SCANNING, progress = state.progress)
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(RudeusSpacing.md)) {
+        if (state.status != ScanStatus.PAUSED) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = RudeusSpacing.md, vertical = RudeusSpacing.smd)) {
             if (!state.anchored) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.sm, Alignment.CenterHorizontally)) {
-                    SurfaceChip(StringId.surface_table, selected = !floor, onClick = { onSurfaceChange(Surface.TABLE) })
-                    SurfaceChip(StringId.surface_floor, selected = floor, onClick = { onSurfaceChange(Surface.FLOOR) })
-                }
-                Spacer(Modifier.height(RudeusSpacing.sm))
+                SegmentedControl(
+                    options = listOf(Surface.TABLE, Surface.FLOOR),
+                    selected = state.surface,
+                    onSelect = onSurfaceChange,
+                    label = { t(if (it == Surface.FLOOR) StringId.surface_floor else StringId.surface_table) },
+                    check = true,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Spacer(Modifier.height(14.dp))
             }
             if (state.status == ScanStatus.IDLE && !state.anchored) {
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+                ) {
                     if (!state.surfaceReady) {
-                        ScrimPill(t(if (floor) StringId.scan_title_floor else StringId.scan_title))
-                        Spacer(Modifier.height(RudeusSpacing.sm))
-                        ScrimPill(t(StringId.scan_hint))
+                        Pill(t(if (floor) StringId.scan_title_floor else StringId.scan_title))
+                        Pill(t(StringId.scan_hint), quiet = true)
                     } else {
-                        ScrimPill(t(if (floor) StringId.scan_tap_to_place_floor else StringId.scan_tap_to_place))
+                        Pill(t(if (floor) StringId.scan_tap_to_place_floor else StringId.scan_tap_to_place))
                     }
                 }
             }
@@ -95,14 +101,16 @@ fun ScanningScreen(
                 title = t(if (state.offline) StringId.scan_offline_title else if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title),
                 hint = t(if (state.offline) StringId.processing_failed_hint else if (floor) StringId.scan_no_plane_hint_floor else StringId.scan_no_plane_hint),
                 kind = BannerKind.ERROR,
-                glyph = Glyph.CROSS,
+                // Skip only after two failures: a first miss is worth another try.
+                action = if (state.failures >= 2) ({ SecondaryButton(t(StringId.skip), onClick = onSkip, compact = true) }) else null,
             )
             StatusBanner(
                 visible = state.status == ScanStatus.EMPTY,
                 title = t(if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title),
                 hint = t(if (floor) StringId.scan_empty_hint_floor else StringId.scan_empty_hint),
                 kind = BannerKind.INFO,
-                glyph = Glyph.EYE,
+                // The table is real, so "Play anyway" is offered at once.
+                action = { SecondaryButton(t(StringId.scan_play_anyway), onClick = onSkip, compact = true) },
             )
             StatusBanner(
                 visible = state.status == ScanStatus.DONE,
@@ -110,16 +118,22 @@ fun ScanningScreen(
                 // Honest: no count until the real scan (T04) finds objects.
                 hint = if (state.objectsFound > 0) "${t(StringId.scan_objects_found)}: ${state.objectsFound}" else null,
                 kind = BannerKind.SUCCESS,
-                glyph = Glyph.CHECK,
             )
             Spacer(Modifier.weight(1f))
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
                 SpeechBubble(text = speech)
             }
+            if (state.status == ScanStatus.SCANNING) {
+                Spacer(Modifier.height(RudeusSpacing.sm))
+                Pill(t(StringId.scanning), Modifier.align(Alignment.CenterHorizontally))
+            }
             Spacer(Modifier.height(RudeusSpacing.md))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                GhostButton(t(StringId.back), onClick = onBack, glyph = Glyph.BACK)
-                Spacer(Modifier.width(RudeusSpacing.md))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.smd),
+            ) {
+                SecondaryButton(t(StringId.back), onClick = onBack, glyph = Glyph.BACK)
                 PrimaryButton(
                     text = t(StringId.scan_button),
                     glyph = Glyph.EYE,
@@ -127,13 +141,9 @@ fun ScanningScreen(
                     onClick = onScan,
                     modifier = Modifier.weight(1f),
                 )
-                // EMPTY: the table is real, so "Play anyway" is offered at once; otherwise Skip after two failures.
-                if (state.status == ScanStatus.EMPTY) {
-                    Spacer(Modifier.width(RudeusSpacing.md))
-                    GhostButton(t(StringId.scan_play_anyway), onClick = onSkip)
-                } else if (state.failures >= 2) {
-                    Spacer(Modifier.width(RudeusSpacing.md))
-                    GhostButton(t(StringId.skip), onClick = onSkip)
+                // No banner to hold Skip (tracking came back, or the next scan is running): it must not vanish after two failures.
+                if (state.failures >= 2 && state.status != ScanStatus.NO_PLANE && state.status != ScanStatus.EMPTY) {
+                    SecondaryButton(t(StringId.skip), onClick = onSkip)
                 }
             }
         }
@@ -142,16 +152,4 @@ fun ScanningScreen(
             hint = if (floor) StringId.paused_hint_floor else StringId.paused_hint,
         )
     }
-}
-
-/** Table | Floor choice: paper chips, the selected one outlined in Sky (Sun stays the Scan button's). */
-@Composable
-private fun SurfaceChip(label: StringId, selected: Boolean, onClick: () -> Unit) {
-    Chip(
-        text = t(label),
-        glyph = if (selected) Glyph.CHECK else null,
-        accent = if (selected) RudeusColors.Sky else RudeusColors.Ink,
-        container = if (selected) RudeusColors.Paper else RudeusColors.PaperDeep,
-        onClick = onClick,
-    )
 }

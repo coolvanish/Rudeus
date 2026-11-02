@@ -9,47 +9,55 @@ of the AR view. Code tokens live in `shared/src/commonMain/kotlin/kz/rudy/ar/ui/
 ## (a) Principles
 
 1. **The camera feed is the canvas.** The AR view (a slot composable from `:androidApp`) fills the screen on
-   Scanning and Play. The UI is a thin overlay: scrims, chips and one button. Nothing opaque covers the middle
+   Scanning and Play. The UI is a thin overlay: paper pills, chips and one button. Nothing opaque covers the middle
    third of the screen where the character lives.
-2. **One primary action per screen.** Capture: *Photo*. Processing: *Retry* (only on failure). Scanning: *Scan*.
-   Play: *Scan* (re-scan). Metrics: *Export JSON*. Everything else is secondary (ghost style) or a chip.
-3. **Tap targets ≥ 56 dp.** Primary buttons are 64 dp tall. Chips are 48 dp tall but sit inside a 56 dp hit area.
+2. **One primary action per screen.** Capture: *Photo*. Processing: *Next* / *Play anyway* / *Retry*. Scanning: *Scan*.
+   Play: *Jump* / *Fly* (ROLL: *Rescan*). Metrics: *Export JSON*. Everything else is secondary, ghost or a chip.
+3. **Heights:** primary 64 dp, secondary and chips 48 dp; every hit area ≥ 56 dp (`hitArea`: a real pointer area, because over the camera the AR view underneath wins any near miss).
    Children tap with the whole fingertip; the phone is often held at arm's length over a table.
 4. **Icons + 1–3 word labels.** Never an icon alone, never a sentence on a button. Glyphs are drawn with Canvas
    (no icon dependency), labels come from the copy table.
 5. **Kazakh first, then Russian; English only for the demo video.** `LocalLang` defaults to `KK`. The language
-   switch is on the Capture screen only; it never appears during play.
-6. **Playful, not babyish.** Bold rounded shapes and crayon colours, but no cartoon mascots in the chrome, no
-   confetti, no rainbow gradients. The child's own drawing is the only character; the chrome stays quiet.
+   switch is in the Settings sheet (opened from Capture only); it never appears during play.
+6. **Bright & clean.** Warm white paper, one Sun action, quiet chrome. No cartoon mascots in the chrome, no
+   confetti, no rainbow gradients. The child's own drawing is the only character.
 7. **Readable in daylight on a table.** We shoot in daylight near a window. Every text sits on paper or on an
-   ink scrim; never text directly on the camera feed. Minimum body size 20 sp, bold.
+   ink scrim; never text directly on the camera feed. Body text is 17 sp SemiBold; nothing a child reads is below
+   13 sp / 700.
 8. **Honest states.** The gate score is shown as a number; a failed gate still lets the child play with a note.
    Tracking loss says "Paused", never resets the character.
+9. **One edge rule.** 2 dp Ink stroke = tappable. Cards, tiles and banners have no stroke; they sit on Cream. HUD
+   surfaces over the camera get a 1 dp `Line` edge. No shadows.
 
 ## (b) Tokens
 
-### Colour — "crayon on paper", light only
+### Colour — "bright & clean", light only
 
 The AR view is always a live camera feed, so there is no dark theme: the UI is paper and ink laid over whatever
-the camera sees. Contrast ratios below are WCAG 2.x luminance ratios of the solid colours.
+the camera sees.
 
-| Token | Hex | Role | Contrast notes |
-|---|---|---|---|
-| `Paper` | `#FFF6E5` | Surfaces: cards, bubbles, chips, the Capture/Processing/Metrics backgrounds | Ink on Paper 15.3:1 |
-| `PaperDeep` | `#F3E4C8` | Secondary surface: table rows, progress tracks, chip pressed state | Ink on PaperDeep 12.6:1 |
-| `Ink` | `#1F1A17` | Text, outlines (3 dp "crayon" stroke), scrims | On Sun 10.4:1, on Paper 15.3:1 |
-| `InkSoft` | `#5C534C` | Secondary text on Paper | 6.4:1 on Paper |
-| `Sun` | `#FFB300` | **Primary action** (the one button), progress fill, scan brackets | Ink text on Sun 10.4:1; do not put white on Sun |
-| `SunDeep` | `#E09A00` | Sun pressed state | |
-| `Sky` | `#1E6FE0` | Secondary/info: ability chip accent, links, "Looking…" | Paper text on Sky 5.0:1 |
-| `Leaf` | `#2E7D32` | Success: gate passed, scan done, offline-but-working | Paper on Leaf 5.5:1 |
-| `Tomato` | `#D93A2F` | Error: gate failed, pipeline error, no plane | Paper on Tomato 5.2:1 |
-| `Grape` | `#7B3FBF` | Dynamic things (hand), rare accent | Paper on Grape 6.4:1 |
-| `Scrim` | `Ink @ 55 %` | Behind any text over the camera feed; full-screen on Paused | Paper text on Scrim over a bright table ≥ 4.5:1 in daylight test |
-| `ScrimStrong` | `Ink @ 75 %` | Pause / tracking-lost banner, processing error sheet | |
+| Token | Hex | Role |
+|---|---|---|
+| `Paper` | `#FFFDF8` | Page, HUD surfaces |
+| `Cream` | `#FAF4E8` | Borderless card fill |
+| `CreamDeep` | `#F2E9D6` | Pressed, tracks, tags |
+| `Line` | `#E8DFCD` | 1 dp HUD edge, list dividers |
+| `Ink` | `#1D1A16` | Text, 2 dp interactive stroke |
+| `InkSoft` | `#5D564E` | Secondary text (7.2:1 on Paper) |
+| `InkMuted` | `#968E84` | Disabled / decorative only |
+| `Sun` | `#FFD02B` | The one primary per screen, under Ink text (13.4:1); never white on Sun |
+| `SunDeep` | `#F2B90F` | Sun pressed |
+| `SunTint` | `#FFF4C7` | Disabled primary fill, icon wells |
+| `Sky` / `SkyDeep` / `SkyTint` | `#1E6FE0` / `#1659B8` / `#E7F0FC` | Secondary: ability tags, switch on, footprints on, mic |
+| `Leaf` / `LeafTint` | `#2E8540` / `#E4F2E7` | Success: gate passed, scan done, offline-but-working |
+| `Tomato` / `TomatoTint` | `#D93A2F` / `#FCE8E6` | Error: gate failed, pipeline error, no plane |
+| `Grape` / `GrapeTint` | `#7B3FBF` / `#F1E9FA` | Dynamic things (hand), rare accent |
+| `Hazard` | `#FF6D00` | Cliff |
+| `Scrim` | `Ink @ 55 %` | Behind the Settings and error sheets |
+| `ScrimStrong` | `Ink @ 75 %` | Paused, full screen |
 
-Rules: text on the camera feed always sits on `Scrim` (banner) or `Paper` (bubble, chip). Sun is used once per
-screen. Tomato is never used for decoration.
+Rules: text on the camera feed always sits on `Paper` (pill, banner, bubble, chip) or on a scrim. Sun is used once per
+screen. Tomato is never used for decoration. Status colours always pair with a word or a dot + title.
 
 #### Footprint debug overlay tints (per `ObjectKind`)
 
@@ -59,36 +67,54 @@ Drawn by `:androidApp` on the plane and by the 2D mini-map in the HUD. Fill at 3
 | `ObjectKind` | Token | Hex | Why |
 |---|---|---|---|
 | `OBSTACLE` | `FootObstacle` | `#D93A2F` (Tomato) | "stop" — the character is pushed out |
-| `PLATFORM` | `FootPlatform` | `#2E7D32` (Leaf) | "go" — walkable, step-up |
+| `PLATFORM` | `FootPlatform` | `#2E8540` (Leaf) | "go" — walkable, step-up |
 | `DYNAMIC` | `FootDynamic` | `#7B3FBF` (Grape) | moves between scans (hand) |
 | `CLIFF` | `FootCliff` | `#FF6D00` (hazard orange), dashed outline, no fill | plane boundary; dashes read as "edge" |
 
 The character's collision circle is Sky at 35 %; the tap target is a Sun ring.
 
-### Typography — system sans, bold
+### Typography — Nunito
 
-Children read short bold words; we never use Light/Regular weights for anything a child reads.
+Nunito (OFL; 600/700/800/900 TTFs in `composeResources/font`, covers Kazakh Cyrillic). Children read short bold words;
+we never use Light/Regular weights for anything a child reads.
 
 | Style | Size / line | Weight | Use |
 |---|---|---|---|
-| `display` | 40 / 46 sp | Bold (700) | Screen headline on paper screens ("Дайын!"), gate score number |
-| `title` | 28 / 34 sp | Bold (700) | Section titles, banner titles, speech bubble text |
-| `body` | 20 / 26 sp | SemiBold (600) | Hints, table rows, notes |
-| `label` | 16 / 20 sp | Bold (700), +0.5 sp tracking | Buttons, chips, badges, table headers |
-| `mono` | 16 / 20 sp | Medium (500), monospace | Metrics numbers, run ids |
+| `display` | 32 / 38 sp | ExtraBold (800) | Screen headline on paper screens |
+| `title` | 24 / 30 sp | ExtraBold (800) | Section and sheet titles, character name |
+| `headline` | 19 / 25 sp | ExtraBold (800) | Shelf titles |
+| `body` | 17 / 24 sp | SemiBold (600) | Hints, notes |
+| `label` | 16 / 20 sp | ExtraBold (800) | Buttons (primary 18 sp), chips, pills |
+| `caption` | 13 / 18 sp | Bold (700) | Secondary lines |
+| `mono` | 14 / 18 sp | Medium (500), monospace | Metrics numbers, run ids |
+| wordmark | 28 / 28 sp | Black (900) | "Rudeus" on Capture |
 
-Material mapping: `displayLarge = display`, `headlineMedium = title`, `titleLarge = title`, `bodyLarge = body`,
-`labelLarge = label`, `bodyMedium = mono`.
+Material mapping: `displayLarge = display`, `headlineMedium = titleLarge = title`, `titleMedium = headline`,
+`bodyLarge = body`, `labelLarge = label`, `bodySmall = caption`, `bodyMedium = mono`.
 
 ### Spacing, radii, elevation
 
-- Spacing scale: **4 / 8 / 16 / 24 / 32 dp** (`RudeusSpacing.xs .. xl`). Screen edge padding 16, section gap 24,
-  HUD inset from safe area 16.
-- Radii: **16 dp** (cards, banners, mini-map), **24 dp** (speech bubble, sheets), **full** (buttons, chips, badges).
-- Elevation: none. Depth comes from the 3 dp Ink outline ("crayon stroke") and from scrims, not shadows.
-  Shadows disappear over a bright camera feed; outlines do not.
-- Scrim rules: a scrim is only as big as the text it protects plus 16 dp padding, except Paused (full screen,
-  `ScrimStrong`) and Processing error (bottom sheet, `ScrimStrong`).
+- Spacing scale: **4 / 8 / 12 / 16 / 20 (screen edge) / 24 / 32 / 48 dp**. Section gap 24, HUD inset from the safe area 16.
+- Radii: tag 8, tile 16, card 20, hero + sheet 28, bubble 24, controls full.
+- Stroke 2 dp, interactive only. HUD hairline 1 dp `Line`. Elevation: none.
+
+### Components
+
+- **Primary button:** Sun, 2 dp Ink, 64 dp. Disabled = SunTint fill, InkMuted stroke + text (no alpha over the camera).
+- **Secondary button:** Paper, 2 dp Ink, 48 dp. **Ghost:** no stroke. Press: scale 0.96 and Sun → SunDeep / Paper → CreamDeep.
+- **Chip:** 48 dp, Paper, 2 dp Ink; on = SkyTint fill, Sky stroke, SkyDeep text.
+- **Segmented control** (Table|Floor, language): Paper pill, 2 dp Ink, 4 dp inset; the selected option fills Ink with
+  Paper text (+ check glyph for Table/Floor).
+- **Switch:** 56×34, 2 dp Ink track; on = Sky track, Paper knob.
+- **Tag:** 24 dp, radius 8, 12 sp 800, tint variants.
+- **Character card:** Cream, no stroke, 124 dp wide; sprite on a Paper well; name 16 sp 800; ability as a small Sky tag.
+  Selected = 2 dp Ink ring + Sun check badge.
+- **Pill** (HUD status): Paper, 1 dp Line edge, 40 dp.
+- **Banner:** Paper card, 1 dp Line, status dot + title + hint, optional one action (Skip, Retry).
+- **Speech bubble:** Paper, 1 dp Line, Sun tail + Sun underline accent.
+- **Progress:** 14 dp, 2 dp Ink edge, Sun fill. **Stages:** 4-column stepper (40 dp icon circles: done Leaf tint + check,
+  active Sun + Ink ring).
+- **Sheet:** Paper, top radius 28, handle, over Scrim.
 
 ## (c) Motion
 
@@ -97,15 +123,15 @@ Easings: `Standard = cubic-bezier(0.2, 0, 0, 1)`, `Emphasised = cubic-bezier(0.0
 
 | Animation | Spec |
 |---|---|
-| **Scan "looking around"** (3–5 s, default 4000 ms, driven by the real scan duration) | Four Sun corner brackets breathe (scale 1.0 → 1.04, 900 ms, Sine, reverse). A pair of cartoon eyes in the centre: pupils sweep left → right → left, 1400 ms per cycle, Sine; a blink (eye height 1 → 0.1 → 1, 120 ms) every 2.8 s. A Sun progress arc (0 → 360°, linear, `durationMs`) around the eyes. Label "Looking…" on a scrim pill. Ends with the arc snapping to full and the eyes widening (scale 1.15, 150 ms, Emphasised) before the "Table ready!" banner. |
+| **Scan "looking around"** (3–5 s, default 4000 ms, driven by the real scan duration) | Four Sun corner brackets with a 2 dp Ink edge breathe (scale 1.0 → 1.04, 900 ms, Sine, reverse). A pair of cartoon eyes in the centre: pupils sweep left → right → left, 1400 ms per cycle, Sine; a blink (eye height 1 → 0.1 → 1, 120 ms) every 2.8 s. A Sun progress arc on a Paper track with an Ink edge (0 → 360°, linear, `durationMs`) around the eyes. Label "Looking…" on a paper pill above the buttons. Ends with the arc snapping to full and the eyes widening (scale 1.15, 150 ms, Emphasised) before the "Table ready!" banner. |
 | **Speech bubble pop** | Enter: scale 0.6 → 1.0 with `Pop` spring (≈ 220 ms, visible overshoot to ~1.05) + fade 120 ms; transform origin at the tail. Exit: fade 150 ms + scale to 0.9, Standard. Auto-dismiss after 2500 ms; a new line replaces the old without exiting (text crossfade 150 ms). |
 | **Jump squash-stretch** (rendered by `:androidApp` on the billboard quad; the spec is here) | Anticipation: 80 ms, scaleX 1.2 / scaleY 0.8. Rise: 150 ms scaleX 0.85 / scaleY 1.15, Emphasised. Apex: 1.0 / 1.0. Land: 100 ms scaleX 1.25 / scaleY 0.75 then back to 1.0 in 120 ms with `Pop`. Walk cycle: bob scaleY 1.0 ↔ 0.94 at 6 Hz; flip on `facing.u` sign. |
-| **Button press** | Scale 1.0 → 0.96 in 90 ms Standard on press, back in 150 ms with `Pop`. Container Sun → SunDeep. |
+| **Button press** | Scale 1.0 → 0.96 in 90 ms Standard on press, back in 150 ms with `Pop`. Container Sun → SunDeep (secondary and ghost → CreamDeep). |
 | **Banner enter/exit** | Slide from the nearest edge 24 dp + fade, 200 ms Emphasised; exit 150 ms Standard. |
 | **Pipeline stage change** | Stage row ticks: check glyph scales 0 → 1 with `Pop`; progress bar animates to the new fraction in 300 ms Standard. Gate score counts up 0 → score over 600 ms. |
 | **Fall / respawn** | Handled by `:androidApp`: quad drops 0.3 m with gravity, fades 150 ms; respawns at `Level.spawn` with the pop spring. HUD shows the "Oops! Fell" bubble. |
 
-**Reduced motion** (`LocalReducedMotion = true`, set by `:androidApp` from the system animator scale): no infinite
+**Reduced motion** (`LocalReducedMotion = true`: the Settings toggle, or the value the host provides above `App`): no infinite
 loops (eyes and brackets are static, pupils centred), progress arc still animates (it conveys time), pops become
 150 ms fades, buttons do not scale, banners fade only. No parallax, ever.
 
@@ -120,68 +146,72 @@ Capture) ends the session; the next Scanning starts again from "Look at the tabl
 the surface and the debug flag; the host reports surface ready, anchor placed, tracking and character events back.
 
 ### Capture — `CaptureScreen`
-Paper background (or a camera preview slot). Headline "Drawing or toy", hint "Put the drawing on the table and
-take a photo", one Sun button **Photo** (camera glyph). Below: "Or pick a ready one" and a horizontal row of
-bundled character cards (sprite + name, 96 dp, Ink outline; selected = Sun outline). The card draws the
-character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a host the demo pair
-is shown. Top-right: `KK / RU / EN`
-segmented switch (the only place it exists) and a ghost **Metrics** button bottom-left.
-- *API offline*: Leaf badge "No internet — ready characters" above the row; the bundled row is the primary path.
-  Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call succeeds). A
-  failed attempt lands on the Processing error sheet as today. Never show a spinner.
-- *No bundled characters* (should not happen; assets ship in the APK): row shows an empty paper card "Nothing yet".
+Paper. Top-left wordmark "Rudeus ⌄" opens the Settings sheet. Display title "Drawing or toy", hint "Put the drawing on
+the table and take a photo". Hero card (Cream, radius 28): example drawing with Paper viewfinder brackets, **Photo**
+(Sun, full width, camera glyph), ghost **From gallery**. Then the headline "Or pick a ready one" and a shelf of bundled
+character cards bleeding off the right edge. The card draws the character's own sprite PNG (shipped in the APK), else a
+host thumbnail, else a glyph. Without a host the demo pair is shown.
+- *API offline*: Paper pill with a Leaf dot "No internet — ready characters" above the shelf; the bundled shelf is the
+  primary path. Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call
+  succeeds). A failed attempt lands on the Processing error sheet as today. Never show a spinner.
+- *No bundled characters* (should not happen; assets ship in the APK): an empty Cream card "Nothing yet".
+
+### Settings sheet — `SettingsSheet`
+Bottom sheet over Capture: Language (ҚАЗ · РУС · ENG segmented; the only language switch), Sounds, Reduce motion
+(overrides the system value), Metrics (dev tag, chevron), About (version, mono). The system back gesture, a tap on the
+scrim or a drag on the sheet closes it.
 
 ### Processing — `ProcessingScreen`
-Paper. Title "Making your character". Four stage rows with glyph + label (Cutting out · Painting · Checking ·
-Naming); the active row has a Sun dot pulsing, done rows a Leaf check. One Sun progress bar. When the gate
-stage completes the score is shown **honestly** as a display number `0.82` with "Style score" and "Passed"
-(Leaf) or "Not passed" (Tomato) and "Attempt 2 / 3". Cutout thumbnail (if provided) appears at 160 dp with the
-crayon outline so the child sees progress.
-- *Gate failed after retries*: Tomato "Not passed · 0.61", note "Style may look a bit different", primary
-  **Play anyway** (Sun), ghost **Retry**. Ship anyway is the default; never block the child.
-- *Pipeline error / offline mid-way*: `ScrimStrong` bottom sheet "Didn't work" + "Check the internet and try
-  again", primary **Retry**, ghost **Back** (which returns to Capture where bundled characters are offered).
-- *Done*: "Done!" display, the finished sprite at 160 dp with the crayon outline, character name, ability chip, and
-  one Sun **Next** (the child looks at their character first; no auto-advance). *Not passed* shows the sprite too.
+Paper. Back (ghost) top-left, which also cancels the run. Title "Making your character". Big Cream hero with the
+photo on a Paper well (the finished sprite replaces it). Progress bar + 4-stage stepper
+(Cutting out · Painting · Checking · Naming). When the gate stage completes the score is shown **honestly** on a Cream
+card: mono number `0.82`, "Style score", "Attempt 2 / 3", Passed (Leaf) or Not passed (Tomato) tag.
+- *Gate failed after retries*: hero with the sprite, name, ability tag, a Tomato dot "Style score 0.61 · Not passed",
+  note "Style may look a bit different", primary **Play anyway**, ghost **Retry**. Never block the child.
+- *Pipeline error / offline mid-way*: sheet over Scrim "Didn't work" + "Check the internet and try again", primary
+  **Retry**, ghost **Pick a ready one** (back to Capture where bundled characters are offered).
+- *Done*: "Done!", large sprite on the hero, name + ability tag, a Leaf dot score line, one Sun **Next** (the child looks
+  at their character first; no auto-advance).
 
 ### Scanning — `ScanningScreen`
-AR view fills the screen. Top-centre: two chips **Table | Floor** (the selected one Sky-outlined with a check),
-visible until the character is placed; the choice survives Back. Bottom-centre: one Sun button **Scan** (eye glyph),
-ghost **Back** to its left. Scan is explicit; never per frame. Floor means floor, carpet or outdoors (grass,
-pavement): the same game at a bigger scale; every "table" line below has a floor variant.
-- *No surface yet*: scrim pills "Look at the table" + "Move the phone slowly"; Scan disabled.
+AR view fills the screen. Top-centre: segmented **Table | Floor** (selected fills Ink, with a check), visible until the
+character is placed; the choice survives Back. Bottom: secondary **Back** + primary **Scan** (eye glyph). Scan is
+explicit; never per frame. Floor means floor, carpet or outdoors (grass, pavement): the same game at a bigger scale;
+every "table" line below has a floor variant.
+- *No surface yet*: paper pills "Look at the table" + "Move the phone slowly" (quiet); Scan disabled.
 - *Surface found, not placed*: one pill "Tap the table — it stands there"; Scan disabled. The tap places the
   character (the session's one anchor); it greets the child in a bubble.
 - *Placed*: pills and chips gone; Scan enabled.
 - *Scanning*: button disabled; `ScanOverlay` plays the looking-around animation for the real scan duration
-  (3–5 s); label "Looking…".
-- *No plane found* (after 10 s without a plane, or scan returns nothing): Tomato-accented banner "No table
+  (3–5 s); pill "Looking…" above the buttons.
+- *No plane found* (after 10 s without a plane, or scan returns nothing): Tomato-dot banner at the top "No table
   found" + "Use a patterned cloth and light from the side" (floor: "No floor found" + "Try outside in daylight:
-  grass or pavement"), button becomes **Scan** again. A ghost **Skip** appears after the second failure (2D
-  fallback: unbounded `Level`).
-- *Done*: Leaf banner "Table ready!" (floor: "Floor ready!") for 1.5 s, then Play. The object count ("Objects 5")
+  grass or pavement"), button becomes **Scan** again. **Skip** appears inside the banner after the second failure
+  (2D fallback: unbounded `Level`), and in the bottom row while no banner is up. *Table is empty*: Sky-dot banner with **Play anyway** inside it.
+- *Done*: Leaf-dot banner "Table ready!" (floor: "Floor ready!") for 1.5 s, then Play. The object count ("Objects 5")
   is shown only when the scan found objects; until the real scan (T04) lands it finds 0 and shows no count.
 - *Tracking paused during scan*: same Paused scrim as Play; the scan is cancelled, not retried automatically.
 
 ### Play — `PlayScreen(arView, …)`
 AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
-- Top-left: `AbilityChip` (glyph + "Jump"), Paper with Ink outline. Tapping it says the ability line in a bubble.
-- Top-right: offline badge (Leaf, "Offline") when `offline`; `Footprints` toggle chip (debug; Sky when on);
-  ghost **Metrics**. Footprints on (debug only): a ghost **Scenario** button under Metrics (`play_scenario`) replays
-  the Day 5 script from where the character stands (`ArSlot.scenarioRequest`).
+- Top-left: `AbilityChip` (glyph + "Jump"), Paper with Ink stroke. Tapping it says the ability line in a bubble.
+- Top-right: offline pill (Leaf dot, "Offline") when `offline`; `Footprints` toggle chip (debug; Sky when on).
+  Footprints on (debug only): secondary **Metrics** and **Scenario** (`play_scenario`) under it; Scenario replays the
+  Day 5 script from where the character stands (`ArSlot.scenarioRequest`). There is no on-screen Back: the system back
+  gesture returns to Capture.
 - Centre-bottom: `SpeechBubble` with the character's line from `CharacterSheet.lines[lang]` (falls back
   kk → ru). Event-triggered (`HudSpeech`): placed -> line 1; jumped -> line 2; blocked -> "Blocked!"; fell ->
   "Oops! Fell"; respawned -> "Back up"; every 3rd arrival -> a sheet line (deterministic); the ability chip -> line 2.
   Walking, landing, stepping up, pause/resume say nothing. Bubbles are ≥ 2.5 s apart; Fell and Back up always
   replace the current one, except that "Back up" waits until "Oops! Fell" has been up 1.2 s.
-- Bottom: one Sun button **Scan** (eye glyph), which reads **Rescan** once a scan has run in this session. Above it
+- Bottom-left: secondary **Scan** (eye glyph), which reads **Rescan** once a scan has run in this session. Above the row
   the hint pill "Tap — it walks": appears when the character is placed, leaves 5 s after it first walks (or on Scan).
-- Bottom, right of Scan: the ability's action button, secondary so Scan stays the one Sun button — Paper fill, Sky
-  outline, Sky text and the ability glyph, 64 dp tall (hit area ≥ 56 dp). **Jump** ("Секір") for JUMP and HIDE,
-  **Fly** ("Ұш") for FLY; ROLL has no button (it rolls fast on its own). Each tap is one jump
-  (`ArSlot.jumpRequest`); physics ignores it in the air. Disabled while tracking is lost.
+- Bottom-right: the ability's action as the Sun primary, ≥ 156 dp wide, under the thumb: **Jump** ("Секір") for JUMP and
+  HIDE, **Fly** ("Ұш") for FLY. ROLL has no ability button (it rolls fast on its own): Scan / Rescan becomes the primary,
+  right-aligned. Each tap is one jump (`ArSlot.jumpRequest`); physics ignores it in the air. Disabled while tracking is
+  lost.
 - *Voice* (T24, only with a `CaptureHost.voice` and once the character is placed): a round 56 dp mic control under
-  the ability chip — Paper fill, Sky outline and mic glyph; Sky-filled with a Paper glyph while held. Hold = record
+  the ability chip — Paper fill, 2 dp Sky stroke and mic glyph; Sky-filled with a Paper glyph while held. Hold = record
   (pill "Listening…" beside it, `voice_listening`); release = transcribe (pill "Thinking…", `voice_thinking`), then
   "jump" / "прыгай" / "секір" jumps (`ArSlot.jumpRequest`) and "go" / "иди" / "жүр" walks one short step forward
   (10 cm × surface scale, `ArSlot.walkForwardRequest`). What was heard shows for 2 s in the speech bubble with a mic
@@ -189,31 +219,31 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   permission opens the system dialog. English is the demo language. Disabled while offline (the offline pill already
   says why), while tracking is lost and while the last phrase is still being transcribed. The one icon-only control
   (brief T24: a round hold target, its pills are the label); accessibility label `voice_hold`.
-- *Offline* (`CaptureHost.offline`): the Leaf badge shows and the hint row shows the pill "No internet — ready
+- *Offline* (`CaptureHost.offline`): the offline pill shows and the hint row shows the pill "No internet — ready
   characters" (`capture_offline_note`) instead of "Tap — it walks", so the child sees why. Scan / Rescan stays
   enabled: a tap is the retry, a failure says "Table is empty" or, while offline, "No internet". The character keeps
   walking and jumping on the last level. On Scanning, a failed scan while offline shows the error card as "No
   internet" / "Check the internet and try again"; Skip / Play anyway still work.
-- Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left) of the
+- Footprints on: the AR view draws tinted footprints; the HUD adds a 120 dp paper mini-map (bottom-left, above Rescan) of the
   `Level` in plane coordinates with the same tints and the character as a Sky dot.
-- *Tracking lost / `Mode.PAUSED`*: full-screen `ScrimStrong`, title "Paused", hint "Point the phone at the
+- *Tracking lost / `Mode.PAUSED`*: the HUD goes; full-screen `ScrimStrong` that takes the touches, title "Paused", hint "Point the phone at the
   table" (floor: "…at the floor"), pause glyph. Physics is frozen by `:core`; nothing resets. The banner leaves by itself when tracking
   resumes; there is no button.
 - *Fell off the cliff*: bubble "Oops! Fell" then "Back up" on respawn.
 - *Scanning from Play*: the same `ScanOverlay`; the character keeps walking underneath.
 
 ### Metrics — `MetricsScreen`
-Paper. Shows this phone's run (`CaptureHost.latestRun()`, core's `MetricsRun`, read when the screen opens).
-Title "Metrics", run id + source/provider/device in mono. Summary tiles (2 × 2, only when n > 0): Passed first try
-`80 %`, p50 `29.8 s`, p90 `41.0 s`, Cost `$0.034`. Table of characters: input · score · retries · time · cost (rows
-in `PaperDeep` stripes). Scans table: objects · ms · accuracy cm. One Sun button **Export JSON** (disabled while
-saving); after export a Leaf toast "Saved" with "Where: Download/Rudeus/<runId>.json" under it in mono. Ghost
-**Back** (to where Metrics was opened from).
-- *No run yet*: display "Nothing yet", hint, Export disabled. Without a host (demo shell) a demo run is shown and
-  Export is disabled.
-- *Export failed*: Tomato banner "Not saved" with Retry.
-- *Cancelled characters* (the child left Processing): listed with "—" for score and retries, a neutral InkSoft
-  accent and muted text; the header counts finished ones like the summary ("Characters (2 · 1 cancelled)").
+Paper, dev density. Opened from the Settings sheet (or from Play with Footprints on). Shows this phone's run
+(`CaptureHost.latestRun()`, core's `MetricsRun`, read when the screen opens). Back (ghost) top-left, title "Metrics",
+run id + source/provider/device in mono. 4 stat tiles in one row (only when n > 0): Passed first try `80%`, p50 `29.8s`,
+p90 `41.0s`, Cost `3.4¢`. Table of characters: input · score · retries · time · cost, 13.5 sp with mono numbers and Cream
+stripes. Scans table: objects · time · accuracy cm. **Export JSON** primary pinned to the bottom (disabled while saving);
+after export a Leaf tag "Saved" with "Where: Download/Rudeus/<runId>.json" in mono above it.
+- *No run yet*: empty Cream card "Nothing yet" + hint, Export disabled. Without a host (demo shell) a demo run is shown
+  and Export is disabled.
+- *Export failed*: Tomato-dot banner "Not saved" with Retry inside it.
+- *Cancelled characters* (the child left Processing): listed with "—" for score and retries and muted text; the header
+  counts finished ones like the summary ("Characters 2 · 1 cancelled").
 
 ## (e) Copy table
 
@@ -320,6 +350,13 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | metrics_col_cost | Баға | Цена | Cost |
 | metrics_col_objects | Заттар | Предметы | Objects |
 | metrics_col_within_cm | Дәлдік, см | Точность, см | Accuracy, cm |
+| settings_title | Баптаулар | Настройки | Settings |
+| settings_language | Тіл | Язык | Language |
+| settings_sounds | Дыбыс | Звук | Sounds |
+| settings_reduce_motion | Қимылды азайту | Меньше анимации | Reduce motion |
+| settings_reduce_motion_hint | Секіру орнына баяу көріну | Плавно вместо прыжков | Fades instead of pops |
+| settings_metrics_hint | Іске қосулар, ұпай, экспорт | Запуски, оценки, экспорт | Runs, scores, export |
+| settings_about | Бағдарлама туралы | О приложении | About |
 | camera_permission_title | Камера керек | Нужна камера | Camera needed |
 | camera_permission_hint | Кейіпкерді үстелде көру үшін | Чтобы увидеть героя на столе | To see the character on the table |
 | camera_permission_button | Рұқсат беру | Разрешить | Allow |
@@ -334,11 +371,11 @@ Accessibility
   label sits next to them.
 - Colour is never the only signal: Passed/Not passed has a word; footprint kinds have labels on the mini-map;
   the cliff is dashed as well as orange.
-- Text ≥ 16 sp bold, body 20 sp; all text on Paper or Scrim; measured contrast ≥ 4.5:1.
+- Text ≥ 13 sp bold, body 17 sp; all text on Paper or Scrim; measured contrast ≥ 4.5:1 (Metrics, a dev screen, goes to 11 sp).
 - Reduced motion honoured via `LocalReducedMotion` (see Motion). No flashing faster than 3 Hz.
 - Languages: kk and ru copy are complete; a missing `CharacterSheet` line falls back kk → ru → en.
 - Speech bubbles stay 2.5 s minimum and never cover the character (anchored above the bottom controls).
-- Works one-handed: primary button bottom-centre, chips top corners, nothing in the middle.
+- Works one-handed: primary button at the bottom (bottom-right on Play), chips top corners, nothing in the middle.
 
 What not to do
 - No text directly on the camera feed. No white text on Sun. No shadows for contrast.

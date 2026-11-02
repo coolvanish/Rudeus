@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.CharacterState
@@ -37,14 +39,14 @@ import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.AbilityChip
 import kz.rudy.ar.ui.components.Chip
 import kz.rudy.ar.ui.components.FootprintMiniMap
-import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
 import kz.rudy.ar.ui.components.OfflineBadge
+import kz.rudy.ar.ui.components.Pill
 import kz.rudy.ar.ui.components.PausedOverlay
 import kz.rudy.ar.ui.components.PrimaryButton
 import kz.rudy.ar.ui.components.ScanOverlay
-import kz.rudy.ar.ui.components.ScrimPill
+import kz.rudy.ar.ui.components.SecondaryButton
 import kz.rudy.ar.ui.components.glyph
 import kz.rudy.ar.ui.components.SpeechBubble
 import kz.rudy.ar.ui.t
@@ -61,7 +63,7 @@ data class HudState(
     val scanning: Boolean = false,
     val scanProgress: Float = 0f,
     val showFootprints: Boolean = false,
-    /** The host's last model call failed on the network: Leaf badge + the offline note above Scan (Scan stays enabled: a tap is the retry). */
+    /** The host's last model call failed on the network: offline pill + the offline note above the buttons (Scan stays enabled: a tap is the retry). */
     val offline: Boolean = false,
     /** "Tap - it walks" pill: on after `ArSlot.onAnchorPlaced`, off 5 s after the first STARTED_WALKING. */
     val showTapHint: Boolean = false,
@@ -82,8 +84,10 @@ data class HudState(
  * with the HUD in a Box on top.
  * Stateless: physics lives in :core, rendering in :androidApp; this only draws chrome.
  *
- * [onJump] backs the Jump / Fly button right of Scan (JUMP, FLY, HIDE; none for ROLL). [onScenario], when given and
- * footprints are on, adds the debug "Scenario" ghost button under Metrics.
+ * [onJump] backs the Sun primary, bottom-right (Jump for JUMP and HIDE, Fly for FLY). ROLL has no ability button, so
+ * Scan / Rescan takes the primary's place; otherwise it is the secondary bottom-left. With footprints on (debug) the
+ * top-right column adds Metrics and, when [onScenario] is given, "Scenario". There is no on-screen Back: the system
+ * back gesture returns to Capture.
  *
  * T24: [onVoiceDown], when given (a `VoiceHost` exists and the character is placed), adds the round hold-to-talk mic
  * under the ability chip: press = [onVoiceDown], release (or the press being cancelled) = [onVoiceUp]. Disabled while
@@ -101,18 +105,18 @@ fun PlayScreen(
     onToggleFootprints: () -> Unit,
     onAbilityTap: () -> Unit,
     onOpenMetrics: () -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onScenario: (() -> Unit)? = null,
     onVoiceDown: (() -> Unit)? = null,
     onVoiceUp: () -> Unit = {},
 ) {
+    val paused = hud.trackingLost || character.mode == Mode.PAUSED
     Box(modifier.fillMaxSize()) {
         arView(Modifier.fillMaxSize())
         ScanOverlay(active = hud.scanning, progress = hud.scanProgress)
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(RudeusSpacing.md)) {
+        if (!paused) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = RudeusSpacing.md, vertical = RudeusSpacing.smd)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Column(verticalArrangement = Arrangement.spacedBy(RudeusSpacing.xs)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     AbilityChip(character.ability, onClick = onAbilityTap)
                     if (onVoiceDown != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -129,23 +133,23 @@ fun PlayScreen(
                             }
                             if (pill != null) {
                                 Spacer(Modifier.width(RudeusSpacing.sm))
-                                ScrimPill(t(pill))
+                                Pill(t(pill))
                             }
                         }
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(RudeusSpacing.xs)) {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (hud.offline) OfflineBadge()
                     Chip(
                         text = t(StringId.footprints),
                         glyph = Glyph.FOOTPRINTS,
-                        accent = if (hud.showFootprints) RudeusColors.Sky else RudeusColors.Ink,
+                        isOn = hud.showFootprints,
                         onClick = onToggleFootprints,
                     )
-                    GhostButton(t(StringId.metrics_button), glyph = Glyph.METRICS, onClick = onOpenMetrics)
-                    if (hud.showFootprints && onScenario != null) {
-                        GhostButton(t(StringId.play_scenario), onClick = onScenario)
+                    if (hud.showFootprints) {
+                        SecondaryButton(t(StringId.metrics_title), glyph = Glyph.METRICS, onClick = onOpenMetrics)
+                        if (onScenario != null) SecondaryButton(t(StringId.play_scenario), onClick = onScenario)
                     }
                 }
             }
@@ -160,55 +164,53 @@ fun PlayScreen(
                     SpeechBubble(text = hud.speech)
                 }
             }
-            Spacer(Modifier.height(RudeusSpacing.md))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                if (hud.showFootprints && level != null) {
-                    FootprintMiniMap(level, character)
+            Spacer(Modifier.height(RudeusSpacing.sm))
+            if (hud.showFootprints && level != null) {
+                FootprintMiniMap(level, character)
+                Spacer(Modifier.height(RudeusSpacing.sm))
+            }
+            // Scan needs the network: the offline note says why a tap may fail, instead of pretending there is no table.
+            val hint = when {
+                hud.scanning -> StringId.scanning
+                hud.offline -> StringId.capture_offline_note
+                hud.showTapHint && character.mode == Mode.IDLE -> StringId.play_tap_to_walk
+                else -> null
+            }
+            if (hint != null) {
+                Pill(t(hint), Modifier.align(Alignment.CenterHorizontally))
+                Spacer(Modifier.height(14.dp))
+            }
+            val scanLabel = t(if (hud.scanned) StringId.rescan else StringId.scan_button)
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.smd, Alignment.End),
+            ) {
+                if (character.ability == Ability.ROLL) {
+                    PrimaryButton(text = scanLabel, glyph = Glyph.EYE, enabled = !hud.scanning, onClick = onScan, modifier = Modifier.widthIn(min = 156.dp))
                 } else {
-                    GhostButton(t(StringId.back), onClick = onBack, glyph = Glyph.BACK)
-                }
-                Spacer(Modifier.width(RudeusSpacing.md))
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (hud.offline) {
-                        // Scan needs the network: say why it is disabled instead of pretending there is no table.
-                        ScrimPill(t(StringId.capture_offline_note))
-                        Spacer(Modifier.height(RudeusSpacing.sm))
-                    } else if (hud.showTapHint && character.mode == Mode.IDLE) {
-                        ScrimPill(t(StringId.play_tap_to_walk))
-                        Spacer(Modifier.height(RudeusSpacing.sm))
-                    }
+                    SecondaryButton(text = scanLabel, glyph = Glyph.EYE, enabled = !hud.scanning, onClick = onScan)
+                    Spacer(Modifier.weight(1f))
                     PrimaryButton(
-                        text = t(if (hud.scanned) StringId.rescan else StringId.scan_button),
-                        glyph = Glyph.EYE,
-                        enabled = !hud.scanning,
-                        onClick = onScan,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                // The ability's action: secondary (Paper + Sky), so Scan stays the one Sun button. ROLL has none.
-                if (character.ability != Ability.ROLL) {
-                    Spacer(Modifier.width(RudeusSpacing.md))
-                    GhostButton(
                         text = t(if (character.ability == Ability.FLY) StringId.play_fly else StringId.play_jump),
                         glyph = character.ability.glyph(),
-                        accent = RudeusColors.Sky,
                         enabled = !hud.trackingLost,
                         onClick = onJump,
-                        modifier = Modifier.height(RudeusSpacing.primaryButton),
+                        modifier = Modifier.widthIn(min = 156.dp),
                     )
                 }
             }
         }
         PausedOverlay(
-            visible = hud.trackingLost || character.mode == Mode.PAUSED,
+            visible = paused,
             hint = if (hud.surface == Surface.FLOOR) StringId.paused_hint_floor else StringId.paused_hint,
         )
     }
 }
 
 /**
- * T24: the round hold-to-talk control, GhostButton-styled (Paper fill, Sky outline and glyph); Sky-filled with a Paper
- * glyph while [listening]. A press calls [onDown]; the release, or the press being cancelled (finger slid off, the
+ * T24: the round hold-to-talk control: Paper fill, 2 dp Sky stroke and glyph; Sky-filled with a Paper glyph while
+ * [listening]. A press calls [onDown]; the release, or the press being cancelled (finger slid off, the
  * control left composition or got disabled), calls [onUp] exactly once.
  */
 @Composable
@@ -216,16 +218,12 @@ private fun MicButton(listening: Boolean, enabled: Boolean, onDown: () -> Unit, 
     val down by rememberUpdatedState(onDown)
     val up by rememberUpdatedState(onUp)
     val label = t(StringId.voice_hold)
-    val outline = if (enabled) RudeusColors.Sky else RudeusColors.InkSoft
-    val fill = when {
-        listening -> RudeusColors.Sky
-        enabled -> RudeusColors.Paper
-        else -> RudeusColors.Paper.copy(alpha = 0.6f)
-    }
+    val outline = if (enabled) RudeusColors.Sky else RudeusColors.InkMuted
+    val fill = if (listening) RudeusColors.Sky else RudeusColors.Paper
     val tint = when {
         listening -> RudeusColors.Paper
         enabled -> RudeusColors.Sky
-        else -> RudeusColors.InkSoft
+        else -> RudeusColors.InkMuted
     }
     Box(
         Modifier
@@ -248,6 +246,6 @@ private fun MicButton(listening: Boolean, enabled: Boolean, onDown: () -> Unit, 
             ),
         contentAlignment = Alignment.Center,
     ) {
-        GlyphIcon(Glyph.MIC, tint)
+        GlyphIcon(Glyph.MIC, tint, size = 22.dp)
     }
 }

@@ -139,6 +139,14 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     metrics_col_within_cm("Дәлдік, см", "Точность, см", "Accuracy, cm"),
 
     /** AR host: the camera permission screen shown instead of the AR view until the child allows the camera. */
+    settings_title("Баптаулар", "Настройки", "Settings"),
+    settings_language("Тіл", "Язык", "Language"),
+    settings_sounds("Дыбыс", "Звук", "Sounds"),
+    settings_reduce_motion("Қимылды азайту", "Меньше анимации", "Reduce motion"),
+    settings_reduce_motion_hint("Секіру орнына баяу көріну", "Плавно вместо прыжков", "Fades instead of pops"),
+    settings_metrics_hint("Іске қосулар, ұпай, экспорт", "Запуски, оценки, экспорт", "Runs, scores, export"),
+    settings_about("Бағдарлама туралы", "О приложении", "About"),
+
     camera_permission_title("Камера керек", "Нужна камера", "Camera needed"),
     camera_permission_hint("Кейіпкерді үстелде көру үшін", "Чтобы увидеть героя на столе", "To see the character on the table"),
     camera_permission_button("Рұқсат беру", "Разрешить", "Allow");

@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 
-/** True when the host (androidApp) reports a reduced-motion preference; see DESIGN.md "Motion". */
+/** True when the Settings toggle or the host asks for reduced motion; see DESIGN.md "Motion". */
 val LocalReducedMotion = staticCompositionLocalOf { false }
 
 val RudeusColorScheme: ColorScheme = lightColorScheme(
@@ -19,30 +19,30 @@ val RudeusColorScheme: ColorScheme = lightColorScheme(
     onPrimaryContainer = RudeusColors.Ink,
     secondary = RudeusColors.Sky,
     onSecondary = RudeusColors.Paper,
-    secondaryContainer = RudeusColors.PaperDeep,
+    secondaryContainer = RudeusColors.Cream,
     onSecondaryContainer = RudeusColors.Ink,
     tertiary = RudeusColors.Leaf,
     onTertiary = RudeusColors.Paper,
     error = RudeusColors.Tomato,
     onError = RudeusColors.Paper,
-    errorContainer = RudeusColors.Tomato,
-    onErrorContainer = RudeusColors.Paper,
+    errorContainer = RudeusColors.TomatoTint,
+    onErrorContainer = RudeusColors.Tomato,
     background = RudeusColors.Paper,
     onBackground = RudeusColors.Ink,
     surface = RudeusColors.Paper,
     onSurface = RudeusColors.Ink,
-    surfaceVariant = RudeusColors.PaperDeep,
+    surfaceVariant = RudeusColors.Cream,
     onSurfaceVariant = RudeusColors.InkSoft,
     outline = RudeusColors.Ink,
-    outlineVariant = RudeusColors.InkSoft,
+    outlineVariant = RudeusColors.Line,
     scrim = RudeusColors.Ink,
 )
 
 val RudeusShapes = Shapes(
-    extraSmall = RoundedCornerShape(RudeusRadius.card),
-    small = RoundedCornerShape(RudeusRadius.card),
+    extraSmall = RoundedCornerShape(RudeusRadius.tag),
+    small = RoundedCornerShape(RudeusRadius.tile),
     medium = RoundedCornerShape(RudeusRadius.card),
-    large = RoundedCornerShape(RudeusRadius.bubble),
+    large = RoundedCornerShape(RudeusRadius.hero),
     extraLarge = RoundedCornerShape(RudeusRadius.full),
 )
 
@@ -51,7 +51,7 @@ fun RudeusTheme(reducedMotion: Boolean = false, content: @Composable () -> Unit)
     CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
         MaterialTheme(
             colorScheme = RudeusColorScheme,
-            typography = RudeusTypography,
+            typography = rudeusTypography(),
             shapes = RudeusShapes,
             content = content,
         )

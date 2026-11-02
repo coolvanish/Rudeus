@@ -50,8 +50,10 @@ import kz.rudy.ar.ui.screens.ProcessingStatus
 import kz.rudy.ar.ui.screens.ScanState
 import kz.rudy.ar.ui.screens.ScanStatus
 import kz.rudy.ar.ui.screens.ScanningScreen
+import kz.rudy.ar.ui.screens.SettingsSheet
 import kz.rudy.ar.ui.screens.VoicePhase
 import kz.rudy.ar.ui.screens.reduce
+import kz.rudy.ar.ui.theme.LocalReducedMotion
 import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusTheme
 import kotlin.time.TimeSource
@@ -106,7 +108,11 @@ private const val VOICE_BUBBLE_MS = 2000L
  * [backHandler] wires the system back gesture: :androidApp passes
  * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
  * no back API of its own on Android without a new dependency (CMP's `ui-backhandler` is not on its classpath).
- * Back rule: Metrics -> where it came from; Play / Scanning / Processing -> Capture; Capture -> system (exit).
+ * Back rule: the Settings sheet closes first; Metrics -> where it came from; Play / Scanning / Processing -> Capture;
+ * Capture -> system (exit).
+ *
+ * Settings (T25): the sheet opens from Capture's wordmark. Reduce motion here ORs with whatever a host provides through
+ * [LocalReducedMotion] above `App`; both last for this process only.
  */
 @Composable
 fun App(
@@ -145,6 +151,12 @@ fun App(
     var voicePhase by remember { mutableStateOf(VoicePhase.IDLE) }
     var walkForwardRequest by remember { mutableStateOf(0) }
     var voiceSerial by remember { mutableStateOf(-1) }
+    // T25: the Settings sheet. Language stays `lang` above.
+    var settingsOpen by remember { mutableStateOf(false) }
+    var reduceMotion by remember { mutableStateOf(false) }
+    // TODO(T25): wire sounds. The player lives in :androidApp (T23), out of :shared's reach; the toggle is UI-only.
+    var soundsOn by remember { mutableStateOf(true) }
+    val hostReducedMotion = LocalReducedMotion.current
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -154,7 +166,8 @@ fun App(
     val offline by offlineFlow.collectAsState()
     val voice = remember(capture) { capture?.voice }
 
-    fun go(to: Screen) { lastScreen = screen; screen = to }
+    // Leaving Capture closes the sheet: a photo can arrive from the camera or picker while it is open.
+    fun go(to: Screen) { lastScreen = screen; screen = to; settingsOpen = false }
     fun startPipeline(bytes: ByteArray?) {
         if (bytes == null) return
         photo = bytes
@@ -176,11 +189,13 @@ fun App(
         go(Screen.SCANNING)
     }
     /**
-     * The one Back rule, shared by the on-screen Back buttons and the system back gesture: Metrics -> where it was
+     * The one Back rule, shared by the on-screen Back buttons and the system back gesture: an open Settings sheet closes;
+     * Metrics -> where it was
      * opened from; Play / Scanning / Processing -> Capture (leaves the AR session, cancels a running pipeline);
      * Capture -> not handled (the system exits).
      */
     fun back() {
+        if (settingsOpen) { settingsOpen = false; return }
         when (screen) {
             Screen.CAPTURE -> Unit
             Screen.METRICS -> {
@@ -361,9 +376,9 @@ fun App(
     }
 
     // System back / predictive back gesture: same rule as the Back buttons; on Capture the system handles it (exit).
-    backHandler(screen != Screen.CAPTURE, ::back)
+    backHandler(screen != Screen.CAPTURE || settingsOpen, ::back)
 
-    RudeusTheme {
+    RudeusTheme(reducedMotion = reduceMotion || hostReducedMotion) {
         CompositionLocalProvider(LocalLang provides lang) {
             Box(Modifier.fillMaxSize()) {
                 // The single AR call site (T13 (a)): same position for Scanning, Play and Metrics-over-Play.
@@ -373,8 +388,7 @@ fun App(
                     Screen.CAPTURE -> CaptureScreen(
                         bundled = bundled,
                         offline = offline,
-                        lang = lang,
-                        onLangChange = { lang = it },
+                        onOpenSettings = { settingsOpen = true },
                         onTakePhoto = {
                             if (capture != null) capture.takePhoto() else startPipeline(ByteArray(0))
                         },
@@ -385,7 +399,6 @@ fun App(
                             selectedBundled = c.id
                             go(Screen.SCANNING)
                         },
-                        onOpenMetrics = ::openMetrics,
                         selectedId = selectedBundled,
                     )
 
@@ -429,6 +442,7 @@ fun App(
                             onContinue = ::useResult,
                             onBack = ::back,
                             sprite = pendingResult?.sprite,
+                            photo = photo,
                         )
                     }
 
@@ -514,7 +528,6 @@ fun App(
                                 if (line != null) speech = HudSpeech.say(speech, line, nowMs())
                             },
                             onOpenMetrics = ::openMetrics,
-                            onBack = ::back,
                             onScenario = if (hud.showFootprints) ({ scenarioRequest++ }) else null,
                             onVoiceDown = if (voice != null && scan.anchored) ::voiceDown else null,
                             onVoiceUp = ::voiceUp,
@@ -532,6 +545,18 @@ fun App(
                         modifier = Modifier.swallowTouches(),
                     )
                 }
+
+                SettingsSheet(
+                    visible = settingsOpen,
+                    lang = lang,
+                    onLangChange = { lang = it },
+                    sounds = soundsOn,
+                    onSoundsChange = { soundsOn = it },
+                    reduceMotion = reduceMotion,
+                    onReduceMotionChange = { reduceMotion = it },
+                    onOpenMetrics = ::openMetrics,
+                    onDismiss = { settingsOpen = false },
+                )
             }
         }
     }

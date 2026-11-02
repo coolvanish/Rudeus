@@ -9,17 +9,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,31 +28,39 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.ui.StringId
-import kz.rudy.ar.ui.components.AbilityChip
+import kz.rudy.ar.ui.components.AbilityTag
+import kz.rudy.ar.ui.components.BottomSheet
 import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
 import kz.rudy.ar.ui.components.PrimaryButton
 import kz.rudy.ar.ui.components.SpriteImage
+import kz.rudy.ar.ui.components.StatusDot
+import kz.rudy.ar.ui.components.Tag
+import kz.rudy.ar.ui.components.TagTone
 import kz.rudy.ar.ui.components.rememberSpriteBitmap
 import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.LocalReducedMotion
 import kz.rudy.ar.ui.theme.RudeusColors
+import kz.rudy.ar.ui.theme.RudeusMono
 import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
 /** Pipeline stages in order (mirrors core CharacterPipeline: cutout -> stylize -> gate -> sheet). */
-enum class PipelineStage(val label: StringId) {
-    CUTOUT(StringId.stage_cutout),
-    STYLIZE(StringId.stage_stylize),
-    GATE(StringId.stage_gate),
-    SHEET(StringId.stage_sheet),
+enum class PipelineStage(val label: StringId, internal val glyph: Glyph) {
+    CUTOUT(StringId.stage_cutout, Glyph.CUT),
+    STYLIZE(StringId.stage_stylize, Glyph.PAINT),
+    GATE(StringId.stage_gate, Glyph.SHIELD),
+    SHEET(StringId.stage_sheet, Glyph.NAME),
 }
 
 enum class ProcessingStatus { RUNNING, GATE_FAILED, ERROR, DONE }
@@ -86,108 +95,214 @@ fun ProcessingScreen(
     onContinue: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The finished character's sprite PNG (`CharacterResult.sprite`); shown at 160 dp once the run is done. */
+    /** The finished character's sprite PNG (`CharacterResult.sprite`); fills the hero once the run is done. */
     sprite: ByteArray? = null,
+    /** The photo going through the pipeline: the hero until the sprite is ready. */
+    photo: ByteArray? = null,
 ) {
     val finished = state.status == ProcessingStatus.DONE || state.status == ProcessingStatus.GATE_FAILED
     val spriteBitmap = rememberSpriteBitmap(if (finished) sprite else null)
-    val reduced = LocalReducedMotion.current
-    val progress by animateFloatAsState(
-        targetValue = state.fraction,
-        animationSpec = tween(if (reduced) RudeusMotion.REDUCED_MS else RudeusMotion.STAGE_PROGRESS_MS, easing = RudeusMotion.Standard),
-        label = "progress",
-    )
+    val photoBitmap = rememberSpriteBitmap(photo)
     Box(modifier.fillMaxSize().background(RudeusColors.Paper)) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(RudeusSpacing.md)) {
-            Text(
-                if (state.status == ProcessingStatus.DONE) t(StringId.processing_done) else t(StringId.processing_title),
-                style = MaterialTheme.typography.displayLarge,
-                color = RudeusColors.Ink,
-            )
-            Spacer(Modifier.height(RudeusSpacing.lg))
-            // Scrolls on short screens once the sprite, the score and the name are all shown.
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                val preview: (@Composable (Modifier) -> Unit)? = spriteBitmap?.let { bmp ->
-                    { m -> SpriteImage(bmp, contentDescription = state.sheet?.name, modifier = m.padding(RudeusSpacing.sm)) }
-                } ?: state.preview
-                preview?.let { content ->
-                    val shape = RoundedCornerShape(RudeusRadius.card)
-                    Box(
-                        Modifier
-                            .size(160.dp)
-                            .align(Alignment.CenterHorizontally)
-                            .clip(shape)
-                            .background(RudeusColors.PaperDeep)
-                            .border(RudeusSpacing.stroke, RudeusColors.Ink, shape),
-                    ) { content(Modifier.fillMaxSize()) }
-                    Spacer(Modifier.height(RudeusSpacing.lg))
-                }
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(RudeusRadius.full)),
-                    color = RudeusColors.Sun,
-                    trackColor = RudeusColors.PaperDeep,
-                )
-                Spacer(Modifier.height(RudeusSpacing.lg))
-                PipelineStage.entries.forEach { stage ->
-                    StageRow(
-                        label = t(stage.label),
-                        done = stage in state.completed,
-                        active = stage == state.stage && state.status == ProcessingStatus.RUNNING,
-                        failed = stage == state.stage && state.status == ProcessingStatus.ERROR,
-                    )
-                }
-                state.gateScore?.let { score ->
-                    Spacer(Modifier.height(RudeusSpacing.lg))
-                    GateScore(score, passed = score >= state.gateThreshold, attempt = state.attempt, maxAttempts = state.maxAttempts)
-                }
-                if (state.status == ProcessingStatus.DONE && state.sheet != null) {
-                    Spacer(Modifier.height(RudeusSpacing.lg))
-                    Text(state.sheet.name, style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
-                    Spacer(Modifier.height(RudeusSpacing.sm))
-                    AbilityChip(state.sheet.ability)
-                }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(start = RudeusSpacing.screenEdge, end = RudeusSpacing.screenEdge, bottom = RudeusSpacing.smd),
+        ) {
+            Box(Modifier.height(52.dp), contentAlignment = Alignment.CenterStart) {
+                if (!finished) GhostButton(t(StringId.back), onClick = onBack, glyph = Glyph.BACK, modifier = Modifier.offset(x = (-14).dp))
+            }
+            if (state.status == ProcessingStatus.DONE) {
+                Text(t(StringId.processing_done), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
+            } else {
+                Text(t(StringId.processing_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
             }
             Spacer(Modifier.height(RudeusSpacing.md))
-            when (state.status) {
-                ProcessingStatus.RUNNING -> GhostButton(t(StringId.cancel), onClick = onBack, glyph = Glyph.BACK)
-                ProcessingStatus.DONE -> PrimaryButton(t(StringId.next), onClick = onContinue, modifier = Modifier.fillMaxWidth())
-                ProcessingStatus.GATE_FAILED -> Column {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(RudeusRadius.hero))
+                    .background(RudeusColors.Cream)
+                    .padding(RudeusSpacing.smd),
+                verticalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+            ) {
+                HeroWell(
+                    image = spriteBitmap ?: photoBitmap,
+                    description = if (spriteBitmap != null) state.sheet?.name else null,
+                    preview = state.preview,
+                    modifier = Modifier.weight(1f).heightIn(min = 96.dp).fillMaxWidth(),
+                )
+                if (finished) ResultLines(state)
+            }
+            if (finished) {
+                Spacer(Modifier.height(RudeusSpacing.screenEdge))
+                if (state.status == ProcessingStatus.DONE) {
+                    PrimaryButton(t(StringId.next), onClick = onContinue, trailingGlyph = Glyph.RIGHT, modifier = Modifier.fillMaxWidth())
+                } else {
                     Text(t(StringId.ship_anyway_note), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
-                    Spacer(Modifier.height(RudeusSpacing.md))
+                    Spacer(Modifier.height(RudeusSpacing.smd))
                     PrimaryButton(t(StringId.ship_anyway), onClick = onShipAnyway, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(RudeusSpacing.sm))
-                    GhostButton(t(StringId.retry), onClick = onRetry)
+                    GhostButton(t(StringId.retry), onClick = onRetry, glyph = Glyph.RETRY, modifier = Modifier.fillMaxWidth())
                 }
-                ProcessingStatus.ERROR -> Unit
+            } else {
+                Spacer(Modifier.height(RudeusSpacing.screenEdge))
+                ProgressBar(state.fraction)
+                Spacer(Modifier.height(14.dp))
+                Stages(state)
+                state.gateScore?.let { score ->
+                    Spacer(Modifier.height(RudeusSpacing.md))
+                    GateScore(score, passed = score >= state.gateThreshold, attempt = state.attempt, maxAttempts = state.maxAttempts)
+                }
             }
         }
-        if (state.status == ProcessingStatus.ERROR) {
-            ErrorSheet(onRetry = onRetry, onBack = onBack, modifier = Modifier.align(Alignment.BottomCenter))
+        BottomSheet(visible = state.status == ProcessingStatus.ERROR) {
+            Text(t(StringId.processing_failed_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
+            Text(t(StringId.processing_failed_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
+            PrimaryButton(t(StringId.retry), onClick = onRetry, glyph = Glyph.RETRY, modifier = Modifier.fillMaxWidth())
+            // T03 (f): offline / no key / HTTP error -> back to Capture, where the ready characters are.
+            GhostButton(t(StringId.processing_pick_ready), onClick = onBack, glyph = Glyph.BACK, modifier = Modifier.fillMaxWidth())
         }
     }
 }
 
+/** The Paper well: [image] (finished sprite, else the photo), else the host's preview. */
 @Composable
-private fun StageRow(label: String, done: Boolean, active: Boolean, failed: Boolean) {
-    Row(
-        Modifier.fillMaxWidth().height(RudeusSpacing.touchTarget),
-        verticalAlignment = Alignment.CenterVertically,
+private fun HeroWell(
+    image: ImageBitmap?,
+    description: String?,
+    preview: (@Composable (Modifier) -> Unit)?,
+    modifier: Modifier,
+) {
+    Box(modifier.clip(RoundedCornerShape(RudeusRadius.card)).background(RudeusColors.Paper)) {
+        val inset = Modifier.fillMaxSize().padding(18.dp)
+        when {
+            image != null -> SpriteImage(image, contentDescription = description, modifier = inset)
+            preview != null -> preview(inset)
+            else -> GlyphIcon(Glyph.CAMERA, RudeusColors.InkMuted, Modifier.align(Alignment.Center), size = 48.dp)
+        }
+    }
+}
+
+/** Under the finished hero: name + ability tag, then the honest score line with a status dot. */
+@Composable
+private fun ResultLines(state: ProcessingState) {
+    state.sheet?.let { sheet ->
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                sheet.name,
+                style = MaterialTheme.typography.titleLarge,
+                color = RudeusColors.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            AbilityTag(sheet.ability)
+        }
+    }
+    state.gateScore?.let { score ->
+        val passed = state.status == ProcessingStatus.DONE
+        Row(
+            Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+        ) {
+            StatusDot(if (passed) RudeusColors.Leaf else RudeusColors.Tomato)
+            Text(t(StringId.gate_score), style = MaterialTheme.typography.bodySmall, color = RudeusColors.InkSoft)
+            Text(formatFixed(score, 2), style = RudeusMono, color = RudeusColors.InkSoft)
+            Text(
+                "· ${t(if (passed) StringId.gate_passed else StringId.gate_failed)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = RudeusColors.InkSoft,
+            )
+        }
+    }
+}
+
+/** 14 dp bar with a 2 dp Ink edge; the Sun fill ends in its own Ink edge. */
+@Composable
+private fun ProgressBar(fraction: Float) {
+    val reduced = LocalReducedMotion.current
+    val progress by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = tween(if (reduced) RudeusMotion.REDUCED_MS else RudeusMotion.STAGE_PROGRESS_MS, easing = RudeusMotion.Standard),
+        label = "progress",
+    )
+    val shape = RoundedCornerShape(RudeusRadius.full)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(14.dp)
+            .clip(shape)
+            .background(RudeusColors.Paper)
+            .border(RudeusSpacing.stroke, RudeusColors.Ink, shape)
+            .padding(RudeusSpacing.stroke),
     ) {
-        Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-            when {
-                done -> GlyphIcon(Glyph.CHECK, RudeusColors.Leaf)
-                failed -> GlyphIcon(Glyph.CROSS, RudeusColors.Tomato)
-                active -> Box(Modifier.size(16.dp).clip(RoundedCornerShape(RudeusRadius.full)).background(RudeusColors.Sun))
-                else -> Box(Modifier.size(12.dp).clip(RoundedCornerShape(RudeusRadius.full)).background(RudeusColors.PaperDeep))
+        Row(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).fillMaxHeight().background(RudeusColors.Sun)) {
+            Spacer(Modifier.weight(1f))
+            Box(Modifier.fillMaxHeight().width(RudeusSpacing.stroke).background(RudeusColors.Ink))
+        }
+    }
+}
+
+/** The 4-column stepper: done = Leaf tint + check, active = Sun + Ink ring, failed = Tomato tint + cross. */
+@Composable
+private fun Stages(state: ProcessingState) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.xs)) {
+        PipelineStage.entries.forEach { stage ->
+            val done = stage in state.completed
+            val active = stage == state.stage && state.status == ProcessingStatus.RUNNING
+            val failed = stage == state.stage && state.status == ProcessingStatus.ERROR
+            val fill = when {
+                failed -> RudeusColors.TomatoTint
+                done -> RudeusColors.LeafTint
+                active -> RudeusColors.Sun
+                else -> RudeusColors.Cream
+            }
+            val tint = when {
+                failed -> RudeusColors.Tomato
+                done -> RudeusColors.Leaf
+                active -> RudeusColors.Ink
+                else -> RudeusColors.InkMuted
+            }
+            Column(
+                Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(fill)
+                        .then(if (active) Modifier.border(RudeusSpacing.stroke, RudeusColors.Ink, CircleShape) else Modifier),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val glyph = when {
+                        failed -> Glyph.CLOSE
+                        done -> Glyph.CHECK
+                        else -> stage.glyph
+                    }
+                    GlyphIcon(glyph, tint, size = 20.dp)
+                }
+                Text(
+                    t(stage.label),
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, lineHeight = 15.sp),
+                    color = when {
+                        active || failed -> RudeusColors.Ink
+                        done -> RudeusColors.InkSoft
+                        else -> RudeusColors.InkMuted
+                    },
+                    textAlign = TextAlign.Center,
+                )
             }
         }
-        Spacer(Modifier.width(RudeusSpacing.md))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (done || active || failed) RudeusColors.Ink else RudeusColors.InkSoft,
-        )
     }
 }
 
@@ -199,56 +314,32 @@ private fun GateScore(score: Float, passed: Boolean, attempt: Int, maxAttempts: 
         animationSpec = tween(if (reduced) 0 else RudeusMotion.SCORE_COUNT_MS, easing = RudeusMotion.Standard),
         label = "score",
     )
-    val accent: Color = if (passed) RudeusColors.Leaf else RudeusColors.Tomato
-    val shape = RoundedCornerShape(RudeusRadius.card)
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(RudeusColors.PaperDeep)
-            .border(RudeusSpacing.stroke, accent, shape)
+            .clip(RoundedCornerShape(RudeusRadius.card))
+            .background(RudeusColors.Cream)
             .padding(RudeusSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Column {
-            Text(t(StringId.gate_score), style = MaterialTheme.typography.labelLarge, color = RudeusColors.InkSoft)
-            Text(formatFixed(shown, 2), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                if (passed) t(StringId.gate_passed) else t(StringId.gate_failed),
-                style = MaterialTheme.typography.titleLarge,
-                color = accent,
-            )
+        Text(
+            formatFixed(shown, 2),
+            style = RudeusMono.copy(fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 34.sp),
+            color = RudeusColors.Ink,
+        )
+        Column(Modifier.weight(1f)) {
+            Text(t(StringId.gate_score), style = MaterialTheme.typography.labelLarge, color = RudeusColors.Ink)
             Text(
                 "${t(StringId.gate_attempt)} $attempt / $maxAttempts",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = RudeusColors.InkSoft,
             )
         }
-    }
-}
-
-@Composable
-private fun ErrorSheet(onRetry: () -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(topStart = RudeusRadius.bubble, topEnd = RudeusRadius.bubble)
-    Column(
-        modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(RudeusColors.ScrimStrong)
-            .safeDrawingPadding()
-            .padding(RudeusSpacing.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(t(StringId.processing_failed_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Paper, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(RudeusSpacing.xs))
-        Text(t(StringId.processing_failed_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.Paper, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(RudeusSpacing.md))
-        PrimaryButton(t(StringId.retry), onClick = onRetry, modifier = Modifier.fillMaxWidth())
-        Spacer(Modifier.height(RudeusSpacing.sm))
-        // T03 (f): offline / no key / HTTP error -> back to Capture, where the ready characters are.
-        GhostButton(t(StringId.processing_pick_ready), onClick = onBack, glyph = Glyph.BACK)
+        if (passed) {
+            Tag(t(StringId.gate_passed), tone = TagTone.LEAF, glyph = Glyph.CHECK)
+        } else {
+            Tag(t(StringId.gate_failed), tone = TagTone.TOMATO)
+        }
     }
 }
