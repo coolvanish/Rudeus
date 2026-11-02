@@ -89,7 +89,7 @@ object Scenarios {
      */
     val DAY5: Scenario = Scenario(
         id = "day5",
-        durationMs = 25_000,
+        durationMs = 15_000, // last beat 11.4 s; JUMP respawns by 12.2 s, FLY arrives by 13.4 s (Pixel: no idle tail)
         steps = listOf(
             ScenarioStep.WalkTo(0, Vec2(0.30f, 0f)),
             ScenarioStep.WalkTo(4_000, Vec2(0f, 0.15f)),

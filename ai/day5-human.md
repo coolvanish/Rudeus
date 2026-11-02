@@ -36,7 +36,7 @@ scan; without one the JUMP variant just lands and walks on.
 |---|---|---|
 | scenario runs 3x without code changes | UNTESTED on device; PASS on the JVM | `ScenarioTest.day5RunsThreeTimesIdentically` (3 identical traces), `day5JumpVariantHitsEveryBeat` (BLOCKED 1.6 s, STEPPED_UP 6.3 s, JUMPED 10.4 s, FELL over the cliff 11.5 s, RESPAWNED 12.2 s), `day5FlyVariantCrossesTheGap` (lands at u = -0.264) |
 Pixel: Footprints on -> **Scenario** button x3 (pick a FLY bundled character for the gap; JUMP falls and respawns).
-Expect per run: `scenario_start`, five `scenario_step idx=0..4 at_ms=0/4000/9000/10400/11400`, `scenario_done ms≈25000`.
+Expect per run: `scenario_start`, five `scenario_step idx=0..4 at_ms=0/4000/9000/10400/11400`, `scenario_done ms≈15000`.
 Also: `occlusion=depth depth_supported=true` at start; character hidden behind the real cup; Jump button ->
 squash-stretch, `jump_ignored mode=JUMPING` on a double tap, `jump_ignored ability=ROLL` for a roller.
 Plan B side-by-side: set `FORCE_OCCLUDER_BOXES = true` in `Occluders.kt`, rebuild, same scene, screenshot both into

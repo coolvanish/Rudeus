@@ -76,7 +76,7 @@ class ScenarioTest {
     fun playerIssuesEachStepOnceInOrder() {
         val scenario = Scenarios.DAY5
         val player = ScenarioPlayer(scenario, startedAtMs = 0L)
-        val batches = listOf(0L, 1_000L, 20_000L, 40_000L).map { now -> player.due(now) to player.finished }
+        val batches = listOf(0L, 1_000L, 12_000L, 40_000L).map { now -> player.due(now) to player.finished }
         assertEquals(scenario.steps, batches.flatMap { it.first })
         assertEquals(listOf(scenario.steps.first()), batches[0].first)
         assertEquals(emptyList(), batches[1].first)

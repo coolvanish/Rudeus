@@ -236,6 +236,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             Log.i(GATE_TAG, "jump_ignored anchored=false")
         } else if (!loop.jump()) {
             Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability}")
+        } else {
+            Log.i(GATE_TAG, "jump ability=${loop.state.ability} u=${loop.state.pos.u} v=${loop.state.pos.v}") // Pixel evidence
         }
     }
     // T24: one voice "go" = one short step forward (the mic only shows once the character is placed).
