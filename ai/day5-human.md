@@ -2,7 +2,7 @@
 
 Everything is on branch **`day5/play`** in the main checkout (= `day4/table-level` + T19–T24). `scripts/verify.sh` is green
 (core 184, shared 12, APK 60 MB). The Pixel was online but **locked** during the autonomous run, so the device QA
-agent could only install and launch (no crash at start); every on-device criterion below is UNTESTED.
+agent could only install and launch (no crash at start); on 2026-11-03 the user ran it: see the "Device results" block at the end.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 454553e..HEAD`)
 | Brief | What | Status |
@@ -70,3 +70,9 @@ which drawings may be committed.
   you already scanned. The T06 "switch to FixtureApi(AssetFixtureSource)" line is superseded.
 - The scenario script assumes the Day 5 table layout; on an arbitrary table it is just a timed tap sequence.
 - Hand = stretch (SAM rigging) not attempted; Day 7 video and README not started.
+
+## 7. Device results (2026-11-03, Pixel 9 Pro XL, user + logcat)
+- PASS: scan 2.3–4.0 s warm (first cold 6.4 s), occlusion = depth, character blocked by the real cup, Jump/Fly by button (4 logged), Wi-Fi off/on without a crash, footprints on the table after commit 3cf8ac0 (they were depth-culled before).
+- PARTIAL: the scenario fired all five taps on time once; three complete runs (`scenario_done`) were never captured because the logcat buffer rotated — rerun with `scripts/device.sh log` open if the number matters for the README.
+- FAIL: voice on the Pixel (not investigated by decision). Hide the mic before the shoot: `AndroidCaptureHost.voice` -> `null`.
+- Open: ruler numbers for the 2 cm footprint row (user says the footprints sit on the objects); the sprite is edge-on from straight above (Y-only billboard, by design; a lean toward a steep camera is a one-line option).

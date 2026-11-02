@@ -149,3 +149,11 @@ after merging). No Gradle edits, no new dependency. The required core test
 Prompt-list note (T16): the generic `object` prompt matched nothing in 7/7 live scans (laptop, remote, toy car, knife, pastry on the
 table); the default list cup/book/phone/bottle/hand/object found 0 objects on every saved table photo because none shows those
 things. For the Pixel gate, put real cups/books/phones/bottles on the table, or decide whether `toy` should replace `object`.
+
+### Day 4 device evidence (Pixel 9 Pro XL, 2026-11-03 00:06–00:12, logcat RudeusGate; branch day5/play)
+| Criterion | Status | Evidence |
+|---|---|---|
+| scan < 6 s | PASS (warm), first cold scan 6356 ms | `scan_ms=` 2261, 2943, 3599, 4025 (segment 1981–3463 ms, 6 prompts, concurrency 6, no 429); the very first scan of the session 6356 ms |
+| 5 objects within 2 cm | PASS by eye (user: "всё окей" with footprints on), no ruler numbers | scans found cup (h 0.015), phone (h 0.065); the cup height is low for a cup — footprint position confirmed on the object by the user, height unverified |
+| character routes around | PASS | user: the character sees the cup and walks around it; physics BLOCKED path |
+Footprint overlay fix needed first: with depth occlusion (T21) the 2 mm overlay was depth-culled and invisible (commit 3cf8ac0: no depth test, 5 mm).

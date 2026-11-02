@@ -42,3 +42,11 @@ The hand = stretch (plan) is not attempted. Gate evidence lands in those briefs'
 |---|---|---|
 | scripted 30 s scenario runs 3x in a row without code changes | UNTESTED on device; PASS on the JVM | `ScenarioTest.day5RunsThreeTimesIdentically`, `day5JumpVariantHitsEveryBeat`, `day5FlyVariantCrossesTheGap` (core 179/0); host replay T21 builds (`assembleDebug`), `scenario_done` lines are the device evidence |
 Cut lines applied: none. Occlusion defaults to depth (Plan A); boxes are one constant away (Plan B). Affordances: jump / fly / roll all wired (HIDE acts as jump).
+
+### Day 5 device evidence (Pixel 9 Pro XL, 2026-11-03, logcat RudeusGate)
+| Criterion | Status | Evidence |
+|---|---|---|
+| scenario runs 3x in a row without code changes | PARTIAL: every scripted tap fired on time in one run; no `scenario_done` captured | 00:14:16 `scenario_step idx=0..4 at_ms=0/4000/9000/10400/11400` exactly on the simulated clock; the run was left 2 s before its 25 s end (now 15 s, commit e938a0d); the logcat buffer rotated before three full runs were read |
+| jump / fly | PASS | four `jump ability=FLY` lines 00:20:07–00:20:19, no `jump_ignored`; user: "по нажатию прыгает" |
+| occlusion | PASS by eye, Plan A | `occlusion=depth depth_supported=true` every session; user confirms the cup is seen; Plan B side-by-side not done |
+Known: the sprite is a Y-only billboard, so from straight above it is seen edge-on ("очень тонкое"); a camera-pitch lean is a one-line follow-up in CharacterNode.kt.

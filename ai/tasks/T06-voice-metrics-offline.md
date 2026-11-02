@@ -44,3 +44,9 @@ Tests not required: audio, assets.
 |---|---|---|
 | fresh install -> character -> full scenario with Wi-Fi off halfway, no crash | UNTESTED on device; JVM `OfflineGuardTest` 5/5 | offline flag + badge (T22/T20); no button locks (review fix d0c5477); sounds/voice never throw into the frame loop |
 | `runs/` has a run with `source: "app"` | PASS | `runs/2026-10-28T12-31-11Z.json` (pulled from the Pixel 2026-10-31) |
+
+### Day 6 device evidence (Pixel 9 Pro XL, 2026-11-03)
+| Criterion | Status | Evidence |
+|---|---|---|
+| Wi-Fi off halfway, no crash | PASS | user: Wi-Fi off then on during play, "всё нормально, без крашей"; no AndroidRuntime crash of kz.rudy.ar in logcat |
+| voice (cut line 1) | FAIL on device | user: the mic "вообще не работает"; not investigated by decision ("не копать"); cut = `AndroidCaptureHost.voice` returns null (one line) before the shoot |

@@ -1,6 +1,6 @@
 # T24 — voice-commands
 
-status: review
+status: review (Pixel 2026-11-03: does not work on device, cause not investigated; cut candidate — one line hides the mic)
 created: 2026-10-31
 day: Day 6
 gate: Day 6 — fresh install -> character -> full scenario with Wi-Fi off halfway, no crash (voice must fail silently offline)
