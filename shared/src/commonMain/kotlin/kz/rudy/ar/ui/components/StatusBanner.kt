@@ -98,7 +98,7 @@ fun StatusBanner(
 
 /**
  * The paper pill by its old name: the AR host (:androidApp, `RudeusArView`) draws its "wait" hint with this, and that
- * zone stays untouched in T25.
+ * zone stays untouched in T26.
  */
 @Composable
 fun ScrimPill(text: String, modifier: Modifier = Modifier) {

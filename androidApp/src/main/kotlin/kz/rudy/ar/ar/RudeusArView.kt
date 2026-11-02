@@ -175,7 +175,12 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     }
     val surface = slotState.surface
     val profile = slotState.profile
-    LaunchedEffect(surface) { loop.configure(profile) } // main thread, same as the frame callback
+    // HAND-REVIEW: T25 — the size re-sizes physics mid-game; the surface stays locked at anchor time (T14). Main thread,
+    // same as the frame callback. The Day 5 scenario beats are timed for size 1×: replay it at 1×.
+    LaunchedEffect(surface, slot.characterSize) {
+        loop.configure(profile, slot.characterSize)
+        Log.i(GATE_TAG, "character_size size=${slot.characterSize} radius=${loop.state.radiusM}")
+    }
     val sprite = remember(engine, materialLoader, slot.spritePng, surface) {
         val png = slot.spritePng
         if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
@@ -393,6 +398,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                             node, state, planeCoords(a, frame.camera.pose), loop.walkPhaseMs,
                             verticalVelocity = loop.body.verticalVelocity,
                             sinceLandedMs = now - loop.landedAtMs,
+                            size = currentSlot.characterSize,
                         )
                         val visible = now >= reappearAtMs[0]
                         if (node.isVisible != visible) node.isVisible = visible

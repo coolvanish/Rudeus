@@ -1,4 +1,4 @@
-# T25 — ui-theme-v2
+# T26 — ui-theme-v2
 
 status: review
 created: 2026-11-03
@@ -29,7 +29,7 @@ The app looks like a finished product instead of a prototype. Same flows, same c
 - All existing `StringId`s stay; add only the 7 `settings_*` ids from DESIGN-update.md (kk, ru, en complete).
 - `metrics_button` on Capture is removed from the UI (the id may stay in Strings.kt).
 - Reduced motion: effective value = Settings toggle OR system animator scale (the host's existing `LocalReducedMotion` value). Toggle state lives in `App` memory; persistence not required.
-- Sounds toggle: if a sound player is reachable from `:shared`, gate it; otherwise the toggle is UI-only with a `// TODO(T25): wire sounds` comment.
+- Sounds toggle: if a sound player is reachable from `:shared`, gate it; otherwise the toggle is UI-only with a `// TODO(T26): wire sounds` comment.
 - Play: JUMP/HIDE → Sun primary "Jump", FLY → Sun primary "Fly", ROLL → no ability button and Rescan becomes the Sun primary, right-aligned. Rescan otherwise is the 48 dp secondary bottom-left.
 - Hit targets ≥ 56 dp everywhere; contentDescription rules from DESIGN.md (f) unchanged.
 - No shadows (`elevation = 0`, no `shadow()` modifiers), no gradients, no emoji.
@@ -66,4 +66,4 @@ Tests not required: Compose screens, HUD layout, theme values (per CLAUDE.md tes
 - UNTESTED: the human flow on the Pixel from "Done when" (AR, real camera, daylight legibility, photo pipeline).
 - deviations from the mockups: Permission keeps Allow mid-screen and has no own Back, because the host draws it in the AR slot under the Scanning HUD, whose bottom row would cover a bottom button and already has Back. Processing's running hero shows the photo, not the cutout: PipelineEvent carries no cutout bytes. Skip stays behind two failures (existing flow; mockup 10 shows it at once) and sits in the bottom row when no banner is up. Scans table has no Surface column: ScanMetrics has none. About shows "Rudeus 1.0" without a build date.
 - beyond the brief's owned paths: composeResources/drawable/capture_example.jpg (hero image), App.kt passes `photo` to ProcessingScreen and drops Play's `onBack`.
-- cut/deferred: Sounds toggle is UI-only (TODO(T25) in App.kt; the player is in :androidApp). The host does not feed the system animator scale into LocalReducedMotion, so only the Settings toggle reduces motion today.
+- cut/deferred: Sounds toggle is UI-only (TODO(T26) in App.kt; the player is in :androidApp). The host does not feed the system animator scale into LocalReducedMotion, so only the Settings toggle reduces motion today.

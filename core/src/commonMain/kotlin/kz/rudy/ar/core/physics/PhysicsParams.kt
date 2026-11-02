@@ -1,6 +1,7 @@
 package kz.rudy.ar.core.physics
 
 import kotlinx.serialization.Serializable
+import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.Semantics
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
@@ -57,14 +58,18 @@ data class PhysicsParams(
         /**
          * [DEFAULT] scaled by [SurfaceProfile.scale]; the step-up and platform heights are taken from the profile
          * as they are (they are already scaled there). Dimensionless multipliers and [pushOutPasses] stay.
+         * [size] ([CharacterSize]) scales only the horizontal motion, so a jump still spans the wider collision circle.
+         * Everything vertical stays the surface's: the scan classified the level with those heights, and at any size a
+         * jump clears a 2 cm object but not a 9 cm cup.
          */
-        fun forProfile(profile: SurfaceProfile): PhysicsParams {
+        fun forProfile(profile: SurfaceProfile, size: Float = CharacterSize.DEFAULT): PhysicsParams {
             val k = profile.scale
+            val horizontal = k * size
             return PhysicsParams(
-                walkSpeedMps = DEFAULT.walkSpeedMps * k,
+                walkSpeedMps = DEFAULT.walkSpeedMps * horizontal,
                 gravityMps2 = DEFAULT.gravityMps2 * k,
                 jumpVelocityMps = DEFAULT.jumpVelocityMps * k,
-                arriveEpsilonM = DEFAULT.arriveEpsilonM * k,
+                arriveEpsilonM = DEFAULT.arriveEpsilonM * horizontal,
                 respawnBelowH = DEFAULT.respawnBelowH * k,
                 stepUpMaxM = profile.stepUpMaxM,
                 platformMaxHeightM = profile.platformMaxHeightM,

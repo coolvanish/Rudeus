@@ -1,0 +1,83 @@
+{
+    "schema": 1,
+    "runId": "2026-10-27T22-58-25Z",
+    "source": "cli",
+    "provider": "fixture",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "drawing-01",
+            "stages": [
+                {
+                    "name": "cutout",
+                    "ms": 1831,
+                    "costUsd": 0.004,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 13119,
+                    "costUsd": 0.02,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 7536,
+                    "costUsd": 0.002,
+                    "attempt": 1,
+                    "ok": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 13116,
+                    "costUsd": 0.02,
+                    "attempt": 2,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 7505,
+                    "costUsd": 0.002,
+                    "attempt": 2,
+                    "ok": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 13117,
+                    "costUsd": 0.02,
+                    "attempt": 3,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 7469,
+                    "costUsd": 0.002,
+                    "attempt": 3,
+                    "ok": false
+                },
+                {
+                    "name": "sheet",
+                    "ms": 7669,
+                    "costUsd": 0.002,
+                    "attempt": 1,
+                    "ok": true
+                }
+            ],
+            "gateScore": 0.068,
+            "gatePassed": false,
+            "retries": 2,
+            "totalMs": 71582,
+            "totalCostUsd": 0.072
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 1,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 71582,
+        "p90Ms": 71582,
+        "costPerCharacterUsd": 0.072
+    }
+}

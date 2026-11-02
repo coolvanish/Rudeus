@@ -56,6 +56,8 @@ enum class Glyph(internal val svg: String) {
     SHIELD("M12 3l7.5 3v6c0 4.6-3.3 7.8-7.5 9-4.2-1.2-7.5-4.4-7.5-9V6z M8.5 12l2.5 2.5 4.5-5"),
     NAME("M4 12.5V4h8.5l8 8-8.5 8.5z " + circle(8.5f, 8.5f, 1.3f)),
     CLOSE("M6 6l12 12M18 6L6 18"),
+    PLUS("M12 5v14M5 12h14"),
+    MINUS("M5 12h14"),
 }
 
 fun Ability.glyph(): Glyph = when (this) {
