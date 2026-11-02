@@ -3,6 +3,7 @@ package kz.rudy.ar.ar
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterEvents
+import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
@@ -17,8 +18,8 @@ import kz.rudy.ar.core.physics.PhysicsParams
 // No game rule lives here: every transition is a Physics.* call from :core. This file only measures dt and
 // maps "camera + anchor TRACKING" to Physics.pause / Physics.resume (locked decision: PAUSED freezes, never resets).
 // HAND-REVIEW: T14 — (1) `params` and the body's collision radius come from the SurfaceProfile (table or floor);
-// `configure` is called from a LaunchedEffect keyed on the locked surface, so it runs before the anchor exists and is
-// simply not called again after it (the lock lives in RudeusArView; there is no guard here).
+// `configure` is called from a LaunchedEffect keyed on the locked surface, so it runs before the anchor exists; after
+// it only the T25 size re-runs it (the lock lives in RudeusArView; there is no guard here).
 // (2) `onFrame` reports the CharacterEvents of everything since the last report (a walkTo from the tap handler, this
 // frame's pause/resume/step) — the diff is against `lastReported`, not the previous frame's body, so a transition
 // made by the tap handler between two frames is never lost.
@@ -63,10 +64,15 @@ internal class GameLoop(
 
     val state: CharacterState get() = body.state
 
-    /** Size the physics for [profile]: walk speed, gravity, arrive epsilon and the collision radius. */
-    fun configure(profile: SurfaceProfile) {
-        params = PhysicsParams.forProfile(profile)
-        body = body.copy(state = body.state.copy(radiusM = profile.radiusM))
+    /**
+     * Size the physics for [profile] and the player's [size]: walk speed, gravity, arrive epsilon and the collision radius.
+     * HAND-REVIEW: T25 — now also called mid-game, on every Bigger / Smaller tap. Only the radius and the horizontal
+     * speeds change, so a jump in the air carries on and a paused body stays paused; the next step pushes the bigger
+     * circle out of any object.
+     */
+    fun configure(profile: SurfaceProfile, size: Float = CharacterSize.DEFAULT) {
+        params = PhysicsParams.forProfile(profile, size)
+        body = body.copy(state = body.state.copy(radiusM = profile.radiusAt(size)))
     }
 
     /** Later taps: route via :core. Plane coords come from `planeCoords(anchor, hitPose)`. */

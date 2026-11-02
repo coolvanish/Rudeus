@@ -137,6 +137,7 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
      * @param walkPhaseMs time spent walking, from [GameLoop.walkPhaseMs].
      * @param verticalVelocity feet velocity along h, m/s (`PhysicsBody.verticalVelocity`); only read while JUMPING.
      * @param sinceLandedMs host clock minus [GameLoop.landedAtMs]; drives the landing squash while < JUMP_LAND_MS.
+     * @param size the player's Bigger / Smaller step (`ArSlot.characterSize`).
      */
     fun apply(
         node: PlaneNode,
@@ -145,6 +146,7 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         walkPhaseMs: Long,
         verticalVelocity: Float = 0f,
         sinceLandedMs: Long = Long.MAX_VALUE,
+        size: Float = 1f,
     ) {
         node.position = localPosition(state.pos, state.h)
 
@@ -179,6 +181,8 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
             sy = 1f + WALK_BOB_STRETCH * s
             sx = 1f - WALK_BOB_SQUASH * s
         }
-        node.scale = Scale(x = flip * sx, y = sy, z = 1f)
+        // HAND-REVIEW: T25 — Bigger / Smaller is a node scale, not a new sprite: no Texture rebuild, and the origin at
+        // the feet keeps them on the table at every size.
+        node.scale = Scale(x = flip * sx * size, y = sy * size, z = 1f)
     }
 }
