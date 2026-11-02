@@ -1,5 +1,7 @@
 package kz.rudy.ar.core.physics
 
+import kz.rudy.ar.core.domain.CharacterEvents
+import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.LevelObject
@@ -130,6 +132,123 @@ class PhysicsSurfaceTest {
         assertEquals(0f, Physics.groundHeight(level, Vec2.ZERO, 0.05f, floor), "not from below the top")
         // Only the params field decides: the floor parameters with the table's platform height cannot stand on it.
         assertEquals(0f, Physics.groundHeight(level, Vec2.ZERO, 0.12f, floor.copy(platformMaxHeightM = table.platformMaxHeightM)))
+    }
+
+    @Test
+    fun characterSizeStepsStopAtBothEnds() {
+        assertEquals(1.5f, CharacterSize.bigger(CharacterSize.DEFAULT))
+        assertEquals(0.75f, CharacterSize.smaller(CharacterSize.DEFAULT))
+        assertEquals(CharacterSize.MAX, CharacterSize.bigger(CharacterSize.MAX))
+        assertEquals(CharacterSize.MIN, CharacterSize.smaller(CharacterSize.MIN))
+        assertTrue(CharacterSize.DEFAULT in CharacterSize.STEPS)
+        assertEquals(CharacterSize.STEPS.sorted(), CharacterSize.STEPS)
+    }
+
+    @Test
+    fun defaultSizeLeavesTheSurfacePhysicsUntouched() {
+        assertEquals(PhysicsParams.DEFAULT, PhysicsParams.forProfile(SurfaceProfile.TABLE, CharacterSize.DEFAULT))
+        assertEquals(floor, PhysicsParams.forProfile(SurfaceProfile.FLOOR, CharacterSize.DEFAULT))
+        assertEquals(SurfaceProfile.TABLE.radiusM, SurfaceProfile.TABLE.radiusAt(CharacterSize.DEFAULT))
+    }
+
+    @Test
+    fun sizeScalesHorizontalMotionButNoHeight() {
+        assertEquals(0.09f, SurfaceProfile.TABLE.radiusAt(3f), 1e-6f)
+        val big = PhysicsParams.forProfile(SurfaceProfile.TABLE, 3f)
+        assertEquals(table.walkSpeedMps * 3f, big.walkSpeedMps, 1e-6f)
+        assertEquals(table.arriveEpsilonM * 3f, big.arriveEpsilonM, 1e-6f)
+        assertEquals(table.jumpVelocityMps, big.jumpVelocityMps)
+        assertEquals(table.gravityMps2, big.gravityMps2)
+        assertEquals(table.respawnBelowH, big.respawnBelowH)
+        // The scan classified the level with the surface's heights: a bigger character must not re-classify it.
+        assertEquals(table.stepUpMaxM, big.stepUpMaxM)
+        assertEquals(table.platformMaxHeightM, big.platformMaxHeightM)
+    }
+
+    @Test
+    fun jumpHeightIsTheSameAtEverySize() {
+        val expected = hop(SurfaceProfile.TABLE, table)
+        for (size in CharacterSize.STEPS) {
+            assertEquals(expected, hop(SurfaceProfile.TABLE, PhysicsParams.forProfile(SurfaceProfile.TABLE, size)), "size $size")
+        }
+    }
+
+    @Test
+    fun biggerCharacterStopsFartherFromTheBox() {
+        val box = LevelObject("box", "box", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.5f, 0f), 0.4f, 0.4f), 0.12f)
+        val level = Level(listOf(box))
+        for (size in CharacterSize.STEPS) {
+            val params = PhysicsParams.forProfile(SurfaceProfile.TABLE, size)
+            val radius = SurfaceProfile.TABLE.radiusAt(size)
+            val start = PhysicsBody(CharacterState(radiusM = radius))
+            val end = run(Physics.walkTo(start, Vec2(0.5f, 0f)), level, params, 5000) { it.blocked }.last()
+            assertTrue(end.blocked, "size $size never blocked")
+            assertEquals(0.3f - radius, end.state.pos.u, 1e-3f, "size $size")
+        }
+    }
+
+    @Test
+    fun everySizeJumpsOverALowObstacle() {
+        val low = LevelObject("low", "object", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.5f, 0f), 0.1f, 0.1f), 0.02f)
+        val level = Level(listOf(low))
+        val target = Vec2(1f, 0f)
+        for (size in CharacterSize.STEPS) {
+            val params = PhysicsParams.forProfile(SurfaceProfile.TABLE, size)
+            val start = PhysicsBody(CharacterState(radiusM = SurfaceProfile.TABLE.radiusAt(size)))
+            val blocked = run(Physics.walkTo(start, target), level, params, 5000) { it.blocked }.last()
+            assertTrue(blocked.blocked, "size $size never reached the obstacle")
+            val end = run(Physics.jump(blocked, params), level, params, 10_000) { it.state.mode == Mode.IDLE }.last()
+            assertEquals(target, end.state.pos, "size $size did not clear it")
+        }
+    }
+
+    @Test
+    fun noSizeJumpsOverACup() {
+        val cup = LevelObject("cup", "cup", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.5f, 0f), 0.1f, 0.1f), 0.09f)
+        val level = Level(listOf(cup))
+        for (size in CharacterSize.STEPS) {
+            val params = PhysicsParams.forProfile(SurfaceProfile.TABLE, size)
+            val radius = SurfaceProfile.TABLE.radiusAt(size)
+            val start = PhysicsBody(CharacterState(radiusM = radius))
+            val blocked = run(Physics.walkTo(start, Vec2(1f, 0f)), level, params, 5000) { it.blocked }.last()
+            assertTrue(blocked.blocked, "size $size never reached the cup")
+            // Long enough for the jump and the landing. A snap out of the footprint would show as a jump in u.
+            for (b in run(Physics.jump(blocked, params), level, params, 100) { false }) {
+                assertEquals(0.45f - radius, b.state.pos.u, 1e-3f, "size $size")
+            }
+        }
+    }
+
+    @Test
+    fun growingBesideABoxPushesOutWithoutAnyEvent() {
+        val box = LevelObject("box", "box", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.5f, 0f), 0.4f, 0.4f), 0.12f)
+        val level = Level(listOf(box))
+        val beside = PhysicsBody(CharacterState(pos = Vec2(0.3f - SurfaceProfile.TABLE.radiusM, 0f), radiusM = SurfaceProfile.TABLE.radiusM))
+        val radius = SurfaceProfile.TABLE.radiusAt(3f)
+        val grown = beside.copy(state = beside.state.copy(radiusM = radius))
+        val next = Physics.step(grown, level, dt, PhysicsParams.forProfile(SurfaceProfile.TABLE, 3f))
+        assertEquals(Mode.IDLE, next.state.mode)
+        assertFalse(next.blocked)
+        assertEquals(0.3f - radius, next.state.pos.u, 1e-3f)
+        assertEquals(emptyList(), CharacterEvents.between(beside, next))
+    }
+
+    @Test
+    fun standingStillIsNeverPushedOffTheTable() {
+        // The spawn is 5 cm from the cup and 3 cm from the table edge: 3× overlaps the cup, and the push-out points off the table.
+        val cup = LevelObject("cup", "cup", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.1f, 0f), 0.1f, 0.1f), 0.09f)
+        val boundary = Polygon.rect(Vec2(0.47f, 0f), 1f, 1f)
+        val level = Level(listOf(cup), boundary = boundary)
+        val params = PhysicsParams.forProfile(SurfaceProfile.TABLE, 3f)
+        val start = PhysicsBody(CharacterState(radiusM = SurfaceProfile.TABLE.radiusAt(3f)))
+        for (b in run(start, level, params, 300) { false }) {
+            assertEquals(Mode.IDLE, b.state.mode)
+            assertEquals(Vec2.ZERO, b.state.pos)
+        }
+        // A walk does apply the push-out. Wherever it takes the character, it ends up standing, not in a loop.
+        val walked = run(Physics.walkTo(start, Vec2(0f, 0.3f)), level, params, 2000) { it.state.mode == Mode.IDLE }
+        assertEquals(Mode.IDLE, walked.last().state.mode)
+        assertEquals(Mode.IDLE, Physics.step(walked.last(), level, dt, params).state.mode)
     }
 
     @Test

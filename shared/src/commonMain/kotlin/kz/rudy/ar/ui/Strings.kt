@@ -83,6 +83,9 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     play_jump("Секір", "Прыгай", "Jump"),
     /** T20: the same button for FLY characters. */
     play_fly("Ұш", "Лети", "Fly"),
+    /** T25: accessibility labels of the Play HUD's round size buttons (they show only a plus / minus glyph). */
+    play_bigger("Үлкейт", "Увеличь", "Bigger"),
+    play_smaller("Кішірейт", "Уменьши", "Smaller"),
     /** T20 debug (footprints on): replays the Day 5 scenario script. */
     play_scenario("Сценарий", "Сценарий", "Scenario"),
     /** T24: the pill beside the mic while it is held (recording). */

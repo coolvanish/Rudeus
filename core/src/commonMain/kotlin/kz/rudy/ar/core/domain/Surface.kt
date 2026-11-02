@@ -12,6 +12,23 @@ import kotlinx.serialization.Serializable
 enum class Surface { TABLE, FLOOR }
 
 /**
+ * The Play HUD's Bigger / Smaller choice: a multiplier on the [SurfaceProfile]'s character. The billboard, the collision
+ * circle and the walking speed follow it (`PhysicsParams.forProfile`). Heights do not: what counts as a platform and how
+ * high a jump goes stay the surface's, so the level plays by the same rules at any size. A fixed list of steps, so
+ * repeated taps cannot drift; 1× is 6 cm on the table, so the table range is 3–18 cm.
+ */
+object CharacterSize {
+    const val DEFAULT = 1f
+    val STEPS = listOf(0.5f, 0.75f, DEFAULT, 1.5f, 2f, 3f)
+    val MIN = STEPS.first()
+    val MAX = STEPS.last()
+
+    fun bigger(size: Float): Float = STEPS.firstOrNull { it > size } ?: MAX
+
+    fun smaller(size: Float): Float = STEPS.lastOrNull { it < size } ?: MIN
+}
+
+/**
  * Size parameters of one [Surface]. Everything in metres / m/s. :androidApp reads the character size and tap
  * tolerance; [kz.rudy.ar.core.physics.PhysicsParams.forSurface] reads the rest. All values are [scale] × the table
  * ones, so the table numbers stay the single source of truth.
@@ -32,6 +49,9 @@ data class SurfaceProfile(
     /** Objects at most this tall count as platforms, taller ones as obstacles. */
     val platformMaxHeightM: Float,
 ) {
+    /** Collision circle radius of a character at [size] ([CharacterSize]). */
+    fun radiusAt(size: Float): Float = radiusM * size
+
     companion object {
         /** Floor profile = table × this. A 24 cm character walking 20 cm/s reads well from standing height. */
         const val FLOOR_SCALE = 4f

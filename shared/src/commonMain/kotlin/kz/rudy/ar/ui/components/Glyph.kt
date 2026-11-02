@@ -20,7 +20,7 @@ import kz.rudy.ar.core.domain.Ability
  * Canvas-drawn glyphs (DESIGN.md: no icon dependency, no emoji in the chrome).
  * Every glyph sits next to a text label; the glyph itself is decorative.
  */
-enum class Glyph { CAMERA, EYE, JUMP, FLY, ROLL, HIDE, BACK, PAUSE, FOOTPRINTS, EXPORT, CHECK, CROSS, METRICS, MIC }
+enum class Glyph { CAMERA, EYE, JUMP, FLY, ROLL, HIDE, BACK, PAUSE, FOOTPRINTS, EXPORT, CHECK, CROSS, METRICS, MIC, PLUS, MINUS }
 
 fun Ability.glyph(): Glyph = when (this) {
     Ability.JUMP -> Glyph.JUMP
@@ -133,5 +133,10 @@ fun DrawScope.drawGlyph(glyph: Glyph, tint: Color) {
             drawLine(tint, p(0.5f, 0.66f), p(0.5f, 0.88f), s.width, StrokeCap.Round)
             drawLine(tint, p(0.32f, 0.88f), p(0.68f, 0.88f), s.width, StrokeCap.Round)
         }
+        Glyph.PLUS -> {
+            drawLine(tint, p(0.18f, 0.5f), p(0.82f, 0.5f), s.width, StrokeCap.Round)
+            drawLine(tint, p(0.5f, 0.18f), p(0.5f, 0.82f), s.width, StrokeCap.Round)
+        }
+        Glyph.MINUS -> drawLine(tint, p(0.18f, 0.5f), p(0.82f, 0.5f), s.width, StrokeCap.Round)
     }
 }
