@@ -36,6 +36,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
+    // HAND-REVIEW: use the existing test library catalog entry for capture restoration regression tests.
+    testImplementation(libs.kotlin.testJunit)
 }
 
 android {

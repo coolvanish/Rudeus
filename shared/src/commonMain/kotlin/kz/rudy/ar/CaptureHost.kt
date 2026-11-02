@@ -1,5 +1,6 @@
 package kz.rudy.ar
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,15 +13,19 @@ import kz.rudy.ar.ui.screens.BundledCharacter
  * What :androidApp injects into [App] for T03 in-app capture. :shared never touches the camera, the network or
  * `BuildConfig`; it only drives these hooks from the Capture and Processing screens. Null host = demo shell.
  *
- * Photo callbacks deliver upright JPEG/PNG bytes with the long side <= 2048 px, or null when the child cancelled
- * (or the image could not be read). They may arrive on any thread.
+ * Photo results deliver upright JPEG/PNG bytes with the long side <= 2048 px, or null when the child cancelled
+ * (or the image could not be read). The active App collects results independently of the launch, so restored
+ * Activity results have a consumer.
  */
 interface CaptureHost {
+    /** One-shot results, buffered by the host until the active App collects them. */
+    val photos: Flow<ByteArray?>
+
     /** Opens the system camera. */
-    fun takePhoto(onPhoto: (ByteArray?) -> Unit)
+    fun takePhoto()
 
     /** Opens the photo picker (no permission needed). */
-    fun pickPhoto(onPhoto: (ByteArray?) -> Unit)
+    fun pickPhoto()
 
     /**
      * Runs `CharacterPipeline` on [photo] off the main thread. [onEvent] is called in order on the pipeline's
@@ -48,7 +53,7 @@ interface CaptureHost {
 
     /**
      * T20: true while the host's last model call failed on the network (and until one succeeds). App collects it:
-     * the Play HUD shows the Leaf "Offline" badge and disables Scan, Capture disables Photo and shows the note.
+     * the Play HUD shows the "Offline" badge and Capture shows a note. Photo and Scan remain enabled for retry.
      * The default (never offline) is one shared flow, so collecting it is stable across recompositions.
      */
     val offline: StateFlow<Boolean> get() = NeverOffline

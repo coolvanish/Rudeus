@@ -14,11 +14,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -43,32 +47,41 @@ class PhotoIntake internal constructor(
     private val permission: ActivityResultLauncher<String>,
     private val pending: Pending,
 ) {
-    internal class Pending {
-        var file: File? = null
-        var onPhoto: ((ByteArray?) -> Unit)? = null
+    internal class Pending(var file: File? = null) {
+        // Results can arrive before App starts collecting after Activity restoration.
+        val results = Channel<ByteArray?>(Channel.BUFFERED)
+        val photos = results.receiveAsFlow()
+
+        companion object {
+            val saver = Saver<Pending, String>(
+                save = { it.file?.absolutePath.orEmpty() },
+                restore = { Pending(it.takeIf(String::isNotEmpty)?.let(::File)) },
+            )
+        }
+
         /** `elapsedRealtime` when the last camera/picker result arrived (the child's shutter + confirm). */
         var shutterAtMs: Long = 0L
     }
 
+    val photos get() = pending.photos
+
     /** The last shutter time, once: Play logs `capture_to_play_ms` only for the capture that led to it. */
     fun takeShutterAtMs(): Long = pending.shutterAtMs.also { pending.shutterAtMs = 0L }
 
-    fun takePhoto(onPhoto: (ByteArray?) -> Unit) {
+    fun takePhoto() {
         val dir = File(context.cacheDir, CAPTURE_DIR).apply { mkdirs() }
         val file = File(dir, "photo-${System.currentTimeMillis()}.jpg")
         pending.file = file
-        pending.onPhoto = onPhoto
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         if (granted) launchCamera(context, camera, pending) else permission.launch(Manifest.permission.CAMERA)
     }
 
-    fun pickPhoto(onPhoto: (ByteArray?) -> Unit) {
-        pending.onPhoto = onPhoto
+    fun pickPhoto() {
         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 }
 
-/** Opens the system camera on [Pending.file]; no camera app -> the waiting callback gets null. */
+/** Opens the system camera; a missing camera app delivers a cancelled result. */
 private fun launchCamera(context: Context, camera: ActivityResultLauncher<Uri>, pending: PhotoIntake.Pending) {
     val file = pending.file ?: return
     try {
@@ -76,7 +89,7 @@ private fun launchCamera(context: Context, camera: ActivityResultLauncher<Uri>, 
     } catch (e: ActivityNotFoundException) {
         Log.w(TAG, "no camera app: ${e.message}")
         pending.file = null
-        pending.onPhoto?.also { pending.onPhoto = null }?.invoke(null)
+        pending.results.trySend(null)
     }
 }
 
@@ -84,18 +97,16 @@ private fun launchCamera(context: Context, camera: ActivityResultLauncher<Uri>, 
 fun rememberPhotoIntake(): PhotoIntake {
     val context = LocalContext.current
     val scope: CoroutineScope = rememberCoroutineScope()
-    val pending = remember { PhotoIntake.Pending() }
+    val pending = rememberSaveable(saver = PhotoIntake.Pending.saver) { PhotoIntake.Pending() }
 
-    /** Runs [load] on IO, then hands the bytes (or null) to the waiting callback on the main thread. */
+    /** Runs [load] on IO and queues the result for the current App, including after process recreation. */
     fun deliver(load: () -> ByteArray?) {
-        val onPhoto = pending.onPhoto ?: return
-        pending.onPhoto = null
         pending.shutterAtMs = SystemClock.elapsedRealtime()
         scope.launch {
             val t0 = SystemClock.elapsedRealtime()
             val bytes = withContext(Dispatchers.IO) { runCatching(load).getOrNull() }
             Log.i(TAG, "photo_ready_ms=${SystemClock.elapsedRealtime() - t0} photo_bytes=${bytes?.size ?: 0}")
-            onPhoto(bytes)
+            pending.results.send(bytes)
         }
     }
 
@@ -118,7 +129,7 @@ fun rememberPhotoIntake(): PhotoIntake {
             launchCamera(context, camera, pending)
         } else {
             pending.file = null
-            pending.onPhoto?.also { pending.onPhoto = null }?.invoke(null)
+            pending.results.trySend(null)
         }
     }
     return remember(camera, picker, permission) { PhotoIntake(context.applicationContext, camera, picker, permission, pending) }

@@ -47,7 +47,7 @@ import java.io.File
 // MetaConfig (whose toString hides it) and is never logged. One MetricsLog per app session: every character appends
 // to files/runs/<runId>.json (rewritten after each run, also on failure or cancel), source "app", device "pixel",
 // so scripts/device.sh pull-runs collects it. A blank key throws before any call -> App shows the ERROR state with
-// "pick a ready one" (the FixtureApi fallback is T06). Style refs come from assets/style-refs in cull.json order.
+// "pick a ready one"; Android has no FixtureApi fallback. Style refs come from assets/style-refs in cull.json order.
 // HAND-REVIEW: T14 (c)(d) — bundled characters come from assets/bundled (a copy of docs/bundled, 7.6 MB: 16 sprites +
 // sheets + index.json), parsed once on first `bundled()` call; `exportRun` writes the session run through
 // MediaStore.Downloads (API >= 29, no permission) or the app's external files dir below that.
@@ -100,16 +100,18 @@ class AndroidCaptureHost(
     }
 
     // HAND-REVIEW: T22 — every model call (pipeline and table scan) goes through one OfflineGuard, whose flag feeds
-    // `CaptureHost.offline` (badge, disabled Photo/Scan). The guard is built eagerly around a LAZY delegate: App
+    // `CaptureHost.offline` (badge; Photo/Scan stay enabled for retry). The guard is built eagerly around a LAZY delegate: App
     // collects `offline` at startup, and a build without a key must show the ERROR sheet on the first call, not crash
     // in composition when `api`'s key check runs.
     private val guard = OfflineGuard(DeferredModels { api })
 
     override val offline: StateFlow<Boolean> get() = guard.offline
 
-    override fun takePhoto(onPhoto: (ByteArray?) -> Unit) = intake.takePhoto(onPhoto)
+    override val photos get() = intake.photos
 
-    override fun pickPhoto(onPhoto: (ByteArray?) -> Unit) = intake.pickPhoto(onPhoto)
+    override fun takePhoto() = intake.takePhoto()
+
+    override fun pickPhoto() = intake.pickPhoto()
 
     // ---- VoiceHost (T24) ----
 

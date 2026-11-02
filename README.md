@@ -4,8 +4,8 @@ An Android AR game for kids in Kazakh and Russian. Photograph a child's drawing 
 character. Press **Scan**: the cup on the table becomes an obstacle, the book a platform, the table edge a cliff.
 Then the character walks, jumps and flies around the real objects.
 
-> Status: prerequisites and the testable core are in place; AR host, capture and scan are being built day by day
-> against the plan in [`ai/build-plan.md`](ai/build-plan.md). All work in this repository is new since Oct 26, 2026.
+> Status: Android prototype with capture, character generation, table scan and AR play implemented.
+> Voice controls are currently disabled in the Android app. Remaining work is tracked in [`ai/build-plan.md`](ai/build-plan.md).
 
 ## How it works
 
@@ -16,7 +16,7 @@ Then the character walks, jumps and flies around the real objects.
 | Gate | Spark 1.3 vision + deterministic palette/outline check | score ≥ 0.7 or retry (≤ 2) |
 | Sheet | Spark 1.3 | name, personality, ability (jump / fly / roll / hide), 5 lines in kk and ru |
 | Table scan | SAM 3.1 | one mask per prompt → footprints on the table plane via ray–plane |
-| Voice (optional) | Voice Transcribe | push-to-talk commands in Kazakh |
+| Voice (disabled in Android) | Voice Transcribe | implementation retained; mic hidden pending device fixes |
 
 The whole pipeline is pure Kotlin in `:core` and runs identically on the phone and from the Mac (`:cli`).
 Geometry needs no depth sensor: the scan saves the camera pose and intrinsics, and footprints come from
@@ -45,8 +45,17 @@ Requirements: JDK 21 (Gradle provisions it), Android SDK with platform 37, an AR
 
 ## API key handling
 Put `META_API_KEY=...` in `local.properties` (gitignored). Gradle injects it into `BuildConfig.META_API_KEY`;
-the CLI reads the `META_API_KEY` environment variable. A pre-commit hook and CI refuse any commit that contains a
-key-shaped string. Without a key the app and CLI run offline against the redacted fixtures in `docs/api-samples/`.
+the CLI reads the `META_API_KEY` environment variable. The pre-commit hook and manually triggered CI scan for
+key-shaped assignments; CI does not run automatically on push or pull requests.
+
+## Offline behavior
+The CLI's fixture mode (`character --fixtures docs/api-samples ...`, without `--live`) uses redacted API responses
+and needs no key. The Android app does not switch to fixtures: without a key, generation and scanning fail;
+ready-made characters remain available from bundled assets.
+
+On a network failure, Android shows an offline badge and keeps the existing scanned level for the current AR
+session. Photo and Scan remain enabled for retry; a successful model call clears the badge. No automatic fixture
+fallback or network retry is performed. Voice controls are currently hidden (`AndroidCaptureHost.voice = null`).
 
 ## Metrics
 Every number reported here comes from a file in `runs/` produced by `MetricsLog` (never hand-edited).

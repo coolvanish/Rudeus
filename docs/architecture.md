@@ -15,7 +15,7 @@ flowchart LR
   A --> C
   L --> C
   C -- Ktor --> M
-  C -- offline --> F
+  C -- CLI fixtures / tests --> F
   C --> R
 ```
 
@@ -50,10 +50,23 @@ threshold 0.7, ≤ 2 retries) → sheet (Spark: name, personality, ability, 5 li
 into `MetricsLog`; `runs/<runId>.json` is the only source for README numbers.
 
 ## Offline mode
-`FixtureApi` implements the same `MetaModels` interface from `docs/api-samples/` (CLI, tests) or bundled assets (phone).
-A network error switches the session to it; the HUD shows the offline badge.
+`FixtureApi` implements `MetaModels` for CLI fixture mode and tests using `docs/api-samples/`. Android does not
+use it: a missing API key causes generation/scanning to fail, while bundled characters remain playable.
+
+Android wraps live calls with `OfflineGuard`: a network error sets the offline flag and is rethrown; a successful
+call clears the flag. Photo and Scan remain enabled as explicit retry actions. The already scanned level stays in
+the current AR session; there is no automatic retry or fixture fallback.
+
+## Voice status
+Recording, transcription and command parsing are implemented, but `AndroidCaptureHost.voice` currently returns
+`null`, hiding the mic in Play. Push-to-talk was disabled after the device check failed; it is not an available
+Android feature until that issue is fixed.
 
 ## Dev loop
 - Domain: `./gradlew :core:jvmTest` (seconds). Pipeline: `./gradlew :cli:run --args="character --fixtures docs/api-samples --out runs --all"`.
 - AR without the table: ARCore Recording & Playback (`ARSceneView(playbackDataset = …)`).
 - Definition of done: `scripts/verify.sh`.
+- Capture restoration device check: open the system camera from Capture, run `adb shell am kill kz.rudy.ar`
+  while the camera is foreground, then take and confirm a photo. The restored app should enter Processing.
+  Repeat with the photo picker, and check cancellation returns to Capture. Use process kill, not force-stop:
+  force-stop also clears pending Activity results and does not simulate normal process reclamation.

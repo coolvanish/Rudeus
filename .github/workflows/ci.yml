@@ -34,7 +34,7 @@ jobs:
           accept-android-sdk-licenses: true
       - uses: gradle/actions/setup-gradle@v4
       - name: Core tests, shared host test, CLI, debug APK
-        run: ./gradlew :core:jvmTest :shared:testAndroidHostTest :cli:compileKotlin :androidApp:assembleDebug --console=plain
+        run: ./gradlew :core:jvmTest :shared:testAndroidHostTest :androidApp:testDebugUnitTest :cli:compileKotlin :androidApp:assembleDebug --console=plain
       - name: Offline pipeline smoke (fixtures)
         run: ./gradlew :cli:run --args="character --fixtures docs/api-samples --out build/ci-runs --all" --console=plain -q
       - uses: actions/upload-artifact@v4
@@ -44,6 +44,7 @@ jobs:
           path: |
             core/build/test-results/**/*.xml
             shared/build/test-results/**/*.xml
+            androidApp/build/test-results/**/*.xml
       - uses: actions/upload-artifact@v4
         with:
           name: rudeus-debug-apk

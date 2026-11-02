@@ -164,6 +164,10 @@ fun App(
         pipelineRun++
         go(Screen.PROCESSING)
     }
+    LaunchedEffect(capture) {
+        capture?.photos?.collect { startPipeline(it) }
+    }
+
     /** Processing -> Scanning with the character that was just made (sheet + sprite), or the demo one. */
     fun useResult() {
         val r = pendingResult
@@ -372,9 +376,9 @@ fun App(
                         lang = lang,
                         onLangChange = { lang = it },
                         onTakePhoto = {
-                            if (capture != null) capture.takePhoto(::startPipeline) else startPipeline(ByteArray(0))
+                            if (capture != null) capture.takePhoto() else startPipeline(ByteArray(0))
                         },
-                        onPickPhoto = capture?.let { host -> { host.pickPhoto(::startPipeline) } },
+                        onPickPhoto = capture?.let { host -> { host.pickPhoto() } },
                         onPickBundled = { c: BundledCharacter ->
                             sheet = c.sheet
                             spritePng = c.spritePng // null keeps the host's built-in dino
