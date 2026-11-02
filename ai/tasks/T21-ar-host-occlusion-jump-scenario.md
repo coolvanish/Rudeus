@@ -120,7 +120,7 @@ under `// HAND-REVIEW: T21`. No core/, shared/, Gradle or manifest change; no ne
   - **Simulated clock** (wave-1 review): `ScenarioPlayer` is started at and driven by `GameLoop.simMs`, the accumulated
     clamped dt physics actually stepped while tracking, not the wall clock. The hop/jump beats have 0.2-0.3 s windows; a
     0.7 s tracking stall or a frame hitch on the wall clock would make FLY come down in the gap. Consequence: a tracking
-    loss simply pauses the script (no bunched steps on resume), and `scenario_done ms=` is simulated time (~25000 exactly
+    loss simply pauses the script (no bunched steps on resume), and `scenario_done ms=` is simulated time (~15000 exactly
     plus one clamped frame), independent of real-time stalls.
 
 ### pixel checklist (grep `adb logcat -s RudeusGate`)
@@ -141,8 +141,8 @@ under `// HAND-REVIEW: T21`. No core/, shared/, Gradle or manifest change; no ne
 6. **Scenario x3** (debug on, real cup at (0.15, 0), book at (0, 0.15), table edge or a CLIFF strip at (-0.20, 0); or the
    ARCore recording): tap Scenario three times, waiting for `scenario_done` each time; the character must snap back to
    the spawn point at each tap (also after a FLY run that ended past the gap). Expect per run: `scenario_start ... sim_ms=`,
-   `scenario_step idx=0..4` with `at_ms=0, 4000, 9000, 10400, 11400`, then `scenario_done ms=` ~25000 (+ one frame; this is
-   simulated time, so it stays ~25000 even if the run took longer in real time). HUD events in order: BLOCKED (cup),
+   `scenario_step idx=0..4` with `at_ms=0, 4000, 9000, 10400, 11400`, then `scenario_done ms=` ~15000 (+ one frame; this is
+   simulated time, so it stays ~15000 even if the run took longer in real time). HUD events in order: BLOCKED (cup),
    STEPPED_UP (book), JUMPED/LANDED (hop), then JUMPED/FELL/RESPAWNED (JUMP) or a landing past the gap (FLY). Cover the
    camera for ~1 s mid-run: the script must pause with the character and continue in step afterwards, not fire bunched
    taps. Gate = three `scenario_done` lines without a rebuild, FLY included.
