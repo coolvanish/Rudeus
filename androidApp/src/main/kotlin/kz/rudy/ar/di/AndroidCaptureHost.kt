@@ -370,6 +370,8 @@ private class DeferredModels(make: () -> MetaModels) : MetaModels {
     private val delegate: MetaModels by lazy(make)
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult = delegate.segment(ref, image, prompts)
     override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = delegate.stylize(ref, cutout, refs)
+    // HAND-REVIEW: forwards the backup prompt to MetaApi; without this line attempt 2 repeats the main prompt on the phone.
+    override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = delegate.stylizeFallback(ref, cutout, refs)
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreStyle(ref, image, refs)
     override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreTechnique(ref, image, refs)
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet = delegate.characterSheet(ref, description, image)

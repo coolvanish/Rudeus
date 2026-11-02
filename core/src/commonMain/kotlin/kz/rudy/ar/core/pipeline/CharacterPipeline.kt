@@ -31,7 +31,9 @@ data class CharacterResult(
 
 /**
  * photo -> cutout (SAM) -> stylize (Muse) -> gate (Spark score + deterministic half) -> retry stylize
- * up to [maxRetries] times while the gate fails. The character sheet (Spark vision on the cutout) starts right after
+ * up to [maxRetries] times while the gate fails. Attempt 2 uses the backup prompt ([MetaModels.stylizeFallback]), the
+ * others the main one. A stylize network error (the Muse timeout included) uses up its attempt like a low score; the
+ * character fails only when no attempt produced a sprite. A failed gate ships the best-scoring sprite. The character sheet (Spark vision on the cutout) starts right after
  * the cutout and runs concurrently with the stylize/gate loop; a failed sheet call ships [SheetParser.fallback]
  * instead of failing the character (cutout and stylize failures still fail it). Every stage lands in [metrics]
  * with its duration, attempt number, success flag and cost: the measured cost when the models report to [metrics]
@@ -131,16 +133,23 @@ class CharacterPipeline(
                 val refRasters: List<RasterImage?> = rasterDecoder?.let { d ->
                     sparkRefs.map { r -> d(spriteMatter?.invoke(r) ?: r) }
                 } ?: emptyList()
-                var sprite: ByteArray = ByteArray(0)
-                var score = 0f
+                var best: ByteArray? = null
+                var bestScore = 0f
                 var passed = false
                 try {
                     while (true) {
                         attempt++
-                        val stylized = stage(STAGE_STYLIZE, attempt, Jobs.MUSE_STYLIZE, metrics.costs.stylizeUsd) {
-                            models.stylize(ref, museCutout, museRefs)
+                        val stylized = try {
+                            stage(STAGE_STYLIZE, attempt, Jobs.MUSE_STYLIZE, metrics.costs.stylizeUsd) {
+                                if (attempt == FALLBACK_ATTEMPT) models.stylizeFallback(ref, museCutout, museRefs)
+                                else models.stylize(ref, museCutout, museRefs)
+                            }
+                        } catch (e: MetaError.Network) {
+                            if (attempt <= maxRetries) continue
+                            if (best == null) throw e
+                            break
                         }
-                        sprite = matte(ref, stylized, attempt)
+                        val sprite = matte(ref, stylized, attempt)
                         // Both looks at once (user decision 2026-10-28): the style rubric and the colour-free one
                         // score the same sprite in parallel; the attempt keeps the higher score.
                         emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
@@ -164,10 +173,14 @@ class CharacterPipeline(
                         val technique = techniqueModel?.let { m ->
                             guarded { gate.combine(m, rasterDecoder?.let { gate.techniqueScore(raster, refRasters) }) }
                         }
-                        score = maxOf(style ?: 0f, technique ?: 0f)
+                        val score = maxOf(style ?: 0f, technique ?: 0f)
                         val stylePassed = style != null && gate.passes(style)
                         val techniquePassed = technique != null && gate.passes(technique)
                         passed = stylePassed || techniquePassed
+                        if (best == null || score >= bestScore) {
+                            best = sprite
+                            bestScore = score
+                        }
                         // A call that returned was billed; one that threw is charged only what was metered.
                         val styleCost = metrics.costSince(styleMark, if (styleModel != null) metrics.costs.scoreUsd else 0.0)
                         val techniqueCost = metrics.costSince(techniqueMark, if (techniqueModel != null) metrics.costs.scoreUsd else 0.0)
@@ -202,8 +215,8 @@ class CharacterPipeline(
                 val sheet = sheetCall.await()
                 record(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
 
-                metrics.endCharacter(gateScore = score, gatePassed = passed, retries = attempt - 1)
-                CharacterResult(ref, sprite, sheet.sheet, score, passed, attempt, mask)
+                metrics.endCharacter(gateScore = bestScore, gatePassed = passed, retries = attempt - 1)
+                CharacterResult(ref, checkNotNull(best), sheet.sheet, bestScore, passed, attempt, mask)
             }
         } catch (e: Throwable) {
             if (e is CancellationException && !currentCoroutineContext().isActive) {
@@ -322,6 +335,9 @@ class CharacterPipeline(
     }
 
     companion object {
+        /** The attempt that uses [MetaModels.stylizeFallback]. */
+        const val FALLBACK_ATTEMPT = 2
+
         const val STAGE_CUTOUT = "cutout"
         const val STAGE_STYLIZE = "stylize"
         const val STAGE_MATTE = "matte"

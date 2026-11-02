@@ -235,6 +235,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | capture_title | Сурет немесе ойыншық | Рисунок или игрушка | Drawing or toy |
 | capture_hint | Суретті үстелге қой да, фотоға түсір | Положи рисунок на стол и сфотографируй | Put the drawing on the table and take a photo |
 | capture_take_photo | Фото | Фото | Photo |
+| capture_privacy_note | Фото Meta AI-ға жіберіледі. Адамдарды түсірме | Фото уходит в Meta AI. Не снимай людей | The photo goes to Meta AI. No people, please |
 | capture_pick_gallery | Галереядан | Из галереи | From gallery |
 | capture_or_pick | Немесе дайынын таңда | Или выбери готового | Or pick a ready one |
 | capture_offline_note | Интернет жоқ — дайын кейіпкерлер | Нет интернета — готовые герои | No internet — ready characters |

@@ -12,6 +12,8 @@
 #   preserved; the pipeline may need to re-cut the stylized output with SAM (sam-cutout on the result).
 # changed 2026-10-28 (T10, live run 1): the prompt names the refs' look (bold even outline, flat crayon fills) and asks
 #   to keep the character recognisable; the old one got thin sketchy lines. Mirrors core/meta Prompts.STYLIZE.
+# changed 2026-11-03 (T11): pencil and white subjects stayed white with thin lines and failed the gate; the prompt now
+#   asks for a thick outline, warm palette and every part coloured in.
 # changed 2026-10-28 (live run 4, runs/2026-10-28T07-46-08Z.json): child drawings came back almost unchanged (their
 #   own strokes and saturated colours, Spark 0.15-0.55, 0/4 passed); the prompt now says a drawing must be redrawn
 #   from scratch in the refs' soft palette, keeping each part's colour. Same day: "sticker" made Muse draw flat
@@ -22,7 +24,7 @@
 # unverified: reasoning_strength "low" is faster (single pass); "high" (default) self-refines. Try both on Day 1.
 {
   "model": "muse-image-1.0",
-  "prompt": "The first image is a child's character: a photo of a toy or a child's own drawing. Either way, redraw the whole character from scratch in exactly the style of the reference images that follow, as if the same illustrator drew it; do not keep the original's strokes, scribbles or marker colours. Copy the references' bold, even outline (the same line weight and colour everywhere), their soft light palette, their flat crayon colour fills with the same fine crayon texture, and their simple friendly shapes with few details. Keep the character's identity so the child recognises it: the same silhouette, pose and features, and the same colour for each part in the references' softer tones. One character only, centred on a plain pure white background with wide margins, no border, no text, no shadow.",
+  "prompt": "The first image is a child's character: a photo of a toy or a child's own drawing. Either way, redraw the whole character from scratch in exactly the style of the reference images that follow, as if the same illustrator drew it; do not keep the original's strokes, scribbles or marker colours. Copy the references' thick, bold, waxy crayon outline (the same heavy line weight and colour everywhere, never thin or sketchy), their warm cheerful palette, their solid crayon colour fills with the same fine crayon texture, covering every part edge to edge, and their simple friendly shapes with few details. Keep the character's identity so the child recognises it: the same subject, silhouette, pose and features, and the same colour for each part. Do not add clothes, accessories, scenery or anything else the original does not have. If the original is uncoloured, a pencil sketch, or white or grey, choose cheerful natural colours and colour every part in; never leave a part white or unfilled. One character only, centred on a plain pure white background with wide margins, no border, no text, no shadow.",
   "images": [
     { "image_url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" }{{REF_IMAGE_ITEMS}}
   ],

@@ -35,6 +35,8 @@ class FakeModels(
     private var techniqueIndex = 0
 
     val stylizeCalls: Int get() = calls.count { it.startsWith("stylize:") }
+    var stylizeFallbackCalls = 0
+        private set
     val scoreCalls: Int get() = calls.count { it.startsWith("scoreStyle:") }
     val techniqueCalls: Int get() = calls.count { it.startsWith("scoreTechnique:") }
 
@@ -51,6 +53,11 @@ class FakeModels(
         pause("stylize")
         stylizeError?.let { throw it }
         return sprite
+    }
+
+    override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
+        stylizeFallbackCalls++
+        return stylize(ref, cutout, refs)
     }
 
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float {

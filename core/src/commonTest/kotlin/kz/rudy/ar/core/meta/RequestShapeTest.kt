@@ -61,7 +61,7 @@ class RequestShapeTest {
     @Test
     fun stylizePromptAsksForRefOutlineAndIdentity() {
         val p = Prompts.STYLIZE.lowercase()
-        for (phrase in listOf("reference images", "bold, even outline", "line weight and colour", "flat crayon colour", "white background", "recognises")) {
+        for (phrase in listOf("reference images", "bold, waxy crayon outline", "line weight and colour", "solid crayon colour", "uncoloured", "white background", "recognises")) {
             assertTrue(phrase in p, "stylize prompt mentions \"$phrase\": $p")
         }
         assertFalse('\n' in Prompts.STYLIZE, "one paragraph")

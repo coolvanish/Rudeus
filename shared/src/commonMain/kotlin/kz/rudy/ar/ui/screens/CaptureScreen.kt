@@ -101,6 +101,8 @@ fun CaptureScreen(
                 Spacer(Modifier.height(RudeusSpacing.sm))
                 GhostButton(text = t(StringId.capture_pick_gallery), onClick = onPickPhoto, modifier = Modifier.fillMaxWidth())
             }
+            Spacer(Modifier.height(RudeusSpacing.sm))
+            Text(t(StringId.capture_privacy_note), style = MaterialTheme.typography.bodySmall, color = RudeusColors.InkSoft)
             Spacer(Modifier.height(RudeusSpacing.xl))
             if (offline) {
                 Chip(
