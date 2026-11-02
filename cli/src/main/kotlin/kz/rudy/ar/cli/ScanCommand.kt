@@ -46,7 +46,8 @@ import kotlin.math.tan
  */
 
 /** Same lists as androidApp's `ScanPrompts` (the CLI cannot depend on :androidApp); keep them in step. */
-private val TABLE_PROMPTS = listOf("cup", "book", "phone", "bottle", "hand", "object")
+private val COMMON_PROMPTS = listOf("cup", "book", "phone", "bottle", "hand", "toy")
+private val TABLE_PROMPTS = COMMON_PROMPTS + listOf("laptop", "remote", "plate", "bowl", "keyboard")
 private val FLOOR_EXTRA_PROMPTS = listOf("box", "shoe", "bag", "ball")
 
 /** The phone's `SCAN_MAX_SIDE` / `SCAN_JPEG_QUALITY` (ScanCapture.kt). */
@@ -63,7 +64,8 @@ internal fun scan(flags: Flags): Int {
     val live = flags.has("live")
     val floor = flags.has("floor")
     val profile = if (floor) SurfaceProfile.FLOOR else SurfaceProfile.TABLE
-    val basePrompts = flags.get("prompts")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: TABLE_PROMPTS
+    val basePrompts = flags.get("prompts")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+        ?: if (floor) COMMON_PROMPTS else TABLE_PROMPTS
     if (basePrompts.isEmpty()) throw CliError("--prompts is empty")
     val prompts = if (floor) basePrompts + FLOOR_EXTRA_PROMPTS.filter { it !in basePrompts } else basePrompts
 
