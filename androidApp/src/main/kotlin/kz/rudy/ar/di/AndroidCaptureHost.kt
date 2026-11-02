@@ -113,7 +113,12 @@ class AndroidCaptureHost(
 
     // ---- VoiceHost (T24) ----
 
-    override val voice: VoiceHost get() = this
+    /**
+     * HAND-REVIEW: cut line 1 applied (Pixel 2026-11-03: push-to-talk did not work on the device, cause not
+     * investigated by decision). `null` hides the mic in the Play HUD; the VoiceHost implementation below stays so
+     * `get() = this` brings it back when it is fixed.
+     */
+    override val voice: VoiceHost? get() = null
 
     override fun hasPermission(): Boolean =
         ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
