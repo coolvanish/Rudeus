@@ -18,8 +18,12 @@ interface TableScanner {
 
 /** SAM prompts per surface (ai/build-plan.md Day 4; the floor adds the brief's four). Specific labels first. */
 object ScanPrompts {
-    val TABLE: List<String> = listOf("cup", "book", "phone", "bottle", "hand", "object")
-    val FLOOR: List<String> = TABLE + listOf("box", "shoe", "bag", "ball")
+    // HAND-REVIEW: prompt list — SAM finds only what is named, and "object" matched nothing in 7/7 live scans, so it
+    // is replaced by "toy" (ai/day4-human.md decision 2) plus common table things. Unlisted labels become obstacles
+    // (Semantics.kindFor). Floor stays at 10 prompts: each 6 prompts add a round at samConcurrency = 6 (scan gate < 6 s).
+    private val COMMON = listOf("cup", "book", "phone", "bottle", "hand", "toy")
+    val TABLE: List<String> = COMMON + listOf("laptop", "remote", "plate", "bowl", "keyboard")
+    val FLOOR: List<String> = COMMON + listOf("box", "shoe", "bag", "ball")
 
     fun of(surface: Surface): List<String> = when (surface) {
         Surface.TABLE -> TABLE
