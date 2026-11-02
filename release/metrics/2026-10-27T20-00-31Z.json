@@ -1,0 +1,121 @@
+{
+    "schema": 1,
+    "runId": "2026-10-27T20-00-31Z",
+    "source": "cli",
+    "provider": "fixture",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "sample-01",
+            "stages": [
+                {
+                    "name": "cutout",
+                    "ms": 26,
+                    "costUsd": 0.004,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 2,
+                    "costUsd": 0.02,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 11,
+                    "costUsd": 0.002,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "sheet",
+                    "ms": 14,
+                    "costUsd": 0.002,
+                    "attempt": 1,
+                    "ok": true
+                }
+            ],
+            "gateScore": 0.91,
+            "gatePassed": true,
+            "retries": 0,
+            "totalMs": 186,
+            "totalCostUsd": 0.028
+        },
+        {
+            "input": "sample-02",
+            "stages": [
+                {
+                    "name": "cutout",
+                    "ms": 1,
+                    "costUsd": 0.004,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 0,
+                    "costUsd": 0.02,
+                    "attempt": 1,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 7,
+                    "costUsd": 0.002,
+                    "attempt": 1,
+                    "ok": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 0,
+                    "costUsd": 0.02,
+                    "attempt": 2,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 7,
+                    "costUsd": 0.002,
+                    "attempt": 2,
+                    "ok": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 0,
+                    "costUsd": 0.02,
+                    "attempt": 3,
+                    "ok": true
+                },
+                {
+                    "name": "gate",
+                    "ms": 4,
+                    "costUsd": 0.002,
+                    "attempt": 3,
+                    "ok": true
+                },
+                {
+                    "name": "sheet",
+                    "ms": 1,
+                    "costUsd": 0.002,
+                    "attempt": 1,
+                    "ok": true
+                }
+            ],
+            "gateScore": 0.85,
+            "gatePassed": true,
+            "retries": 2,
+            "totalMs": 24,
+            "totalCostUsd": 0.072
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 2,
+        "gatePassRateFirstTry": 0.5,
+        "p50Ms": 24,
+        "p90Ms": 186,
+        "costPerCharacterUsd": 0.05
+    }
+}

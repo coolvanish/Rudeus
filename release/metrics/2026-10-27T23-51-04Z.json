@@ -1,0 +1,263 @@
+{
+    "schema": 1,
+    "runId": "2026-10-27T23-51-04Z",
+    "source": "cli",
+    "provider": "meta",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "toy-car-01",
+            "stages": [
+                {
+                    "name": "cutout",
+                    "ms": 3003,
+                    "costUsd": 0.005,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 16541,
+                    "costUsd": 0.01,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 406,
+                    "costUsd": 0.0,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 6626,
+                    "costUsd": 0.0055,
+                    "attempt": 1,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 16756,
+                    "costUsd": 0.01,
+                    "attempt": 2,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 419,
+                    "costUsd": 0.0,
+                    "attempt": 2,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 6599,
+                    "costUsd": 0.0051,
+                    "attempt": 2,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 17590,
+                    "costUsd": 0.01,
+                    "attempt": 3,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 398,
+                    "costUsd": 0.0,
+                    "attempt": 3,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 8924,
+                    "costUsd": 0.006,
+                    "attempt": 3,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "sheet",
+                    "ms": 7558,
+                    "costUsd": 0.0033,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.668,
+            "gatePassed": false,
+            "retries": 2,
+            "totalMs": 78625,
+            "totalCostUsd": 0.0549
+        },
+        {
+            "input": "toy-car-02",
+            "stages": [
+                {
+                    "name": "cutout",
+                    "ms": 2128,
+                    "costUsd": 0.005,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 19290,
+                    "costUsd": 0.01,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 454,
+                    "costUsd": 0.0,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 8146,
+                    "costUsd": 0.0061,
+                    "attempt": 1,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "sheet",
+                    "ms": 9245,
+                    "costUsd": 0.0046,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 31183,
+            "totalCostUsd": 0.0257
+        },
+        {
+            "input": "watermelon-01",
+            "stages": [
+                {
+                    "name": "cutout",
+                    "ms": 2252,
+                    "costUsd": 0.005,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 20513,
+                    "costUsd": 0.01,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 343,
+                    "costUsd": 0.0,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 53433,
+                    "costUsd": 0.0052,
+                    "attempt": 1,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 29984,
+                    "costUsd": 0.01,
+                    "attempt": 2,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 381,
+                    "costUsd": 0.0,
+                    "attempt": 2,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 8726,
+                    "costUsd": 0.0059,
+                    "attempt": 2,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "stylize",
+                    "ms": 18701,
+                    "costUsd": 0.01,
+                    "attempt": 3,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 349,
+                    "costUsd": 0.0,
+                    "attempt": 3,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "gate",
+                    "ms": 7794,
+                    "costUsd": 0.0053,
+                    "attempt": 3,
+                    "ok": false,
+                    "measured": true
+                },
+                {
+                    "name": "sheet",
+                    "ms": 11505,
+                    "costUsd": 0.0045,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.462,
+            "gatePassed": false,
+            "retries": 2,
+            "totalMs": 143148,
+            "totalCostUsd": 0.0559
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 3,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 78625,
+        "p90Ms": 143148,
+        "costPerCharacterUsd": 0.0455
+    }
+}
