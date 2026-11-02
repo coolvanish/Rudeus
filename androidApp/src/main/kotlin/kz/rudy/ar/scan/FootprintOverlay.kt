@@ -28,13 +28,18 @@ import kz.rudy.ar.ui.theme.RudeusColors
 // different vertex count (SceneView keys geometry updates on the count).
 
 /** Footprints float this far above the plane (brief: h = 0.002 m). */
-internal const val FOOTPRINT_LIFT_M = 0.002f
+internal const val FOOTPRINT_LIFT_M = 0.005f
 
 /** One unlit transparent material per kind, in the DESIGN.md tints. Main thread (MaterialLoader). */
 internal fun footprintMaterials(materialLoader: MaterialLoader): Map<ObjectKind, MaterialInstance> =
     ObjectKind.entries.associateWith { kind ->
         val alpha = if (kind == ObjectKind.CLIFF) RudeusColors.FootOutlineAlpha else RudeusColors.FootFillAlpha
-        materialLoader.createUnlitColorInstance(RudeusColors.footprint(kind).copy(alpha = alpha))
+        materialLoader.createUnlitColorInstance(RudeusColors.footprint(kind).copy(alpha = alpha)).apply {
+            // HAND-REVIEW: Pixel 2026-11-03 — with depth occlusion on (T21 Plan A) the camera writes real-world depth
+            // and the 2 mm-high footprints were depth-tested against noisy depth-from-motion: nothing showed on the
+            // table while the mini-map had the level. Debug chrome is drawn without the depth test (always on top).
+            setDepthCulling(false)
+        }
     }
 
 /** Call inside the session `AnchorNode { }` only while `slot.debug` is on. */
