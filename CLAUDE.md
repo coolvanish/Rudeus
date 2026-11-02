@@ -62,6 +62,9 @@ Flow for a brief: implement (opus-high / opus-extra / sonnet-high) -> rudeus-rev
 
 ## Skills (in `.claude/skills/`)
 `verify`, `ar-sceneview`, `meta-fixtures`, `task-brief`, `metrics`, `gate`. Load the one that matches before working.
+Workflow skills from the first week: `build-day` (a day end to end), `hand-review` (any androidApp/Gradle edit),
+`device-evidence` (Pixel/emulator proof), `human-checklist` (`ai/dayN-human.md`), `cut-line` (applying a cut),
+`harness-limits` (what the hooks and auto mode refuse, and what to do instead).
 Library docs: use Context7 (`/sceneview/sceneview`, `/websites/developers_google_ar`, Ktor, kotlinx) — never guess an API.
 
 ## Conventions

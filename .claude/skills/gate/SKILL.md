@@ -10,7 +10,7 @@ description: Run a go/no-go check against the day gates and cut lines in ai/buil
    Evidence is a run id in `runs/`, a test name, or a device measurement with the command used.
 3. If any criterion is FAIL after 6 PM local, apply cut lines **in order** (1 Voice, 2 SAM rigging, 3 hand,
    4 depth occlusion, 5 affordances to jump-only, 6 in-app capture). Never cut: Day 1 gate, metrics JSON,
-   Day 6 offline mode, Day 7 shoot.
+   Day 6 offline mode, Day 7 shoot. How to apply a cut (switch, status, commit) is the `cut-line` skill.
 4. Write the verdict into the day's task brief `Result` section and in the session's final message as a table:
 
 | Criterion | Status | Evidence |
