@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSheet
@@ -148,6 +149,9 @@ fun App(
     var voiceSerial by remember { mutableStateOf(-1) }
     // T25: Bigger / Smaller. A choice, not a request, so it is kept across Back like the surface.
     var characterSize by remember { mutableStateOf(CharacterSize.DEFAULT) }
+    // T26: characters made on this phone (shown ahead of the bundled ones) and the result last sent to disk.
+    var saved by remember { mutableStateOf<List<BundledCharacter>>(emptyList()) }
+    var keptResult by remember { mutableStateOf<CharacterResult?>(null) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -170,10 +174,30 @@ fun App(
     LaunchedEffect(capture) {
         capture?.photos?.collect { startPipeline(it) }
     }
+    LaunchedEffect(capture) {
+        if (capture != null) saved = capture.savedCharacters()
+    }
+
+    /**
+     * T26: [result] joins the ready characters, so it can be played again without a new photo. Runs in App's scope, so
+     * leaving the screen does not lose it; the same result is kept once, and a failed save may be tried again by "Next".
+     */
+    fun keep(result: CharacterResult) {
+        val host = capture ?: return
+        if (keptResult === result) return
+        keptResult = result
+        scope.launch {
+            val card = host.saveCharacter(result)
+            if (card == null) keptResult = null
+            else saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) // the disk evicted the oldest too
+        }
+    }
 
     /** Processing -> Scanning with the character that was just made (sheet + sprite), or the demo one. */
     fun useResult() {
         val r = pendingResult
+        // A gate-passed result is already kept; one below the gate is kept only because the child chose to play it.
+        if (r != null) keep(r)
         sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
         spritePng = r?.sprite
         go(Screen.SCANNING)
@@ -375,7 +399,7 @@ fun App(
 
                 when (screen) {
                     Screen.CAPTURE -> CaptureScreen(
-                        bundled = bundled,
+                        bundled = saved + bundled,
                         offline = offline,
                         lang = lang,
                         onLangChange = { lang = it },
@@ -408,14 +432,18 @@ fun App(
                                 }
                                 processing = processing.copy(stage = null, completed = done, status = ProcessingStatus.DONE, sheet = DemoData.sheet)
                             } else {
-                                // Real pipeline (T03). Events arrive on the pipeline's thread; each one is a single
-                                // snapshot-state write, so no dispatch is needed. The result is taken from the Finished
-                                // event, so it is in place before the screen shows "Next". Leaving the screen cancels the run.
+                                // Real pipeline (T03). Events arrive on the pipeline's thread; they only write snapshot
+                                // state, so no dispatch is needed. The result is taken (and kept, T26) from the Finished
+                                // event before `processing` changes, so it is in place before the screen shows "Next".
+                                // Leaving the screen cancels the run.
                                 try {
                                     capture.makeCharacter(bytes) { event ->
                                         // After Retry a late event of the cancelled run must not fold into the fresh state.
                                         if (run != pipelineRun) return@makeCharacter
-                                        if (event is PipelineEvent.Finished) pendingResult = event.result
+                                        if (event is PipelineEvent.Finished) {
+                                            pendingResult = event.result
+                                            if (event.result.gatePassed) keep(event.result)
+                                        }
                                         processing = processing.reduce(event)
                                     }
                                 } catch (e: CancellationException) {
