@@ -131,7 +131,7 @@ private const val REAPPEAR_AFTER_TRACKING_MS = 800L
  */
 internal const val GENERATED_SPRITE_FACES_RIGHT = false
 
-/** Depth readings per tap along the walk (depthGapsOnWay): a gap between two surfaces is 30 cm or more, this is about one every 15 cm on a 1 m walk. */
+// HAND-REVIEW: Pixel 2026-11-03 — depth readings per tap along the walk (depthGapsOnWay): a gap between two surfaces is 30 cm or more, this is about one every 15 cm on a 1 m walk.
 private const val WALK_DEPTH_SAMPLES = 6
 
 /**
@@ -485,12 +485,14 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         // tap, relative to the plane the level stands on (+ = plane too low), and the feet's height.
                         val depthGap = hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) }
                         // HAND-REVIEW: Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
-                        // so "in the polygon" is not "on the table". A drop in depth at the tap or on the way refuses the tap, as a
-                        // tap on the floor is; :core decides. No depth reading (null) never refuses. The boundary is not touched.
+                        // so "in the polygon" is not "on the table". A drop in depth on the way or at the tap refuses it; :core decides.
+                        // No depth reading (null) never refuses. The boundary is not touched. The character says it cannot go there
+                        // (the BLOCKED line), so a refused tap is not a dead tap.
                         val gaps = depthGapsOnWay(frame, a, loop.state.pos, uv, WALK_DEPTH_SAMPLES) + depthGap
                         Log.i(GATE_TAG, "tap_depth_gap=$depthGap feet_h=${loop.state.h} way=$gaps")
                         if (SurfaceBoundary.crossesEdge(gaps, slotState.profile)) {
                             Log.i(GATE_TAG, "tap_past_edge u=${uv.u} v=${uv.v}")
+                            currentSlot.onCharacterEvent(CharacterEvent.BLOCKED)
                         } else {
                             confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
                             loop.walkTo(uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame

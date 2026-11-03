@@ -19,7 +19,7 @@ fun planeCoords(anchor: Anchor, world: Pose): Vec2 {
     return Vec2(local.tx(), local.tz())
 }
 
-/** World pose -> height above the anchor's plane, metres. The h that goes with [planeCoords]. */
+/** HAND-REVIEW: Pixel 2026-11-03 — world pose -> height above the anchor's plane, metres. The h that goes with [planeCoords]. */
 fun planeHeight(anchor: Anchor, world: Pose): Float = anchor.pose.inverse().compose(world).ty()
 
 /**
@@ -45,6 +45,7 @@ fun depthGapsOnWay(frame: Frame, anchor: Anchor, from: Vec2, to: Vec2, samples: 
     }
 }
 
+// HAND-REVIEW: Pixel 2026-11-03 — see depthGapsOnWay: a depth hit farther than this from the ray is not on the walk.
 private const val ON_RAY_M = 0.05f
 
 /** (u, v, h) in the anchor's plane frame -> world pose (translation only, identity rotation). */
