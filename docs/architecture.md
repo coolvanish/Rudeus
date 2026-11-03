@@ -36,13 +36,18 @@ toWorld(anchor, (u, v), h)     = anchor.pose ∘ translation(u, h, v)
 ```
 
 ## Scan: how the table becomes a level
-1. Player presses **Scan** (never per-frame). The app grabs one camera image and stores the camera pose, intrinsics,
-   the anchor pose and the plane polygon as `ScanInput`.
-2. `MetaModels.segment` returns one mask per prompt (cup, book, phone, bottle, hand, object).
-3. `SceneBuilder`: mask → largest component → contour → Douglas–Peucker → base points → ray–plane → footprint polygon;
-   height from the top-edge ray; `Semantics.kindFor(label, h)`; ids matched to the previous level by centroid.
-4. `Physics.step` routes the character: push-out from obstacles, step-up onto ≤ 4 cm platforms, fall and respawn past the
-   plane boundary, jump parabola, fly/roll abilities.
+1. Player presses **Scan** (never per-frame). A camera looking steeper than 75° (`ScanAngle`) is told to change angle
+   before anything is paid for. Otherwise the app grabs one camera image and stores the camera pose, intrinsics, the
+   anchor pose and the plane polygon as `ScanInput`.
+2. `MetaModels.segment` returns one mask per prompt (cup, book, phone, bottle, hand, object). `TableScan` leaves out masks
+   seen steeper than 75° (their geometry is wrong however good the mask is) and carries the previous objects they cover.
+3. `SceneBuilder`: mask → largest component → contour → near rim → ray–plane → footprint polygon; height from the ray to
+   the silhouette's highest pixel; `Semantics.kindFor(label, h)`; ids matched to the previous level by centroid.
+4. `SurfaceBoundary` keeps the level boundary as the surface known so far: the convex hull of the plane polygon at each
+   scan, the spawn, accepted taps and the character. ARCore's polygon alone can end mid-table, so the hull never shrinks;
+   it can also run past the table, so the live polygon does not feed it and a depth drop on the way refuses a tap.
+5. `Physics.step` routes the character: push-out from obstacles (never over a cliff), step-up onto ≤ 4 cm platforms, fall
+   and respawn past the boundary, jump parabola, fly/roll abilities.
 
 ## Character pipeline (same code on phone and CLI)
 cutout (SAM) → stylize (Muse Image, ≤ 9 refs) → gate (Spark vision score × 0.6 + deterministic palette/outline × 0.4,

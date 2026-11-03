@@ -31,6 +31,7 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     capture_title("Сурет немесе ойыншық", "Рисунок или игрушка", "Drawing or toy"),
     capture_hint("Суретті үстелге қой да, фотоға түсір", "Положи рисунок на стол и сфотографируй", "Put the drawing on the table and take a photo"),
     capture_take_photo("Фото", "Фото", "Photo"),
+    capture_privacy_note("Фото Meta AI-ға жіберіледі. Адамдарды түсірме", "Фото уходит в Meta AI. Не снимай людей", "The photo goes to Meta AI. No people, please"),
     capture_pick_gallery("Галереядан", "Из галереи", "From gallery"),
     capture_or_pick("Немесе дайынын таңда", "Или выбери готового", "Or pick a ready one"),
     capture_offline_note("Интернет жоқ — дайын кейіпкерлер", "Нет интернета — готовые герои", "No internet — ready characters"),
@@ -64,6 +65,9 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     scan_no_plane_hint("Өрнекті мата жай, жарық бүйірден түссін", "Постели ткань с узором, свет сбоку", "Use a patterned cloth and light from the side"),
     scan_no_plane_title_floor("Еден табылмады", "Пол не найден", "No floor found"),
     scan_no_plane_hint_floor("Күндіз далада көр: шөп не тротуар", "Попробуй днём на улице: трава или тротуар", "Try outside in daylight: grass or pavement"),
+    /** The camera looks almost straight down: the scan needs a side view of the objects. */
+    scan_too_steep_title("Тым жоғарыдан", "Слишком сверху", "Too straight down"),
+    scan_too_steep_hint("Телефонды тікірек ұстап, сәл артқа шегін", "Держи телефон прямее и отойди назад", "Hold the phone more upright and step back"),
     scan_empty_title("Үстел бос", "Стол пустой", "Table is empty"),
     scan_empty_hint("Кесе не кітап қой", "Поставь кружку или книгу", "Put a cup or a book on it"),
     scan_empty_title_floor("Еден бос", "Пол пустой", "Floor is empty"),
@@ -142,6 +146,14 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     metrics_col_within_cm("Дәлдік, см", "Точность, см", "Accuracy, cm"),
 
     /** AR host: the camera permission screen shown instead of the AR view until the child allows the camera. */
+    settings_title("Баптаулар", "Настройки", "Settings"),
+    settings_language("Тіл", "Язык", "Language"),
+    settings_sounds("Дыбыс", "Звук", "Sounds"),
+    settings_reduce_motion("Қимылды азайту", "Меньше анимации", "Reduce motion"),
+    settings_reduce_motion_hint("Секіру орнына баяу көріну", "Плавно вместо прыжков", "Fades instead of pops"),
+    settings_metrics_hint("Іске қосулар, ұпай, экспорт", "Запуски, оценки, экспорт", "Runs, scores, export"),
+    settings_about("Бағдарлама туралы", "О приложении", "About"),
+
     camera_permission_title("Камера керек", "Нужна камера", "Camera needed"),
     camera_permission_hint("Кейіпкерді үстелде көру үшін", "Чтобы увидеть героя на столе", "To see the character on the table"),
     camera_permission_button("Рұқсат беру", "Разрешить", "Allow");

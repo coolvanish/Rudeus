@@ -52,8 +52,10 @@ import kz.rudy.ar.ui.screens.ProcessingStatus
 import kz.rudy.ar.ui.screens.ScanState
 import kz.rudy.ar.ui.screens.ScanStatus
 import kz.rudy.ar.ui.screens.ScanningScreen
+import kz.rudy.ar.ui.screens.SettingsSheet
 import kz.rudy.ar.ui.screens.VoicePhase
 import kz.rudy.ar.ui.screens.reduce
+import kz.rudy.ar.ui.theme.LocalReducedMotion
 import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusTheme
 import kotlin.time.TimeSource
@@ -87,7 +89,7 @@ private const val VOICE_BUBBLE_MS = 2000L
  * screen runs the fake stage loop so the shell still demos.
  *
  * Scan (T04): the Scan / Rescan button bumps `ArSlot.scanRequest`; the host grabs one camera frame, segments it on
- * IO, swaps the new `Level` into physics and answers once through `onScanned` (count, or null on failure) and
+ * IO, swaps the new `Level` into physics and answers once through `onScanned` ([ScanAnswer]) and
  * `onLevel`. The overlay's arc runs toward [SCAN_ARC_HOLD] over `SCAN_DEFAULT_MS` and holds until that answer, so it
  * animates for the real duration. Without a host the shell has no AR view to answer, so the scan ends after
  * `SCAN_DEFAULT_MS` with an honest 0.
@@ -108,7 +110,11 @@ private const val VOICE_BUBBLE_MS = 2000L
  * [backHandler] wires the system back gesture: :androidApp passes
  * `{ enabled, onBack -> androidx.activity.compose.BackHandler(enabled, onBack) }` (predictive-back safe). :shared has
  * no back API of its own on Android without a new dependency (CMP's `ui-backhandler` is not on its classpath).
- * Back rule: Metrics -> where it came from; Play / Scanning / Processing -> Capture; Capture -> system (exit).
+ * Back rule: the Settings sheet closes first; Metrics -> where it came from; Play / Scanning / Processing -> Capture;
+ * Capture -> system (exit).
+ *
+ * Settings (T26): the sheet opens from Capture's wordmark. Reduce motion here ORs with whatever a host provides through
+ * [LocalReducedMotion] above `App`; both last for this process only. Sounds reaches the host as `ArSlot.soundsOn`.
  */
 @Composable
 fun App(
@@ -147,6 +153,11 @@ fun App(
     var voicePhase by remember { mutableStateOf(VoicePhase.IDLE) }
     var walkForwardRequest by remember { mutableStateOf(0) }
     var voiceSerial by remember { mutableStateOf(-1) }
+    // T26: the Settings sheet. Language stays `lang` above.
+    var settingsOpen by remember { mutableStateOf(false) }
+    var reduceMotion by remember { mutableStateOf(false) }
+    var soundsOn by remember { mutableStateOf(true) }
+    val hostReducedMotion = LocalReducedMotion.current
     // T25: Bigger / Smaller. A choice, not a request, so it is kept across Back like the surface.
     var characterSize by remember { mutableStateOf(CharacterSize.DEFAULT) }
     // T26: characters made on this phone (shown ahead of the bundled ones) and the result last sent to disk.
@@ -161,7 +172,8 @@ fun App(
     val offline by offlineFlow.collectAsState()
     val voice = remember(capture) { capture?.voice }
 
-    fun go(to: Screen) { lastScreen = screen; screen = to }
+    // Leaving Capture closes the sheet: a photo can arrive from the camera or picker while it is open.
+    fun go(to: Screen) { lastScreen = screen; screen = to; settingsOpen = false }
     fun startPipeline(bytes: ByteArray?) {
         if (bytes == null) return
         photo = bytes
@@ -203,11 +215,13 @@ fun App(
         go(Screen.SCANNING)
     }
     /**
-     * The one Back rule, shared by the on-screen Back buttons and the system back gesture: Metrics -> where it was
+     * The one Back rule, shared by the on-screen Back buttons and the system back gesture: an open Settings sheet closes;
+     * Metrics -> where it was
      * opened from; Play / Scanning / Processing -> Capture (leaves the AR session, cancels a running pipeline);
      * Capture -> not handled (the system exits).
      */
     fun back() {
+        if (settingsOpen) { settingsOpen = false; return }
         when (screen) {
             Screen.CAPTURE -> Unit
             Screen.METRICS -> {
@@ -305,42 +319,55 @@ fun App(
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
     }
-    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); null -> NO_PLANE
-    // (Skip appears after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan
-    // overlay ends; an empty rescan says "Table is empty", a failed one "No table found", so the HUD stays honest.
-    val onScanned = rememberUpdatedState<(Int?) -> Unit> { objects ->
+    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); Failed -> NO_PLANE
+    // (Skip appears after two); TooSteep -> TOO_STEEP (not a failure either: only the angle has to change). A late
+    // answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends; an empty rescan says
+    // "Table is empty", a failed one "No table found", a steep one how to hold the phone, so the HUD stays honest. A level
+    // that left out a too-steep object says so too: the character would otherwise walk through it unexplained.
+    val onScanned = rememberUpdatedState<(ScanAnswer) -> Unit> { answer ->
         when (screen) {
             Screen.SCANNING -> if (scan.status == ScanStatus.SCANNING) {
-                scan = if (objects == null) {
-                    scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
-                } else if (objects == 0) {
-                    scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
-                } else {
-                    scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = objects, failures = 0)
+                if (answer is ScanAnswer.Found && answer.missed) speech = HudSpeech.say(speech, StringId.scan_too_steep_hint.get(lang), nowMs())
+                scan = when (answer) {
+                    ScanAnswer.Failed -> scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
+                    ScanAnswer.TooSteep -> scan.copy(status = ScanStatus.TOO_STEEP, progress = 0f, objectsFound = 0)
+                    is ScanAnswer.Found -> if (answer.objects == 0) {
+                        scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
+                    } else {
+                        scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = answer.objects, failures = 0)
+                    }
                 }
             }
             else -> {
-                if (hud.scanning && (objects == null || objects == 0)) {
-                    val floor = surface == Surface.FLOOR
-                    val id = when {
-                        objects == 0 -> if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title
+                val floor = surface == Surface.FLOOR
+                val id = when (answer) {
+                    ScanAnswer.TooSteep -> StringId.scan_too_steep_hint
+                    ScanAnswer.Failed -> when {
                         offline -> StringId.scan_offline_title
-                        else -> if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
+                        floor -> StringId.scan_no_plane_title_floor
+                        else -> StringId.scan_no_plane_title
                     }
-                    speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                    is ScanAnswer.Found -> when {
+                        answer.missed -> StringId.scan_too_steep_hint
+                        answer.objects > 0 -> null
+                        floor -> StringId.scan_empty_title_floor
+                        else -> StringId.scan_empty_title
+                    }
                 }
-                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
+                if (hud.scanning && id != null) speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || answer is ScanAnswer.Found)
             }
         }
     }
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
     val ability = sheet.ability
-    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize) {
+    val slot = remember(spritePng, surface, debug, soundsOn, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
             debug = debug,
+            soundsOn = soundsOn,
             onSurfaceReady = { onSurfaceReady.value(it) },
             onAnchorPlaced = { onAnchorPlaced.value() },
             onTracking = { onTracking.value(it) },
@@ -389,9 +416,9 @@ fun App(
     }
 
     // System back / predictive back gesture: same rule as the Back buttons; on Capture the system handles it (exit).
-    backHandler(screen != Screen.CAPTURE, ::back)
+    backHandler(screen != Screen.CAPTURE || settingsOpen, ::back)
 
-    RudeusTheme {
+    RudeusTheme(reducedMotion = reduceMotion || hostReducedMotion) {
         CompositionLocalProvider(LocalLang provides lang) {
             Box(Modifier.fillMaxSize()) {
                 // The single AR call site (T13 (a)): same position for Scanning, Play and Metrics-over-Play.
@@ -401,8 +428,7 @@ fun App(
                     Screen.CAPTURE -> CaptureScreen(
                         bundled = saved + bundled,
                         offline = offline,
-                        lang = lang,
-                        onLangChange = { lang = it },
+                        onOpenSettings = { settingsOpen = true },
                         onTakePhoto = {
                             if (capture != null) capture.takePhoto() else startPipeline(ByteArray(0))
                         },
@@ -413,7 +439,6 @@ fun App(
                             selectedBundled = c.id
                             go(Screen.SCANNING)
                         },
-                        onOpenMetrics = ::openMetrics,
                         selectedId = selectedBundled,
                     )
 
@@ -461,6 +486,7 @@ fun App(
                             onContinue = ::useResult,
                             onBack = ::back,
                             sprite = pendingResult?.sprite,
+                            photo = photo,
                         )
                     }
 
@@ -549,7 +575,6 @@ fun App(
                                 if (line != null) speech = HudSpeech.say(speech, line, nowMs())
                             },
                             onOpenMetrics = ::openMetrics,
-                            onBack = ::back,
                             onScenario = if (hud.showFootprints) ({ scenarioRequest++ }) else null,
                             onVoiceDown = if (voice != null && scan.anchored) ::voiceDown else null,
                             onVoiceUp = ::voiceUp,
@@ -567,6 +592,18 @@ fun App(
                         modifier = Modifier.swallowTouches(),
                     )
                 }
+
+                SettingsSheet(
+                    visible = settingsOpen,
+                    lang = lang,
+                    onLangChange = { lang = it },
+                    sounds = soundsOn,
+                    onSoundsChange = { soundsOn = it },
+                    reduceMotion = reduceMotion,
+                    onReduceMotionChange = { reduceMotion = it },
+                    onOpenMetrics = ::openMetrics,
+                    onDismiss = { settingsOpen = false },
+                )
             }
         }
     }

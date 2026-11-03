@@ -11,11 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,19 +21,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
-import kz.rudy.ar.ui.StringId
-import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.LocalReducedMotion
 import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusMotion
-import kz.rudy.ar.ui.theme.RudeusSpacing
+
+/** A top-left bracket on a 48 grid, from the mockups. */
+private val BRACKET by lazy { PathParser().parsePathString("M6 42V18A12 12 0 0 1 18 6h24").toPath() }
 
 /**
- * The 3-5 s "looking around" scan animation (DESIGN.md "Motion"):
- * breathing Sun corner brackets, a pair of eyes whose pupils sweep left-right with a blink,
- * and a linear progress arc driven by [progress] (0..1, from the real scan duration).
- * Reduced motion: brackets and eyes are static, only the arc animates.
+ * The 3-5 s "looking around" scan animation (DESIGN.md "Motion"): breathing Sun corner brackets, a pair of eyes whose
+ * pupils sweep left-right with a blink, and a linear progress arc driven by [progress] (0..1, from the real scan
+ * duration). Everything carries an Ink edge so it reads on a white table. The "Looking…" pill is the screen's, above
+ * its buttons. Reduced motion: brackets and eyes are static, only the arc animates.
  */
 @Composable
 fun ScanOverlay(active: Boolean, progress: Float, modifier: Modifier = Modifier) {
@@ -77,55 +75,37 @@ fun ScanOverlay(active: Boolean, progress: Float, modifier: Modifier = Modifier)
     val eyeOpen = if (reduced) 1f else blink
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize().padding(RudeusSpacing.xl)) {
-            val stroke = Stroke(RudeusSpacing.stroke.toPx() * 1.5f, cap = StrokeCap.Round)
-            val len = size.minDimension * 0.12f
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val hw = size.width / 2f * bracketScale
-            val hh = size.height / 2f * bracketScale
-            val corners = listOf(
-                Offset(cx - hw, cy - hh) to Offset(1f, 1f),
-                Offset(cx + hw, cy - hh) to Offset(-1f, 1f),
-                Offset(cx - hw, cy + hh) to Offset(1f, -1f),
-                Offset(cx + hw, cy + hh) to Offset(-1f, -1f),
-            )
-            for ((c, d) in corners) {
-                drawLine(RudeusColors.Sun, c, Offset(c.x + d.x * len, c.y), stroke.width, StrokeCap.Round)
-                drawLine(RudeusColors.Sun, c, Offset(c.x, c.y + d.y * len), stroke.width, StrokeCap.Round)
+        Canvas(Modifier.size(260.dp)) {
+            val unit = 52.dp.toPx() / 48f
+            scale(bracketScale, pivot = center) {
+                drawCornerBrackets(BRACKET, 0f, unit, RudeusColors.Ink, 10f, StrokeCap.Round)
+                drawCornerBrackets(BRACKET, 0f, unit, RudeusColors.Sun, 5f, StrokeCap.Round)
             }
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Canvas(Modifier.size(160.dp)) {
-                val r = size.minDimension / 2f
-                val ringStroke = RudeusSpacing.stroke.toPx() * 2f
-                drawCircle(RudeusColors.Scrim, r)
-                drawArc(
-                    RudeusColors.Paper.copy(alpha = 0.3f), -90f, 360f, false,
-                    topLeft = Offset(ringStroke, ringStroke), size = Size(size.width - ringStroke * 2, size.height - ringStroke * 2),
-                    style = Stroke(ringStroke, cap = StrokeCap.Round),
-                )
-                drawArc(
-                    RudeusColors.Sun, -90f, 360f * arc, false,
-                    topLeft = Offset(ringStroke, ringStroke), size = Size(size.width - ringStroke * 2, size.height - ringStroke * 2),
-                    style = Stroke(ringStroke, cap = StrokeCap.Round),
-                )
-                val eyeR = r * 0.26f
-                val pupilR = eyeR * 0.45f
-                for (side in listOf(-1f, 1f)) {
-                    val ec = Offset(center.x + side * r * 0.36f, center.y)
-                    drawOval(
-                        RudeusColors.Paper,
-                        topLeft = Offset(ec.x - eyeR, ec.y - eyeR * eyeOpen),
-                        size = Size(eyeR * 2, eyeR * 2 * eyeOpen),
-                    )
-                    if (eyeOpen > 0.3f) {
-                        drawCircle(RudeusColors.Ink, pupilR, Offset(ec.x + pupilX * (eyeR - pupilR) * 0.8f, ec.y))
-                    }
+
+            val r = 66.dp.toPx()
+            val ringTopLeft = Offset(center.x - r, center.y - r)
+            val ringSize = Size(r * 2, r * 2)
+            drawCircle(RudeusColors.Ink.copy(alpha = 0.9f), r, center, style = Stroke(13.dp.toPx()))
+            drawCircle(RudeusColors.Paper, r, center, style = Stroke(8.dp.toPx()))
+            drawArc(
+                RudeusColors.Sun, -90f, 360f * arc, false,
+                topLeft = ringTopLeft, size = ringSize,
+                style = Stroke(8.dp.toPx(), cap = StrokeCap.Round),
+            )
+
+            val eyeW = 34.dp.toPx()
+            val eyeH = 44.dp.toPx() * eyeOpen
+            val edge = 2.5.dp.toPx()
+            val pupilR = 7.dp.toPx()
+            for (side in listOf(-1f, 1f)) {
+                val ec = Offset(center.x + side * 22.dp.toPx(), center.y)
+                val topLeft = Offset(ec.x - eyeW / 2, ec.y - eyeH / 2)
+                drawOval(RudeusColors.Paper, topLeft, Size(eyeW, eyeH))
+                drawOval(RudeusColors.Ink, topLeft, Size(eyeW, eyeH), style = Stroke(edge))
+                if (eyeOpen > 0.3f) {
+                    drawCircle(RudeusColors.Ink, pupilR, Offset(ec.x + pupilX * (eyeW / 2 - pupilR - edge), ec.y))
                 }
             }
-            Spacer(Modifier.height(RudeusSpacing.md))
-            ScrimPill(t(StringId.scanning))
         }
     }
 }

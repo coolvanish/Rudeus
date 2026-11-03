@@ -33,13 +33,13 @@ import kotlin.math.min
  */
 @Composable
 fun FootprintMiniMap(level: Level, character: CharacterState?, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(RudeusRadius.card)
+    val shape = RoundedCornerShape(RudeusRadius.tile)
     Box(
         modifier
             .size(120.dp)
             .clip(shape)
             .background(RudeusColors.Paper)
-            .border(RudeusSpacing.stroke, RudeusColors.Ink, shape)
+            .border(RudeusSpacing.hairline, RudeusColors.Line, shape)
             .padding(RudeusSpacing.sm),
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -57,7 +57,7 @@ fun FootprintMiniMap(level: Level, character: CharacterState?, modifier: Modifie
                 poly.points.forEachIndexed { i, p -> val o = map(p); if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y) }
                 close()
             }
-            val outline = RudeusSpacing.stroke.toPx() * 0.7f
+            val outline = RudeusSpacing.stroke.toPx()
             level.boundary?.let { b ->
                 val tint = RudeusColors.footprint(ObjectKind.CLIFF)
                 drawPath(

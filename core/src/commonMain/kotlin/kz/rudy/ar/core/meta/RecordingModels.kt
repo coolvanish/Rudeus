@@ -54,8 +54,14 @@ class RecordingModels(
         return result
     }
 
-    override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
-        val (png, ms) = timed { inner.stylize(ref, cutout, refs) }
+    override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
+        recordStylize(ref) { inner.stylize(ref, cutout, refs) }
+
+    override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
+        recordStylize(ref) { inner.stylizeFallback(ref, cutout, refs) }
+
+    private suspend fun recordStylize(ref: String, call: suspend () -> ByteArray): ByteArray {
+        val (png, ms) = timed { call() }
         val names = outputs.getOrPut(ref) { ArrayList() }
         val name = "$ref.out-${names.size + 1}.png"
         writer.write(joinPath(Jobs.MUSE_STYLIZE, name), png)

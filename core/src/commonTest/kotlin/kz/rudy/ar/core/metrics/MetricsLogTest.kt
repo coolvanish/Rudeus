@@ -22,6 +22,7 @@ import kotlin.test.assertTrue
 class MetricsLogTest {
     /** [FakeModels] that reports a measured cost to [meter] like MetaApi does: per call, by job (the sheet reports none). */
     private class MeteredModels(private val inner: FakeModels, private val meter: MetricsLog) : MetaModels by inner {
+        override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = stylize(ref, cutout, refs)
         override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult =
             inner.segment(ref, image, prompts).also { prompts.forEach { _ -> meter.record(Jobs.segmentJob(prompts), ref, 0.0025) } }
         override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
