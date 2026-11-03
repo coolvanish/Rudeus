@@ -146,7 +146,7 @@ Capture) ends the session; the next Scanning starts again from "Look at the tabl
 the surface and the debug flag; the host reports surface ready, anchor placed, tracking and character events back.
 
 ### Capture — `CaptureScreen`
-Paper. Top-left wordmark "Rudeus ⌄" opens the Settings sheet. Display title "Drawing or toy", hint "Put the drawing on
+Paper. Top-left wordmark "Rudeus ⌄" (the arrow in Sky) opens the Settings sheet. Display title "Drawing or toy", hint "Put the drawing on
 the table and take a photo". Hero card (Cream, radius 28): example drawing with Paper viewfinder brackets, **Photo**
 (Sun, full width, camera glyph), ghost **From gallery**, and under them the caption "The photo goes to Meta AI…"
 (`capture_privacy_note`). Then the headline "Or pick a ready one" and a shelf of character cards bleeding off the right

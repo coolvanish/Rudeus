@@ -181,7 +181,8 @@ private fun Wordmark(onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(t(StringId.app_name), style = rudeusWordmark(), color = RudeusColors.Ink)
-            GlyphIcon(Glyph.DOWN, RudeusColors.Ink, Modifier.padding(top = 3.dp), size = 20.dp, strokeWidth = 2.8f)
+            // Sky so the arrow, the only colour up here, reads as "this opens something".
+            GlyphIcon(Glyph.DOWN, RudeusColors.Sky, Modifier.padding(top = 3.dp), size = 20.dp, strokeWidth = 2.8f)
         }
     }
 }
