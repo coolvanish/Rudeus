@@ -28,6 +28,11 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     lang_ru("РУС", "РУС", "RU"),
     lang_en("ENG", "ENG", "EN"),
 
+    /** T27: the intro's captions (the fourth is play_tap_to_walk). */
+    intro_draw("Кейіпкеріңді сал", "Нарисуй героя", "Draw a hero"),
+    intro_alive("Ол жанданады", "Он оживёт", "It comes alive"),
+    intro_table("Үстелің — деңгей", "Стол — твой уровень", "Your table is the level"),
+
     capture_title("Сурет немесе ойыншық", "Рисунок или игрушка", "Drawing or toy"),
     capture_hint("Суретті үстелге қой да, фотоға түсір", "Положи рисунок на стол и сфотографируй", "Put the drawing on the table and take a photo"),
     capture_take_photo("Фото", "Фото", "Photo"),

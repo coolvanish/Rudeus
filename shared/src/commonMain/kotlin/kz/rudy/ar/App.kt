@@ -1,5 +1,9 @@
 package kz.rudy.ar
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -43,6 +47,7 @@ import kz.rudy.ar.ui.screens.CaptureScreen
 import kz.rudy.ar.ui.screens.ExportStatus
 import kz.rudy.ar.ui.screens.HudSpeech
 import kz.rudy.ar.ui.screens.HudState
+import kz.rudy.ar.ui.screens.IntroScreen
 import kz.rudy.ar.ui.screens.MetricsScreen
 import kz.rudy.ar.ui.screens.PipelineStage
 import kz.rudy.ar.ui.screens.PlayScreen
@@ -123,6 +128,7 @@ fun App(
     backHandler: @Composable (enabled: Boolean, onBack: () -> Unit) -> Unit = { _, _ -> },
 ) {
     var screen by remember { mutableStateOf(Screen.CAPTURE) }
+    var introDone by remember { mutableStateOf(false) }
     var lang by remember { mutableStateOf(Lang.KK) }
     var sheet by remember { mutableStateOf(DemoData.sheet) }
     var processing by remember { mutableStateOf(ProcessingState()) }
@@ -417,6 +423,7 @@ fun App(
 
     // System back / predictive back gesture: same rule as the Back buttons; on Capture the system handles it (exit).
     backHandler(screen != Screen.CAPTURE || settingsOpen, ::back)
+    backHandler(!introDone) { introDone = true }
 
     RudeusTheme(reducedMotion = reduceMotion || hostReducedMotion) {
         CompositionLocalProvider(LocalLang provides lang) {
@@ -604,6 +611,11 @@ fun App(
                     onOpenMetrics = ::openMetrics,
                     onDismiss = { settingsOpen = false },
                 )
+
+                // T27: over Capture, not a Screen: the fade at the end shows Capture already there. Once per launch.
+                AnimatedVisibility(visible = !introDone, enter = EnterTransition.None, exit = fadeOut(tween(250))) {
+                    IntroScreen(onDone = { introDone = true })
+                }
             }
         }
     }
