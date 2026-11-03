@@ -6,6 +6,21 @@ import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 
+/** How one scan request ended. */
+sealed interface ScanAnswer {
+    /**
+     * A new level is in: [objects] objects on it (0 = an empty table is still a level with a boundary). [missed] = a
+     * real object was seen too steeply and is not in the level, so the character would walk through it.
+     */
+    data class Found(val objects: Int, val missed: Boolean = false) : ScanAnswer
+
+    /** No frame, network, missing key, timeout. The old level stays. */
+    data object Failed : ScanAnswer
+
+    /** Seen from too far above to trust the geometry (`ScanAngle`). The old level stays; another angle is the fix. */
+    data object TooSteep : ScanAnswer
+}
+
 /**
  * Everything the shared UI hands to the AR view slot and everything it wants back. No ARCore/SceneView types:
  * :androidApp implements `arView: @Composable (Modifier, ArSlot) -> Unit` and :shared only reacts through the callbacks.
@@ -32,15 +47,12 @@ data class ArSlot(
     /**
      * T04: the explicit Scan button. Each increment asks the host for ONE table scan (never per frame): it grabs the
      * next camera frame, runs segmentation on IO and swaps the new `Level` in. 0 = nothing requested yet. A request
-     * while a scan is still running, or before the anchor exists, is answered with `onScanned(null)`.
+     * while a scan is still running joins it; one before the anchor exists is answered with [ScanAnswer.Failed].
      */
     val scanRequest: Int = 0,
-    /**
-     * The scan finished: the number of objects it found (0 = an empty table is still a level with a boundary), or
-     * null when it failed (no frame, network, missing key, timeout). Exactly one call per [scanRequest].
-     */
-    val onScanned: (objects: Int?) -> Unit = {},
-    /** The level now driving physics (after every successful scan); the HUD's FootprintMiniMap draws it. */
+    /** The scan finished. Exactly one call per [scanRequest]. */
+    val onScanned: (ScanAnswer) -> Unit = {},
+    /** The level now driving physics (after every successful scan and every tap that grows its boundary); the HUD's FootprintMiniMap draws it. */
     val onLevel: (Level) -> Unit = {},
     /**
      * T20: the character's ability from its sheet. The host sets `CharacterState.ability` before the anchor and again

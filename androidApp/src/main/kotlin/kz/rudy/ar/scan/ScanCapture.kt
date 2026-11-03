@@ -18,15 +18,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.core.domain.Level
-import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.geometry.Intrinsics
 import kz.rudy.ar.core.geometry.Pose3
 import kz.rudy.ar.core.geometry.Quat
 import kz.rudy.ar.core.geometry.Vec3
+import kz.rudy.ar.core.geometry.douglasPeucker
+import kz.rudy.ar.core.geometry.traceContour
+import kz.rudy.ar.core.pipeline.LabeledMask
 import kz.rudy.ar.core.pipeline.ScanInput
 import kz.rudy.ar.core.pipeline.ScanMasks
-import kz.rudy.ar.core.pipeline.SceneBuilder
+import kz.rudy.ar.core.pipeline.TableScan
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 
@@ -36,7 +38,7 @@ import java.util.Locale
 //      displayOrientedPose: the CPU image and Camera.getImageIntrinsics() are both in sensor orientation), the anchor
 //      pose and the anchor plane's polygon (`Plane.getPolygon()` x/z pairs through `centerPose` -> world points).
 //  (2) runTableScan, IO: NV21 -> JPEG (YuvImage) -> <= SCAN_MAX_SIDE px -> TableScanner.segment -> :core
-//      (ScanMasks.of, ScanInput.fromAnchor, SceneBuilder.build). The intrinsics are rescaled to the pixel grid the
+//      (ScanMasks.of, ScanInput.fromAnchor, TableScan.build). The intrinsics are rescaled to the pixel grid the
 //      masks come back in (SAM answers in the input JPEG's grid: docs/api-samples/sam-table matches its input).
 // No ARCore type leaves this file except as :core Pose3/Vec3; nothing here decides what an object means.
 
@@ -63,7 +65,8 @@ internal class ScanGrab(
     val startedMs: Long,
 )
 
-internal class ScanOutcome(val level: Level?, val ms: Long, val error: String? = null)
+/** [tooSteep]: every object was seen from too far above, so there is no level. [missed]: the level lacks one such object. */
+internal class ScanOutcome(val level: Level?, val ms: Long, val error: String? = null, val tooSteep: Boolean = false, val missed: Boolean = false)
 
 /** One attempt to grab the current frame: [grab], or nothing with [retry] = ARCore had no image for it yet. */
 internal class GrabAttempt(val grab: ScanGrab?, val retry: Boolean)
@@ -125,6 +128,25 @@ internal fun grabScanFrame(frame: Frame, anchor: Anchor, plane: Plane?, nowMs: L
 }
 
 /**
+ * HAND-REVIEW: Pixel 2026-11-03 — log only: a real cup reads 5 mm (`scan_object h=0.005`) and no real mask has been measured.
+ * These lines let :core replay a scan on the JVM: poses and mask outlines, no image. 2 px because logcat cuts a line at 4 KB.
+ */
+private fun logScanReplay(ref: String, grab: ScanGrab, intr: Intrinsics, masks: List<LabeledMask>) {
+    fun Pose3.text() = "%.5f,%.5f,%.5f,%.6f,%.6f,%.6f,%.6f".format(
+        Locale.US, position.x, position.y, position.z, rotation.x, rotation.y, rotation.z, rotation.w,
+    )
+    Log.i(
+        TAG,
+        "scan_replay ref=$ref cam=${grab.cameraPose.text()} anchor=${grab.anchorPose.text()} " +
+            "intr=${intr.fx},${intr.fy},${intr.cx},${intr.cy},${intr.width},${intr.height}",
+    )
+    for (m in masks) {
+        val outline = douglasPeucker(traceContour(m.mask.largestComponent(), singleComponent = true), 2f)
+        Log.i(TAG, "scan_replay_mask ref=$ref label=${m.label} pts=${outline.joinToString(";") { "${it.x},${it.y}" }}")
+    }
+}
+
+/**
  * IO. JPEG -> SAM -> level. Never throws: a failure (network, missing key, timeout, degenerate masks) comes back as
  * [ScanOutcome.error] with `level = null`. [previous] keeps ids stable across re-scans (SceneBuilder, <= 5 cm).
  */
@@ -153,15 +175,13 @@ internal suspend fun runTableScan(
         val grid = masks.firstOrNull()?.mask
         val intrinsics = grab.intrinsics.scaledTo(grid?.width ?: jpegW, grid?.height ?: jpegH)
         val input = ScanInput.fromAnchor(grab.anchorPose, grab.cameraPose, intrinsics, masks, grab.planePolygonWorld)
-        val built = SceneBuilder().build(input, previous, profile)
-        // A prompt whose request failed (429, timeout) must not make its objects vanish: the previous scan's objects
-        // of that label are carried over unchanged. DYNAMIC ones (a hand) are not: they are re-placed every scan.
-        val carried = if (previous == null || result.failedPrompts.isEmpty()) emptyList() else {
-            val failed = result.failedPrompts.toSet()
-            val taken = built.objects.mapTo(HashSet()) { it.id }
-            previous.objects.filter { it.label in failed && it.kind != ObjectKind.DYNAMIC && it.id !in taken }
-        }
-        val level = if (carried.isEmpty()) built else built.copy(objects = built.objects + carried)
+        logScanReplay(ref, grab, intrinsics, masks)
+        // HAND-REVIEW: T25 — the decisions (too-steep masks, what is carried over) are :core's TableScan; this only logs them.
+        val scan = TableScan.build(input, result.failedPrompts, previous, profile)
+        if (scan.tooSteep.isNotEmpty()) Log.i(TAG, "scan_too_steep where=object labels=${scan.tooSteep} missed=${scan.missed} ref=$ref")
+        if (scan.cutByFrame.isNotEmpty()) Log.i(TAG, "scan_cut_by_frame labels=${scan.cutByFrame} ref=$ref")
+        val level = scan.level ?: return@withContext ScanOutcome(null, SystemClock.elapsedRealtime() - grab.startedMs, tooSteep = true)
+        val carried = scan.carried
         val ms = SystemClock.elapsedRealtime() - grab.startedMs
         Log.i(
             TAG,
@@ -174,7 +194,7 @@ internal suspend fun runTableScan(
             val c = o.centroid
             Log.i(TAG, "scan_object id=${o.id} kind=${o.kind} c=(%.3f,%.3f) h=%.3f n=${o.footprint.size}".format(Locale.US, c.u, c.v, o.heightM))
         }
-        ScanOutcome(level, ms)
+        ScanOutcome(level, ms, missed = scan.missed > 0)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

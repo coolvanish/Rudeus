@@ -87,7 +87,7 @@ private const val VOICE_BUBBLE_MS = 2000L
  * screen runs the fake stage loop so the shell still demos.
  *
  * Scan (T04): the Scan / Rescan button bumps `ArSlot.scanRequest`; the host grabs one camera frame, segments it on
- * IO, swaps the new `Level` into physics and answers once through `onScanned` (count, or null on failure) and
+ * IO, swaps the new `Level` into physics and answers once through `onScanned` ([ScanAnswer]) and
  * `onLevel`. The overlay's arc runs toward [SCAN_ARC_HOLD] over `SCAN_DEFAULT_MS` and holds until that answer, so it
  * animates for the real duration. Without a host the shell has no AR view to answer, so the scan ends after
  * `SCAN_DEFAULT_MS` with an honest 0.
@@ -305,31 +305,43 @@ fun App(
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
     }
-    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); null -> NO_PLANE
-    // (Skip appears after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan
-    // overlay ends; an empty rescan says "Table is empty", a failed one "No table found", so the HUD stays honest.
-    val onScanned = rememberUpdatedState<(Int?) -> Unit> { objects ->
+    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); Failed -> NO_PLANE
+    // (Skip appears after two); TooSteep -> TOO_STEEP (not a failure either: only the angle has to change). A late
+    // answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends; an empty rescan says
+    // "Table is empty", a failed one "No table found", a steep one how to hold the phone, so the HUD stays honest. A level
+    // that left out a too-steep object says so too: the character would otherwise walk through it unexplained.
+    val onScanned = rememberUpdatedState<(ScanAnswer) -> Unit> { answer ->
         when (screen) {
             Screen.SCANNING -> if (scan.status == ScanStatus.SCANNING) {
-                scan = if (objects == null) {
-                    scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
-                } else if (objects == 0) {
-                    scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
-                } else {
-                    scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = objects, failures = 0)
+                if (answer is ScanAnswer.Found && answer.missed) speech = HudSpeech.say(speech, StringId.scan_too_steep_hint.get(lang), nowMs())
+                scan = when (answer) {
+                    ScanAnswer.Failed -> scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
+                    ScanAnswer.TooSteep -> scan.copy(status = ScanStatus.TOO_STEEP, progress = 0f, objectsFound = 0)
+                    is ScanAnswer.Found -> if (answer.objects == 0) {
+                        scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
+                    } else {
+                        scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = answer.objects, failures = 0)
+                    }
                 }
             }
             else -> {
-                if (hud.scanning && (objects == null || objects == 0)) {
-                    val floor = surface == Surface.FLOOR
-                    val id = when {
-                        objects == 0 -> if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title
+                val floor = surface == Surface.FLOOR
+                val id = when (answer) {
+                    ScanAnswer.TooSteep -> StringId.scan_too_steep_hint
+                    ScanAnswer.Failed -> when {
                         offline -> StringId.scan_offline_title
-                        else -> if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
+                        floor -> StringId.scan_no_plane_title_floor
+                        else -> StringId.scan_no_plane_title
                     }
-                    speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                    is ScanAnswer.Found -> when {
+                        answer.missed -> StringId.scan_too_steep_hint
+                        answer.objects > 0 -> null
+                        floor -> StringId.scan_empty_title_floor
+                        else -> StringId.scan_empty_title
+                    }
                 }
-                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
+                if (hud.scanning && id != null) speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || answer is ScanAnswer.Found)
             }
         }
     }

@@ -66,7 +66,7 @@ data class Polygon(val points: List<Vec2>) {
         return Vec2(cu / (6f * a), cv / (6f * a))
     }
 
-    /** Point-in-polygon (even-odd ray cast). Boundary points are treated as inside. */
+    /** Point-in-polygon (even-odd ray cast). Half-open: points exactly on an edge or vertex may read either way. */
     fun contains(p: Vec2): Boolean {
         var inside = false
         var j = points.size - 1
@@ -135,7 +135,7 @@ data class LevelObject(
 @Serializable
 data class Level(
     val objects: List<LevelObject>,
-    /** Detected plane polygon. Outside it is a cliff. Null = unbounded (2D fallback mode). */
+    /** The surface known so far ([kz.rudy.ar.core.pipeline.SurfaceBoundary]). Outside it is a cliff. Null = unbounded (floor, 2D fallback mode). */
     val boundary: Polygon? = null,
     /** Spawn / respawn point in plane coordinates. */
     val spawn: Vec2 = Vec2.ZERO,
@@ -185,6 +185,17 @@ object Semantics {
     /** Flat things a character can stand on when low enough. "box" is for the floor (a shoebox); the table scan never prompts it. */
     private val platformLabels = setOf("book", "phone", "notebook", "card", "paper", "box")
     private val dynamicLabels = setOf("hand", "finger")
+
+    /** Things that normally lie flat, however they are labelled for play: a box stands, a book mostly does not. */
+    private val flatLabels = setOf("book", "phone", "notebook", "card", "paper")
+
+    /** Things about as deep as they are wide, whatever a single view shows beyond the near edge. A toy is a guess: it can be anything, and too short beats an invisible wall. */
+    private val compactLabels = setOf("cup", "mug", "glass", "bottle", "can", "bowl", "ball", "toy")
+
+    /** [label] normally lies flat, so what a single view shows beyond its near edge is more likely depth than height. */
+    fun liesFlat(label: String): Boolean = label.lowercase() in flatLabels
+
+    fun isCompact(label: String): Boolean = label.lowercase() in compactLabels
 
     /**
      * What a scanned object means at the scale of [profile]: a hand is [ObjectKind.DYNAMIC]; a platform label no

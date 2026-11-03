@@ -24,6 +24,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** One SAM mask with the prompt that produced it. */
 @Serializable
@@ -193,8 +194,10 @@ data class SceneParams(
     val dpEpsilonPx: Float = 3f,
     /** Footprints smaller than this are noise and dropped, m². */
     val minFootprintAreaM2: Float = 1e-4f,
-    /** Object heights are clamped to [0, maxHeightM]. */
+    /** Object heights are clamped to [minHeightM, maxHeightM]. */
     val maxHeightM: Float = 0.3f,
+    /** A mask is an object: height 0, which a flat thing can read within noise, would let the character walk through an obstacle. */
+    val minHeightM: Float = 0.005f,
     /** Re-scan: an object keeps its id when the nearest previous object with the same label is closer than this. */
     val rematchMaxDistM: Float = 0.05f,
 )
@@ -214,18 +217,19 @@ data class SceneParams(
  * boundary crossing per angle, seen from `g`) — the base's near rim — anchored at the two points where the boundary
  * leaves the extreme radial lines (tangent points / base corners), and complete it by point reflection through the
  * midpoint of that tangent chord. This is exact for centrally symmetric bases (cylinders, boxes at any yaw whose side
- * face is visible from `g`); for a box seen exactly on-axis the chain degenerates and the raw shadow is used instead
- * (over-deep by `h / tan(elevation)`, 2 cm for a 2 cm book at 45°). Measured on the synthetic 45° scan: cup
+ * face is visible from `g`); for a box seen on-axis or nearly so the chain degenerates to a sliver and the raw shadow
+ * is used instead, its depth capped by the box's width (over-deep by `h / tan(elevation)` below the cap, 2 cm for a 2 cm
+ * book at 45°; what passes the cap reads as height). Measured on the synthetic 45° scan: cup
  * (r = 4 cm, h = 9 cm) centroid error 0.9 cm, book (15 x 10 x 2 cm) 0.4 cm. The cup error comes from locating the
  * tangent point: the rim leaves the radial side edge tangentially, so with lateral pixel noise δ the chord endpoint
  * lands ~sqrt(2·r·δ) up the rim toward the camera.
  *
  * ### Height
- * The top-most silhouette pixel is the far top edge of the object. Its ray is intersected with the vertical plane,
+ * The silhouette's highest pixel, along the projected plane normal, is the far top edge of the object. Its ray is intersected with the vertical plane,
  * perpendicular to the ray's horizontal direction, that passes through the *far boundary* of the footprint along
  * the ray's ground track (for a vertical object that boundary is directly below the top edge). Using the centroid
  * instead would bias the height by `r · tan(elevation)` (4 cm for the test cup), so the far boundary is used and
- * the centroid is the fallback when the ground track misses the footprint. Clamped to `[0, maxHeightM]`.
+ * the centroid is the fallback when the ground track misses the footprint. Clamped to `[minHeightM, maxHeightM]`.
  * Measured: cup 1.4 cm high (inherits the footprint's far-edge error), book 0.6 cm.
  *
  * ### Ids
@@ -239,13 +243,19 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
 
         /** Angular tolerance (rad) for "on the extreme radial line": ~1 px at 1 m with a 1000 px focal length. */
         const val EXTREME_ANGLE_TOL = 2e-3f
+
+        /** How much longer than wide a flat thing can be: 1.5 for a 15 x 10 book, 1.4 for A5, 1.7 leaves room for its shadow. */
+        const val FLAT_DEPTH_PER_WIDTH = 1.7f
+
+        /** Below this the near-rim footprint is a sliver ([isSliver]) and the raw shadow is used; about 1:9. */
+        const val MIN_COMPACTNESS = 0.3
     }
 
     /** [profile] (table or floor) only decides each object's kind ([Semantics.kindFor]); footprints and heights are metric. */
     fun build(input: ScanInput, previous: Level? = null, profile: SurfaceProfile = SurfaceProfile.TABLE): Level {
         val candidates = ArrayList<Pair<String, Candidate>>()
         for (lm in input.masks) {
-            val c = extract(lm.mask, input) ?: continue
+            val c = extract(lm.mask, input, lm.label) ?: continue
             candidates.add(lm.label to c)
         }
         val objects = assignIds(candidates, previous, profile)
@@ -257,7 +267,7 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
     }
 
     /** Footprint + height of one mask, or null when the mask yields nothing usable. */
-    internal fun extract(mask: BooleanMask, input: ScanInput): Candidate? {
+    internal fun extract(mask: BooleanMask, input: ScanInput, label: String): Candidate? {
         val component = mask.largestComponent()
         if (component.isEmpty) return null
         val contour = traceContour(component, singleComponent = true)
@@ -267,15 +277,19 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
 
         val shadow = simplified.mapNotNull { p -> pixelToPlane(p.x, p.y, input.intrinsics, input.cameraPose, input.plane) }
         if (shadow.size < 3) return null
-        // Raw (unsimplified) shadow: used only for the tangent chord endpoints, which the pixel-space DP pass blurs.
+        // Raw (unsimplified) shadow: for the near rim, which the pixel-space DP pass blurs ([nearRimFootprint]).
         val rawShadow = contour.mapNotNull { p -> pixelToPlane(p.x, p.y, input.intrinsics, input.cameraPose, input.plane) }
         val cameraGround = input.plane.toPlane(input.cameraPose.position)
         val footprintPts = nearRimFootprint(shadow, cameraGround, rawShadow)
-        val footprint = toPolygon(footprintPts) ?: toPolygon(shadow) ?: return null
+        val rim = toPolygon(footprintPts)?.takeUnless(::isSliver)
+        val footprint = rim?.let { if (Semantics.isCompact(label)) toPolygon(cappedDepth(it.points, cameraGround, footprintPts, 1f)) ?: it else it }
+            ?: toPolygon(cappedDepth(shadow, cameraGround, footprintPts, if (Semantics.liesFlat(label)) FLAT_DEPTH_PER_WIDTH else 1f))
+            ?: toPolygon(shadow)
+            ?: return null
         if (footprint.area < params.minFootprintAreaM2) return null
 
         val height = estimateHeight(component, footprint, input)
-        return Candidate(footprint, height.coerceIn(0f, params.maxHeightM))
+        return Candidate(footprint, height.coerceIn(params.minHeightM, params.maxHeightM))
     }
 
     /**
@@ -286,6 +300,9 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
      * angular span, the nearest crossing of the ray from [g] with the shadow boundary is taken. Those samples are the
      * base's near rim; the far rim is their point reflection through the midpoint of the first/last sample. The
      * result is simplified with a 2 mm Douglas–Peucker pass.
+     *
+     * The rays run against the raw shadow: DP takes the corner off the base of a side edge, on a coarse grid enough that
+     * a ray there only crosses the far, smeared end of the edge, and the rim grows a spike (19 cm past a cup at 640x480).
      */
     internal fun nearRimFootprint(shadow: List<Vec2>, g: Vec2, rawShadow: List<Vec2> = shadow): List<Vec2> {
         val n = shadow.size
@@ -315,8 +332,8 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
             val a = minA + span * (i + 0.5f) / ENVELOPE_SAMPLES
             val w = ref * cos(a) + perp * sin(a)
             var tNear = Float.MAX_VALUE
-            for (k in 0 until n) {
-                val t = raySegment(g, w, shadow[k], shadow[(k + 1) % n]) ?: continue
+            for (k in raw.indices) {
+                val t = raySegment(g, w, raw[k], raw[(k + 1) % raw.size]) ?: continue
                 if (t < tNear) tNear = t
             }
             if (tNear < Float.MAX_VALUE) near.add(g + w * tNear)
@@ -343,6 +360,44 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
         return best
     }
 
+    /**
+     * A box seen nearly square-on has a straight near rim, and reflecting a straight line gives no depth: a sliver along
+     * its front edge. Compactness 4π·area / perimeter² is about π·(b/a) for a thin a x b rectangle, 0.75 for a 3:2 book.
+     */
+    private fun isSliver(p: Polygon): Boolean {
+        val perimeter = p.edges().sumOf { (a, b) -> a.distanceTo(b).toDouble() }
+        return 4.0 * kotlin.math.PI * p.area / (perimeter * perimeter) < MIN_COMPACTNESS
+    }
+
+    /**
+     * [points] (a footprint outline) no deeper from [g] than [perWidth] times the width of the near rim [rim] across the
+     * view. What lies beyond could be depth or height smeared away from [g], and one view cannot tell them apart.
+     *
+     * A box seen square-on has a straight rim, so its shadow is capped: at the rim's width, so that what a taller box smears
+     * past the cap reads as height and a 35 cm box does not become a walkable mat with a wall of shadow behind it; for
+     * something that lies flat at [FLAT_DEPTH_PER_WIDTH] of it, because the rim may be the short side of a book lying
+     * lengthwise. A real cup seen low has a rim that reflects into the whole shadow, because the mask's sides meet the
+     * radial lines at its top: 31 cm deep and 9 wide on the Pixel, which also read its height as 2 cm, and a plush toy 42
+     * deep and 15 wide. Such things are about as deep as wide ([Semantics.isCompact]), so they are capped at their width.
+     */
+    private fun cappedDepth(points: List<Vec2>, g: Vec2, rim: List<Vec2>, perWidth: Float): List<Vec2> {
+        if (rim.isEmpty()) return points
+        val centre = points.fold(Vec2.ZERO) { a, p -> a + p } / points.size.toFloat()
+        val dir = (centre - g).normalized()
+        val across = dir.perp()
+        val width = rim.maxOf { it.dot(across) } - rim.minOf { it.dot(across) }
+        if (width <= 0f || dir.lengthSquared < 1e-12f) return points
+        val limit = points.minOf { (it - g).dot(dir) } + width * perWidth
+        val out = ArrayList<Vec2>(points.size + 2)
+        for (i in points.indices) {
+            val a = points[i]; val b = points[(i + 1) % points.size]
+            val ta = (a - g).dot(dir); val tb = (b - g).dot(dir)
+            if (ta <= limit) out.add(a)
+            if ((ta <= limit) != (tb <= limit)) out.add(a + (b - a) * ((limit - ta) / (tb - ta)))
+        }
+        return out
+    }
+
     /** Dedupes consecutive points and builds a Polygon, or null when fewer than 3 distinct points remain. */
     private fun toPolygon(pts: List<Vec2>): Polygon? {
         val out = ArrayList<Vec2>()
@@ -353,9 +408,9 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
         return if (poly.area < 1e-9f) null else poly
     }
 
-    /** Height from the top-most silhouette pixel; see class KDoc. */
+    /** Height from the silhouette's highest pixel ([topPixel]); see class KDoc. */
     internal fun estimateHeight(component: BooleanMask, footprint: Polygon, input: ScanInput): Float {
-        val top = topPixel(component) ?: return 0f
+        val top = topPixel(component, input) ?: return 0f
         val ray = pixelRay(top.x, top.y, input.intrinsics, input.cameraPose)
         val plane = input.plane
         val g = plane.toPlane(ray.origin)
@@ -377,15 +432,38 @@ class SceneBuilder(private val params: SceneParams = SceneParams()) {
         return camH + s * vert
     }
 
-    /** Mean x of the pixels in the top-most set row (smallest y). */
-    private fun topPixel(mask: BooleanMask): PixelPoint? {
+    /**
+     * The silhouette's physically highest end, however the sensor image lies: the frame is in sensor orientation, so its
+     * top row is the side of the object in portrait and the bottom of it upside down. "Up" is where the plane normal
+     * projects to at the mask's centre. Mean of the pixels within 1 px of the extreme along it.
+     */
+    private fun topPixel(mask: BooleanMask, input: ScanInput): PixelPoint? {
+        var sumX = 0f; var sumY = 0f; var n = 0
         for (y in 0 until mask.height) {
-            var sum = 0f; var cnt = 0
             val row = y * mask.width
-            for (x in 0 until mask.width) if (mask.bits[row + x]) { sum += x; cnt++ }
-            if (cnt > 0) return PixelPoint(sum / cnt + 0.5f, y + 0.5f)
+            for (x in 0 until mask.width) if (mask.bits[row + x]) { sumX += x; sumY += y; n++ }
         }
-        return null
+        if (n == 0) return null
+        val intr = input.intrinsics
+        val camX = (sumX / n + 0.5f - intr.cx) / intr.fx
+        val camY = -(sumY / n + 0.5f - intr.cy) / intr.fy
+        val normal = input.cameraPose.rotation.inverse().rotate(input.plane.normal)
+        // Derivative of the projection of (camX, camY, -1) + t * normal at t = 0; image y points down.
+        var upX = intr.fx * (normal.x + camX * normal.z)
+        var upY = -intr.fy * (normal.y + camY * normal.z)
+        val len = sqrt(upX * upX + upY * upY)
+        if (len < 1e-6f) { upX = 0f; upY = -1f } else { upX /= len; upY /= len }
+        var best = -Float.MAX_VALUE
+        for (y in 0 until mask.height) {
+            val row = y * mask.width
+            for (x in 0 until mask.width) if (mask.bits[row + x]) best = maxOf(best, x * upX + y * upY)
+        }
+        sumX = 0f; sumY = 0f; n = 0
+        for (y in 0 until mask.height) {
+            val row = y * mask.width
+            for (x in 0 until mask.width) if (mask.bits[row + x] && x * upX + y * upY >= best - 1f) { sumX += x; sumY += y; n++ }
+        }
+        return PixelPoint(sumX / n + 0.5f, sumY / n + 0.5f)
     }
 
     /** Parameter t >= 0 where ray (o, d) crosses segment [a, b], or null. */
