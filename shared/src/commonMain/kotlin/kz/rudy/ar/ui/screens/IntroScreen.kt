@@ -58,8 +58,8 @@ import kotlin.math.sin
  * A drawing is traced on paper, it peels off as a sticker and comes alive, a table slides in and gets scanned, and the
  * hero hops over it the way the game plays: up onto the book, off the cup, stopping at the edge.
  *
- * Everything on screen is a pure function of one time value, [pose]. Reduced motion uses that directly: it holds five
- * still poses and fades between them instead of playing the clock. A tap anywhere (or Skip, or Back) ends it.
+ * Everything on screen is a pure function of one time value. Reduced motion uses that directly: it holds five still
+ * poses and crossfades between them instead of playing the clock. A tap anywhere (or Skip, or Back) ends it.
  */
 @Composable
 internal fun IntroScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
@@ -67,20 +67,45 @@ internal fun IntroScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
     val done by rememberUpdatedState(onDone)
     var clock by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(reduced) {
-        val total = if (reduced) REDUCED_POSES.size * REDUCED_HOLD_MS else TOTAL_MS
+        val total = if (reduced) REDUCED_POSES.size * REDUCED_HOLD_MS else INTRO_MS
         val t0 = withFrameMillis { it }
         while (clock < total) withFrameMillis { clock = (it - t0).toFloat() }
         done()
     }
-    fun pose(): Float = if (reduced) REDUCED_POSES[(clock / REDUCED_HOLD_MS).toInt().coerceAtMost(REDUCED_POSES.lastIndex)] else clock
-
     Box(
         modifier
             .fillMaxSize()
             .background(RudeusColors.Paper)
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDone)
-            .graphicsLayer { alpha = if (reduced) seg(clock % REDUCED_HOLD_MS, 0f, REDUCED_FADE_MS) else 1f },
+            .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onDone),
     ) {
+        if (reduced) {
+            // A crossfade between stills. The first still is the system splash's own picture, so it never fades in.
+            fun page(): Int = (clock / REDUCED_HOLD_MS).toInt().coerceAtMost(REDUCED_POSES.lastIndex)
+            fun fade(): Float = seg(clock - page() * REDUCED_HOLD_MS, 0f, REDUCED_FADE_MS)
+            IntroPicture(
+                pose = { REDUCED_POSES[(page() - 1).coerceAtLeast(0)] },
+                modifier = Modifier.graphicsLayer { alpha = if (page() == 0) 0f else 1f - fade() },
+            )
+            IntroPicture(
+                pose = { REDUCED_POSES[page()] },
+                modifier = Modifier.graphicsLayer { alpha = if (page() == 0) 1f else fade() },
+            )
+        } else {
+            IntroPicture(pose = { clock * STORY_MS / INTRO_MS })
+        }
+
+        GhostButton(
+            text = t(StringId.skip),
+            onClick = onDone,
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp),
+        )
+    }
+}
+
+/** The stage, the wordmark and the captions at one time value. [pose] is read only while drawing, so no recomposition. */
+@Composable
+private fun IntroPicture(pose: () -> Float, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().clearAndSetSemantics {}) { drawIntro(pose()) }
 
         Text(
@@ -113,19 +138,15 @@ internal fun IntroScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
                     },
             )
         }
-
-        GhostButton(
-            text = t(StringId.skip),
-            onClick = onDone,
-            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp),
-        )
     }
 }
 
-private const val TOTAL_MS = 8000f
+/** How long the intro plays. Every time below is on the story's own 8000 ms timeline, so this one number sets the pace. */
+private const val INTRO_MS = 12000f
+private const val STORY_MS = 8000f
 private const val REVEAL_START = 1000f
 private const val REVEAL_END = 1450f
-private const val REDUCED_HOLD_MS = 1500f
+private const val REDUCED_HOLD_MS = 2400f
 private const val REDUCED_FADE_MS = 150f
 private val REDUCED_POSES = floatArrayOf(950f, 3285f, 4580f, 5760f, 6300f).toList()
 
@@ -184,6 +205,19 @@ private fun heroPose(t: Float): HeroPose {
     return HeroPose(px, py, 1f - stretch + land, 1f + stretch - land)
 }
 
+/** The hero squashes on its feet: its scale pivots here, in star units, and not at the star's centre. */
+private const val HERO_PIVOT_Y = 40f
+
+private fun heroTilt(t: Float): Float = lerp(-4f, 0f, seg(t, 3300f, 3480f))
+
+/** Where a point of the star (50 radius) lands on the stage: the same transform [drawHero] draws with. */
+private fun heroToStage(p: Offset, pose: HeroPose, scale: Float, degrees: Float): Offset {
+    val x = p.x * scale * pose.sx
+    val y = HERO_PIVOT_Y + (p.y - HERO_PIVOT_Y) * scale * pose.sy
+    val a = degrees * PI.toFloat() / 180f
+    return Offset(x * cos(a) - y * sin(a) + pose.x, x * sin(a) + y * cos(a) + pose.y)
+}
+
 private fun heroScale(t: Float): Float = when {
     t < 3300f -> 1.6f
     t < 4640f -> lerp(1.6f, 1.95f, backOut(seg(t, 3300f, 3620f)))
@@ -224,11 +258,11 @@ private val ScribblePath by lazy {
 private fun DrawScope.drawHero(t: Float) {
     val trace = seg(t, 1800f, 2650f)
     val fill = seg(t, 2650f, 3150f)
-    if (trace <= 0f) return
+    if (t < 1700f) return
     val pose = heroPose(t)
     val s = heroScale(t)
     val sticker = seg(t, 3300f, 3480f)
-    val tilt = lerp(-4f, 0f, sticker)
+    val tilt = heroTilt(t)
     val eyes = seg(t, 3380f, 3520f)
     val look = when {
         t in 5000f..5720f -> 3f * sin((t - 5000f) / 720f * 2f * PI.toFloat())
@@ -240,7 +274,7 @@ private fun DrawScope.drawHero(t: Float) {
     withTransform({
         translate(pose.x, pose.y)
         rotate(tilt + teeter, Offset.Zero)
-        scale(s * pose.sx, s * pose.sy, Offset(0f, 40f))
+        scale(s * pose.sx, s * pose.sy, Offset(0f, HERO_PIVOT_Y))
     }) {
         if (sticker > 0f) {
             drawPath(StarPath, RudeusColors.Ink.copy(alpha = sticker), style = Stroke(19f, join = StrokeJoin.Round))
@@ -281,7 +315,7 @@ private fun DrawScope.drawHero(t: Float) {
         else -> null
     }
     val inOut = seg(t, 1700f, 1800f) * (1f - seg(t, 3150f, 3280f))
-    if (tip != null || inOut > 0f) drawCrayon(Offset((tip ?: Offset(44f, -40f)).x * s + pose.x, (tip ?: Offset(44f, -40f)).y * s + pose.y), inOut)
+    if (inOut > 0f) drawCrayon(heroToStage(tip ?: Offset(44f, -40f), pose, s, tilt), inOut)
 }
 
 private val Line = Color(0xFF2B1D16)
@@ -342,10 +376,11 @@ private fun DrawScope.drawPopTicks(t: Float) {
     if (x <= 0f || x >= 1f) return
     val r0 = lerp(106f, 150f, easeOut(x))
     val r1 = lerp(118f, 158f, easeOut(x))
+    val center = heroToStage(Offset.Zero, heroPose(t), heroScale(t), heroTilt(t))
     (0 until 10).forEach { i ->
         val a = i * 36f * PI.toFloat() / 180f - PI.toFloat() / 2f
         val c = Offset(cos(a), sin(a))
-        drawLine(Line.copy(alpha = 1f - x), Offset(c.x * r0, c.y * r0 - 10f), Offset(c.x * r1, c.y * r1 - 10f), 5f, cap = StrokeCap.Round)
+        drawLine(Line.copy(alpha = 1f - x), center + c * r0, center + c * r1, 5f, cap = StrokeCap.Round)
     }
 }
 

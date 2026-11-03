@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -130,7 +131,8 @@ fun App(
     backHandler: @Composable (enabled: Boolean, onBack: () -> Unit) -> Unit = { _, _ -> },
 ) {
     var screen by remember { mutableStateOf(Screen.CAPTURE) }
-    var introDone by remember { mutableStateOf(false) }
+    // Saveable: the system camera can cost us the process, and the intro must not replay over the photo coming back.
+    var introDone by rememberSaveable { mutableStateOf(false) }
     // The system's language order. LocalLocaleList only says when it changed (the Activity handles locale itself):
     // it comes from Configuration, which Android may reorder towards what the APK has translated.
     val langs = remember(LocalLocaleList.current) { Lang.preferred(LocaleList.current.map { it.language }) }
