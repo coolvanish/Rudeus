@@ -1,8 +1,20 @@
 package kz.rudy.ar.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseInOutSine
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,25 +23,31 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.StringId
@@ -43,7 +61,9 @@ import kz.rudy.ar.ui.components.PrimaryButton
 import kz.rudy.ar.ui.components.SpriteImage
 import kz.rudy.ar.ui.components.rememberSpriteBitmap
 import kz.rudy.ar.ui.t
+import kz.rudy.ar.ui.theme.LocalReducedMotion
 import kz.rudy.ar.ui.theme.RudeusColors
+import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
@@ -117,17 +137,11 @@ fun CaptureScreen(
             Spacer(Modifier.height(RudeusSpacing.md))
             if (bundled.isEmpty()) {
                 EmptyCard(t(StringId.capture_empty))
+                Spacer(Modifier.weight(1f))
             } else {
-                val row = rememberLazyListState()
-                // A keyed row holds its scroll on the old first card, so a card added in front would sit off-screen left.
-                LaunchedEffect(bundled.first().id) { row.scrollToItem(0) }
-                LazyRow(state = row, horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.md)) {
-                    items(bundled, key = { it.id }) { c ->
-                        CharacterCard(c, selected = c.id == selectedId, onClick = { onPickBundled(c) })
-                    }
-                }
+                CharacterGrid(bundled, selectedId, onPickBundled, Modifier.weight(1f))
+                Spacer(Modifier.height(RudeusSpacing.md))
             }
-            Spacer(Modifier.weight(1f))
             GhostButton(text = t(StringId.metrics_button), glyph = Glyph.METRICS, onClick = onOpenMetrics)
         }
     }
@@ -139,20 +153,130 @@ fun CaptureScreen(
  */
 private val CARD_WIDTH = 144.dp
 
+/** A grid row needs this much: the sprite stays at least 72 dp above the name and the chip. */
+private val CARD_MIN_HEIGHT = 168.dp
+
+/** With a single tall row the card stops here, where the sprite has filled the card's width. */
+private val CARD_MAX_HEIGHT = 224.dp
+
+private const val ENTRANCE_STAGGER_MS = 40L
+private const val ENTRANCE_MAX_STAGGER = 8
+
+/**
+ * As many rows as fit in the height left, scrolling sideways. A card pops in the first time it shows on this visit,
+ * one after another while the row is still; the others make room with a spring when a card is added in front.
+ */
 @Composable
-private fun CharacterCard(c: BundledCharacter, selected: Boolean, onClick: () -> Unit) {
+private fun CharacterGrid(
+    characters: List<BundledCharacter>,
+    selectedId: String?,
+    onPick: (BundledCharacter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val reduced = LocalReducedMotion.current
+    val grid = rememberLazyGridState()
+    val entered = remember { mutableSetOf<String>() }
+    // A keyed grid holds its scroll on the old first card, so a card added in front would sit off-screen left.
+    LaunchedEffect(characters.first().id) {
+        if (reduced) grid.scrollToItem(0) else grid.animateScrollToItem(0)
+    }
+    LazyHorizontalGrid(
+        rows = GridCells.Adaptive(CARD_MIN_HEIGHT),
+        modifier = modifier.fillMaxWidth(),
+        state = grid,
+        horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.md),
+        verticalArrangement = Arrangement.spacedBy(RudeusSpacing.md),
+    ) {
+        itemsIndexed(characters, key = { _, c -> c.id }) { index, c ->
+            val entranceDelayMs = remember {
+                when {
+                    !entered.add(c.id) -> null
+                    reduced || grid.isScrollInProgress -> 0L
+                    else -> (index - grid.firstVisibleItemIndex).coerceIn(0, ENTRANCE_MAX_STAGGER) * ENTRANCE_STAGGER_MS
+                }
+            }
+            CharacterCard(
+                c,
+                selected = c.id == selectedId,
+                entranceDelayMs = entranceDelayMs,
+                onClick = { onPick(c) },
+                // The card's own entrance replaces the fade in.
+                modifier = if (reduced) Modifier.animateItem(fadeInSpec = null, placementSpec = null) else Modifier.animateItem(fadeInSpec = null),
+            )
+        }
+    }
+}
+
+/** [entranceDelayMs] null = already shown on this visit, so no entrance. Reduced motion: a fade and no scaling. */
+@Composable
+private fun CharacterCard(
+    c: BundledCharacter,
+    selected: Boolean,
+    entranceDelayMs: Long?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val shape = RoundedCornerShape(RudeusRadius.card)
+    val reduced = LocalReducedMotion.current
+    val entrance = remember { Animatable(if (entranceDelayMs == null) 1f else 0f) }
+    LaunchedEffect(Unit) {
+        if (entranceDelayMs != null) {
+            delay(entranceDelayMs)
+            entrance.animateTo(1f, if (reduced) tween(RudeusMotion.REDUCED_MS) else RudeusMotion.pop())
+        }
+    }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed && !reduced) 0.96f else 1f,
+        animationSpec = if (pressed) tween(RudeusMotion.BUTTON_PRESS_MS, easing = RudeusMotion.Standard) else RudeusMotion.pop(),
+        label = "press",
+    )
+    val outline by animateColorAsState(
+        targetValue = if (selected) RudeusColors.Sun else RudeusColors.Ink,
+        animationSpec = tween(RudeusMotion.REDUCED_MS, easing = RudeusMotion.Standard),
+        label = "outline",
+    )
     Column(
-        Modifier
+        modifier
+            .wrapContentHeight(Alignment.Top)
+            .heightIn(max = CARD_MAX_HEIGHT)
             .width(CARD_WIDTH)
+            .graphicsLayer {
+                val pop = if (reduced) 1f else 0.6f + 0.4f * entrance.value
+                scaleX = pop * pressScale
+                scaleY = pop * pressScale
+                alpha = entrance.value.coerceIn(0f, 1f)
+            }
             .clip(shape)
             .background(RudeusColors.PaperDeep)
-            .border(RudeusSpacing.stroke, if (selected) RudeusColors.Sun else RudeusColors.Ink, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .border(RudeusSpacing.stroke, outline, shape)
+            .clickable(interactionSource = interaction, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
             .padding(RudeusSpacing.sm),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+        // The picked character breathes like the scan brackets; a loop, so reduced motion keeps it still.
+        val breath = if (selected && !reduced) {
+            rememberInfiniteTransition(label = "breath").animateFloat(
+                initialValue = 1f,
+                targetValue = 1.04f,
+                animationSpec = infiniteRepeatable(tween(RudeusMotion.BRACKET_BREATHE_MS, easing = EaseInOutSine), RepeatMode.Reverse),
+                label = "breathScale",
+            )
+        } else {
+            null
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .graphicsLayer {
+                    val scale = breath?.value ?: 1f
+                    scaleX = scale
+                    scaleY = scale
+                },
+            contentAlignment = Alignment.Center,
+        ) {
             val sprite = rememberSpriteBitmap(c.spritePng)
             val thumb = c.thumbnail
             when {

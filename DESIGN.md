@@ -101,6 +101,7 @@ Easings: `Standard = cubic-bezier(0.2, 0, 0, 1)`, `Emphasised = cubic-bezier(0.0
 | **Speech bubble pop** | Enter: scale 0.6 → 1.0 with `Pop` spring (≈ 220 ms, visible overshoot to ~1.05) + fade 120 ms; transform origin at the tail. Exit: fade 150 ms + scale to 0.9, Standard. Auto-dismiss after 2500 ms; a new line replaces the old without exiting (text crossfade 150 ms). |
 | **Jump squash-stretch** (rendered by `:androidApp` on the billboard quad; the spec is here) | Anticipation: 80 ms, scaleX 1.2 / scaleY 0.8. Rise: 150 ms scaleX 0.85 / scaleY 1.15, Emphasised. Apex: 1.0 / 1.0. Land: 100 ms scaleX 1.25 / scaleY 0.75 then back to 1.0 in 120 ms with `Pop`. Walk cycle: bob scaleY 1.0 ↔ 0.94 at 6 Hz; flip on `facing.u` sign. |
 | **Button press** | Scale 1.0 → 0.96 in 90 ms Standard on press, back in 150 ms with `Pop`. Container Sun → SunDeep. |
+| **Character cards** (Capture) | First time a card shows on a visit: scale 0.6 → 1.0 with `Pop` + fade, 40 ms apart (at most 8 steps) while the grid is still, at once while scrolling. Press: as Button press. A card added in front: the grid scrolls to it and the others move with a spring. Selected: outline → Sun in 150 ms, sprite breathes 1.0 → 1.04, 900 ms, Sine, reverse. |
 | **Banner enter/exit** | Slide from the nearest edge 24 dp + fade, 200 ms Emphasised; exit 150 ms Standard. |
 | **Pipeline stage change** | Stage row ticks: check glyph scales 0 → 1 with `Pop`; progress bar animates to the new fraction in 300 ms Standard. Gate score counts up 0 → score over 600 ms. |
 | **Fall / respawn** | Handled by `:androidApp`: quad drops 0.3 m with gravity, fades 150 ms; respawns at `Level.spawn` with the pop spring. HUD shows the "Oops! Fell" bubble. |
@@ -121,8 +122,9 @@ the surface and the debug flag; the host reports surface ready, anchor placed, t
 
 ### Capture — `CaptureScreen`
 Paper background (or a camera preview slot). Headline "Drawing or toy", hint "Put the drawing on the table and
-take a photo", one Sun button **Photo** (camera glyph). Below: "Or pick a ready one" and a horizontal row of
-bundled character cards (sprite + name, 96 dp, Ink outline; selected = Sun outline). The card draws the
+take a photo", one Sun button **Photo** (camera glyph). Below: "Or pick a ready one" and a grid of bundled
+character cards scrolling sideways, with as many rows as fit above Metrics (a row needs 168 dp: sprite + name + chip,
+Ink outline; selected = Sun outline). The card draws the
 character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a host the demo pair
 is shown. Characters made from the child's photos come first, newest first: one joins the row when it passes the
 check, or when the child taps "Play anyway" (below the check, Retry adds nothing). The 30 newest stay on the phone
