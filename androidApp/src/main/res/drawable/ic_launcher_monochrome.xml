@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HAND-REVIEW: T27 — themed-icon layer (Android 13+): robe silhouette, hood opening cut out, the eyes left in. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M40 58C31 62 25 68 22 78C20 84 19 88 18.5 92H89.5C89 88 88 84 86 78C83 68 77 62 68 58L54 76Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M54 19C60 23 70 27 74 38C77 47 75 56 69 62C64 67 59 71 54 74C49 71 44 67 39 62C33 56 31 47 34 38C38 27 48 23 54 19ZM54 28C60 31 66.5 36 66.5 44C66.5 52 60 58 54 64C48 58 41.5 52 41.5 44C41.5 36 48 31 54 28Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M44.9 46.5a3.7 4.5 0 1 0 7.4 0a3.7 4.5 0 1 0 -7.4 0ZM55.7 46.5a3.7 4.5 0 1 0 7.4 0a3.7 4.5 0 1 0 -7.4 0Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- HAND-REVIEW: T27 — the system splash (Android 12+) shows the launcher icon on Sun, so it hands over to the
+         Compose intro, which opens with the same badge on the same colour, without a flash of white. -->
+    <style name="Theme.Rudeus" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">#FFD02B</item>
+    </style>
+</resources>
