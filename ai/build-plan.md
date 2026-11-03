@@ -12,7 +12,7 @@ Full editable version: Claude Doc "Rudeus AR Game Build Plan". This copy is the 
 | SAM 3.1 job 3 | segment table objects (cup, book, phone, hand…) into level geometry + occluders |
 | Muse Image edit | stylize cutout with ≤9 style reference images |
 | Spark 1.3 vision (contributor tier) | style gate: score vs refs (threshold 0.7, ≤2 retries) |
-| Spark 1.3 | character sheet JSON: name, personality, ability ∈ {jump, fly, roll, hide}, 5 lines kk/ru |
+| Spark 1.3 | character sheet JSON: names kk/ru/en, personality, ability ∈ {jump, fly, roll, hide}, 5 lines kk/ru/en |
 | Voice Transcribe | optional; demo voice commands in ENGLISH (Russian second). Kazakh is not an ASR language — accepted (Oct 28); copy stays kk/ru/en |
 
 ## Locked decisions

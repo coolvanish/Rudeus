@@ -13,6 +13,9 @@
 #   JSON string lands in choices[0].message.content. Use strict:true + additionalProperties:false.
 # unverified: Kazakh output quality of Muse Spark 1.3 (no language list in the docs); the Day 1 probe decides.
 # unverified: whether "strict": true rejects the nested "lines" object; drop strict if the call returns 400.
+# changed 2026-11-03: "name" became "names" {kk, ru, en} and "lines" gained "en", so the app shows the name and the
+#   lines in the chosen language. Fixtures recorded before that have one "name" (SheetParser keeps it as the Kazakh name)
+#   and no "en" lines (SheetParser pads them with its generic English lines).
 # probed 2026-10-28: max_completion_tokens 600 returned finish_reason "length" with content null (reasoning tokens
 #   count against the budget) -> raised to 2048 and reasoning_effort "low" (mirrors core/meta Prompts).
 {
@@ -21,7 +24,7 @@
     {
       "role": "user",
       "content": [
-        { "type": "text", "text": "The image shows a character a child drew. Reply with JSON only: {\"name\": a short friendly name in Kazakh (Cyrillic script), \"personality\": one sentence, \"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], \"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each." },
+        { "type": "text", "text": "The image shows a character a child drew. Reply with JSON only: {\"names\": {\"kk\": a short friendly name in Kazakh (Cyrillic script), \"ru\": the same name in Russian, \"en\": the same name in English}, \"personality\": one sentence, \"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], \"ru\": [the same 5 lines in Russian], \"en\": [the same 5 lines in English]}}. Lines are for a child, max 6 words each." },
         { "type": "image_url", "image_url": { "url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" } }
       ]
     }
@@ -35,7 +38,16 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string" },
+          "names": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kk": { "type": "string" },
+              "ru": { "type": "string" },
+              "en": { "type": "string" }
+            },
+            "required": ["kk", "ru", "en"]
+          },
           "personality": { "type": "string" },
           "ability": { "type": "string", "enum": ["jump", "fly", "roll", "hide"] },
           "lines": {
@@ -43,12 +55,13 @@
             "additionalProperties": false,
             "properties": {
               "kk": { "type": "array", "items": { "type": "string" } },
-              "ru": { "type": "array", "items": { "type": "string" } }
+              "ru": { "type": "array", "items": { "type": "string" } },
+              "en": { "type": "array", "items": { "type": "string" } }
             },
-            "required": ["kk", "ru"]
+            "required": ["kk", "ru", "en"]
           }
         },
-        "required": ["name", "personality", "ability", "lines"]
+        "required": ["names", "personality", "ability", "lines"]
       }
     }
   },

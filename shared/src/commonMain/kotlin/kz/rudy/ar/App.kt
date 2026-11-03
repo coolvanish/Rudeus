@@ -644,7 +644,9 @@ internal object DemoData {
         lines = mapOf(
             "kk" to listOf("Сәлем! Мен Мұратпын!", "Секіремін!", "Ой, кесе!", "Кітапқа шығамын!", "Қайда барамыз?"),
             "ru" to listOf("Привет! Я Мурат!", "Прыгаю!", "Ой, чашка!", "Залезу на книгу!", "Куда пойдём?"),
+            "en" to listOf("Hi! I'm Murat!", "I jump!", "Oh, a cup!", "I'll climb the book!", "Where to next?"),
         ),
+        names = mapOf("kk" to "Мұрат", "ru" to "Мурат", "en" to "Murat"),
     )
 
     val bundled = listOf(
@@ -658,7 +660,9 @@ internal object DemoData {
                 lines = mapOf(
                     "kk" to listOf("Мияу!", "Ұйықтағым келеді", "Тығыламын", "Кесе артында!", "Тапшы мені"),
                     "ru" to listOf("Мяу!", "Хочу спать", "Прячусь", "За чашкой!", "Найди меня"),
+                    "en" to listOf("Meow!", "I want to sleep", "I'm hiding", "Behind the cup!", "Find me"),
                 ),
+                names = mapOf("kk" to "Мысық", "ru" to "Кошка", "en" to "Kitty"),
             ),
         ),
     )

@@ -1,5 +1,10 @@
 {
     "name": "Ақбөбек",
+    "names": {
+        "kk": "Ақбөбек",
+        "ru": "Акбобек",
+        "en": "Akbobek"
+    },
     "personality": "A gentle and cheerful little horse who loves to run and play.",
     "ability": "JUMP",
     "lines": {
@@ -16,6 +21,13 @@
             "Давай бегать и играть!",
             "Я умею быстро бегать!",
             "Ты мой друг!"
+        ],
+        "en": [
+            "Hi! My name is Akbobek!",
+            "I love green grass!",
+            "Let's run and play!",
+            "I can run fast!",
+            "You are my friend!"
         ]
     }
 }

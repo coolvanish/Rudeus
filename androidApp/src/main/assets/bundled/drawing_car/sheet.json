@@ -1,5 +1,10 @@
 {
     "name": "Жылдам",
+    "names": {
+        "kk": "Жылдам",
+        "ru": "Быстрый",
+        "en": "Speedy"
+    },
     "personality": "Cheerful and brave, always ready to race with friends.",
     "ability": "ROLL",
     "lines": {
@@ -16,6 +21,13 @@
             "Не бойся, я рядом!",
             "Мы все победим!",
             "Смейся громко, веселись!"
+        ],
+        "en": [
+            "Hi! I'm Speedy!",
+            "Let's race together!",
+            "Don't worry, I'm right here!",
+            "We will all win!",
+            "Laugh out loud, have fun!"
         ]
     }
 }

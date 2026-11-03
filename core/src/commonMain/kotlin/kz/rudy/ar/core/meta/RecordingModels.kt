@@ -119,10 +119,11 @@ class RecordingModels(
     companion object {
         const val NOTE_PREFIX = "recorded by cli character --live on"
 
-        /** The model JSON shape [SheetParser.fromJson] reads: `name, personality, ability` (lowercase), `lines`. */
+        /** The model JSON shape [SheetParser.fromJson] reads: `name, names, personality, ability` (lowercase), `lines`. */
         fun sheetJson(sheet: CharacterSheet): JsonObject = JsonObject(
             mapOf(
                 "name" to JsonPrimitive(sheet.name),
+                "names" to JsonObject(sheet.names.mapValues { (_, n) -> JsonPrimitive(n) }),
                 "personality" to JsonPrimitive(sheet.personality),
                 "ability" to JsonPrimitive(sheet.ability.name.lowercase()),
                 "lines" to JsonObject(sheet.lines.mapValues { (_, l) -> JsonArray(l.map { JsonPrimitive(it) }) }),

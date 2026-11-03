@@ -148,12 +148,18 @@ enum class Ability { JUMP, FLY, ROLL, HIDE }
 /** Output of the "character sheet" model call. */
 @Serializable
 data class CharacterSheet(
+    /** The Kazakh name; the only one on sheets written before [names]. */
     val name: String,
     val personality: String,
     val ability: Ability,
-    /** Language code ("kk", "ru") -> 5 short lines the character says. */
+    /** Language code ("kk", "ru", "en") -> 5 short lines the character says. */
     val lines: Map<String, List<String>>,
-)
+    /** Language code ("kk", "ru", "en") -> the name in that language. */
+    val names: Map<String, String> = emptyMap(),
+) {
+    /** The name to show in language [code]; [name] when the sheet has none in it. */
+    fun nameIn(code: String): String = names[code] ?: name
+}
 
 /** Character finite-state machine modes. */
 @Serializable

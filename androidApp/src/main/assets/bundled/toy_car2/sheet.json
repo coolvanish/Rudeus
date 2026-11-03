@@ -1,5 +1,10 @@
 {
     "name": "Джиппи",
+    "names": {
+        "kk": "Джиппи",
+        "ru": "Джиппи",
+        "en": "Jeepy"
+    },
     "personality": "Brave and cheerful off-road friend who loves adventures.",
     "ability": "ROLL",
     "lines": {
@@ -16,6 +21,13 @@
             "Я грязи не боюсь!",
             "Мои колёса крутятся быстро!",
             "Садись выше, поехали!"
+        ],
+        "en": [
+            "Hi! I'm Jeepy!",
+            "Let's go exploring together!",
+            "I'm not afraid of mud!",
+            "My wheels spin fast!",
+            "Climb up high, let's go!"
         ]
     }
 }

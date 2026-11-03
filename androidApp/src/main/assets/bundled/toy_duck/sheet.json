@@ -1,5 +1,10 @@
 {
     "name": "Бөпеш",
+    "names": {
+        "kk": "Бөпеш",
+        "ru": "Бопеш",
+        "en": "Bopesh"
+    },
     "personality": "Cheerful and curious, loves rolling and learning shapes.",
     "ability": "ROLL",
     "lines": {
@@ -16,6 +21,13 @@
             "Поставим фигурку на место!",
             "Ты очень умный!",
             "Молодец! Поиграем ещё!"
+        ],
+        "en": [
+            "Hi! My name is Bopesh!",
+            "Let's play together!",
+            "Let's put the shape back!",
+            "You are very smart!",
+            "Well done! Let's play more!"
         ]
     }
 }

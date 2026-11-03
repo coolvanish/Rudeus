@@ -1,5 +1,10 @@
 {
     "name": "Тино Дино",
+    "names": {
+        "kk": "Тино Дино",
+        "ru": "Тино Дино",
+        "en": "Tino Dino"
+    },
     "personality": "Brave and cuddly friend who loves to play and protect.",
     "ability": "JUMP",
     "lines": {
@@ -16,6 +21,13 @@
             "Давай обниматься и смеяться!",
             "Не бойся, я защищу тебя!",
             "Пойдём навстречу приключениям!"
+        ],
+        "en": [
+            "Hi! Will you play with me?",
+            "I'm big, but I'm kind!",
+            "Let's hug and laugh!",
+            "Don't worry, I'll protect you!",
+            "Let's go on an adventure!"
         ]
     }
 }

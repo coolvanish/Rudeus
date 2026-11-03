@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.ObjectKind
+import kz.rudy.ar.core.meta.SheetParser
 
 /** The languages the app speaks. Which one it opens in comes from the phone, see [preferred]. */
 enum class Lang(val code: String) {
@@ -207,9 +208,9 @@ object Strings {
         ObjectKind.CLIFF -> StringId.kind_cliff
     }
 
-    /** Character sheet lines fall back kk -> ru -> en -> first available. */
+    /** A sheet without this language (saved before it had one) says the generic lines, so the child can read them. */
     fun sheetLines(lines: Map<String, List<String>>, lang: Lang): List<String> =
-        lines[lang.code] ?: lines["kk"] ?: lines["ru"] ?: lines["en"] ?: lines.values.firstOrNull() ?: emptyList()
+        lines[lang.code] ?: SheetParser.FALLBACK_LINES[lang.code] ?: lines.values.firstOrNull() ?: emptyList()
 }
 
 /** Resolve a string for the current [LocalLang]. */

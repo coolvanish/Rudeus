@@ -1,5 +1,10 @@
 {
     "name": "Зуми",
+    "names": {
+        "kk": "Зуми",
+        "ru": "Зуми",
+        "en": "Zoomy"
+    },
     "personality": "Cheerful little green car who loves to race fast and make friends.",
     "ability": "ROLL",
     "lines": {
@@ -16,6 +21,13 @@
             "Мои колёсики крутятся быстро!",
             "Поехали! Помчим как ветер!",
             "Ты мой лучший друг!"
+        ],
+        "en": [
+            "Hi! Race with me!",
+            "I'm a very fast car!",
+            "My wheels spin so fast!",
+            "Let's go! Fast as wind!",
+            "You are my best friend!"
         ]
     }
 }

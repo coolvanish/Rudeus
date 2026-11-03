@@ -160,7 +160,9 @@ camera glyph), ghost **From gallery**, and under them the caption "The photo goe
 The headline "Or pick a ready one" peeks under the hero, so the view reads as "scroll for more". Scrolling brings the
 filter chips All · Mine · Ready, which pin to the top, over the character cards (as many columns as fit at 124 dp). On a
 filter change the cards both shelves share move with a spring, the dropped ones fade and the new ones pop in.
-The card draws the character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph.
+The card draws the character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Its name follows
+the app language (`CharacterSheet.names`, kk/ru/en; Spark writes all three for a new photo). A character saved before
+that has only its Kazakh name, and generic lines in English.
 Without a host the demo pair is shown. Characters made from the child's photos are Mine; All shows them first, newest
 first: one joins when it passes the check, or when the child taps "Play anyway" (below the check, Retry adds nothing).
 The 30 newest stay on the phone across restarts. An empty Mine says "Nothing yet" and to take a photo.
@@ -213,8 +215,8 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   Footprints on (debug only): secondary **Metrics** and **Scenario** (`play_scenario`) under it; Scenario replays the
   Day 5 script from where the character stands (`ArSlot.scenarioRequest`). There is no on-screen Back: the system back
   gesture returns to Capture.
-- Centre-bottom: `SpeechBubble` with the character's line from `CharacterSheet.lines[lang]` (falls back
-  kk → ru). Event-triggered (`HudSpeech`): placed -> line 1; jumped -> line 2; blocked -> "Blocked!"; fell ->
+- Centre-bottom: `SpeechBubble` with the character's line from `CharacterSheet.lines[lang]` (a character
+  saved before it had this language says the generic `SheetParser.FALLBACK_LINES`). Event-triggered (`HudSpeech`): placed -> line 1; jumped -> line 2; blocked -> "Blocked!"; fell ->
   "Oops! Fell"; respawned -> "Back up"; every 3rd arrival -> a sheet line (deterministic); the ability chip -> line 2.
   Walking, landing, stepping up, pause/resume say nothing. Bubbles are ≥ 2.5 s apart; Fell and Back up always
   replace the current one, except that "Back up" waits until "Oops! Fell" has been up 1.2 s.
@@ -400,7 +402,7 @@ Accessibility
   the cliff is dashed as well as orange.
 - Text ≥ 13 sp bold, body 17 sp; all text on Paper or Scrim; measured contrast ≥ 4.5:1 (Metrics, a dev screen, goes to 11 sp).
 - Reduced motion honoured via `LocalReducedMotion` (see Motion). No flashing faster than 3 Hz.
-- Languages: kk and ru copy are complete; a missing `CharacterSheet` line falls back kk → ru → en.
+- Languages: kk and ru copy are complete; a `CharacterSheet` without lines in a language says the generic `SheetParser.FALLBACK_LINES`.
 - Speech bubbles stay 2.5 s minimum and never cover the character (anchored above the bottom controls).
 - Works one-handed: primary button at the bottom (bottom-right on Play), chips top corners, nothing in the middle.
 

@@ -1,5 +1,10 @@
 {
     "name": "Мүйізбай",
+    "names": {
+        "kk": "Мүйізбай",
+        "ru": "Рогатик",
+        "en": "Moomoo"
+    },
     "personality": "Brave and kind, always helps little friends.",
     "ability": "JUMP",
     "lines": {
@@ -16,6 +21,13 @@
             "Давай вместе бегать и играть!",
             "Рожки большие, но я добрый!",
             "Ты мой самый лучший друг!"
+        ],
+        "en": [
+            "Hi! Can we be friends?",
+            "I really love grass!",
+            "Let's run and play together!",
+            "Big horns, but I'm kind!",
+            "You are my best friend!"
         ]
     }
 }

@@ -1,5 +1,10 @@
 {
     "name": "Жүйрік",
+    "names": {
+        "kk": "Жүйрік",
+        "ru": "Шустрик",
+        "en": "Swifty"
+    },
     "personality": "Cheerful little car who loves to race and help friends.",
     "ability": "ROLL",
     "lines": {
@@ -16,6 +21,13 @@
             "Друзья, поехали путешествовать!",
             "Давайте все вместе играть!",
             "Я тебя очень сильно люблю!"
+        ],
+        "en": [
+            "Hi! Race with me!",
+            "I'm a very fast car!",
+            "Friends, let's go exploring!",
+            "Come on, let's all play!",
+            "I love you so much!"
         ]
     }
 }

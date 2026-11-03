@@ -1,5 +1,10 @@
 {
     "name": "Бөжек",
+    "names": {
+        "kk": "Бөжек",
+        "ru": "Божек",
+        "en": "Dotty"
+    },
     "personality": "Cheerful and kind little bug who loves to make friends.",
     "ability": "FLY",
     "lines": {
@@ -16,6 +21,13 @@
             "Я люблю красные точечки!",
             "Давай посчитаем цветочки вместе!",
             "Ты мой лучший друг!"
+        ],
+        "en": [
+            "Hi! I'm Dotty!",
+            "Let's play together, okay?",
+            "I love little red dots!",
+            "Let's count flowers together!",
+            "You are my best friend!"
         ]
     }
 }

@@ -13,18 +13,20 @@ import kz.rudy.ar.core.domain.CharacterSheet
 /**
  * Turns the Spark character-sheet reply into a [CharacterSheet] and enforces the contract from
  * `.claude/skills/meta-fixtures/SKILL.md`: unknown ability -> JUMP, exactly [LINES_PER_LANGUAGE] lines
- * in each of "kk" and "ru" (padded with [FALLBACK_LINES], truncated when longer).
+ * in each of "kk", "ru" and "en" (padded with [FALLBACK_LINES], truncated when longer).
  *
  * Expected model JSON (fences and surrounding prose are tolerated):
- * `{"name": "...", "personality": "...", "ability": "jump|fly|roll|hide", "lines": {"kk": [...], "ru": [...]}}`
+ * `{"names": {"kk": "...", "ru": "...", "en": "..."}, "personality": "...", "ability": "jump|fly|roll|hide", "lines": {"kk": [...], "ru": [...], "en": [...]}}`
+ * Replies recorded before `names` carry one `"name"` instead; it is kept as the Kazakh name.
  */
 object SheetParser {
     const val LINES_PER_LANGUAGE = 5
-    val LANGUAGES = listOf("kk", "ru")
+    val LANGUAGES = listOf("kk", "ru", "en")
 
     val FALLBACK_LINES: Map<String, List<String>> = mapOf(
         "kk" to listOf("Сәлем!", "Кеттік!", "Мен мұндамын!", "Қарап тұр!", "Жарайсың!"),
         "ru" to listOf("Привет!", "Пошли!", "Я здесь!", "Смотри!", "Молодец!"),
+        "en" to listOf("Hi!", "Let's go!", "I'm here!", "Look!", "Well done!"),
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -41,7 +43,11 @@ object SheetParser {
 
     fun fromJson(element: JsonElement): CharacterSheet {
         val obj = element as? JsonObject ?: throw MetaError.Parse("character sheet is not a JSON object")
-        val name = obj.string("name")?.takeIf { it.isNotBlank() } ?: "Dos"
+        val names = LinkedHashMap<String, String>()
+        (obj["names"] as? JsonObject)?.forEach { (lang, value) ->
+            (value as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { names[lang.lowercase()] = it }
+        }
+        val name = names["kk"] ?: obj.string("name")?.takeIf { it.isNotBlank() } ?: names.values.firstOrNull() ?: "Dos"
         val personality = obj.string("personality") ?: ""
         val ability = parseAbility(obj.string("ability"))
         val linesEl = obj["lines"]
@@ -51,7 +57,7 @@ object SheetParser {
                 if (arr is JsonArray) lines[lang.lowercase()] = arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             }
         }
-        return normalise(CharacterSheet(name, personality, ability, lines))
+        return normalise(CharacterSheet(name, personality, ability, lines, names))
     }
 
     /**
@@ -70,7 +76,7 @@ object SheetParser {
         return Ability.entries.firstOrNull { it.name == key } ?: Ability.JUMP
     }
 
-    /** Ensures 5 non-blank lines for each of kk and ru; keeps any extra languages as they are. */
+    /** Ensures 5 non-blank lines for each of [LANGUAGES]; keeps any extra languages as they are. */
     fun normalise(sheet: CharacterSheet): CharacterSheet {
         val out = LinkedHashMap<String, List<String>>()
         for (lang in LANGUAGES) {

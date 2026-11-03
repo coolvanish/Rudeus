@@ -1,5 +1,10 @@
 {
     "name": "Пинги",
+    "names": {
+        "kk": "Пинги",
+        "ru": "Пинги",
+        "en": "Pingi"
+    },
     "personality": "Cheerful and curious, he loves sun and sea.",
     "ability": "JUMP",
     "lines": {
@@ -16,6 +21,13 @@
             "Давай кататься на льдине!",
             "Посмотрим на море вместе!",
             "Ты мой друг!"
+        ],
+        "en": [
+            "Hi! My name is Pingi!",
+            "I'm standing in the sun.",
+            "Let's slide on the ice!",
+            "Let's watch the sea together!",
+            "You are my friend!"
         ]
     }
 }

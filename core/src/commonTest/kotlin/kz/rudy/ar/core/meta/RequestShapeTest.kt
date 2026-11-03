@@ -122,7 +122,7 @@ class RequestShapeTest {
         assertEquals(setOf("name", "schema", "strict"), js.keys)
         assertEquals("CharacterSheet", js["name"]!!.jsonPrimitive.content)
         val schema = js["schema"]!!.jsonObject
-        assertEquals(listOf("name", "personality", "ability", "lines"), (schema["required"] as JsonArray).map { it.jsonPrimitive.content })
+        assertEquals(listOf("names", "personality", "ability", "lines"), (schema["required"] as JsonArray).map { it.jsonPrimitive.content })
         val ability = schema["properties"]!!.jsonObject["ability"]!!.jsonObject
         assertEquals(listOf("jump", "fly", "roll", "hide"), ability["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
         assertEquals("false", schema["additionalProperties"]!!.jsonPrimitive.content)

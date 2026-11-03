@@ -413,9 +413,9 @@ object Prompts {
         return "$subject $SHEET_INSTRUCTIONS"
     }
 
-    private const val SHEET_INSTRUCTIONS = "Reply with JSON only: {\"name\": a short friendly name in Kazakh (Cyrillic script), \"personality\": one sentence, " +
+    private const val SHEET_INSTRUCTIONS = "Reply with JSON only: {\"names\": {\"kk\": a short friendly name in Kazakh (Cyrillic script), \"ru\": the same name in Russian, \"en\": the same name in English}, \"personality\": one sentence, " +
         "\"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], " +
-        "\"ru\": [the same 5 lines in Russian]}}. Lines are for a child, max 6 words each."
+        "\"ru\": [the same 5 lines in Russian], \"en\": [the same 5 lines in English]}}. Lines are for a child, max 6 words each."
 
     // Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's transparency is
     // lost; hence "plain white background": CharacterPipeline mattes it away (SpriteMatte, SAM pass as fallback).
@@ -451,13 +451,15 @@ object Prompts {
         """
         {"type":"object","additionalProperties":false,
          "properties":{
-           "name":{"type":"string"},
+           "names":{"type":"object","additionalProperties":false,
+                    "properties":{"kk":{"type":"string"},"ru":{"type":"string"},"en":{"type":"string"}},
+                    "required":["kk","ru","en"]},
            "personality":{"type":"string"},
            "ability":{"type":"string","enum":["jump","fly","roll","hide"]},
            "lines":{"type":"object","additionalProperties":false,
-                    "properties":{"kk":{"type":"array","items":{"type":"string"}},"ru":{"type":"array","items":{"type":"string"}}},
-                    "required":["kk","ru"]}},
-         "required":["name","personality","ability","lines"]}
+                    "properties":{"kk":{"type":"array","items":{"type":"string"}},"ru":{"type":"array","items":{"type":"string"}},"en":{"type":"array","items":{"type":"string"}}},
+                    "required":["kk","ru","en"]}},
+         "required":["names","personality","ability","lines"]}
         """.trimIndent(),
     ).jsonObject
 

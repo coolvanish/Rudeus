@@ -1,5 +1,10 @@
 {
     "name": "Жұлдызша",
+    "names": {
+        "kk": "Жұлдызша",
+        "ru": "Звездочка",
+        "en": "Starry"
+    },
     "personality": "Cheerful and bouncy, always ready to play with friends.",
     "ability": "JUMP",
     "lines": {
@@ -16,6 +21,13 @@
             "Я очень люблю звёздочки!",
             "Ты мой самый лучший друг!",
             "Будем прыгать и смеяться!"
+        ],
+        "en": [
+            "Hi! My name is Starry!",
+            "Shall we jump and play?",
+            "I really love the stars!",
+            "You are my best friend!",
+            "Let's jump and laugh!"
         ]
     }
 }

@@ -45,7 +45,10 @@ if they are larger than a screen: summarise shape and sizes instead.
   decision 2026-10-28): recorded as `techniqueScores` next to `scores` in `spark-score/<ref>.fixture.json`. Fixtures
   recorded before that have no or fewer `techniqueScores`; a missing list makes that look fail (`rescore` ok=false),
   a short one repeats its last value. Spark gets the first 3 style refs (`CharacterPipeline.SPARK_MAX_REFS`).
-- Sheet: `ability` must parse into `Ability {JUMP, FLY, ROLL, HIDE}`; unknown -> `JUMP`. Lines: 5 in `kk`, 5 in `ru`.
+- Sheet: `ability` must parse into `Ability {JUMP, FLY, ROLL, HIDE}`; unknown -> `JUMP`. Lines: 5 each in `kk`, `ru`, `en`.
+  `names`: one name each in `kk`, `ru`, `en`. Fixtures recorded before that have one `name` (kept as the Kazakh name) and no
+  `en` lines (padded with generic ones), so a bundle regenerated from them loses its translations (`BundledLanguagesTest`
+  fails) until they are re-recorded.
 - Cutout: a single mask; multiple masks -> take the largest connected component.
 - Table: one mask per prompt; empty mask -> object absent, not an error.
 

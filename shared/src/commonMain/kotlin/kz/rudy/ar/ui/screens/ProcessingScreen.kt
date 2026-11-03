@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.AbilityTag
 import kz.rudy.ar.ui.components.BottomSheet
@@ -130,7 +131,7 @@ fun ProcessingScreen(
             ) {
                 HeroWell(
                     image = spriteBitmap ?: photoBitmap,
-                    description = if (spriteBitmap != null) state.sheet?.name else null,
+                    description = if (spriteBitmap != null) state.sheet?.nameIn(LocalLang.current.code) else null,
                     preview = state.preview,
                     modifier = Modifier.weight(1f).heightIn(min = 96.dp).fillMaxWidth(),
                 )
@@ -196,7 +197,7 @@ private fun ResultLines(state: ProcessingState) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                sheet.name,
+                sheet.nameIn(LocalLang.current.code),
                 style = MaterialTheme.typography.titleLarge,
                 color = RudeusColors.Ink,
                 maxLines = 1,

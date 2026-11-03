@@ -1,5 +1,10 @@
 {
     "name": "Аппақ",
+    "names": {
+        "kk": "Аппақ",
+        "ru": "Снежок",
+        "en": "Snowy"
+    },
     "personality": "Curious and gentle, loves to play in the snow.",
     "ability": "HIDE",
     "lines": {
@@ -16,6 +21,13 @@
             "Я белый лисёнок!",
             "Я рад тебя видеть!",
             "Обнимемся, друг мой!"
+        ],
+        "en": [
+            "Hi! Will you play with me?",
+            "Let's run in the snow!",
+            "I'm a snow-white fox!",
+            "I'm so happy to see you!",
+            "Let's hug, my friend!"
         ]
     }
 }

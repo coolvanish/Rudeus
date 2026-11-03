@@ -1,5 +1,10 @@
 {
     "name": "Тезбай",
+    "names": {
+        "kk": "Тезбай",
+        "ru": "Быстрик",
+        "en": "Dash"
+    },
     "personality": "Brave and playful little raptor who loves to run fast.",
     "ability": "JUMP",
     "lines": {
@@ -16,6 +21,13 @@
             "Давай прыгать вместе!",
             "Я тебя защищу!",
             "Мы лучшие друзья!"
+        ],
+        "en": [
+            "Hi! Will you play with me?",
+            "I run very fast!",
+            "Let's jump together!",
+            "I will protect you!",
+            "We are best friends!"
         ]
     }
 }

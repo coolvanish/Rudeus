@@ -1,5 +1,10 @@
 {
     "name": "Қызылтай",
+    "names": {
+        "kk": "Қызылтай",
+        "ru": "Красныш",
+        "en": "Reddy"
+    },
     "personality": "Cheerful and always ready for adventure.",
     "ability": "ROLL",
     "lines": {
@@ -16,6 +21,13 @@
             "Мои колеса фиолетовые, красивые?",
             "Садись, поедем путешествовать вместе!",
             "С друзьями ехать очень весело!"
+        ],
+        "en": [
+            "Hi! Let's go for a ride!",
+            "I'm a fast red car!",
+            "Aren't my purple wheels pretty?",
+            "Hop in, let's go exploring!",
+            "Riding with friends is fun!"
         ]
     }
 }

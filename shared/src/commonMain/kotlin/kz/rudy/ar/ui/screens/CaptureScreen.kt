@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.max
 import kotlin.math.max
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.CharacterCard
 import kz.rudy.ar.ui.components.Chip
@@ -415,7 +416,7 @@ private fun BundledCard(
         null
     }
     CharacterCard(
-        name = c.sheet.name,
+        name = c.sheet.nameIn(LocalLang.current.code),
         ability = c.sheet.ability,
         selected = selected,
         onClick = onClick,

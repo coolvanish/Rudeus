@@ -1,5 +1,10 @@
 {
     "name": "Қоқи",
+    "names": {
+        "kk": "Қоқи",
+        "ru": "Коки",
+        "en": "Koki"
+    },
     "personality": "Cheerful and kind friend who loves standing in the water.",
     "ability": "FLY",
     "lines": {
@@ -16,6 +21,13 @@
             "Я очень люблю розовую воду!",
             "Давай помашем крылышками!",
             "Ты мой самый лучший друг!"
+        ],
+        "en": [
+            "Hi! My name is Koki!",
+            "Let's play together, okay?",
+            "I love the pink water!",
+            "Let's flap our wings!",
+            "You are my best friend!"
         ]
     }
 }

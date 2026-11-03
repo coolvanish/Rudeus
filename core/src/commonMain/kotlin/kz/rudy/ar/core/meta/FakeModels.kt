@@ -103,6 +103,7 @@ class FakeModels(
             lines = mapOf(
                 "kk" to listOf("Сәлем!", "Секірейік!", "Мен батырмын!", "Қайда барамыз?", "Жарайсың!"),
                 "ru" to listOf("Привет!", "Прыгаем!", "Я смелый!", "Куда идём?", "Молодец!"),
+                "en" to listOf("Hi!", "Let's jump!", "I'm brave!", "Where to?", "Well done!"),
             ),
         )
 
