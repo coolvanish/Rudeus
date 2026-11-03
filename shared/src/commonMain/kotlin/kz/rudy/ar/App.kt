@@ -113,7 +113,7 @@ private const val VOICE_BUBBLE_MS = 2000L
  * Capture -> system (exit).
  *
  * Settings (T26): the sheet opens from Capture's wordmark. Reduce motion here ORs with whatever a host provides through
- * [LocalReducedMotion] above `App`; both last for this process only.
+ * [LocalReducedMotion] above `App`; both last for this process only. Sounds reaches the host as `ArSlot.soundsOn`.
  */
 @Composable
 fun App(
@@ -155,7 +155,6 @@ fun App(
     // T26: the Settings sheet. Language stays `lang` above.
     var settingsOpen by remember { mutableStateOf(false) }
     var reduceMotion by remember { mutableStateOf(false) }
-    // TODO(T26): wire sounds. The player lives in :androidApp (T23), out of :shared's reach; the toggle is UI-only.
     var soundsOn by remember { mutableStateOf(true) }
     val hostReducedMotion = LocalReducedMotion.current
     // T25: Bigger / Smaller. A choice, not a request, so it is kept across Back like the surface.
@@ -327,11 +326,12 @@ fun App(
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
     val ability = sheet.ability
-    val slot = remember(spritePng, surface, debug, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize) {
+    val slot = remember(spritePng, surface, debug, soundsOn, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
             debug = debug,
+            soundsOn = soundsOn,
             onSurfaceReady = { onSurfaceReady.value(it) },
             onAnchorPlaced = { onAnchorPlaced.value() },
             onTracking = { onTracking.value(it) },

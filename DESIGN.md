@@ -131,7 +131,7 @@ Easings: `Standard = cubic-bezier(0.2, 0, 0, 1)`, `Emphasised = cubic-bezier(0.0
 | **Pipeline stage change** | Stage row ticks: check glyph scales 0 → 1 with `Pop`; progress bar animates to the new fraction in 300 ms Standard. Gate score counts up 0 → score over 600 ms. |
 | **Fall / respawn** | Handled by `:androidApp`: quad drops 0.3 m with gravity, fades 150 ms; respawns at `Level.spawn` with the pop spring. HUD shows the "Oops! Fell" bubble. |
 
-**Reduced motion** (`LocalReducedMotion = true`: the Settings toggle, or the value the host provides above `App`): no infinite
+**Reduced motion** (`LocalReducedMotion = true`: the Settings toggle OR the system's animator duration scale at 0, which the host provides above `App`): no infinite
 loops (eyes and brackets are static, pupils centred), progress arc still animates (it conveys time), pops become
 150 ms fades, buttons do not scale, banners fade only. No parallax, ever.
 
@@ -157,8 +157,9 @@ host thumbnail, else a glyph. Without a host the demo pair is shown.
 - *No bundled characters* (should not happen; assets ship in the APK): an empty Cream card "Nothing yet".
 
 ### Settings sheet — `SettingsSheet`
-Bottom sheet over Capture: Language (ҚАЗ · РУС · ENG segmented; the only language switch), Sounds, Reduce motion
-(overrides the system value), Metrics (dev tag, chevron), About (version, mono). The system back gesture, a tap on the
+Bottom sheet over Capture: Language (ҚАЗ · РУС · ENG segmented; the only language switch), Sounds (off = the host plays
+no character sounds; speech bubbles stay), Reduce motion (adds to the system value: it can turn reduced motion on, not
+off), Metrics (dev tag, chevron), About (version, mono). The system back gesture, a tap on the
 scrim or a drag on the sheet closes it.
 
 ### Processing — `ProcessingScreen`

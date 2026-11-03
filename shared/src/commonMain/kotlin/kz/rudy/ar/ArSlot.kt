@@ -21,6 +21,8 @@ data class ArSlot(
     val surface: Surface,
     /** Debug chrome on (footprints toggle): the host may show its own dev controls (e.g. the ARCore Rec button). */
     val debug: Boolean = false,
+    /** The Settings sheet's Sounds toggle: the host plays character sounds only while true. Events fire either way. */
+    val soundsOn: Boolean = true,
     /** True once a settled horizontal plane exists and a tap would place the character; false when none does. */
     val onSurfaceReady: (Boolean) -> Unit = {},
     /** The session anchor was created by a tap: the character now stands on the surface. */
