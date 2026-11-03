@@ -17,10 +17,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,8 +48,8 @@ import kz.rudy.ar.ui.theme.RudeusRadius
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
 /**
- * A character shipped in the APK (CLI-generated, DESIGN.md "Capture"). The card draws [spritePng] when present,
- * else the host's [thumbnail], else a glyph.
+ * A ready character: shipped in the APK (CLI-generated, DESIGN.md "Capture") or kept from an earlier photo (T26). The
+ * card draws [spritePng] when present, else the host's [thumbnail], else a glyph.
  */
 data class BundledCharacter(
     val id: String,
@@ -118,7 +120,10 @@ fun CaptureScreen(
             if (bundled.isEmpty()) {
                 EmptyCard(t(StringId.capture_empty))
             } else {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.md)) {
+                val row = rememberLazyListState()
+                // A keyed row holds its scroll on the old first card, so a card added in front would sit off-screen left.
+                LaunchedEffect(bundled.first().id) { row.scrollToItem(0) }
+                LazyRow(state = row, horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.md)) {
                     items(bundled, key = { it.id }) { c ->
                         CharacterCard(c, selected = c.id == selectedId, onClick = { onPickBundled(c) })
                     }

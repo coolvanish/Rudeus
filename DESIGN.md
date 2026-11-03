@@ -124,7 +124,9 @@ Paper background (or a camera preview slot). Headline "Drawing or toy", hint "Pu
 take a photo", one Sun button **Photo** (camera glyph). Below: "Or pick a ready one" and a horizontal row of
 bundled character cards (sprite + name, 96 dp, Ink outline; selected = Sun outline). The card draws the
 character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a host the demo pair
-is shown. Top-right: `KK / RU / EN`
+is shown. Characters made from the child's photos come first, newest first: one joins the row when it passes the
+check, or when the child taps "Play anyway" (below the check, Retry adds nothing). The 30 newest stay on the phone
+across restarts. Top-right: `KK / RU / EN`
 segmented switch (the only place it exists) and a ghost **Metrics** button bottom-left.
 - *API offline*: Leaf badge "No internet — ready characters" above the row; the bundled row is the primary path.
   Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call succeeds). A
