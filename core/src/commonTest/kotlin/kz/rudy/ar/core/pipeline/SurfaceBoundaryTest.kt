@@ -72,6 +72,14 @@ class SurfaceBoundaryTest {
         assertFalse(SurfaceBoundary.crossesEdge(emptyList(), SurfaceProfile.TABLE))
         assertTrue(SurfaceBoundary.crossesEdge(listOf(0.01f, -0.288f, null), SurfaceProfile.TABLE))
         assertFalse(SurfaceBoundary.crossesEdge(listOf(-0.288f), SurfaceProfile.FLOOR), "scales with the surface")
+        assertTrue(SurfaceBoundary.crossesEdge(listOf(null, null, -0.175f), SurfaceProfile.TABLE), "only the tap: from the plane")
+    }
+
+    /** Pixel 05:11:42 and 05:12:07: the plane 13 cm above the table after an anchor jump, a tap on it and one past its end. */
+    @Test
+    fun aPlaneAboveTheTableDoesNotReadAsAnEdge() {
+        assertFalse(SurfaceBoundary.crossesEdge(listOf(-0.151f, -0.125f, -0.129f, -0.125f, -0.126f, -0.128f, -0.128f), SurfaceProfile.TABLE))
+        assertTrue(SurfaceBoundary.crossesEdge(listOf(-0.125f, -0.109f, -0.101f, -0.092f, -0.212f, -0.422f), SurfaceProfile.TABLE))
     }
 
     /** A 3× character beside a cup at the rim, where the push-out points off the table (a review found it walking through). */

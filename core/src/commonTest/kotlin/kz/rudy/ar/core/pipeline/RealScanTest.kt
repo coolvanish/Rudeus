@@ -82,4 +82,32 @@ class RealScanTest {
         assertEquals(listOf("laptop", "remote"), r.cutByFrame)
         assertEquals(0, r.missed)
     }
+
+    /** 05:10:52: a mug and the rabbit both run off the top of the frame. */
+    private val edgeScan = ScanInput(
+        listOf(
+            LabeledMask("cup", outline("580.5,0.5;728.5,0.5;726.5,26.5;715.5,57.5;708.5,66.5;699.5,70.5;648.5,71.5;594.5,67.5;583.5,61.5;577.5,46.5;577.5,13.5")),
+            LabeledMask("cup", outline("532.5,244.5;563.5,245.5;580.5,249.5;608.5,248.5;629.5,258.5;637.5,268.5;640.5,291.5;636.5,307.5;642.5,328.5;642.5,369.5;638.5,374.5;606.5,379.5;604.5,396.5;600.5,401.5;554.5,391.5;544.5,385.5;544.5,370.5;576.5,356.5;583.5,346.5;575.5,332.5;535.5,326.5;527.5,320.5;523.5,305.5;521.5,268.5;525.5,252.5")),
+            LabeledMask("toy", outline("528.5,0.5;553.5,0.5;573.5,30.5;575.5,46.5;583.5,64.5;596.5,70.5;611.5,70.5;617.5,73.5;616.5,91.5;609.5,103.5;607.5,121.5;599.5,134.5;560.5,141.5;536.5,137.5;520.5,129.5;501.5,103.5;502.5,81.5;506.5,73.5;504.5,70.5;474.5,90.5;457.5,93.5;446.5,91.5;442.5,68.5;449.5,52.5;472.5,39.5;495.5,32.5;508.5,16.5;525.5,5.5")),
+            LabeledMask("remote", outline("788.5,53.5;799.5,59.5;810.5,95.5;722.5,224.5;705.5,243.5;698.5,243.5;689.5,214.5;689.5,204.5;728.5,146.5;775.5,67.5")),
+        ),
+        Intrinsics(933.2064f, 932.54755f, 652.90564f, 357.89487f, 1280, 720),
+        pose("0.02504,-0.03297,0.24479,-0.160407,-0.122321,-0.685924,0.699153"),
+        PlaneFrame.fromAnchorPose(pose("-0.03871,-0.37649,-0.34868,0.006215,0.058010,-0.000905,0.998296")),
+    )
+
+    @Test
+    fun aCupAndAToyAtTheEdgeOfTheFrameAreStillObjects() {
+        val r = TableScan.build(edgeScan, emptyList(), null, SurfaceProfile.TABLE)
+        assertEquals(listOf("cup", "cup", "remote", "toy"), assertNotNull(r.level).objects.map { it.label }.sorted())
+        assertEquals(emptyList(), r.cutByFrame)
+    }
+
+    @Test
+    fun aRescanKeepsWhatItKnewOverAMaskAtTheEdge() {
+        val first = assertNotNull(TableScan.build(edgeScan, emptyList(), null, SurfaceProfile.TABLE).level)
+        val again = TableScan.build(edgeScan, emptyList(), first, SurfaceProfile.TABLE)
+        assertEquals(first.objects.map { it.id }.sorted(), assertNotNull(again.level).objects.map { it.id }.sorted())
+        assertTrue(again.carried.isNotEmpty() && again.carried.all { it in first.objects }, "carried ${again.carried.map { it.id }}, cut ${again.cutByFrame}")
+    }
 }

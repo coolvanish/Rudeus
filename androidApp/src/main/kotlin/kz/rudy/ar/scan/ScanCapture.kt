@@ -128,8 +128,8 @@ internal fun grabScanFrame(frame: Frame, anchor: Anchor, plane: Plane?, nowMs: L
 }
 
 /**
- * HAND-REVIEW: Pixel 2026-11-03 — log only: a real cup reads 5 mm (`scan_object h=0.005`) and no real mask has been measured.
- * These lines let :core replay a scan on the JVM: poses and mask outlines, no image. 2 px because logcat cuts a line at 4 KB.
+ * HAND-REVIEW: Pixel 2026-11-03 — log only: these lines let :core replay a real scan on the JVM (`RealScanTest` came from
+ * them): poses and mask outlines, no image. 2 px because logcat cuts a line at 4 KB.
  */
 private fun logScanReplay(ref: String, grab: ScanGrab, intr: Intrinsics, masks: List<LabeledMask>) {
     fun Pose3.text() = "%.5f,%.5f,%.5f,%.6f,%.6f,%.6f,%.6f".format(
