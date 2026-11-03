@@ -31,6 +31,7 @@ import io.github.sceneview.math.Direction
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Size
 import io.github.sceneview.node.PlaneNode
+import com.google.ar.core.DepthPoint
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberModelLoader
@@ -40,10 +41,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kz.rudy.ar.ArSlot
+import kz.rudy.ar.ScanAnswer
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
+import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.geometry.PlaneFrame
+import kz.rudy.ar.core.pipeline.ScanAngle
+import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
 import kz.rudy.ar.core.scenario.Scenarios
@@ -54,6 +60,7 @@ import kz.rudy.ar.scan.TableScanner
 import kz.rudy.ar.scan.footprintMaterials
 import kz.rudy.ar.scan.grabScanFrame
 import kz.rudy.ar.scan.runTableScan
+import kz.rudy.ar.scan.toPose3
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.ScrimPill
 import kz.rudy.ar.ui.t
@@ -79,7 +86,7 @@ import kotlin.math.abs
 // camera image, Camera.getPose, image intrinsics, anchor pose, anchor plane polygon) on the main thread and launches
 // the IO half (JPEG -> SAM via the host-only TableScanner -> :core SceneBuilder). The loop keeps stepping the old
 // level meanwhile; the new Level is swapped into `loop.level` on the main thread, reported through `onLevel`, and the
-// scan is answered exactly once through `onScanned` (count, or null: no anchor, not tracking, busy, no frame, error).
+// scan is answered exactly once through `onScanned` (Found count; Failed: no anchor, not tracking, no frame, error; TooSteep).
 // The anchor's Plane is kept (`anchorPlane`) so the scan can read its polygon as the level boundary (cliffs) — on
 // the TABLE only: a floor has no edge and ARCore's floor patches are partial, so FLOOR scans pass no plane. The
 // debug overlay (scan/FootprintOverlay.kt) lives under the AnchorNode and is composed only while `slot.debug`.
@@ -87,8 +94,8 @@ import kotlin.math.abs
 // answered; a request while a scan is pending or running joins it and the running scan answers all of them with its
 // result (no instant NO_PLANE during a tracking blip). (2) A frame without a camera image yet (NotYetAvailable) keeps
 // the request pending for up to GRAB_MAX_TRIES frames. (3) `scanBusy` is cleared in `finally`, so a cancelled or
-// failed scan can never leave Rescan dead for the session. (4) Walk taps outside `loop.level.boundary` are ignored:
-// the boundary is a snapshot of the plane polygon at scan time, while hit tests use the live, growing polygon.
+// failed scan can never leave Rescan dead for the session. (4) was "ignore walk taps past the scanned snapshot";
+// T25 replaced it with `confirmSurface` below, because that refused taps on the real table.
 // HAND-REVIEW: T21 — (a) occlusion: `sessionConfiguration` decides ONCE per session from `isDepthModeSupported`
 // (Occluders.kt `occlusionFor`): DEPTH turns on SceneView's depth-aware camera stream (`rememberARCameraStream` +
 // `ARCameraStream.isDepthOcclusionEnabled`, 4.31.0), BOXES composes invisible depth-writing nodes per LevelObject
@@ -104,8 +111,8 @@ import kotlin.math.abs
 // plain holder; a scan meanwhile just swaps the level, the script goes on. A request before the anchor exists is
 // dropped (`scenario_rejected`).
 // HAND-REVIEW: T24 — voice "go": each `slot.walkForwardRequest` increment is one loop.walkTo 10 cm x profile.scale
-// along the character's `facing`, from where it stands; a target outside `loop.level.boundary` (the scanned snapshot,
-// same rule as walk taps) is skipped and logged `voice_walk_outside_boundary`; before the anchor it is dropped.
+// along the character's `facing`, from where it stands; a target outside `loop.level.boundary` is skipped and logged
+// `voice_walk_outside_boundary` (no hit test confirms that surface, unlike a tap); before the anchor it is dropped.
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
@@ -123,6 +130,9 @@ private const val REAPPEAR_AFTER_TRACKING_MS = 800L
  * backwards. Per-sprite detection is a follow-up, not a T03 item.
  */
 internal const val GENERATED_SPRITE_FACES_RIGHT = false
+
+/** Depth readings per tap along the walk (depthGapsOnWay): a gap between two surfaces is 30 cm or more, this is about one every 15 cm on a 1 m walk. */
+private const val WALK_DEPTH_SAMPLES = 6
 
 /**
  * Plain holders for the slot-facing state written by the frame callback and the tap handler (main thread only).
@@ -162,7 +172,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val scanTries = remember { intArrayOf(0) } // frames the pending request has waited for a camera image
     val scanCount = remember { intArrayOf(0) }
     val scope = rememberCoroutineScope()
-    var level by remember { mutableStateOf<Level?>(null) } // written once per scan (overlay), never per frame
+    var level by remember { mutableStateOf<Level?>(null) } // written per scan and per boundary-growing tap (overlay), never per frame
     val footprintMaterials = remember(materialLoader) { footprintMaterials(materialLoader) }
     val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
     val settle = remember { PlaneSettle() }
@@ -210,11 +220,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             showHint = false
         }
     }
-    /** Answers every request owed so far with [objects] (exactly one onScanned per request). Main thread. */
-    fun answerOwed(objects: Int?) {
+    /** Answers every request owed so far with [answer] (exactly one onScanned per request). Main thread. */
+    fun answerOwed(answer: ScanAnswer) {
         val n = scanOwed[0]
         scanOwed[0] = 0
-        repeat(n) { currentSlot.onScanned(objects) }
+        repeat(n) { currentSlot.onScanned(answer) }
     }
     // A scan request is armed here and fulfilled by the next frame (acquireCameraImage wants the current frame).
     // Without an anchor or a host nothing can ever scan: answered at once. Otherwise the request is owed; if a scan
@@ -223,7 +233,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         if (slot.scanRequest == 0) return@LaunchedEffect
         if (anchorRef[0] == null || scanner == null) {
             Log.i(GATE_TAG, "scan_rejected anchored=${anchorRef[0] != null} host=${scanner != null}")
-            currentSlot.onScanned(null)
+            currentSlot.onScanned(ScanAnswer.Failed)
             return@LaunchedEffect
         }
         scanOwed[0]++
@@ -276,6 +286,21 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         Log.i(GATE_TAG, "scenario_start id=${script.id} steps=${script.steps.size} surface=${slotState.surface} sim_ms=$startMs")
     }
     /**
+     * HAND-REVIEW: T25 — the plane polygon is only the table seen so far, so a tap the hit test accepted is table: it
+     * grows the boundary instead of being refused. Only the tap: on the Pixel the live polygon ran past the end of the
+     * table and the hull kept that (2026-11-03). On the floor the boundary stays null. Main thread, called per tap, never
+     * per frame. One anchor per session stays: only the Level changes.
+     */
+    fun confirmSurface(uv: Vec2) {
+        if (loop.level.boundary == null) return
+        val grown = SurfaceBoundary.grown(loop.level, standing = listOf(uv))
+        if (grown === loop.level) return
+        loop.level = grown
+        level = grown
+        currentSlot.onLevel(grown)
+        Log.i(GATE_TAG, "boundary_grown n=${grown.boundary?.size} u=${uv.u} v=${uv.v}")
+    }
+    /**
      * Main thread, from onSessionUpdated while a request is pending: grab this frame, then build the level on IO and
      * swap it in on return. Returns true when the request stays pending for the next frame (no image yet).
      */
@@ -283,7 +308,14 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         val host = scanner
         if (host == null || !tracking) {
             Log.i(GATE_TAG, "scan_skipped tracking=$tracking host=${host != null}")
-            answerOwed(null)
+            answerOwed(ScanAnswer.Failed)
+            return false
+        }
+        // HAND-REVIEW: T25 — checked before the image copy and the SAM bill. Scan stays a button; this only answers it
+        // sooner, and the level in play is untouched.
+        if (ScanAngle.cameraTooSteep(frame.camera.pose.toPose3(), PlaneFrame.fromAnchorPose(a.pose.toPose3()))) {
+            Log.i(GATE_TAG, "scan_too_steep where=camera")
+            answerOwed(ScanAnswer.TooSteep)
             return false
         }
         // The level boundary comes from the anchor plane on the table only (see the T04 header).
@@ -293,7 +325,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         if (grab == null) {
             if (attempt.retry && ++scanTries[0] < GRAB_MAX_TRIES) return true
             Log.i(GATE_TAG, "scan_skipped no_image tries=${scanTries[0]}")
-            answerOwed(null)
+            answerOwed(ScanAnswer.Failed)
             return false
         }
         scanBusy[0] = true
@@ -301,16 +333,22 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         val previous = loop.level
         val profile = slotState.profile
         scope.launch {
-            var answer: Int? = null
+            var answer: ScanAnswer = ScanAnswer.Failed
             try {
                 val outcome = runTableScan(grab, host, ScanPrompts.of(profile.surface), previous, profile, ref)
-                val built = outcome.level
+                // HAND-REVIEW: T25 — the swap never shrinks the boundary or leaves the character outside it, read from
+                // `loop` here (not at grab time) so a tap made during the scan counts. The polygon alone can shift between
+                // scans and drop a character standing still, or loop respawns if it misses the spawn. This only changes
+                // the Level: PAUSED still freezes and never resets.
+                val built = outcome.level?.let { SurfaceBoundary.afterScan(it, loop.level, loop.state) }
                 if (built != null) {
                     loop.level = built // main thread: the next frame already steps against the new level
                     level = built
                     currentSlot.onLevel(built)
-                    answer = built.objects.size
+                    answer = ScanAnswer.Found(built.objects.size, outcome.missed)
                     host.recordScan(built.objects.size, outcome.ms)
+                } else if (outcome.tooSteep) {
+                    answer = ScanAnswer.TooSteep
                 }
             } finally {
                 scanBusy[0] = false
@@ -395,7 +433,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     // While not tracking the camera pose is meaningless and the AnchorNode hides its children.
                     if (tracking && node != null) {
                         poser.apply(
-                            node, state, planeCoords(a, frame.camera.pose), loop.walkPhaseMs,
+                            node, state, planeCoords(a, frame.camera.pose), planeHeight(a, frame.camera.pose), loop.walkPhaseMs,
                             verticalVelocity = loop.body.verticalVelocity,
                             sinceLandedMs = now - loop.landedAtMs,
                             size = currentSlot.characterSize,
@@ -413,7 +451,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     // Walk taps only count on the anchor's own surface (within the profile's tolerance): a tap past the
                     // table edge hits the floor plane and the character would walk off into the air.
                     val tolerance = slotState.profile.tapHeightToleranceM
-                    val hit = frame.hitTest(event).firstOrNull {
+                    val hits = frame.hitTest(event)
+                    val hit = hits.firstOrNull {
                         val t = it.trackable
                         t is Plane && t.isPoseInPolygon(it.hitPose) &&
                             (a == null || abs(it.hitPose.ty() - a.pose.ty()) <= tolerance)
@@ -441,15 +480,21 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         s.onTracking(true)
                     } else if (hit != null) {
                         val uv = planeCoords(a, hit.hitPose)
-                        // The scanned boundary is a snapshot; the hit test used the live (grown) plane polygon. A tap
-                        // past the snapshot would send the character over a "cliff" in the middle of the table.
-                        val boundary = loop.level.boundary
-                        if (boundary != null && !boundary.contains(uv)) {
-                            Log.i(GATE_TAG, "walk_tap_outside_boundary u=${uv.u} v=${uv.v}")
-                            return@rememberOnGestureListener
-                        }
                         probe.onTap(a, hit.hitPose, uv)
-                        loop.walkTo(uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+                        // HAND-REVIEW: Pixel 2026-11-03 — for feet that sink or float: where the Depth API sees the table at this
+                        // tap, relative to the plane the level stands on (+ = plane too low), and the feet's height.
+                        val depthGap = hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) }
+                        // HAND-REVIEW: Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
+                        // so "in the polygon" is not "on the table". A drop in depth at the tap or on the way refuses the tap, as a
+                        // tap on the floor is; :core decides. No depth reading (null) never refuses. The boundary is not touched.
+                        val gaps = depthGapsOnWay(frame, a, loop.state.pos, uv, WALK_DEPTH_SAMPLES) + depthGap
+                        Log.i(GATE_TAG, "tap_depth_gap=$depthGap feet_h=${loop.state.h} way=$gaps")
+                        if (SurfaceBoundary.crossesEdge(gaps, slotState.profile)) {
+                            Log.i(GATE_TAG, "tap_past_edge u=${uv.u} v=${uv.v}")
+                        } else {
+                            confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
+                            loop.walkTo(uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+                        }
                     }
                 }
             ),

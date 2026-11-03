@@ -11,6 +11,7 @@ import kz.rudy.ar.core.geometry.Pose3
 import kz.rudy.ar.core.geometry.Vec3
 import kz.rudy.ar.core.geometry.pixelRay
 import kz.rudy.ar.core.geometry.projectToPixel
+import kz.rudy.ar.core.physics.Physics
 import kz.rudy.ar.core.meta.MaskResult
 import kz.rudy.ar.core.meta.SegmentResult
 import kotlin.math.PI
@@ -156,6 +157,107 @@ class SceneBuilderTest {
         // A tall "book" is an obstacle.
         val tall = SceneBuilder().build(scan("book" to Box(-0.05f, 0.05f, 0.1f, 0.2f, 0.08f)))
         assertEquals(ObjectKind.OBSTACLE, tall.objects[0].kind)
+    }
+
+    /** A straight near rim reflects onto itself: a sliver along the front edge, 5 cm off and reading 5-18 cm tall. */
+    @Test
+    fun aBookKeepsItsFootprintAtAnyYawOnTheCpuImageGrid() {
+        val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
+        val centre = Vec2(0.10f, 0.20f)
+        var rows = 0; var platforms = 0
+        for (elevation in listOf(45f, 60f, 74f)) for (yaw in listOf(0f, 3f, 10f, 30f, 90f)) for (lateral in listOf(0f, 0.06f)) {
+            val p = view.pose(Vec2(centre.u + lateral, centre.v), elevation)
+            val mask = view.boxMask(p, centre, 0.15f, 0.10f, 0.02f, yaw)
+            val book = SceneBuilder().build(view.input(p, LabeledMask("book", mask))).objects.single()
+            val where = "elevation $elevation yaw $yaw lateral $lateral"
+            assertTrue(book.centroid.distanceTo(centre) < 0.05f, "$where: centre ${book.centroid}")
+            assertTrue(book.footprint.area > 0.2f * 0.015f, "$where: area ${book.footprint.area}")
+            rows++
+            if (book.kind == ObjectKind.PLATFORM) platforms++
+        }
+        assertTrue(platforms >= rows * 0.8f, "$platforms of $rows are platforms")
+    }
+
+    /** How a book sits in front of someone reading it: the rim is its short side, and what lies beyond is its length. */
+    @Test
+    fun aBookLyingLengthwiseIsStillAPlatform() {
+        val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
+        val centre = Vec2(0.10f, 0.20f)
+        for (elevation in listOf(30f, 45f, 60f, 70f)) for (size in listOf(0.15f to 0.10f, 0.21f to 0.15f)) {
+            val p = view.pose(centre, elevation)
+            val mask = view.boxMask(p, centre, size.first, size.second, 0.02f, 90f)
+            val book = SceneBuilder().build(view.input(p, LabeledMask("book", mask))).objects.single()
+            assertEquals(ObjectKind.PLATFORM, book.kind, "elevation $elevation size $size: height ${book.heightM}")
+        }
+    }
+
+    /** The other side of the book: the same straight near rim, but what lies beyond it is height, not depth. */
+    @Test
+    fun aTallBoxSeenSquareOnIsNotAFlatMat() {
+        val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
+        val centre = Vec2(0.10f, 0.20f)
+        for (yaw in listOf(0f, 3f, 10f)) {
+            val p = view.pose(centre, 45f)
+            val standing = view.boxMask(p, centre, 0.20f, 0.03f, 0.25f, yaw)
+            val box = SceneBuilder().build(view.input(p, LabeledMask("box", standing))).objects.single()
+            assertEquals(ObjectKind.OBSTACLE, box.kind, "yaw $yaw: height ${box.heightM}")
+            assertTrue(box.footprint.area < 0.055f, "yaw $yaw: area ${box.footprint.area}, a wall of shadow")
+        }
+        for (elevation in listOf(45f, 60f)) {
+            val p = view.pose(centre, elevation)
+            val box = SceneBuilder().build(view.input(p, LabeledMask("box", view.boxMask(p, centre, 0.40f, 0.30f, 0.35f))), profile = SurfaceProfile.FLOOR).objects.single()
+            assertEquals(ObjectKind.OBSTACLE, box.kind, "elevation $elevation: height ${box.heightM}")
+        }
+    }
+
+    /** A long thin box in an oblique view is a real near rim, not a sliver: it must not fall back to the shadow. */
+    @Test
+    fun aLongBoxSeenObliquelyKeepsItsNearRim() {
+        val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
+        val centre = Vec2(0.10f, 0.20f)
+        val p = view.pose(Vec2(centre.u + 0.20f, centre.v), 45f)
+        val box = SceneBuilder().build(view.input(p, LabeledMask("object", view.boxMask(p, centre, 0.30f, 0.06f, 0.10f, 30f)))).objects.single()
+        assertTrue(abs(box.heightM - 0.10f) < 0.04f, "height ${box.heightM}")
+        assertTrue(box.footprint.area < 2f * 0.30f * 0.06f, "area ${box.footprint.area}, smeared by the shadow")
+    }
+
+    /** A cup at 180 degrees of roll used to read 0 cm: the top row of a sensor image is not the top of the object. */
+    @Test
+    fun theHeightDoesNotDependOnHowTheSensorImageLies() {
+        for (view in listOf(ScanViewFixture(), ScanViewFixture(ScanViewFixture.CPU_IMAGE))) {
+            val centre = Vec2(0.10f, 0.20f)
+            val heights = listOf(0f, 90f, 180f, 270f).map { roll ->
+                val p = view.pose(centre, 45f, 45f, roll)
+                SceneBuilder().build(view.input(p, LabeledMask("cup", view.cupMask(p, centre)))).objects.single().heightM
+            }
+            assertTrue(heights.all { abs(it - 0.09f) < 0.025f }, "heights $heights")
+            assertTrue(heights.max() - heights.min() < 0.01f, "heights $heights")
+        }
+    }
+
+    /** DP on a coarse grid used to grow a spike past the cup: 19 cm long on a cup 8 cm wide. */
+    @Test
+    fun aCupOnTheCpuImageGridHasNoSpike() {
+        val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
+        val centre = Vec2(0.10f, 0.20f)
+        for (roll in listOf(0f, 90f)) for (elevation in listOf(30f, 38f, 45f, 52f, 60f, 67f, 74f)) {
+            val p = view.pose(centre, elevation, elevation, roll)
+            val cup = SceneBuilder().build(view.input(p, LabeledMask("cup", view.cupMask(p, centre)))).objects.single()
+            val where = "roll $roll elevation $elevation"
+            assertTrue(cup.footprint.points.all { it.distanceTo(centre) < 0.06f }, "$where: ${cup.footprint.points}")
+            assertTrue(cup.centroid.distanceTo(centre) < 0.02f, "$where: centre ${cup.centroid}")
+            assertEquals(ObjectKind.OBSTACLE, cup.kind)
+        }
+    }
+
+    @Test
+    fun aMaskIsNeverANoHeightObject() {
+        val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
+        val centre = Vec2(0.10f, 0.20f)
+        val p = view.pose(centre, 45f)
+        val flat = SceneBuilder().build(view.input(p, LabeledMask("remote", view.boxMask(p, centre, 0.15f, 0.10f, 0.001f)))).objects.single()
+        assertTrue(flat.heightM >= 0.005f, "height ${flat.heightM}")
+        assertTrue(Physics.blocks(flat, feetH = 0f), "an obstacle a character can walk through is no obstacle")
     }
 
     @Test

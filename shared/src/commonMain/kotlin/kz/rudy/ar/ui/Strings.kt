@@ -64,6 +64,9 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     scan_no_plane_hint("Өрнекті мата жай, жарық бүйірден түссін", "Постели ткань с узором, свет сбоку", "Use a patterned cloth and light from the side"),
     scan_no_plane_title_floor("Еден табылмады", "Пол не найден", "No floor found"),
     scan_no_plane_hint_floor("Күндіз далада көр: шөп не тротуар", "Попробуй днём на улице: трава или тротуар", "Try outside in daylight: grass or pavement"),
+    /** The camera looks almost straight down: the scan needs a side view of the objects. */
+    scan_too_steep_title("Тым жоғарыдан", "Слишком сверху", "Too straight down"),
+    scan_too_steep_hint("Телефонды тікірек ұстап, сәл артқа шегін", "Держи телефон прямее и отойди назад", "Hold the phone more upright and step back"),
     scan_empty_title("Үстел бос", "Стол пустой", "Table is empty"),
     scan_empty_hint("Кесе не кітап қой", "Поставь кружку или книгу", "Put a cup or a book on it"),
     scan_empty_title_floor("Еден бос", "Пол пустой", "Floor is empty"),

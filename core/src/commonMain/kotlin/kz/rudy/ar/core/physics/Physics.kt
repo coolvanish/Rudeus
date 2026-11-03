@@ -49,7 +49,9 @@ data class PhysicsBody(
  * - Cliff: `pos` outside `level.boundary` (or inside a [ObjectKind.CLIFF] footprint) has no ground. On the ground
  *   that means [Mode.FALLING]; airborne non-[Ability.FLY] characters also start falling. Horizontal motion stops
  *   while falling off a cliff. When `h < respawnBelowH` the mode becomes [Mode.RESPAWNING]; the next step puts
- *   the character [Mode.IDLE] at `level.spawn` with `h = 0`.
+ *   the character [Mode.IDLE] at `level.spawn` with `h = 0`. An obstacle never pushes anyone over a cliff: when the
+ *   push-out would, the character stops short of it and counts as blocked. One standing inside the obstacle (a rescan
+ *   can put a cup on it) walks on, so nothing traps it; one only overlapping it may move but not go deeper into it.
  * - [Mode.JUMPING]: vertical velocity integrates gravity (× [PhysicsParams.flyGravityScale] for [Ability.FLY]),
  *   horizontal motion continues toward the target, landing happens when the feet reach the ground height.
  *   A FLY character airborne over a cliff keeps flying; it only falls if it comes down over the cliff.
@@ -121,10 +123,7 @@ object Physics {
 
         // 2. Push the collision circle out of blocking objects (feet height before vertical integration).
         val moved = pos
-        pos = resolveCollisions(level, pos, s.h, s.radiusM, params)
-        // A character standing still overlaps only after a spawn, a resize or a rescan. Shoving it over a cliff for that
-        // would respawn it into the same overlap, forever, so it stays where it is until it walks.
-        if (target == null && !airborne && isOverCliff(level, pos) && !isOverCliff(level, moved)) pos = moved
+        pos = resolveCollisions(level, pos, s.pos, s.h, s.radiusM, params)
         // Blocked: the push-out took back more than half of the intended step. With d = intended, p = moved - pos
         // (what the push-out undid), the cancelled length along d is p·d / |d|; compare without a square root.
         val intended = moved - s.pos
@@ -133,7 +132,7 @@ object Physics {
 
         // 3. Arrival check after collisions so a blocked character never "arrives"; snap onto the target.
         if (target != null && (target - pos).length <= params.arriveEpsilonM) {
-            pos = resolveCollisions(level, target, s.h, s.radiusM, params)
+            pos = resolveCollisions(level, target, pos, s.h, s.radiusM, params)
             target = null
             if (!airborne) mode = Mode.IDLE
         }
@@ -272,7 +271,28 @@ object Physics {
     private fun canJump(state: CharacterState): Boolean =
         state.ability != Ability.ROLL && (state.mode == Mode.IDLE || state.mode == Mode.WALKING)
 
+    /**
+     * [start] pushed out of the objects. When that would cross a cliff: [from] if it was clear, [start] if [from] is
+     * inside an object, and otherwise, overlapping one, [start] only if that does not go deeper (a big character spawned
+     * beside a cup at the rim must not walk through the cup).
+     */
     private fun resolveCollisions(
+        level: Level,
+        start: Vec2,
+        from: Vec2,
+        feetH: Float,
+        radius: Float,
+        params: PhysicsParams,
+    ): Vec2 {
+        val pushed = pushOut(level, start, feetH, radius, params)
+        if (!isOverCliff(level, pushed) || isOverCliff(level, start)) return pushed
+        val overlap = (pushOut(level, from, feetH, radius, params) - from).length
+        if (overlap == 0f) return from
+        if (level.objects.any { blocks(it, feetH, params) && it.footprint.contains(from) }) return start
+        return if ((pushed - start).length <= overlap + H_EPS) start else from
+    }
+
+    private fun pushOut(
         level: Level,
         start: Vec2,
         feetH: Float,
