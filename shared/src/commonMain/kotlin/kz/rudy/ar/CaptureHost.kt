@@ -42,6 +42,12 @@ interface CaptureHost {
      */
     fun bundled(): List<BundledCharacter> = emptyList()
 
+    /** T26: characters made on this phone in earlier runs and kept on disk, newest first. Never throws. */
+    suspend fun savedCharacters(): List<BundledCharacter> = emptyList()
+
+    /** T26: keeps [result] on disk for later sessions; its card, or null when it could not be kept. Never throws. */
+    suspend fun saveCharacter(result: CharacterResult): BundledCharacter? = null
+
     /** The app session's metrics run so far (characters made on this phone), or null before the first one. */
     fun latestRun(): MetricsRun? = null
 

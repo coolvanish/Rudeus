@@ -1,0 +1,58 @@
+package kz.rudy.ar.core.bundle
+
+import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.io.CharacterFolder
+import kotlin.time.Clock
+
+/** A character made on this phone and kept on disk. */
+class SavedCharacter(val id: String, val sheet: CharacterSheet, val sprite: ByteArray)
+
+/**
+ * Characters made on this phone, so a good one can be played again without a new photo and a new pipeline run. Ids
+ * are `saved-<epoch ms>`, strictly rising even if the clock stands still or goes back, and [load] returns newest first.
+ * An entry that cannot be read is skipped; a folder that is not a character is ignored. Past [maxKept] the oldest
+ * goes, which bounds what [load] brings into memory. One call at a time; both do file I/O, so call them off the main
+ * thread.
+ */
+class SavedCharacters(
+    private val folder: CharacterFolder,
+    private val maxKept: Int = MAX_KEPT,
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+) {
+    init { require(maxKept > 0) }
+
+    /** Throws when the folder cannot be written; nothing is evicted then. */
+    fun save(sprite: ByteArray, sheet: CharacterSheet): SavedCharacter {
+        val stamps = stamps()
+        val id = idOf(maxOf(clock(), (stamps.firstOrNull() ?: 0L) + 1))
+        folder.write(id, sprite, Bundle.encodeSheet(sheet))
+        stamps.drop(maxKept - 1).forEach { folder.delete(idOf(it)) }
+        return SavedCharacter(id, sheet, sprite)
+    }
+
+    fun load(): List<SavedCharacter> = stamps().mapNotNull { read(idOf(it)) }
+
+    private fun read(id: String): SavedCharacter? = try {
+        val sprite = folder.readSprite(id)?.takeIf { it.isNotEmpty() }
+        val sheet = folder.readSheet(id)
+        if (sprite == null || sheet == null) null else SavedCharacter(id, Bundle.decodeSheet(sheet), sprite)
+    } catch (e: Exception) {
+        null
+    }
+
+    /** The stamps of every character in the folder, newest first. */
+    private fun stamps(): List<Long> =
+        folder.ids().mapNotNull { if (it.startsWith(PREFIX)) it.removePrefix(PREFIX).toLongOrNull() else null }.sortedDescending()
+
+    private fun idOf(stamp: Long) = "$PREFIX$stamp"
+
+    companion object {
+        /** About 25 MB at most at the bundled sprite size. */
+        const val MAX_KEPT = 30
+
+        /** Same bound as the bundled sprites: a ~6 cm billboard on the table; the pipeline's full size is 2-5 MB. */
+        const val SPRITE_MAX_SIDE = 768
+
+        private const val PREFIX = "saved-"
+    }
+}

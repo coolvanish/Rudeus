@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSheet
@@ -88,7 +89,7 @@ private const val VOICE_BUBBLE_MS = 2000L
  * screen runs the fake stage loop so the shell still demos.
  *
  * Scan (T04): the Scan / Rescan button bumps `ArSlot.scanRequest`; the host grabs one camera frame, segments it on
- * IO, swaps the new `Level` into physics and answers once through `onScanned` (count, or null on failure) and
+ * IO, swaps the new `Level` into physics and answers once through `onScanned` ([ScanAnswer]) and
  * `onLevel`. The overlay's arc runs toward [SCAN_ARC_HOLD] over `SCAN_DEFAULT_MS` and holds until that answer, so it
  * animates for the real duration. Without a host the shell has no AR view to answer, so the scan ends after
  * `SCAN_DEFAULT_MS` with an honest 0.
@@ -159,6 +160,9 @@ fun App(
     val hostReducedMotion = LocalReducedMotion.current
     // T25: Bigger / Smaller. A choice, not a request, so it is kept across Back like the surface.
     var characterSize by remember { mutableStateOf(CharacterSize.DEFAULT) }
+    // T26: characters made on this phone (shown ahead of the bundled ones) and the result last sent to disk.
+    var saved by remember { mutableStateOf<List<BundledCharacter>>(emptyList()) }
+    var keptResult by remember { mutableStateOf<CharacterResult?>(null) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -182,10 +186,30 @@ fun App(
     LaunchedEffect(capture) {
         capture?.photos?.collect { startPipeline(it) }
     }
+    LaunchedEffect(capture) {
+        if (capture != null) saved = capture.savedCharacters()
+    }
+
+    /**
+     * T26: [result] joins the ready characters, so it can be played again without a new photo. Runs in App's scope, so
+     * leaving the screen does not lose it; the same result is kept once, and a failed save may be tried again by "Next".
+     */
+    fun keep(result: CharacterResult) {
+        val host = capture ?: return
+        if (keptResult === result) return
+        keptResult = result
+        scope.launch {
+            val card = host.saveCharacter(result)
+            if (card == null) keptResult = null
+            else saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) // the disk evicted the oldest too
+        }
+    }
 
     /** Processing -> Scanning with the character that was just made (sheet + sprite), or the demo one. */
     fun useResult() {
         val r = pendingResult
+        // A gate-passed result is already kept; one below the gate is kept only because the child chose to play it.
+        if (r != null) keep(r)
         sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
         spritePng = r?.sprite
         go(Screen.SCANNING)
@@ -295,31 +319,43 @@ fun App(
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
     }
-    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); null -> NO_PLANE
-    // (Skip appears after two). A late answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan
-    // overlay ends; an empty rescan says "Table is empty", a failed one "No table found", so the HUD stays honest.
-    val onScanned = rememberUpdatedState<(Int?) -> Unit> { objects ->
+    // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); Failed -> NO_PLANE
+    // (Skip appears after two); TooSteep -> TOO_STEEP (not a failure either: only the angle has to change). A late
+    // answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends; an empty rescan says
+    // "Table is empty", a failed one "No table found", a steep one how to hold the phone, so the HUD stays honest. A level
+    // that left out a too-steep object says so too: the character would otherwise walk through it unexplained.
+    val onScanned = rememberUpdatedState<(ScanAnswer) -> Unit> { answer ->
         when (screen) {
             Screen.SCANNING -> if (scan.status == ScanStatus.SCANNING) {
-                scan = if (objects == null) {
-                    scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
-                } else if (objects == 0) {
-                    scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
-                } else {
-                    scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = objects, failures = 0)
+                if (answer is ScanAnswer.Found && answer.missed) speech = HudSpeech.say(speech, StringId.scan_too_steep_hint.get(lang), nowMs())
+                scan = when (answer) {
+                    ScanAnswer.Failed -> scan.copy(status = ScanStatus.NO_PLANE, progress = 0f, objectsFound = 0, failures = scan.failures + 1)
+                    ScanAnswer.TooSteep -> scan.copy(status = ScanStatus.TOO_STEEP, progress = 0f, objectsFound = 0)
+                    is ScanAnswer.Found -> if (answer.objects == 0) {
+                        scan.copy(status = ScanStatus.EMPTY, progress = 0f, objectsFound = 0)
+                    } else {
+                        scan.copy(status = ScanStatus.DONE, progress = 1f, objectsFound = answer.objects, failures = 0)
+                    }
                 }
             }
             else -> {
-                if (hud.scanning && (objects == null || objects == 0)) {
-                    val floor = surface == Surface.FLOOR
-                    val id = when {
-                        objects == 0 -> if (floor) StringId.scan_empty_title_floor else StringId.scan_empty_title
+                val floor = surface == Surface.FLOOR
+                val id = when (answer) {
+                    ScanAnswer.TooSteep -> StringId.scan_too_steep_hint
+                    ScanAnswer.Failed -> when {
                         offline -> StringId.scan_offline_title
-                        else -> if (floor) StringId.scan_no_plane_title_floor else StringId.scan_no_plane_title
+                        floor -> StringId.scan_no_plane_title_floor
+                        else -> StringId.scan_no_plane_title
                     }
-                    speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                    is ScanAnswer.Found -> when {
+                        answer.missed -> StringId.scan_too_steep_hint
+                        answer.objects > 0 -> null
+                        floor -> StringId.scan_empty_title_floor
+                        else -> StringId.scan_empty_title
+                    }
                 }
-                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || objects != null)
+                if (hud.scanning && id != null) speech = HudSpeech.say(speech, id.get(lang), nowMs())
+                hud = hud.copy(scanning = false, scanProgress = 0f, scanned = hud.scanned || answer is ScanAnswer.Found)
             }
         }
     }
@@ -390,7 +426,7 @@ fun App(
 
                 when (screen) {
                     Screen.CAPTURE -> CaptureScreen(
-                        bundled = bundled,
+                        bundled = saved + bundled,
                         offline = offline,
                         onOpenSettings = { settingsOpen = true },
                         onTakePhoto = {
@@ -421,14 +457,18 @@ fun App(
                                 }
                                 processing = processing.copy(stage = null, completed = done, status = ProcessingStatus.DONE, sheet = DemoData.sheet)
                             } else {
-                                // Real pipeline (T03). Events arrive on the pipeline's thread; each one is a single
-                                // snapshot-state write, so no dispatch is needed. The result is taken from the Finished
-                                // event, so it is in place before the screen shows "Next". Leaving the screen cancels the run.
+                                // Real pipeline (T03). Events arrive on the pipeline's thread; they only write snapshot
+                                // state, so no dispatch is needed. The result is taken (and kept, T26) from the Finished
+                                // event before `processing` changes, so it is in place before the screen shows "Next".
+                                // Leaving the screen cancels the run.
                                 try {
                                     capture.makeCharacter(bytes) { event ->
                                         // After Retry a late event of the cancelled run must not fold into the fresh state.
                                         if (run != pipelineRun) return@makeCharacter
-                                        if (event is PipelineEvent.Finished) pendingResult = event.result
+                                        if (event is PipelineEvent.Finished) {
+                                            pendingResult = event.result
+                                            if (event.result.gatePassed) keep(event.result)
+                                        }
                                         processing = processing.reduce(event)
                                     }
                                 } catch (e: CancellationException) {

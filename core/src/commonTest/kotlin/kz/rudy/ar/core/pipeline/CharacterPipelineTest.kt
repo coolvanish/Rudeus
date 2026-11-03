@@ -88,6 +88,57 @@ class CharacterPipelineTest {
     }
 
     @Test
+    fun secondAttemptUsesTheBackupPrompt() = runTest {
+        val models = FakeModels(scores = listOf(0.5f, 0.6f, 0.65f))
+        CharacterPipeline(models, StyleGate(threshold = 0.7f), metrics(), maxRetries = 2).run("dog", image, refs, "")
+
+        assertEquals(3, models.stylizeCalls)
+        assertEquals(1, models.stylizeFallbackCalls, "attempt 2 only")
+    }
+
+    @Test
+    fun failedGateShipsTheBestAttemptNotTheLast() = runTest {
+        var n = 0
+        val models = object : MetaModels by FakeModels(scores = listOf(0.5f, 0.65f, 0.4f)) {
+            override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = stylize(ref, cutout, refs)
+            override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>) = byteArrayOf((++n).toByte())
+        }
+        val log = metrics()
+        val result = CharacterPipeline(models, StyleGate(threshold = 0.7f), log, maxRetries = 2).run("dog", image, refs, "")
+
+        assertContentEquals(byteArrayOf(2), result.sprite)
+        assertEquals(0.65f, result.gateScore, 1e-4f)
+        assertEquals(0.65f, log.toRun().characters.single().gateScore, 1e-4f)
+        assertFalse(result.gatePassed)
+    }
+
+    @Test
+    fun stylizeTimeoutUsesUpAnAttemptAndTheNextOneShips() = runTest {
+        var n = 0
+        val models = object : MetaModels by FakeModels(scores = listOf(0.8f)) {
+            override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = stylize(ref, cutout, refs)
+            override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
+                if (++n == 1) throw MetaError.Network("timeout")
+                return byteArrayOf(9)
+            }
+        }
+        val result = CharacterPipeline(models, StyleGate(), metrics(), maxRetries = 2).run("dog", image, refs, "")
+
+        assertEquals(2, result.attempts)
+        assertTrue(result.gatePassed)
+        assertContentEquals(byteArrayOf(9), result.sprite)
+    }
+
+    @Test
+    fun stylizeNetworkErrorOnEveryAttemptFailsTheCharacter() = runTest {
+        val models = FakeModels(stylizeError = MetaError.Network("offline"))
+        assertFailsWith<MetaError.Network> {
+            CharacterPipeline(models, StyleGate(), metrics(), maxRetries = 2).run("dog", image, refs, "")
+        }
+        assertEquals(3, models.stylizeCalls)
+    }
+
+    @Test
     fun pipelineScoresMattedSprite() = runTest {
         val models = FakeModels(scores = listOf(0.5f, 0.9f))
         val log = metrics()
@@ -416,6 +467,7 @@ class CharacterPipelineTest {
 
     /** [inner] except that [MetaModels.stylize] never returns: it suspends until the caller is cancelled. */
     private class StuckStylize(private val inner: FakeModels) : MetaModels by inner {
+        override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = stylize(ref, cutout, refs)
         override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
             inner.calls += "stylize:$ref"
             awaitCancellation()
@@ -464,6 +516,7 @@ class CharacterPipelineTest {
         // Cancelled in the retry's stylize: attempt 2 had started, so one retry; attempt 1 stays in the file.
         var stylizes = 0
         val retryStuck = object : MetaModels by FakeModels(scores = listOf(0.3f)) {
+            override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = stylize(ref, cutout, refs)
             override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
                 if (++stylizes == 2) awaitCancellation()
                 return byteArrayOf(0x50, 0x4E, 0x47)

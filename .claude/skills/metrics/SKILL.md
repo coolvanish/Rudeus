@@ -40,6 +40,10 @@ it only after a failed `gate`; earlier runs have no `rescore` at all). Each stag
 if either look does, so `totalMs` < the sum of stage `ms` within an attempt too. A colour-free pass on attempt 1
 counts as a first-try pass (`retries: 0`).
 
+Attempt 2 uses the backup prompt (`Prompts.STYLIZE_FALLBACK`, added 2026-11-03), so its stages are the old prompt's. A
+`stylize` stage with `ok: false` that is not on the last attempt is a network error (the 120 s Muse timeout) that used up
+that attempt, not a dead character. `gateScore` is the best attempt's score and the best sprite ships.
+
 `measured` (added Day 2, default `false`, still `schema: 1`; older runs parse as `false`): `true` = `costUsd` is the sum
 of what the provider's replies reported for that stage (`MetricsLog` is `MetaApi`'s `CostMeter`; prices in
 `core/meta/Pricing.kt`); `false` = the `CostTable` estimate (fixture runs, replies without `usage`) or a stage with no

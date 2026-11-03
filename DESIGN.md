@@ -148,9 +148,12 @@ the surface and the debug flag; the host reports surface ready, anchor placed, t
 ### Capture — `CaptureScreen`
 Paper. Top-left wordmark "Rudeus ⌄" opens the Settings sheet. Display title "Drawing or toy", hint "Put the drawing on
 the table and take a photo". Hero card (Cream, radius 28): example drawing with Paper viewfinder brackets, **Photo**
-(Sun, full width, camera glyph), ghost **From gallery**. Then the headline "Or pick a ready one" and a shelf of bundled
-character cards bleeding off the right edge. The card draws the character's own sprite PNG (shipped in the APK), else a
-host thumbnail, else a glyph. Without a host the demo pair is shown.
+(Sun, full width, camera glyph), ghost **From gallery**, and under them the caption "The photo goes to Meta AI…"
+(`capture_privacy_note`). Then the headline "Or pick a ready one" and a shelf of character cards bleeding off the right
+edge. The card draws the character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a
+host the demo pair is shown. Characters made from the child's photos come first, newest first: one joins the shelf when
+it passes the check, or when the child taps "Play anyway" (below the check, Retry adds nothing). The 30 newest stay on
+the phone across restarts.
 - *API offline*: Paper pill with a Leaf dot "No internet — ready characters" above the shelf; the bundled shelf is the
   primary path. Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call
   succeeds). A failed attempt lands on the Processing error sheet as today. Never show a spinner.
@@ -271,6 +274,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | capture_title | Сурет немесе ойыншық | Рисунок или игрушка | Drawing or toy |
 | capture_hint | Суретті үстелге қой да, фотоға түсір | Положи рисунок на стол и сфотографируй | Put the drawing on the table and take a photo |
 | capture_take_photo | Фото | Фото | Photo |
+| capture_privacy_note | Фото Meta AI-ға жіберіледі. Адамдарды түсірме | Фото уходит в Meta AI. Не снимай людей | The photo goes to Meta AI. No people, please |
 | capture_pick_gallery | Галереядан | Из галереи | From gallery |
 | capture_or_pick | Немесе дайынын таңда | Или выбери готового | Or pick a ready one |
 | capture_offline_note | Интернет жоқ — дайын кейіпкерлер | Нет интернета — готовые герои | No internet — ready characters |

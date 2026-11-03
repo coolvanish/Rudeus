@@ -21,6 +21,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 // HAND-REVIEW: T02 — the character is ONE Y-only billboard quad: SceneView `PlaneNode` (geometry, not the ARCore
 // Plane) + `materialLoader.createImageInstance(texture)`. SceneView 4.31.0's image_texture.filamat is UNLIT,
@@ -58,6 +59,14 @@ private const val JUMP_RISE_SY = 1.15f
 private const val JUMP_LAND_SX = 1.25f
 private const val JUMP_LAND_SY = 0.75f
 private const val JUMP_LAND_MS = 120L
+
+// HAND-REVIEW: Pixel 2026-11-03 — the table cut off the feet (screenshots 12:07 and 03:57; no bundled sprite has a
+// transparent margin below it). Depth occlusion compares the bottom of the quad with depth-from-motion of the table right
+// behind it, and a plane a centimetre low puts it under the table. So the quad is scaled about the camera, by this share of
+// the character's height (3.6 cm on the table): every pixel stays exactly where it was and only its depth shrinks. A cup
+// still hides a character behind it: the cup's near side is about 11 cm in front of it. PAUSED and the physics do not see
+// this, it is the node transform only. 0f turns it off.
+private const val FEET_DEPTH_BIAS = 0.6f
 
 /** |facing · right| below this keeps the previous flip, so walking straight at/away from the camera cannot flicker. */
 private const val FLIP_DEADBAND = 0.15f
@@ -134,6 +143,7 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
 
     /**
      * @param cameraLocal camera position in plane coords: `planeCoords(anchor, frame.camera.pose)`.
+     * @param cameraHeightM its height above the plane: `planeHeight(anchor, frame.camera.pose)`.
      * @param walkPhaseMs time spent walking, from [GameLoop.walkPhaseMs].
      * @param verticalVelocity feet velocity along h, m/s (`PhysicsBody.verticalVelocity`); only read while JUMPING.
      * @param sinceLandedMs host clock minus [GameLoop.landedAtMs]; drives the landing squash while < JUMP_LAND_MS.
@@ -143,16 +153,21 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         node: PlaneNode,
         state: CharacterState,
         cameraLocal: Vec2,
+        cameraHeightM: Float,
         walkPhaseMs: Long,
         verticalVelocity: Float = 0f,
         sinceLandedMs: Long = Long.MAX_VALUE,
         size: Float = 1f,
     ) {
-        node.position = localPosition(state.pos, state.h)
+        val toCam = cameraLocal - state.pos
+        val upToCam = cameraHeightM - state.h
+        // See FEET_DEPTH_BIAS. At most half way, for a camera right over the sprite.
+        val camDist = sqrt(toCam.lengthSquared + upToCam * upToCam)
+        val pull = if (camDist > 1e-3f) minOf(sprite.heightM * FEET_DEPTH_BIAS / camDist, 0.5f) else 0f
+        node.position = localPosition(state.pos + toCam * pull, state.h + upToCam * pull)
 
         // Y-only billboard. After a yaw of θ about Y the node's +Z (the quad's front) is (sin θ, 0, cos θ) in
         // plane coords; point it at the camera. Rotation is Euler degrees (SceneView Node.rotation).
-        val toCam = cameraLocal - state.pos
         val yawRad = atan2(toCam.u, toCam.v)
         node.rotation = Rotation(y = (yawRad * 180.0 / PI).toFloat())
 
@@ -183,6 +198,6 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         }
         // HAND-REVIEW: T25 — Bigger / Smaller is a node scale, not a new sprite: no Texture rebuild, and the origin at
         // the feet keeps them on the table at every size.
-        node.scale = Scale(x = flip * sx * size, y = sy * size, z = 1f)
+        node.scale = Scale(x = flip * sx * (1f - pull) * size, y = sy * (1f - pull) * size, z = 1f)
     }
 }

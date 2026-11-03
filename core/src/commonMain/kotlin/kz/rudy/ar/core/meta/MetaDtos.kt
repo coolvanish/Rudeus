@@ -424,6 +424,22 @@ object Prompts {
     const val STYLIZE = "The first image is a child's character: a photo of a toy or a child's own drawing. Either way, redraw the " +
         "whole character from scratch in exactly the style of the reference images that follow, as if the same " +
         "illustrator drew it; do not keep the original's strokes, scribbles or marker colours. Copy the references' " +
+        "thick, bold, waxy crayon outline (the same heavy line weight and colour everywhere, never thin or sketchy), " +
+        "their warm cheerful palette, their solid crayon colour fills with the same fine crayon texture, covering " +
+        "every part edge to edge, and their simple friendly shapes with few details. Keep the character's identity so " +
+        "the child recognises it: the same subject, silhouette, pose and features, and the same colour for each part. " +
+        "Do not add clothes, accessories, scenery or anything else the original does not have. If the original is " +
+        "uncoloured, a pencil sketch, or white or grey, choose cheerful natural colours and colour every part in; " +
+        "never leave a part white or unfilled. One character only, centred on a plain pure white background with " +
+        "wide margins, no border, no text, no shadow."
+
+    /**
+     * The backup for attempt 2 when [STYLIZE] fails: the prompt before 2026-11-03. It suits saturated drawings that the
+     * main one failed (a red and black ladybug, 0.79 against 0.57), while the main one is needed for uncoloured ones.
+     */
+    const val STYLIZE_FALLBACK = "The first image is a child's character: a photo of a toy or a child's own drawing. Either way, redraw the " +
+        "whole character from scratch in exactly the style of the reference images that follow, as if the same " +
+        "illustrator drew it; do not keep the original's strokes, scribbles or marker colours. Copy the references' " +
         "bold, even outline (the same line weight and colour everywhere), their soft light palette, their flat crayon " +
         "colour fills with the same fine crayon texture, and their simple friendly shapes with few details. Keep the " +
         "character's identity so the child recognises it: the same silhouette, pose and features, and the same colour " +

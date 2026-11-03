@@ -19,10 +19,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -57,8 +59,8 @@ import rudeus.shared.generated.resources.Res
 import rudeus.shared.generated.resources.capture_example
 
 /**
- * A character shipped in the APK (CLI-generated, DESIGN.md "Capture"). The card draws [spritePng] when present,
- * else the host's [thumbnail], else a glyph.
+ * A ready character: shipped in the APK (CLI-generated, DESIGN.md "Capture") or kept from an earlier photo (T26). The
+ * card draws [spritePng] when present, else the host's [thumbnail], else a glyph.
  */
 data class BundledCharacter(
     val id: String,
@@ -122,6 +124,13 @@ fun CaptureScreen(
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
+                    Text(
+                        t(StringId.capture_privacy_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = RudeusColors.InkSoft,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
                 Spacer(Modifier.height(22.dp))
                 if (offline) {
@@ -134,8 +143,12 @@ fun CaptureScreen(
             if (bundled.isEmpty()) {
                 EmptyCard(t(StringId.capture_empty), modifier = Modifier.padding(horizontal = RudeusSpacing.screenEdge))
             } else {
+                val row = rememberLazyListState()
+                // A keyed row holds its scroll on the old first card, so a card added in front would sit off-screen left.
+                LaunchedEffect(bundled.first().id) { row.scrollToItem(0) }
                 // Bleeds off the right edge so the row reads as "there is more".
                 LazyRow(
+                    state = row,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(horizontal = RudeusSpacing.screenEdge),
                 ) {

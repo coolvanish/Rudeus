@@ -71,14 +71,20 @@ class MetaApi(
         }
     }
 
-    override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray {
+    override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
+        stylize(ref, cutout, refs, Prompts.STYLIZE)
+
+    override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
+        stylize(ref, cutout, refs, Prompts.STYLIZE_FALLBACK)
+
+    private suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray {
         requireServed(Jobs.MUSE_STYLIZE, "stylize")
         val images = ArrayList<ImageInput>()
         images += ImageInput(dataUrl(sniffImageMime(cutout), Base64.encode(cutout)))
         refs.take(MAX_STYLE_REFS).forEach { images += ImageInput(dataUrl(sniffImageMime(it), Base64.encode(it))) }
         val req = StylizeRequest(
             model = config.museImageModel,
-            prompt = Prompts.STYLIZE,
+            prompt = prompt,
             images = images,
             reasoningStrength = config.museReasoningStrength,
         )

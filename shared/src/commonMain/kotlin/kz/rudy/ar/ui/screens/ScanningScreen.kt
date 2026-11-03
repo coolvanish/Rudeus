@@ -29,8 +29,8 @@ import kz.rudy.ar.ui.components.StatusBanner
 import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
-/** [NO_PLANE] = the scan failed (no table found); [EMPTY] = the table was found but nothing is on it. */
-enum class ScanStatus { IDLE, SCANNING, NO_PLANE, EMPTY, DONE, PAUSED }
+/** [NO_PLANE] = the scan failed (no table found); [EMPTY] = the table was found but nothing is on it; [TOO_STEEP] = the view was from too far above, another angle is the fix. */
+enum class ScanStatus { IDLE, SCANNING, NO_PLANE, EMPTY, TOO_STEEP, DONE, PAUSED }
 
 /** Plain state for the Scanning screen. [progress] is 0..1 over the real scan duration (3-5 s). */
 data class ScanState(
@@ -113,6 +113,12 @@ fun ScanningScreen(
                 action = { SecondaryButton(t(StringId.scan_play_anyway), onClick = onSkip, compact = true) },
             )
             StatusBanner(
+                visible = state.status == ScanStatus.TOO_STEEP,
+                title = t(StringId.scan_too_steep_title),
+                hint = t(StringId.scan_too_steep_hint),
+                kind = BannerKind.INFO,
+            )
+            StatusBanner(
                 visible = state.status == ScanStatus.DONE,
                 title = t(if (floor) StringId.scan_done_floor else StringId.scan_done),
                 // Honest: no count until the real scan (T04) finds objects.
@@ -137,7 +143,7 @@ fun ScanningScreen(
                 PrimaryButton(
                     text = t(StringId.scan_button),
                     glyph = Glyph.EYE,
-                    enabled = state.anchored && (state.status == ScanStatus.IDLE || state.status == ScanStatus.NO_PLANE || state.status == ScanStatus.EMPTY),
+                    enabled = state.anchored && (state.status == ScanStatus.IDLE || state.status == ScanStatus.NO_PLANE || state.status == ScanStatus.EMPTY || state.status == ScanStatus.TOO_STEEP),
                     onClick = onScan,
                     modifier = Modifier.weight(1f),
                 )

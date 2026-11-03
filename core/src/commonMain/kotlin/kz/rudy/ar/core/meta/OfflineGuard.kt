@@ -36,6 +36,9 @@ class OfflineGuard(private val delegate: MetaModels) : MetaModels {
     override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
         track { delegate.stylize(ref, cutout, refs) }
 
+    override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
+        track { delegate.stylizeFallback(ref, cutout, refs) }
+
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float =
         track { delegate.scoreStyle(ref, image, refs) }
 

@@ -16,6 +16,12 @@ interface MetaModels {
     /** Muse Image edit: restyle the [cutout] (PNG with alpha) to match the style [refs]. Returns PNG bytes. */
     suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray
 
+    /**
+     * [stylize] with the backup prompt, for the attempt after a failed one. Models without a second prompt (fixtures,
+     * fakes) replay [stylize]; decorators must forward it.
+     */
+    suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = stylize(ref, cutout, refs)
+
     /** Spark vision: how well [image] matches the style of [refs], in 0..1. */
     suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float
 

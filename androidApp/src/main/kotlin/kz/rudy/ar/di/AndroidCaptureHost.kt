@@ -21,6 +21,9 @@ import kz.rudy.ar.CaptureHost
 import kz.rudy.ar.VoiceHost
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.capture.PhotoIntake
+import kz.rudy.ar.core.bundle.SavedCharacter
+import kz.rudy.ar.core.bundle.SavedCharacters
+import kz.rudy.ar.core.io.FileCharacterFolder
 import kz.rudy.ar.core.io.FileMetricsSink
 import kotlinx.coroutines.flow.StateFlow
 import kz.rudy.ar.core.domain.CharacterSheet
@@ -63,6 +66,7 @@ private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
 private const val RUNS_DIR = "runs"
 private const val BUNDLED_DIR = "bundled"
+private const val SAVED_DIR = "characters"
 
 /** Where the exported run lands on API >= 29 (relative to the primary external volume), as the player sees it in Files. */
 private const val EXPORT_RELATIVE_DIR = "Download/Rudeus"
@@ -84,6 +88,11 @@ class AndroidCaptureHost(
     @Volatile private var scans = 0 // written on IO (recordScan), read on main (latestRun)
     private val recorder = VoiceRecorder()
     private val voiceCalls = java.util.concurrent.atomic.AtomicInteger(0)
+    // HAND-REVIEW: T26 — characters from the child's photos live in files/characters/<id>/ (app-private, no permission,
+    // survives an update; the manifest's allowBackup also puts it in Auto Backup). :core owns the format and the
+    // 30-character cap; this only moves files on IO, scales the sprite to the bundled 768 px and logs
+    // `saved_character=` / `saved_characters=`, never a name.
+    private val saved = SavedCharacters(FileCharacterFolder(File(app.filesDir, SAVED_DIR)))
 
     private val styleRefs: List<ByteArray> by lazy {
         loadStyleRefs(app.assets).also { Log.i(TAG, "style_refs=${it.size}") }
@@ -195,6 +204,30 @@ class AndroidCaptureHost(
     /** Process-level cache, preloaded by MainActivity.onCreate; the first call blocks only for what is left. */
     override fun bundled(): List<BundledCharacter> = BundledAssets.get(app)
 
+    /** Never throws (CaptureHost contract): a folder it cannot read only leaves the row with the bundled characters. */
+    override suspend fun savedCharacters(): List<BundledCharacter> = withContext(Dispatchers.IO) {
+        try {
+            val t0 = SystemClock.elapsedRealtime()
+            saved.load().filter { spriteDecodable(it.sprite) }.map { it.toCard() }
+                .also { Log.i(TAG, "saved_characters=${it.size} saved_ms=${SystemClock.elapsedRealtime() - t0}") }
+        } catch (e: Exception) {
+            Log.w(TAG, "saved characters unreadable: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /** Never throws (CaptureHost contract): a failed save costs the card, not the game in progress. */
+    override suspend fun saveCharacter(result: CharacterResult): BundledCharacter? = withContext(Dispatchers.IO) {
+        try {
+            val sprite = AndroidImages.downscale(result.sprite, SavedCharacters.SPRITE_MAX_SIDE)
+            saved.save(sprite, result.sheet).toCard()
+                .also { Log.i(TAG, "saved_character=${it.id} sprite_bytes=${sprite.size} passed=${result.gatePassed}") }
+        } catch (e: Exception) {
+            Log.w(TAG, "save character failed: ${e.message}")
+            null
+        }
+    }
+
     /** The run so far once a character was started or a scan recorded this session, else null. */
     override fun latestRun(): MetricsRun? = if (characters > 0 || scans > 0) metrics.toRun() else null
 
@@ -291,6 +324,15 @@ class AndroidCaptureHost(
     }
 }
 
+private fun SavedCharacter.toCard() = BundledCharacter(id = id, sheet = sheet, thumbnail = null, spritePng = sprite)
+
+/** A sprite BitmapFactory cannot size is skipped when listing, not discovered as a decode failure on the table. */
+private fun spriteDecodable(sprite: ByteArray): Boolean {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(sprite, 0, sprite.size, bounds)
+    return bounds.outWidth > 0 && bounds.outHeight > 0
+}
+
 /** Every png/jpg under assets/style-refs, best first: cull.json `kept` order, then the rest by name (as the CLI). */
 private fun loadStyleRefs(assets: AssetManager): List<ByteArray> {
     val names = assets.list(STYLE_REFS_DIR).orEmpty().filter {
@@ -351,10 +393,7 @@ private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
             val spritePath = o.optString("sprite", "$ref/sprite.png")
             val sheetPath = o.optString("sheet", "$ref/sheet.json")
             val sprite = assets.open("$BUNDLED_DIR/$spritePath").use { it.readBytes() }
-            // A sprite BitmapFactory cannot size is skipped here, not discovered as a decode failure on the table.
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(sprite, 0, sprite.size, bounds)
-            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "sprite undecodable: $spritePath" }
+            check(spriteDecodable(sprite)) { "sprite undecodable: $spritePath" }
             val sheet = SheetParser.parse(assets.open("$BUNDLED_DIR/$sheetPath").bufferedReader().use { it.readText() })
             Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite))
         } catch (e: Exception) {
@@ -370,6 +409,8 @@ private class DeferredModels(make: () -> MetaModels) : MetaModels {
     private val delegate: MetaModels by lazy(make)
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult = delegate.segment(ref, image, prompts)
     override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = delegate.stylize(ref, cutout, refs)
+    // HAND-REVIEW: forwards the backup prompt to MetaApi; without this line attempt 2 repeats the main prompt on the phone.
+    override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray = delegate.stylizeFallback(ref, cutout, refs)
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreStyle(ref, image, refs)
     override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreTechnique(ref, image, refs)
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet = delegate.characterSheet(ref, description, image)

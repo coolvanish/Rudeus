@@ -48,6 +48,11 @@ Put `META_API_KEY=...` in `local.properties` (gitignored). Gradle injects it int
 the CLI reads the `META_API_KEY` environment variable. The pre-commit hook and manually triggered CI scan for
 key-shaped assignments; CI does not run automatically on push or pull requests.
 
+## Photos and privacy
+No backend: photos go directly from the phone to the Meta APIs. Spark runs on the contributor tier, where Meta may train
+on the prompts, including the character image. The Capture screen says that the photo goes to Meta AI and asks not to
+photograph people.
+
 ## Offline behavior
 The CLI's fixture mode (`character --fixtures docs/api-samples ...`, without `--live`) uses redacted API responses
 and needs no key. The Android app does not switch to fixtures: without a key, generation and scanning fail;
