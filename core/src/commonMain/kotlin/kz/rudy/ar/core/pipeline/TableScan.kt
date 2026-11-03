@@ -34,12 +34,19 @@ object TableScan {
      * so a cup that moved away keeps no ghost behind it. DYNAMIC objects (a hand) are never carried: they are re-placed
      * every scan. A hand low in the frame or a speck of noise is not a reason to tell the player to move the phone.
      *
-     * Neither do masks the frame cuts off reach it: half a silhouette gives wrong geometry, and on the Pixel a finger over
-     * the lens came back as a "laptop" and a "remote", walls nobody can see. They are treated like a too-steep mask for
-     * what they cover, but are no reason to speak to the player. A hand stays, since one always comes in from the edge.
+     * A mask the frame cuts off is half a silhouette, and on the Pixel a finger over the lens came back as a "laptop" and a
+     * "remote", walls nobody can see. So it stays out too: it keeps the previous object it covers, like a too-steep mask,
+     * and is no reason to speak to the player. Two exceptions. A hand always comes in from the edge. And a compact object
+     * nothing is known about yet is built anyway: 2 of 11 real scans had a real cup or rabbit at the edge, its capped
+     * footprint was within 2.5 cm of the whole one (the cup narrow), and that beats a character walking through it.
      */
     fun build(input: ScanInput, failedPrompts: List<String>, previous: Level?, profile: SurfaceProfile): Result {
-        val (cut, whole) = input.masks.partition { isCutByFrame(it, profile) }
+        fun LabeledMask.standsFor(o: LevelObject) =
+            (label == o.label || label.lowercase() in ScanMasks.GENERIC_LABELS) && covers(mask, o, input)
+        val known = previous?.objects.orEmpty().filter { it.kind != ObjectKind.DYNAMIC }
+        val (cut, whole) = input.masks.partition { m ->
+            isCutByFrame(m, profile) && (!Semantics.isCompact(m.label) || known.any { m.standsFor(it) })
+        }
         val view = ScanAngle.split(input.copy(masks = whole))
         val builder = SceneBuilder()
         val steepLabels = view.tooSteep.map { it.label }
@@ -51,9 +58,7 @@ object TableScan {
         if (built.objects.isEmpty() && steepObjects.isNotEmpty()) return Result(null, emptyList(), steepLabels, steepObjects.size, cutLabels)
 
         val taken = built.objects.mapTo(HashSet()) { it.id }
-        val candidates = previous?.objects.orEmpty().filter { it.kind != ObjectKind.DYNAMIC && it.id !in taken }
-        fun LabeledMask.standsFor(o: LevelObject) =
-            (label == o.label || label.lowercase() in ScanMasks.GENERIC_LABELS) && covers(mask, o, input)
+        val candidates = known.filter { it.id !in taken }
         val carried = candidates.filter { o -> o.label in failedPrompts || (steepObjects + cut).any { it.standsFor(o) } }
         val missed = steepObjects.count { m -> candidates.none { m.standsFor(it) } }
         val level = if (carried.isEmpty()) built else built.copy(objects = built.objects + carried)

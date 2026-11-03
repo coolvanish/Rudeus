@@ -34,8 +34,8 @@ object SurfaceBoundary {
     private const val MIN_GROWTH_M2 = 1e-6f
 
     /**
-     * How far below the plane the Depth API must see a surface for it not to be the table, metres on the table (scaled
-     * by [SurfaceProfile.scale]). On the Pixel a tap past the end of the table read -29 cm, 22 others -7.5 to +13 cm.
+     * How far below the table the Depth API must see a surface for it not to be the table, metres on the table (scaled
+     * by [SurfaceProfile.scale]). On the Pixel taps past the end of the table read 17 to 42 cm down, those on it far less.
      */
     const val EDGE_DROP_M = 0.15f
 
@@ -49,11 +49,17 @@ object SurfaceBoundary {
     }
 
     /**
-     * True when a depth reading on the way to a tap, as height above the plane (null = none there), shows no table:
-     * ARCore's polygon runs past the real edge and across a gap to another surface at the same height.
+     * True when depth readings on the way to a tap, from the character's end and as heights above the plane (null = none
+     * there), show no table: ARCore's polygon runs past the real edge and across a gap to another surface at the same
+     * height. The drop is measured from the first reading, the table under the character, not from the plane: after an
+     * anchor jump on the Pixel the plane sat 13 cm above the table for minutes, and a fixed limit refused a tap on the table.
+     * With one reading there is nothing to start from, so it is measured from the plane.
      */
-    fun crossesEdge(depthGapsM: List<Float?>, profile: SurfaceProfile): Boolean =
-        depthGapsM.any { it != null && it < -EDGE_DROP_M * profile.scale }
+    fun crossesEdge(depthGapsM: List<Float?>, profile: SurfaceProfile): Boolean {
+        val readings = depthGapsM.filterNotNull()
+        val table = if (readings.size > 1) minOf(readings.first(), 0f) else 0f
+        return readings.any { it < table - EDGE_DROP_M * profile.scale }
+    }
 
     /**
      * The level to swap in when a scan returns: [scanned]'s polygon joined with [current]'s boundary, the spawn and the

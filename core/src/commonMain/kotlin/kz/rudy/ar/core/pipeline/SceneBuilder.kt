@@ -230,7 +230,7 @@ data class SceneParams(
  * the ray's ground track (for a vertical object that boundary is directly below the top edge). Using the centroid
  * instead would bias the height by `r · tan(elevation)` (4 cm for the test cup), so the far boundary is used and
  * the centroid is the fallback when the ground track misses the footprint. Clamped to `[minHeightM, maxHeightM]`.
- * Measured: cup 1.4 cm high (inherits the footprint's far-edge error), book 0.6 cm.
+ * Measured on synthetic masks: cup 1.4 cm high (inherits the footprint's far-edge error), book 0.6 cm. Real masks: `RealScanTest`.
  *
  * ### Ids
  * An object re-uses the id of the nearest previous object with the same label within [SceneParams.rematchMaxDistM]
