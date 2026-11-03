@@ -39,10 +39,12 @@ toWorld(anchor, (u, v), h)     = anchor.pose ∘ translation(u, h, v)
 1. Player presses **Scan** (never per-frame). A camera looking steeper than 75° (`ScanAngle`) is told to change angle
    before anything is paid for. Otherwise the app grabs one camera image and stores the camera pose, intrinsics, the
    anchor pose and the plane polygon as `ScanInput`.
-2. `MetaModels.segment` returns one mask per prompt (cup, book, phone, bottle, hand, object). `TableScan` leaves out masks
-   seen steeper than 75° (their geometry is wrong however good the mask is) and carries the previous objects they cover.
-3. `SceneBuilder`: mask → largest component → contour → near rim → ray–plane → footprint polygon; height from the ray to
-   the silhouette's highest pixel; `Semantics.kindFor(label, h)`; ids matched to the previous level by centroid.
+2. `MetaModels.segment` returns one mask per prompt (`ScanPrompts`). `TableScan` leaves out masks seen steeper than 75°
+   (their geometry is wrong however good the mask is) and masks the frame cuts off (a finger over the lens reads as a
+   laptop), and carries the previous objects they cover. A hand and a compact object nothing is known about yet stay in.
+3. `SceneBuilder`: mask → largest component → contour → near rim → ray–plane → footprint polygon, a compact label no
+   deeper than wide; height from the ray to the silhouette's highest pixel; `Semantics.kindFor(label, h)`; ids matched
+   to the previous level by centroid.
 4. `SurfaceBoundary` keeps the level boundary as the surface known so far: the convex hull of the plane polygon at each
    scan, the spawn, accepted taps and the character. ARCore's polygon alone can end mid-table, so the hull never shrinks;
    it can also run past the table, so the live polygon does not feed it and a depth drop on the way refuses a tap.
