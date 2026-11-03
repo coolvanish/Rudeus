@@ -129,6 +129,7 @@ Easings: `Standard = cubic-bezier(0.2, 0, 0, 1)`, `Emphasised = cubic-bezier(0.0
 | **Button press** | Scale 1.0 → 0.96 in 90 ms Standard on press, back in 150 ms with `Pop`. Container Sun → SunDeep (secondary and ghost → CreamDeep). |
 | **Banner enter/exit** | Slide from the nearest edge 24 dp + fade, 200 ms Emphasised; exit 150 ms Standard. |
 | **Pipeline stage change** | Stage row ticks: check glyph scales 0 → 1 with `Pop`; progress bar animates to the new fraction in 300 ms Standard. Gate score counts up 0 → score over 600 ms. |
+| **Intro** (T27, 8 s, every cold start; tap, Skip or Back ends it) | One clock drives everything. 0–1 s the robe badge on Sun (same size and place as the system splash), a blink, the wordmark pops. 1–1.45 s a Paper circle opens from the centre. Then four captions: a crayon traces and scribbles the hero on a sheet; the sheet drops away and the hero is a sticker with open eyes, two hops; the table slides up, Sun brackets and a sweep line scan it, footprints appear in their kind colours; Sun tap rings send the hero onto the book, off the cup and to the hazard edge. Ends with a 250 ms fade to Capture. Reduced motion: five still poses, 1500 ms each, 150 ms fades. |
 | **Fall / respawn** | Handled by `:androidApp`: quad drops 0.3 m with gravity, fades 150 ms; respawns at `Level.spawn` with the pop spring. HUD shows the "Oops! Fell" bubble. |
 
 **Reduced motion** (`LocalReducedMotion = true`: the Settings toggle OR the system's animator duration scale at 0, which the host provides above `App`): no infinite
@@ -144,6 +145,11 @@ screen is Scanning or Play (and while Metrics is opened from Play: Metrics is dr
 Scanning -> Play keeps the same ARCore session and its single anchor. Leaving to Capture (or opening Metrics from
 Capture) ends the session; the next Scanning starts again from "Look at the table". The `ArSlot` carries the sprite,
 the surface and the debug flag; the host reports surface ready, anchor placed, tracking and character events back.
+
+### Intro — `IntroScreen`
+The launcher icon and the system splash share it: a grey hooded robe on Sun (`docs/brand/rudeus-icon.svg`, `RobeMark`).
+The robe is brand, never a character in the game (principle: the child's drawing is the only character); inside the
+story the hero is a drawn star. Drawn over Capture, so nothing waits behind it; no sound. Motion row above.
 
 ### Capture — `CaptureScreen`
 Paper. Top-left wordmark "Rudeus ⌄" (the arrow in Sky) opens the Settings sheet. Display title "Drawing or toy", hint "Put the drawing on
@@ -271,6 +277,9 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | lang_kk | ҚАЗ | ҚАЗ | KK |
 | lang_ru | РУС | РУС | RU |
 | lang_en | ENG | ENG | EN |
+| intro_draw | Кейіпкеріңді сал | Нарисуй героя | Draw a hero |
+| intro_alive | Ол жанданады | Он оживёт | It comes alive |
+| intro_table | Үстелің — деңгей | Стол — твой уровень | Your table is the level |
 | capture_title | Сурет немесе ойыншық | Рисунок или игрушка | Drawing or toy |
 | capture_hint | Суретті үстелге қой да, фотоға түсір | Положи рисунок на стол и сфотографируй | Put the drawing on the table and take a photo |
 | capture_take_photo | Фото | Фото | Photo |
