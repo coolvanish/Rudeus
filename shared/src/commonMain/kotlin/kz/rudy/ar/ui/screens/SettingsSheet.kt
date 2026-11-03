@@ -46,6 +46,7 @@ private const val ABOUT_VERSION = "Rudeus 1.0"
 fun SettingsSheet(
     visible: Boolean,
     lang: Lang,
+    langs: List<Lang>,
     onLangChange: (Lang) -> Unit,
     sounds: Boolean,
     onSoundsChange: (Boolean) -> Unit,
@@ -57,7 +58,7 @@ fun SettingsSheet(
 ) {
     BottomSheet(visible = visible, onDismiss = onDismiss, modifier = modifier) {
         Text(t(StringId.settings_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
-        LanguageRow(lang, onLangChange)
+        LanguageRow(lang, langs, onLangChange)
         Column {
             SwitchRow(Glyph.SOUND, t(StringId.settings_sounds), null, sounds, onSoundsChange)
             Divider()
@@ -79,12 +80,12 @@ fun SettingsSheet(
 }
 
 @Composable
-private fun LanguageRow(lang: Lang, onLangChange: (Lang) -> Unit) {
+private fun LanguageRow(lang: Lang, langs: List<Lang>, onLangChange: (Lang) -> Unit) {
     Column {
         SettingRow(Glyph.GLOBE, t(StringId.settings_language), null, Modifier.heightIn(min = 48.dp))
         Spacer(Modifier.height(6.dp))
         SegmentedControl(
-            options = Lang.entries,
+            options = langs,
             selected = lang,
             onSelect = onLangChange,
             // Each language is named in its own script whatever the current one is: ҚАЗ · РУС · ENG.

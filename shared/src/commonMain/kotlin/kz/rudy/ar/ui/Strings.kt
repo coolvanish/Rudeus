@@ -5,8 +5,19 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.ObjectKind
 
-/** Kazakh first, then Russian; English only for the demo video. */
-enum class Lang(val code: String) { KK("kk"), RU("ru"), EN("en") }
+/** The languages the app speaks. Which one it opens in comes from the phone, see [preferred]. */
+enum class Lang(val code: String) {
+    KK("kk"), RU("ru"), EN("en");
+
+    companion object {
+        /**
+         * Every language, best first: those in [systemLanguages] (ISO codes, the system's list from the top), then
+         * English, then the rest. The first is what the app opens in, so a phone with none of ours gets English.
+         */
+        fun preferred(systemLanguages: List<String>): List<Lang> =
+            (systemLanguages.mapNotNull { code -> entries.find { it.code == code } } + EN + entries).distinct()
+    }
+}
 
 val LocalLang = staticCompositionLocalOf { Lang.KK }
 

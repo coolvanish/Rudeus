@@ -17,8 +17,9 @@ of the AR view. Code tokens live in `shared/src/commonMain/kotlin/kz/rudy/ar/ui/
    Children tap with the whole fingertip; the phone is often held at arm's length over a table.
 4. **Icons + 1–3 word labels.** Never an icon alone, never a sentence on a button. Glyphs are drawn with Canvas
    (no icon dependency), labels come from the copy table.
-5. **Kazakh first, then Russian; English only for the demo video.** `LocalLang` defaults to `KK`. The language
-   switch is in the Settings sheet (opened from Capture only); it never appears during play.
+5. **The phone's language first.** The app opens in the highest language in the system list that it speaks (`kk`,
+   `ru`, `en`), or English if there is none; the language switch lists them in that same order. The switch is in the
+   Settings sheet (opened from Capture only); it never appears during play.
 6. **Bright & clean.** Warm white paper, one Sun action, quiet chrome. No cartoon mascots in the chrome, no
    confetti, no rainbow gradients. The child's own drawing is the only character.
 7. **Readable in daylight on a table.** We shoot in daylight near a window. Every text sits on paper or on an

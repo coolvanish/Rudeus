@@ -18,6 +18,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLocaleList
+import androidx.compose.ui.text.intl.LocaleList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -129,7 +131,10 @@ fun App(
 ) {
     var screen by remember { mutableStateOf(Screen.CAPTURE) }
     var introDone by remember { mutableStateOf(false) }
-    var lang by remember { mutableStateOf(Lang.KK) }
+    // The system's language order. LocalLocaleList only says when it changed (the Activity handles locale itself):
+    // it comes from Configuration, which Android may reorder towards what the APK has translated.
+    val langs = remember(LocalLocaleList.current) { Lang.preferred(LocaleList.current.map { it.language }) }
+    var lang by remember(langs) { mutableStateOf(langs.first()) }
     var sheet by remember { mutableStateOf(DemoData.sheet) }
     var processing by remember { mutableStateOf(ProcessingState()) }
     var scan by remember { mutableStateOf(ScanState()) }
@@ -603,6 +608,7 @@ fun App(
                 SettingsSheet(
                     visible = settingsOpen,
                     lang = lang,
+                    langs = langs,
                     onLangChange = { lang = it },
                     sounds = soundsOn,
                     onSoundsChange = { soundsOn = it },
