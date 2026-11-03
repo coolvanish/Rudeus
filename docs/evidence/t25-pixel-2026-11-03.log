@@ -1,0 +1,390 @@
+--------- beginning of main
+11-03 04:16:26.388 I/RudeusGate(29485): bundled=16 bundled_ms=90
+11-03 04:16:34.796 I/RudeusGate(29485): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:16:34.799 I/RudeusGate(29485): occlusion=depth depth_supported=true
+11-03 04:16:34.886 I/RudeusGate(29485): session_resumed
+11-03 04:16:37.858 I/RudeusGate(29485): plane_detected_ms=2972
+11-03 04:16:41.577 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:16:49.762 I/RudeusGate(29485): anchor t_ms=0 pos=(0.3803,-0.3781,-2.0946)
+11-03 04:16:49.762 I/RudeusGate(29485): anchor_plane_age_ms=11897 surface=TABLE
+11-03 04:16:51.959 I/RudeusGate(29485): tap u=-0.0193 v=0.9373 world=(0.1976,-0.4971,-1.2338) anchorTracking=TRACKING t_ms=2201
+11-03 04:16:51.959 I/RudeusGate(29485): tap_depth_gap=0.03647563 feet_h=0.0
+11-03 04:17:00.909 I/RudeusGate(29485): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:17:00.909 I/RudeusGate(29485): occlusion=depth depth_supported=true
+11-03 04:17:00.958 I/RudeusGate(29485): session_resumed
+11-03 04:17:05.450 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:10.212 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:13.013 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:20.344 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:22.607 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+--------- beginning of main
+11-03 04:17:00.909 I/RudeusGate(29485): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:17:00.909 I/RudeusGate(29485): occlusion=depth depth_supported=true
+11-03 04:17:00.958 I/RudeusGate(29485): session_resumed
+11-03 04:17:05.450 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:10.212 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:13.013 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:20.344 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:22.607 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:26.814 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:39.494 I/RudeusGate(29485): plane_detected_ms=38536
+11-03 04:17:40.432 I/RudeusGate(29485): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:17:52.375 I/RudeusGate(29485): anchor t_ms=0 pos=(-0.2208,-0.4454,-1.7870)
+11-03 04:17:52.375 I/RudeusGate(29485): anchor_plane_age_ms=12881 surface=TABLE
+11-03 04:18:02.391 I/RudeusGate(29485): anchor t_ms=10016 pos=(-0.2297,-0.4565,-1.6241)
+11-03 04:18:03.564 I/RudeusGate(29485): scan_replay ref=scan-01 cam=0.09259,-0.03731,0.20472,0.080148,0.044967,0.714552,-0.693520 anchor=-0.22967,-0.45646,-1.62379,-0.002859,0.082687,0.002985,0.996566 intr=938.54724,937.1438,637.3199,356.5582,1280,720
+11-03 04:18:03.719 I/RudeusGate(29485): scan_replay_mask ref=scan-01 label=plate pts=471.5,377.5;489.5,380.5;501.5,390.5;500.5,412.5;490.5,421.5;469.5,424.5;456.5,416.5;452.5,410.5;454.5,388.5
+11-03 04:18:03.736 I/RudeusGate(29485): scan_replay_mask ref=scan-01 label=plate pts=415.5,389.5;438.5,400.5;440.5,410.5;437.5,425.5;420.5,435.5;410.5,435.5;401.5,431.5;392.5,419.5;392.5,406.5;402.5,393.5
+11-03 04:18:04.060 I/RudeusGate(29485): scan_ms=6348 segment_ms=5438 objects=1 masks=2 prompts=11 failed=0 carried=0 jpeg=1280x720 bytes=137214 boundary=13 ref=scan-01
+11-03 04:18:04.061 I/RudeusGate(29485): scan_object id=plate-1 kind=OBSTACLE c=(1.766,-22.895) h=0.300 n=4
+11-03 04:18:12.398 I/RudeusGate(29485): anchor t_ms=20022 pos=(-0.2293,-0.4561,-1.6218)
+11-03 04:18:13.374 I/RudeusGate(29485): boundary_grown n=16 u=-0.09702104 v=-0.837392
+11-03 04:18:13.374 I/RudeusGate(29485): tap u=-0.0970 v=-0.8374 world=(-0.4630,-0.4560,-2.4316) anchorTracking=TRACKING t_ms=20999
+11-03 04:18:13.374 I/RudeusGate(29485): tap_depth_gap=0.13225925 feet_h=0.0
+11-03 04:18:14.252 I/RudeusGate(29485): boundary_grown n=17 u=-0.08647775 v=-0.6368736
+11-03 04:18:14.252 I/RudeusGate(29485): tap u=-0.0865 v=-0.6369 world=(-0.4195,-0.4559,-2.2352) anchorTracking=TRACKING t_ms=21877
+11-03 04:18:14.252 I/RudeusGate(29485): tap_depth_gap=0.13007641 feet_h=0.0
+11-03 04:18:17.291 I/RudeusGate(29485): jump ability=FLY u=-0.02565631 v=-0.19375107
+11-03 04:18:22.410 I/RudeusGate(29485): anchor t_ms=30035 pos=(-0.2421,-0.4650,-1.5968)
+11-03 04:18:23.125 I/RudeusGate(29485): jump ability=FLY u=-0.08030041 v=-0.59186745
+11-03 04:18:27.378 I/RudeusGate(29485): jump ability=FLY u=-0.08647775 v=-0.6368736
+11-03 04:18:28.304 I/RudeusGate(29485): boundary_grown n=17 u=-0.038149312 v=0.085579515
+11-03 04:18:28.304 I/RudeusGate(29485): tap u=-0.0381 v=0.0856 world=(-0.2658,-0.4649,-1.5059) anchorTracking=TRACKING t_ms=35929
+11-03 04:18:28.304 I/RudeusGate(29485): tap_depth_gap=0.111991644 feet_h=0.2661063
+11-03 04:18:29.583 I/RudeusGate(29485): scenario_start id=day5 steps=5 surface=TABLE sim_ms=37077
+11-03 04:18:29.589 I/RudeusGate(29485): scenario_step idx=0 at_ms=0
+11-03 04:18:31.569 I/RudeusGate(29485): boundary_grown n=19 u=-0.54526925 v=-0.9506142
+11-03 04:18:31.570 I/RudeusGate(29485): tap u=-0.5453 v=-0.9506 world=(-0.9262,-0.4542,-2.3938) anchorTracking=TRACKING t_ms=39195
+11-03 04:18:31.570 I/RudeusGate(29485): tap_depth_gap=0.124379635 feet_h=0.0
+11-03 04:18:32.422 I/RudeusGate(29485): anchor t_ms=40047 pos=(-0.2320,-0.4523,-1.5354)
+11-03 04:18:33.597 I/RudeusGate(29485): scenario_step idx=1 at_ms=4000
+11-03 04:18:34.006 I/RudeusGate(29485): boundary_grown n=17 u=0.49175027 v=0.024328232
+11-03 04:18:34.007 I/RudeusGate(29485): tap u=0.4918 v=0.0243 world=(0.2575,-0.4518,-1.5893) anchorTracking=TRACKING t_ms=41632
+11-03 04:18:34.007 I/RudeusGate(29485): tap_depth_gap=0.0016923547 feet_h=0.0
+11-03 04:18:35.483 I/RudeusGate(29485): jump ability=FLY u=0.11094948 v=-0.048358876
+11-03 04:18:38.583 I/RudeusGate(29485): scenario_step idx=2 at_ms=9000
+11-03 04:18:38.977 I/RudeusGate(29485): boundary_grown n=18 u=0.6199276 v=-0.10455859
+11-03 04:18:38.978 I/RudeusGate(29485): tap u=0.6199 v=-0.1046 world=(0.3640,-0.4483,-1.7712) anchorTracking=TRACKING t_ms=46603
+11-03 04:18:38.979 I/RudeusGate(29485): tap_depth_gap=0.07356268 feet_h=0.0
+11-03 04:18:39.980 I/RudeusGate(29485): scenario_step idx=3 at_ms=10400
+11-03 04:18:40.979 I/RudeusGate(29485): jump_ignored mode=JUMPING ability=FLY scenario=true
+11-03 04:18:40.980 I/RudeusGate(29485): scenario_step idx=4 at_ms=11400
+11-03 04:18:42.431 I/RudeusGate(29485): anchor t_ms=50055 pos=(-0.2300,-0.4483,-1.5653)
+11-03 04:18:42.465 I/RudeusGate(29485): boundary_grown n=18 u=0.30349928 v=-0.45158517
+11-03 04:18:42.466 I/RudeusGate(29485): tap u=0.3035 v=-0.4516 world=(-0.0056,-0.4483,-2.0610) anchorTracking=TRACKING t_ms=50091
+11-03 04:18:42.466 I/RudeusGate(29485): tap_depth_gap=0.05365956 feet_h=0.0
+11-03 04:18:44.017 I/RudeusGate(29485): boundary_grown n=20 u=0.6173725 v=-1.5235821
+11-03 04:18:44.018 I/RudeusGate(29485): tap u=0.6174 v=-1.5236 world=(0.1261,-0.4483,-3.1703) anchorTracking=TRACKING t_ms=51643
+11-03 04:18:44.018 I/RudeusGate(29485): tap_depth_gap=null feet_h=0.0
+11-03 04:18:44.578 I/RudeusGate(29485): scenario_done ms=15005
+11-03 04:18:45.997 I/RudeusGate(29485): jump ability=FLY u=0.5710355 v=-0.2610419
+11-03 04:18:54.223 I/RudeusGate(29485): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:18:54.223 I/RudeusGate(29485): occlusion=depth depth_supported=true
+11-03 04:18:54.282 I/RudeusGate(29485): session_resumed
+11-03 04:18:55.891 I/RudeusGate(29485): plane_detected_ms=1609
+11-03 04:19:01.849 I/RudeusGate(29485): anchor_rejected plane_age_ms=5958 need_ms=10000
+11-03 04:19:06.370 I/RudeusGate(29485): anchor t_ms=0 pos=(-0.0391,-0.5027,-0.7004)
+11-03 04:19:06.370 I/RudeusGate(29485): anchor_plane_age_ms=10479 surface=TABLE
+11-03 04:19:11.719 I/RudeusGate(29485): scan_replay ref=scan-01 cam=0.47919,-0.17587,-0.46294,0.467490,-0.230855,0.509261,-0.684699 anchor=-0.03909,-0.50265,-0.70040,0.000000,0.536565,0.000000,0.843859 intr=938.54724,937.1438,637.3199,356.5582,1280,720
+11-03 04:19:11.765 I/RudeusGate(29485): scan_replay_mask ref=scan-01 label=cup pts=542.5,79.5;617.5,93.5;646.5,105.5;651.5,116.5;652.5,141.5;645.5,169.5;636.5,182.5;618.5,186.5;540.5,181.5;530.5,175.5;526.5,161.5;526.5,126.5;534.5,89.5
+11-03 04:19:11.789 I/RudeusGate(29485): scan_replay_mask ref=scan-01 label=laptop pts=1279.5,545.5;1279.5,719.5;987.5,719.5;1017.5,698.5
+11-03 04:19:11.809 I/RudeusGate(29485): scan_replay_mask ref=scan-01 label=remote pts=868.5,609.5;929.5,633.5;917.5,652.5;862.5,716.5;856.5,719.5;783.5,719.5
+11-03 04:19:12.145 I/RudeusGate(29485): scan_ms=4590 segment_ms=3965 objects=3 masks=3 prompts=11 failed=0 carried=0 jpeg=1280x720 bytes=108643 boundary=19 ref=scan-01
+11-03 04:19:12.145 I/RudeusGate(29485): scan_object id=cup-1 kind=OBSTACLE c=(0.292,-0.279) h=0.027 n=17
+11-03 04:19:12.145 I/RudeusGate(29485): scan_object id=laptop-1 kind=OBSTACLE c=(-0.069,0.346) h=0.089 n=4
+11-03 04:19:12.145 I/RudeusGate(29485): scan_object id=remote-1 kind=OBSTACLE c=(-0.121,0.147) h=0.043 n=4
+11-03 04:19:14.866 I/RudeusGate(29485): boundary_grown n=21 u=0.43033087 v=-0.9939754
+11-03 04:19:14.866 I/RudeusGate(29485): tap u=0.4303 v=-0.9940 world=(-0.7644,-0.4933,-1.4773) anchorTracking=TRACKING t_ms=8496
+11-03 04:19:14.866 I/RudeusGate(29485): tap_depth_gap=0.044430643 feet_h=0.0
+11-03 04:19:15.305 I/RudeusGate(29485): boundary_grown n=22 u=0.39698166 v=-0.8488233
+11-03 04:19:15.305 I/RudeusGate(29485): tap u=0.3970 v=-0.8488 world=(-0.6473,-0.4933,-1.3852) anchorTracking=TRACKING t_ms=8935
+11-03 04:19:15.305 I/RudeusGate(29485): tap_depth_gap=0.029145151 feet_h=0.0
+11-03 04:19:16.372 I/RudeusGate(29485): anchor t_ms=10002 pos=(-0.0488,-0.4933,-0.6641)
+11-03 04:19:16.442 I/RudeusGate(29485): boundary_grown n=23 u=0.28406733 v=-0.08285341
+11-03 04:19:16.443 I/RudeusGate(29485): tap u=0.2841 v=-0.0829 world=(-0.0026,-0.4933,-0.9564) anchorTracking=TRACKING t_ms=10073
+11-03 04:19:16.443 I/RudeusGate(29485): tap_depth_gap=-0.022502542 feet_h=0.0
+11-03 04:19:18.907 I/RudeusGate(29485): boundary_grown n=23 u=0.23676181 v=-0.25861672
+11-03 04:19:18.907 I/RudeusGate(29485): tap u=0.2368 v=-0.2586 world=(-0.1817,-0.4933,-0.9885) anchorTracking=TRACKING t_ms=12537
+11-03 04:19:18.907 I/RudeusGate(29485): tap_depth_gap=0.02880165 feet_h=0.0
+11-03 04:19:20.378 I/RudeusGate(29485): boundary_grown n=23 u=0.25354105 v=-0.20297721
+11-03 04:19:20.378 I/RudeusGate(29485): tap u=0.2535 v=-0.2030 world=(-0.1242,-0.4933,-0.9800) anchorTracking=TRACKING t_ms=14008
+11-03 04:19:20.379 I/RudeusGate(29485): tap_depth_gap=0.019261986 feet_h=0.0
+11-03 04:19:21.812 I/RudeusGate(29485): jump ability=FLY u=0.19336176 v=-0.17741467
+11-03 04:19:24.927 I/RudeusGate(29485): boundary_grown n=23 u=0.51566213 v=-0.70856714
+11-03 04:19:24.927 I/RudeusGate(29485): tap u=0.5157 v=-0.7086 world=(-0.4696,-0.4932,-1.4327) anchorTracking=TRACKING t_ms=18557
+11-03 04:19:24.927 I/RudeusGate(29485): tap_depth_gap=0.02923432 feet_h=0.02690366
+11-03 04:19:26.382 I/RudeusGate(29485): anchor t_ms=20012 pos=(-0.0485,-0.4931,-0.6639)
+11-03 04:19:26.679 I/RudeusGate(29485): boundary_grown n=23 u=0.70207536 v=-1.1420661
+11-03 04:19:26.679 I/RudeusGate(29485): tap u=0.7021 v=-1.1421 world=(-0.7821,-0.4931,-1.7861) anchorTracking=TRACKING t_ms=20309
+11-03 04:19:26.680 I/RudeusGate(29485): tap_depth_gap=0.07453942 feet_h=0.02690366
+11-03 04:19:34.456 I/RudeusGate(29485): boundary_grown n=21 u=0.4177305 v=2.913773E-4
+11-03 04:19:34.457 I/RudeusGate(29485): tap u=0.4177 v=0.0003 world=(0.1333,-0.4910,-1.0400) anchorTracking=TRACKING t_ms=28087
+11-03 04:19:34.458 I/RudeusGate(29485): tap_depth_gap=0.015215486 feet_h=0.0
+11-03 04:19:36.392 I/RudeusGate(29485): anchor t_ms=30022 pos=(-0.0450,-0.4909,-0.6622)
+11-03 04:19:37.122 I/RudeusGate(29485): boundary_grown n=23 u=0.30697787 v=-0.7157068
+11-03 04:19:37.123 I/RudeusGate(29485): tap u=0.3070 v=-0.7157 world=(-0.5615,-0.4909,-1.2452) anchorTracking=TRACKING t_ms=30753
+11-03 04:19:37.123 I/RudeusGate(29485): tap_depth_gap=0.022794873 feet_h=0.0
+11-03 04:19:37.884 I/RudeusGate(29485): boundary_grown n=24 u=0.376665 v=-0.0010215044
+11-03 04:19:37.884 I/RudeusGate(29485): tap u=0.3767 v=-0.0010 world=(0.1143,-0.4912,-1.0036) anchorTracking=TRACKING t_ms=31514
+11-03 04:19:37.884 I/RudeusGate(29485): tap_depth_gap=-7.072091E-4 feet_h=0.0
+11-03 04:19:39.282 I/RudeusGate(29485): tap u=0.4135 v=-0.0445 world=(0.0907,-0.4912,-1.0555) anchorTracking=TRACKING t_ms=32911
+11-03 04:19:39.282 I/RudeusGate(29485): tap_depth_gap=-0.009207189 feet_h=0.0
+11-03 04:19:41.677 I/RudeusGate(29485): boundary_grown n=24 u=1.772886 v=-1.385606
+11-03 04:19:41.678 I/RudeusGate(29485): tap u=1.7729 v=-1.3856 world=(-0.5429,-0.4913,-2.8573) anchorTracking=TRACKING t_ms=35307
+11-03 04:19:41.678 I/RudeusGate(29485): tap_depth_gap=-0.022430599 feet_h=0.0
+11-03 04:19:42.395 I/RudeusGate(29485): jump ability=FLY u=0.4547944 v=-0.38344297
+11-03 04:19:46.405 I/RudeusGate(29485): anchor t_ms=40035 pos=(-0.0455,-0.4912,-0.6625)
+11-03 04:19:52.811 I/RudeusGate(29485): boundary_grown n=25 u=1.3768401 v=-1.3265631
+11-03 04:19:52.811 I/RudeusGate(29485): tap u=1.3768 v=-1.3266 world=(-0.6587,-0.4915,-2.4740) anchorTracking=TRACKING t_ms=46441
+11-03 04:19:52.811 I/RudeusGate(29485): tap_depth_gap=-0.28836316 feet_h=0.0
+11-03 04:19:54.460 I/RudeusGate(29485): jump ability=FLY u=1.0067086 v=-0.83149874
+11-03 04:19:56.412 I/RudeusGate(29485): anchor t_ms=50042 pos=(-0.0479,-0.4928,-0.6636)
+11-03 04:20:02.749 I/RudeusGate(29485): boundary_grown n=24 u=0.68735576 v=-1.075433
+11-03 04:20:02.749 I/RudeusGate(29485): tap u=0.6874 v=-1.0754 world=(-0.7176,-0.4930,-1.7358) anchorTracking=TRACKING t_ms=56379
+11-03 04:20:02.749 I/RudeusGate(29485): tap_depth_gap=-0.026498795 feet_h=0.0
+11-03 04:20:03.540 I/RudeusGate(29485): jump ability=FLY u=1.2829901 v=-1.241096
+11-03 04:20:06.424 I/RudeusGate(29485): anchor t_ms=60053 pos=(-0.0379,-0.4929,-0.6555)
+11-03 04:20:16.424 I/RudeusGate(29485): anchor t_ms=70054 pos=(-0.0456,-0.4978,-0.6592)
+11-03 04:20:21.447 I/RudeusGate(29485): boundary_grown n=25 u=0.3585202 v=-0.15128037
+11-03 04:20:21.448 I/RudeusGate(29485): tap u=0.3585 v=-0.1513 world=(-0.0365,-0.5030,-1.0500) anchorTracking=TRACKING t_ms=75078
+11-03 04:20:21.448 I/RudeusGate(29485): tap_depth_gap=-0.075203 feet_h=0.0
+11-03 04:20:23.246 I/RudeusGate(29485): jump ability=FLY u=0.65731895 v=-0.99101776
+11-03 04:20:26.438 I/RudeusGate(29485): anchor t_ms=80067 pos=(-0.0672,-0.5116,-0.6678)
+11-03 04:37:56.516 I/RudeusGate( 1860): bundled=16 bundled_ms=96
+11-03 04:38:06.051 I/RudeusGate( 1860): decode_px=2016x1134 photo_px=4032x2268 heif=false
+11-03 04:38:06.085 I/RudeusGate( 1860): photo_ready_ms=74 photo_bytes=442870
+11-03 04:38:06.196 I/RudeusGate( 1860): style_refs=8
+11-03 04:38:06.197 I/RudeusGate( 1860): stage_start=cutout attempt=1 at_ms=9
+11-03 04:38:09.291 I/RudeusGate( 1860): stage_end=cutout attempt=1 ok=true ms=3092 at_ms=3103
+11-03 04:38:09.314 I/RudeusGate( 1860): stage_start=sheet attempt=1 at_ms=3126
+11-03 04:38:11.117 I/RudeusGate( 1860): stage_start=stylize attempt=1 at_ms=4929
+11-03 04:38:35.875 I/RudeusGate( 1860): stage_end=stylize attempt=1 ok=true ms=24757 at_ms=29687
+11-03 04:38:35.876 I/RudeusGate( 1860): stage_start=matte attempt=1 at_ms=29688
+11-03 04:38:37.109 I/RudeusGate( 1860): stage_end=matte attempt=1 ok=true ms=1233 at_ms=30921
+11-03 04:38:37.110 I/RudeusGate( 1860): stage_start=gate attempt=1 at_ms=30922
+11-03 04:38:37.110 I/RudeusGate( 1860): stage_start=rescore attempt=1 at_ms=30922
+11-03 04:38:48.541 I/RudeusGate( 1860): gate_scored attempt=1 score=0.914 passed=true at_ms=42352
+11-03 04:38:48.541 I/RudeusGate( 1860): stage_end=gate attempt=1 ok=true ms=10606 at_ms=42353
+11-03 04:38:48.541 I/RudeusGate( 1860): stage_end=rescore attempt=1 ok=true ms=10225 at_ms=42353
+11-03 04:38:48.541 I/RudeusGate( 1860): stage_end=sheet attempt=1 ok=true ms=10711 at_ms=42353
+11-03 04:38:48.542 I/RudeusGate( 1860): pipeline_ms=42354 gate=0.914 passed=true attempts=1 sprite_bytes=1335316 name=Бал Ара run=2026-11-02T23-37-56Z
+11-03 04:39:48.741 I/RudeusGate( 1860): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:39:48.742 I/RudeusGate( 1860): occlusion=depth depth_supported=true
+11-03 04:39:48.804 I/RudeusGate( 1860): session_resumed
+11-03 04:39:48.854 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:39:51.135 I/RudeusGate( 1860): tracking_failure=EXCESSIVE_MOTION
+11-03 04:39:51.342 I/RudeusGate( 1860): tracking_failure=null
+11-03 04:39:52.744 I/RudeusGate( 1860): plane_detected_ms=3940
+11-03 04:40:05.569 I/RudeusGate( 1860): anchor t_ms=0 pos=(0.0912,-0.3210,-0.2956)
+11-03 04:40:05.569 I/RudeusGate( 1860): anchor_plane_age_ms=12822 surface=TABLE
+11-03 04:40:13.036 I/RudeusGate( 1860): scan_replay ref=scan-01 cam=-0.07486,0.03254,0.03977,-0.088280,-0.298447,-0.681684,0.662150 anchor=0.09120,-0.32105,-0.29612,-0.000602,-0.244590,0.000216,0.969626 intr=931.0171,934.3986,649.98157,356.21692,1280,720
+11-03 04:40:13.190 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=cup pts=530.5,180.5;557.5,182.5;604.5,192.5;650.5,208.5;660.5,224.5;663.5,236.5;661.5,268.5;651.5,291.5;639.5,301.5;621.5,304.5;522.5,302.5;516.5,299.5;507.5,285.5;505.5,232.5;508.5,214.5;516.5,195.5
+11-03 04:40:13.209 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=cup pts=532.5,500.5;548.5,501.5;571.5,512.5;580.5,523.5;585.5,540.5;579.5,566.5;589.5,581.5;592.5,608.5;597.5,618.5;598.5,633.5;592.5,644.5;569.5,649.5;557.5,655.5;559.5,678.5;555.5,683.5;515.5,680.5;489.5,673.5;487.5,651.5;514.5,635.5;525.5,624.5;526.5,618.5;511.5,603.5;475.5,602.5;459.5,597.5;450.5,582.5;445.5,558.5;446.5,523.5;456.5,506.5;466.5,503.5;513.5,505.5
+11-03 04:40:13.225 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=toy pts=445.5,250.5;459.5,253.5;473.5,269.5;476.5,280.5;489.5,289.5;504.5,286.5;513.5,303.5;503.5,316.5;508.5,322.5;523.5,321.5;531.5,328.5;530.5,343.5;523.5,354.5;521.5,375.5;516.5,384.5;508.5,390.5;478.5,397.5;453.5,397.5;431.5,392.5;414.5,379.5;406.5,365.5;406.5,330.5;386.5,346.5;371.5,352.5;351.5,353.5;347.5,349.5;342.5,329.5;351.5,312.5;371.5,299.5;399.5,290.5;404.5,281.5;421.5,265.5
+11-03 04:40:13.615 I/RudeusGate( 1860): scan_ms=4877 segment_ms=4022 objects=3 masks=3 prompts=11 failed=0 carried=0 jpeg=1280x720 bytes=106801 boundary=24 ref=scan-01
+11-03 04:40:13.615 I/RudeusGate( 1860): scan_object id=cup-1 kind=OBSTACLE c=(-0.013,-0.251) h=0.081 n=8
+11-03 04:40:13.615 I/RudeusGate( 1860): scan_object id=cup-2 kind=OBSTACLE c=(-0.303,-0.290) h=0.068 n=24
+11-03 04:40:13.616 I/RudeusGate( 1860): scan_object id=toy-1 kind=OBSTACLE c=(-0.121,-0.569) h=0.103 n=28
+11-03 04:40:15.277 I/RudeusGate( 1860): capture_to_play_ms=129267
+11-03 04:40:15.568 I/RudeusGate( 1860): anchor t_ms=10000 pos=(0.0912,-0.3211,-0.2962)
+11-03 04:40:16.799 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:40:17.674 I/RudeusGate( 1860): character_size size=2.0 radius=0.06
+11-03 04:40:18.027 I/RudeusGate( 1860): character_size size=3.0 radius=0.089999996
+11-03 04:40:19.822 I/RudeusGate( 1860): character_size size=2.0 radius=0.06
+11-03 04:40:20.101 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:40:20.357 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:40:20.609 I/RudeusGate( 1860): character_size size=0.75 radius=0.022499999
+11-03 04:40:20.920 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:40:21.123 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:40:21.353 I/RudeusGate( 1860): character_size size=2.0 radius=0.06
+11-03 04:40:21.620 I/RudeusGate( 1860): character_size size=3.0 radius=0.089999996
+11-03 04:40:22.489 I/RudeusGate( 1860): jump ability=FLY u=0.0 v=0.0
+11-03 04:40:24.071 I/RudeusGate( 1860): tap u=-0.1104 v=-0.1325 world=(0.0569,-0.3211,-0.4651) anchorTracking=TRACKING t_ms=18503
+11-03 04:40:24.074 I/RudeusGate( 1860): tap_depth_gap=-6.168783E-4 feet_h=0.22149004 way=[8.991957E-4, -0.0029644966, -0.016330004, -0.012299359, -0.0028214455, -6.168783E-4, -6.168783E-4]
+11-03 04:40:25.572 I/RudeusGate( 1860): anchor t_ms=20003 pos=(0.0912,-0.3211,-0.2961)
+11-03 04:40:27.398 I/RudeusGate( 1860): tap u=-0.1596 v=-0.2109 world=(0.0507,-0.3211,-0.5575) anchorTracking=TRACKING t_ms=21830
+11-03 04:40:27.404 I/RudeusGate( 1860): tap_depth_gap=-8.543134E-4 feet_h=0.0 way=[-5.1110983E-5, 8.454919E-5, 4.46409E-4, 3.9702654E-4, -4.954934E-4, -8.543134E-4, -8.543134E-4]
+11-03 04:40:33.592 I/RudeusGate( 1860): tap u=0.0423 v=0.0888 world=(0.0861,-0.3207,-0.1976) anchorTracking=TRACKING t_ms=28024
+11-03 04:40:33.594 I/RudeusGate( 1860): tap_depth_gap=-5.8579445E-4 feet_h=0.0 way=[0.0015499294, -1.9541383E-4, -0.0015875995, 2.6157498E-4, 0.0025839806, -5.8579445E-4, -5.8579445E-4]
+11-03 04:40:35.580 I/RudeusGate( 1860): anchor t_ms=30012 pos=(0.0912,-0.3211,-0.2961)
+11-03 04:40:36.119 I/RudeusGate( 1860): tap u=-0.1810 v=-0.0650 world=(-0.0375,-0.3208,-0.4390) anchorTracking=TRACKING t_ms=30551
+11-03 04:40:36.121 I/RudeusGate( 1860): tap_depth_gap=0.018519402 feet_h=0.0 way=[0.001344204, 0.0023878217, 0.007449001, 0.010585964, 0.013627291, 0.018519402, 0.018519402]
+11-03 04:40:45.599 I/RudeusGate( 1860): anchor t_ms=40030 pos=(0.0912,-0.3230,-0.2971)
+11-03 04:40:47.014 I/RudeusGate( 1860): jump ability=FLY u=-0.18102624 v=-0.06498936
+11-03 04:40:48.090 I/RudeusGate( 1860): jump_ignored mode=JUMPING ability=FLY
+11-03 04:40:59.981 I/RudeusGate( 1860): photo_ready_ms=1 photo_bytes=0
+11-03 04:41:12.432 I/RudeusGate( 1860): decode_px=1134x2016 photo_px=2268x4032 heif=false
+11-03 04:41:12.470 I/RudeusGate( 1860): photo_ready_ms=164 photo_bytes=623321
+11-03 04:41:12.519 I/RudeusGate( 1860): stage_start=cutout attempt=1 at_ms=0
+11-03 04:41:16.958 I/RudeusGate( 1860): stage_end=cutout attempt=1 ok=true ms=4439 at_ms=4439
+11-03 04:41:17.283 I/RudeusGate( 1860): stage_start=sheet attempt=1 at_ms=4764
+11-03 04:41:19.007 I/RudeusGate( 1860): stage_start=stylize attempt=1 at_ms=6488
+11-03 04:41:50.706 I/RudeusGate( 1860): stage_end=stylize attempt=1 ok=true ms=31698 at_ms=38187
+11-03 04:41:50.707 I/RudeusGate( 1860): stage_start=matte attempt=1 at_ms=38187
+11-03 04:41:52.768 I/RudeusGate( 1860): stage_end=matte attempt=1 ok=true ms=2060 at_ms=40249
+11-03 04:41:52.768 I/RudeusGate( 1860): stage_start=gate attempt=1 at_ms=40249
+11-03 04:41:52.769 I/RudeusGate( 1860): stage_start=rescore attempt=1 at_ms=40250
+11-03 04:42:02.565 I/RudeusGate( 1860): gate_scored attempt=1 score=0.839 passed=true at_ms=50045
+11-03 04:42:02.566 I/RudeusGate( 1860): stage_end=gate attempt=1 ok=true ms=8034 at_ms=50047
+11-03 04:42:02.566 I/RudeusGate( 1860): stage_end=rescore attempt=1 ok=false ms=8031 at_ms=50047
+11-03 04:42:02.566 I/RudeusGate( 1860): stage_end=sheet attempt=1 ok=true ms=10388 at_ms=50047
+11-03 04:42:02.567 I/RudeusGate( 1860): pipeline_ms=50048 gate=0.839 passed=true attempts=1 sprite_bytes=2383198 name=Балара run=2026-11-02T23-37-56Z
+11-03 04:42:45.441 I/RudeusGate( 1860): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:42:45.441 I/RudeusGate( 1860): occlusion=depth depth_supported=true
+11-03 04:42:45.512 I/RudeusGate( 1860): session_resumed
+11-03 04:42:45.577 I/RudeusGate( 1860): character_size size=3.0 radius=0.089999996
+11-03 04:42:48.142 I/RudeusGate( 1860): plane_detected_ms=2630
+11-03 04:42:59.372 I/RudeusGate( 1860): anchor t_ms=0 pos=(0.0814,-0.2879,-0.5961)
+11-03 04:42:59.372 I/RudeusGate( 1860): anchor_plane_age_ms=11229 surface=TABLE
+11-03 04:43:06.067 I/RudeusGate( 1860): scan_replay ref=scan-01 cam=-0.01696,0.03006,0.12662,-0.073319,-0.198171,-0.718318,0.662851 anchor=0.03626,-0.29019,-0.59483,-0.002559,-0.036821,0.002695,0.999315 intr=931.0171,934.3986,649.98157,356.21692,1280,720
+11-03 04:43:06.087 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=cup pts=583.5,206.5;601.5,207.5;617.5,213.5;643.5,215.5;675.5,223.5;682.5,232.5;688.5,257.5;685.5,287.5;681.5,298.5;672.5,306.5;602.5,317.5;567.5,317.5;558.5,306.5;553.5,263.5;556.5,231.5;566.5,212.5
+11-03 04:43:06.106 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=cup pts=596.5,483.5;619.5,483.5;637.5,491.5;648.5,513.5;643.5,531.5;646.5,543.5;637.5,540.5;634.5,544.5;628.5,541.5;621.5,548.5;611.5,551.5;591.5,571.5;544.5,568.5;536.5,552.5;531.5,528.5;531.5,503.5;535.5,491.5;544.5,487.5;584.5,487.5
+11-03 04:43:06.126 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=toy pts=516.5,266.5;526.5,267.5;536.5,273.5;553.5,293.5;558.5,310.5;567.5,319.5;590.5,319.5;597.5,322.5;598.5,340.5;593.5,350.5;594.5,365.5;584.5,382.5;546.5,391.5;528.5,390.5;510.5,383.5;493.5,362.5;495.5,335.5;491.5,335.5;469.5,356.5;447.5,362.5;441.5,359.5;436.5,340.5;444.5,323.5;480.5,304.5;489.5,290.5
+11-03 04:43:06.430 I/RudeusGate( 1860): scan_ms=4654 segment_ms=4160 objects=3 masks=3 prompts=11 failed=0 carried=0 jpeg=1280x720 bytes=103350 boundary=20 ref=scan-01
+11-03 04:43:06.430 I/RudeusGate( 1860): scan_object id=cup-1 kind=OBSTACLE c=(0.151,-0.007) h=0.081 n=8
+11-03 04:43:06.430 I/RudeusGate( 1860): scan_object id=cup-2 kind=OBSTACLE c=(-0.072,-0.137) h=0.088 n=9
+11-03 04:43:06.430 I/RudeusGate( 1860): scan_object id=toy-1 kind=OBSTACLE c=(0.153,-0.390) h=0.119 n=28
+11-03 04:43:08.047 I/RudeusGate( 1860): capture_to_play_ms=115743
+11-03 04:43:08.885 I/RudeusGate( 1860): tap u=-0.1023 v=-0.8445 world=(-0.0036,-0.2902,-1.4447) anchorTracking=TRACKING t_ms=9514
+11-03 04:43:08.888 I/RudeusGate( 1860): tap_depth_gap=0.051758274 feet_h=0.0 way=[1.1294608, 1.1294608, 1.1294608, 1.1294608, 1.1294608, 1.1294608, 0.051758274]
+11-03 04:43:09.385 I/RudeusGate( 1860): anchor t_ms=10014 pos=(0.0363,-0.2902,-0.5950)
+11-03 04:43:10.032 I/RudeusGate( 1860): tap u=-0.0149 v=0.2194 world=(0.0053,-0.2903,-0.3773) anchorTracking=TRACKING t_ms=10661
+11-03 04:43:10.033 I/RudeusGate( 1860): tap_depth_gap=0.006718874 feet_h=0.0 way=[0.014875442, 0.013667673, 0.012437284, 0.011245817, 0.01018846, 0.006718874, 0.006718874]
+11-03 04:43:11.411 I/RudeusGate( 1860): jump ability=FLY u=-0.0042683072 v=0.14967148
+11-03 04:43:12.425 I/RudeusGate( 1860): tap u=0.0101 v=0.2618 world=(0.0270,-0.2903,-0.3332) anchorTracking=TRACKING t_ms=13054
+11-03 04:43:12.427 I/RudeusGate( 1860): tap_depth_gap=0.003576219 feet_h=0.27197945 way=[0.9805839, 0.9805839, 0.9805839, 0.9805839, 0.9805839, 0.9805839, 0.003576219]
+11-03 04:43:13.677 I/RudeusGate( 1860): tap u=-0.0872 v=-0.9359 world=(0.0182,-0.2903,-1.5348) anchorTracking=TRACKING t_ms=14306
+11-03 04:43:13.678 I/RudeusGate( 1860): tap_depth_gap=0.050489828 feet_h=0.0 way=[0.013712794, -0.08828384, -0.0047781765, 0.0309861, 0.046399906, 0.05748026, 0.050489828]
+11-03 04:43:14.233 I/RudeusGate( 1860): tap u=0.0032 v=0.3034 world=(0.0172,-0.2903,-0.2921) anchorTracking=TRACKING t_ms=14862
+11-03 04:43:14.241 I/RudeusGate( 1860): tap_depth_gap=0.003950894 feet_h=0.0 way=[0.008906454, 0.0074152052, 0.005662948, 0.0041048527, 0.003608942, 0.003912121, 0.003950894]
+11-03 04:43:19.390 I/RudeusGate( 1860): anchor t_ms=20019 pos=(0.0361,-0.2890,-0.5922)
+11-03 04:43:23.807 I/RudeusGate( 1860): tap u=-0.0353 v=0.1318 world=(-0.0087,-0.2898,-0.4653) anchorTracking=TRACKING t_ms=24436
+11-03 04:43:23.808 I/RudeusGate( 1860): tap_depth_gap=0.0063651204 feet_h=0.0 way=[-0.011190057, -0.0038384795, 0.0017635524, 0.0034960806, 0.003293991, 0.0052812397, 0.0063651204]
+11-03 04:43:25.053 I/RudeusGate( 1860): tap u=0.0761 v=0.3150 world=(0.0889,-0.2893,-0.2732) anchorTracking=TRACKING t_ms=25682
+11-03 04:43:25.053 I/RudeusGate( 1860): tap_depth_gap=1.7362833E-4 feet_h=0.0 way=[0.005136937, 0.0016332269, -1.0713935E-4, -0.0052700937, 0.0028240085, 1.7362833E-4, 1.7362833E-4]
+11-03 04:43:25.075 I/RudeusGate( 1860): character_size size=2.0 radius=0.06
+11-03 04:43:25.340 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:43:25.552 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:43:25.709 I/RudeusGate( 1860): character_size size=0.75 radius=0.022499999
+11-03 04:43:25.995 I/RudeusGate( 1860): character_size size=0.5 radius=0.015
+11-03 04:43:27.988 I/RudeusGate( 1860): character_size size=0.75 radius=0.022499999
+11-03 04:43:28.213 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:43:28.786 I/RudeusGate( 1860): character_size size=0.75 radius=0.022499999
+11-03 04:43:28.813 I/RudeusGate( 1860): tap u=-0.0932 v=0.1929 world=(-0.0713,-0.2873,-0.4028) anchorTracking=TRACKING t_ms=29442
+11-03 04:43:28.814 I/RudeusGate( 1860): tap_depth_gap=0.00461936 feet_h=0.0 way=[-0.006177366, -0.0092583895, -9.276271E-4, 0.0025387108, 0.0029178858, 0.00461936, 0.00461936]
+11-03 04:43:28.992 I/RudeusGate( 1860): character_size size=0.5 radius=0.015
+11-03 04:43:29.407 I/RudeusGate( 1860): anchor t_ms=30036 pos=(0.0358,-0.2873,-0.5883)
+11-03 04:43:30.849 I/RudeusGate( 1860): jump ability=FLY u=-0.0033628347 v=0.23798142
+11-03 04:43:35.966 I/RudeusGate( 1860): tap u=-0.0555 v=0.1894 world=(-0.0333,-0.2881,-0.4054) anchorTracking=TRACKING t_ms=36595
+11-03 04:43:35.970 I/RudeusGate( 1860): tap_depth_gap=0.006570637 feet_h=0.0 way=[0.72823524, 0.72823524, 0.72823524, 0.72823524, 0.72823524, 0.72823524, 0.006570637]
+11-03 04:43:36.306 I/RudeusGate( 1860): jump ability=FLY u=-0.0847492 v=0.19216444
+11-03 04:43:39.415 I/RudeusGate( 1860): anchor t_ms=40043 pos=(0.0354,-0.2851,-0.5834)
+11-03 04:43:43.745 I/RudeusGate( 1860): jump ability=FLY u=-0.05546658 v=0.18943885
+11-03 04:43:49.417 I/RudeusGate( 1860): anchor t_ms=50045 pos=(0.0352,-0.2842,-0.5814)
+11-03 04:45:48.059 I/RudeusGate( 1860): depth_supported=true depth_mode=AUTOMATIC
+11-03 04:45:48.060 I/RudeusGate( 1860): occlusion=depth depth_supported=true
+11-03 04:45:48.148 I/RudeusGate( 1860): session_resumed
+11-03 04:45:48.212 I/RudeusGate( 1860): character_size size=0.5 radius=0.015
+11-03 04:45:48.503 I/RudeusGate( 1860): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:45:51.582 I/RudeusGate( 1860): anchor_rejected plane_age_ms=null need_ms=10000
+11-03 04:45:55.921 I/RudeusGate( 1860): plane_detected_ms=7773
+11-03 04:45:56.834 I/RudeusGate( 1860): anchor_rejected plane_age_ms=912 need_ms=10000
+11-03 04:45:59.845 I/RudeusGate( 1860): anchor_rejected plane_age_ms=3924 need_ms=10000
+11-03 04:46:03.054 I/RudeusGate( 1860): anchor_rejected plane_age_ms=7133 need_ms=10000
+11-03 04:46:06.777 I/RudeusGate( 1860): anchor t_ms=0 pos=(0.1850,-0.2067,-0.4059)
+11-03 04:46:06.777 I/RudeusGate( 1860): anchor_plane_age_ms=10856 surface=TABLE
+11-03 04:46:11.939 I/RudeusGate( 1860): scan_replay ref=scan-01 cam=0.05728,0.10246,0.01106,-0.066898,-0.278852,-0.689978,0.664603 anchor=0.18766,-0.19937,-0.40598,-0.000490,-0.142716,0.000779,0.989763 intr=932.45087,933.6837,651.46625,358.0306,1280,720
+11-03 04:46:11.955 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=cup pts=512.5,110.5;544.5,113.5;569.5,128.5;615.5,143.5;624.5,150.5;629.5,164.5;631.5,190.5;625.5,216.5;615.5,234.5;603.5,239.5;513.5,239.5;492.5,236.5;484.5,231.5;477.5,210.5;483.5,149.5;494.5,121.5
+11-03 04:46:11.970 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=cup pts=431.5,409.5;479.5,412.5;508.5,410.5;526.5,416.5;541.5,428.5;546.5,441.5;546.5,454.5;538.5,473.5;527.5,478.5;514.5,479.5;511.5,484.5;498.5,487.5;478.5,501.5;431.5,495.5;423.5,485.5;419.5,462.5;420.5,425.5;424.5,415.5
+11-03 04:46:11.986 I/RudeusGate( 1860): scan_replay_mask ref=scan-01 label=toy pts=436.5,158.5;451.5,161.5;474.5,193.5;475.5,214.5;487.5,236.5;518.5,243.5;517.5,253.5;510.5,263.5;509.5,279.5;499.5,292.5;468.5,298.5;452.5,298.5;421.5,289.5;399.5,262.5;400.5,232.5;368.5,250.5;344.5,253.5;339.5,248.5;340.5,235.5;336.5,227.5;348.5,208.5;391.5,193.5;410.5,173.5
+11-03 04:46:12.227 I/RudeusGate( 1860): scan_ms=4084 segment_ms=3644 objects=3 masks=3 prompts=11 failed=0 carried=0 jpeg=1280x720 bytes=105906 boundary=20 ref=scan-01
+11-03 04:46:12.227 I/RudeusGate( 1860): scan_object id=cup-1 kind=OBSTACLE c=(0.146,-0.223) h=0.078 n=8
+11-03 04:46:12.227 I/RudeusGate( 1860): scan_object id=cup-2 kind=OBSTACLE c=(-0.064,-0.359) h=0.087 n=9
+11-03 04:46:12.227 I/RudeusGate( 1860): scan_object id=toy-1 kind=OBSTACLE c=(0.168,-0.593) h=0.121 n=26
+11-03 04:46:13.683 I/RudeusGate( 1860): tap u=-0.0753 v=-0.0741 world=(0.1364,-0.1994,-0.4983) anchorTracking=TRACKING t_ms=6906
+11-03 04:46:13.685 I/RudeusGate( 1860): tap_depth_gap=-0.0032445341 feet_h=0.0 way=[0.006668344, 0.0056447536, 0.0036670268, 0.0022348166, 0.0011098981, -0.0032445341, -0.0032445341]
+11-03 04:46:14.785 I/RudeusGate( 1860): character_size size=0.75 radius=0.022499999
+11-03 04:46:15.249 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:46:15.476 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:46:16.203 I/RudeusGate( 1860): character_size size=1.0 radius=0.03
+11-03 04:46:16.790 I/RudeusGate( 1860): anchor t_ms=10013 pos=(0.1877,-0.1994,-0.4060)
+11-03 04:46:17.750 I/RudeusGate( 1860): tap u=0.0620 v=0.0834 world=(0.2236,-0.1994,-0.3085) anchorTracking=TRACKING t_ms=10973
+11-03 04:46:17.753 I/RudeusGate( 1860): tap_depth_gap=-0.0037880987 feet_h=0.0 way=[0.0019221902, 0.0047522336, 0.0053183585, 0.0049553216, -0.011277929, -0.0037880987, -0.0037880987]
+11-03 04:46:18.277 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:46:18.481 I/RudeusGate( 1860): character_size size=2.0 radius=0.06
+11-03 04:46:18.681 I/RudeusGate( 1860): character_size size=3.0 radius=0.089999996
+11-03 04:46:19.981 I/RudeusGate( 1860): jump ability=FLY u=0.062034756 v=0.08340448
+11-03 04:46:20.879 I/RudeusGate( 1860): character_size size=2.0 radius=0.06
+11-03 04:46:21.182 I/RudeusGate( 1860): character_size size=1.5 radius=0.044999998
+11-03 04:46:22.495 I/RudeusGate( 1860): tap u=-0.0347 v=-0.0490 world=(0.1682,-0.1994,-0.4628) anchorTracking=TRACKING t_ms=15718
+11-03 04:46:22.496 I/RudeusGate( 1860): tap_depth_gap=0.005018398 feet_h=0.0 way=[1.0897019, 1.0897019, 1.0897019, 1.0897019, 1.0897019, 1.0897019, 0.005018398]
+11-03 04:46:22.921 I/RudeusGate( 1860): tap u=-0.0045 v=-0.2322 world=(0.2490,-0.1994,-0.6300) anchorTracking=TRACKING t_ms=16144
+11-03 04:46:22.924 I/RudeusGate( 1860): tap_depth_gap=0.00152646 feet_h=0.0 way=[0.0026572943, 0.0067806095, 0.0067276657, 0.006967947, 0.004815489, 0.00152646, 0.00152646]
+11-03 04:46:23.794 I/RudeusGate( 1860): tap u=-0.0624 v=-0.2792 world=(0.2067,-0.1994,-0.6915) anchorTracking=TRACKING t_ms=17017
+11-03 04:46:23.801 I/RudeusGate( 1860): tap_depth_gap=-3.4983456E-4 feet_h=0.0 way=[1.1298485, 1.1298485, 1.1298485, 1.1298485, 1.1298485, 1.1298485, -3.4983456E-4]
+11-03 04:46:24.512 I/RudeusGate( 1860): tap u=-0.1879 v=-0.8384 world=(0.2443,-0.1994,-1.2633) anchorTracking=TRACKING t_ms=17735
+11-03 04:46:24.525 I/RudeusGate( 1860): tap_depth_gap=0.0072279572 feet_h=0.0 way=[0.0032723993, 0.0071213394, 0.037763163, 0.05727695, 0.019730702, 0.0072279572, 0.0072279572]
+11-03 04:46:26.493 I/RudeusGate( 1860): tap u=-0.1823 v=-0.6240 world=(0.1891,-0.1994,-1.0561) anchorTracking=TRACKING t_ms=19716
+11-03 04:46:26.495 I/RudeusGate( 1860): tap_depth_gap=0.017925516 feet_h=0.0 way=[-0.0015542209, 0.014097586, 0.029127523, 0.042843714, 0.02126664, 0.017925516, 0.017925516]
+11-03 04:46:26.797 I/RudeusGate( 1860): anchor t_ms=20020 pos=(0.1877,-0.1994,-0.4060)
+11-03 04:46:27.925 I/RudeusGate( 1860): jump ability=FLY u=-0.055386607 v=-0.26505017
+11-03 04:46:31.477 I/RudeusGate( 1860): tap u=-0.1966 v=-0.4250 world=(0.1192,-0.1994,-0.8693) anchorTracking=TRACKING t_ms=24699
+11-03 04:46:31.479 I/RudeusGate( 1860): tap_depth_gap=-0.004008606 feet_h=0.0 way=[0.01791139, 0.019061804, 0.018099874, 0.009518951, -0.0032372475, -0.004008606, -0.004008606]
+11-03 04:46:33.328 I/RudeusGate( 1860): tap u=-0.2409 v=-0.3149 world=(0.0456,-0.1994,-0.7761) anchorTracking=TRACKING t_ms=26551
+11-03 04:46:33.332 I/RudeusGate( 1860): tap_depth_gap=-0.020377144 feet_h=0.0 way=[-0.0054083467, -0.006502807, -0.011851862, -0.01650317, -0.018216923, -0.020377144, -0.020377144]
+11-03 04:46:34.061 I/RudeusGate( 1860): tap u=-0.1507 v=-0.0829 world=(0.0665,-0.1994,-0.5281) anchorTracking=TRACKING t_ms=27283
+11-03 04:46:34.068 I/RudeusGate( 1860): tap_depth_gap=-0.026280135 feet_h=0.0 way=[-0.0073350817, -0.010749832, -0.015607595, -0.021538377, -0.025409937, -0.026280135, -0.026280135]
+11-03 04:46:36.751 I/RudeusGate( 1860): tap u=-0.3832 v=-0.4791 world=(-0.0428,-0.2037,-0.9797) anchorTracking=TRACKING t_ms=29974
+11-03 04:46:36.755 I/RudeusGate( 1860): tap_depth_gap=0.0017393976 feet_h=0.0 way=[0.00587371, 0.008906007, 0.0059368014, 0.001995787, 0.002770692, 0.0017393976, 0.0017393976]
+11-03 04:46:36.808 I/RudeusGate( 1860): anchor t_ms=30030 pos=(0.1894,-0.2037,-0.4119)
+11-03 04:46:37.951 I/RudeusGate( 1860): tap u=-0.5150 v=-0.4680 world=(-0.1723,-0.2037,-1.0064) anchorTracking=TRACKING t_ms=31174
+11-03 04:46:37.951 I/RudeusGate( 1860): tap_depth_gap=0.036384538 feet_h=0.0 way=[0.016794354, 0.0014425069, 8.0764294E-4, 0.026080772, 0.033826858, 0.036384538, 0.036384538]
+11-03 04:46:37.952 I/RudeusGate( 1860): boundary_grown n=18 u=-0.5149534 v=-0.46802315
+11-03 04:46:38.448 I/RudeusGate( 1860): tap u=-0.5262 v=-0.4648 world=(-0.1841,-0.2037,-1.0064) anchorTracking=TRACKING t_ms=31671
+11-03 04:46:38.449 I/RudeusGate( 1860): tap_depth_gap=0.035975784 feet_h=0.0 way=[0.0030643344, -9.0384483E-4, 0.01013051, 0.030097082, 0.03382708, 0.035975784, 0.035975784]
+11-03 04:46:38.450 I/RudeusGate( 1860): boundary_grown n=18 u=-0.5262351 v=-0.4647509
+11-03 04:46:39.369 I/RudeusGate( 1860): tap u=-0.6253 v=-0.5132 world=(-0.2654,-0.2037,-1.0809) anchorTracking=TRACKING t_ms=32592
+11-03 04:46:39.373 I/RudeusGate( 1860): tap_depth_gap=0.037209183 feet_h=0.0 way=[0.003977552, 0.025762737, 0.033787444, 0.03648372, 0.035322815, 0.037209183, 0.037209183]
+11-03 04:46:39.376 I/RudeusGate( 1860): boundary_grown n=17 u=-0.6252932 v=-0.5132065
+11-03 04:46:45.905 I/RudeusGate( 1860): tap u=-0.6335 v=-0.8202 world=(-0.1871,-0.2023,-1.3758) anchorTracking=TRACKING t_ms=39127
+11-03 04:46:45.907 I/RudeusGate( 1860): tap_depth_gap=-0.17543232 feet_h=0.0 way=[0.43499646, 0.43499646, 0.43499646, 0.43499646, 0.43499646, 0.43499646, -0.17543232]
+11-03 04:46:45.907 I/RudeusGate( 1860): tap_past_edge u=-0.63351595 v=-0.8202257
+11-03 04:46:46.680 I/RudeusGate( 1860): tap u=-0.6387 v=-0.7638 world=(-0.2081,-0.2023,-1.3231) anchorTracking=TRACKING t_ms=39903
+11-03 04:46:46.681 I/RudeusGate( 1860): tap_depth_gap=-0.2876141 feet_h=0.0 way=[0.43396145, 0.43396145, 0.43396145, 0.43396145, 0.43396145, 0.43396145, -0.2876141]
+11-03 04:46:46.681 I/RudeusGate( 1860): tap_past_edge u=-0.6387265 v=-0.763757
+11-03 04:46:46.826 I/RudeusGate( 1860): anchor t_ms=40049 pos=(0.1889,-0.2023,-0.4100)
+11-03 04:46:47.196 I/RudeusGate( 1860): tap u=-0.5866 v=-0.6946 world=(-0.1777,-0.2021,-1.2418) anchorTracking=TRACKING t_ms=40419
+11-03 04:46:47.198 I/RudeusGate( 1860): tap_depth_gap=0.0039124787 feet_h=0.0 way=[0.43045408, 0.43045408, 0.43045408, 0.43045408, 0.43045408, 0.43045408, 0.0039124787]
+11-03 04:46:47.199 I/RudeusGate( 1860): boundary_grown n=18 u=-0.5866155 v=-0.6945536
+11-03 04:46:48.329 I/RudeusGate( 1860): tap u=-0.4157 v=-0.6801 world=(-0.0178,-0.2021,-1.1796) anchorTracking=TRACKING t_ms=41552
+11-03 04:46:48.331 I/RudeusGate( 1860): tap_depth_gap=0.011119425 feet_h=0.0 way=[0.009395763, 0.009971902, 0.009539902, 0.010250911, 0.01132299, 0.011119425, 0.011119425]
+11-03 04:46:52.541 I/RudeusGate( 1860): tap u=0.3792 v=-0.0234 world=(0.5599,-0.2040,-0.3277) anchorTracking=TRACKING t_ms=45764
+11-03 04:46:52.547 I/RudeusGate( 1860): tap_depth_gap=0.022556305 feet_h=0.0 way=[1.185786, 1.185786, 1.185786, 1.185786, 1.185786, 1.185786, 0.022556305]
+11-03 04:46:52.553 I/RudeusGate( 1860): boundary_grown n=17 u=0.37918162 v=-0.02340287
+11-03 04:46:54.753 I/RudeusGate( 1860): jump ability=FLY u=-0.28811076 v=-0.57473797
+11-03 04:46:56.827 I/RudeusGate( 1860): anchor t_ms=50049 pos=(0.1878,-0.1997,-0.4064)
+11-03 04:46:57.042 I/RudeusGate( 1860): jump ability=FLY u=0.03178115 v=-0.34966114
+11-03 04:47:06.830 I/RudeusGate( 1860): anchor t_ms=60052 pos=(0.1882,-0.2007,-0.4078)
+11-03 04:47:08.112 I/RudeusGate( 1860): tap u=0.0203 v=-0.1431 world=(0.2485,-0.2016,-0.5406) anchorTracking=TRACKING t_ms=61335
+11-03 04:47:08.114 I/RudeusGate( 1860): tap_depth_gap=0.0061758906 feet_h=0.0 way=[null, 0.0048724413, 0.0077783167, 0.008497059, 0.006042987, 0.0061758906, 0.0061758906]
+11-03 04:47:10.119 I/RudeusGate( 1860): jump ability=FLY u=0.2366785 v=-0.07094661
+11-03 04:47:15.693 I/RudeusGate( 1860): jump ability=FLY u=0.020296395 v=-0.14313877
+11-03 04:47:16.830 I/RudeusGate( 1860): anchor t_ms=70052 pos=(0.1921,-0.2102,-0.4209)
+11-03 04:47:20.307 I/RudeusGate( 1860): tap u=-0.0218 v=0.0898 world=(0.1455,-0.2095,-0.3399) anchorTracking=TRACKING t_ms=73530
+11-03 04:47:20.308 I/RudeusGate( 1860): tap_depth_gap=0.0035903156 feet_h=0.0 way=[0.007372722, 0.006784141, 0.007638842, 0.0055117607, 0.005446255, 0.0035903156, 0.0035903156]
+11-03 04:47:26.833 I/RudeusGate( 1860): anchor t_ms=80055 pos=(0.1909,-0.2074,-0.4171)
+11-03 04:50:07.843 I/RudeusGate( 1860): anchor t_ms=241066 pos=(0.3040,-0.4849,-0.8000)
+11-03 04:50:12.766 I/RudeusGate( 1860): tap u=0.6693 v=-0.5946 world=(1.0010,-0.2074,-0.7984) anchorTracking=TRACKING t_ms=245989
+11-03 04:50:12.770 I/RudeusGate( 1860): tap_depth_gap=0.010687485 feet_h=0.0 way=[null, 9.587705E-4, 0.0026988238, 0.015965685, 0.012893736, 0.010687485, 0.010687485]
+11-03 04:50:15.137 I/RudeusGate( 1860): jump ability=FLY u=0.104435734 v=-0.035149742
+11-03 04:50:17.855 I/RudeusGate( 1860): anchor t_ms=251077 pos=(0.1784,-0.1766,-0.3746)
+11-03 04:50:20.341 I/RudeusGate( 1860): tap u=1.0353 v=-0.7695 world=(1.3890,-0.1768,-0.8206) anchorTracking=TRACKING t_ms=253564
+11-03 04:50:20.347 I/RudeusGate( 1860): tap_depth_gap=0.035187006 feet_h=0.0 way=[0.0049277395, 0.0037479997, 0.010933295, 0.026437089, 0.03117226, 0.035187006, 0.035187006]
+11-03 04:50:20.352 I/RudeusGate( 1860): boundary_grown n=16 u=1.0352671 v=-0.76949805
+11-03 04:50:23.926 I/RudeusGate( 1860): jump ability=FLY u=0.7257849 v=-0.5713867
+11-03 04:50:27.860 I/RudeusGate( 1860): anchor t_ms=261082 pos=(0.1785,-0.1769,-0.3749)
+11-03 04:50:28.140 I/RudeusGate( 1860): jump ability=FLY u=1.0352671 v=-0.76949805
+11-03 04:50:30.821 I/RudeusGate( 1860): tap u=0.5122 v=-0.2746 world=(0.7474,-0.1769,-0.4936) anchorTracking=TRACKING t_ms=264044
+11-03 04:50:30.822 I/RudeusGate( 1860): tap_depth_gap=-3.8430095E-5 feet_h=0.0 way=[0.03142713, 0.026383966, 0.015863687, 0.002922967, -0.001843527, -3.8430095E-5, -3.8430095E-5]
+11-03 04:50:31.455 I/RudeusGate( 1860): jump ability=FLY u=1.001 v=-0.7370755
+11-03 05:02:10.728 I/RudeusGate( 8066): bundled=16 bundled_ms=52
