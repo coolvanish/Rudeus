@@ -440,7 +440,8 @@ fun App(
 
                 when (screen) {
                     Screen.CAPTURE -> CaptureScreen(
-                        bundled = saved + bundled,
+                        bundled = bundled,
+                        saved = saved,
                         offline = offline,
                         onOpenSettings = { settingsOpen = true },
                         onTakePhoto = {

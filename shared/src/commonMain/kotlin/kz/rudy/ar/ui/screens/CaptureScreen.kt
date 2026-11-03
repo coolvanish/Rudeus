@@ -28,19 +28,25 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
@@ -56,12 +62,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
+import kotlin.math.max
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.CharacterCard
+import kz.rudy.ar.ui.components.Chip
 import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
@@ -99,8 +107,10 @@ data class BundledCharacter(
 private val VIEWFINDER by lazy { PathParser().parsePathString("M2 32V12A10 10 0 0 1 12 2H32").toPath() }
 
 /**
- * Capture: take a photo of the drawing/toy, or pick a bundled character. The "Rudeus ⌄" wordmark opens the Settings
- * sheet, where the language switch and Metrics live.
+ * Capture: take a photo of the drawing/toy, or pick a character. One vertical grid is the whole screen: the hero fills the
+ * first view with the shelf's headline peeking below it, and the All / Mine / Ready filter chips pin to the top over the
+ * cards. The "Rudeus ⌄" wordmark opens the Settings sheet, where the language switch and Metrics live.
+ * [saved] are the characters from the child's photos, [bundled] the ones shipped in the APK.
  * [onPickPhoto] (T03) adds a "from gallery" button under the camera one when the host offers a photo picker.
  */
 @Composable
@@ -111,109 +121,137 @@ fun CaptureScreen(
     onTakePhoto: () -> Unit,
     onPickBundled: (BundledCharacter) -> Unit,
     modifier: Modifier = Modifier,
+    saved: List<BundledCharacter> = emptyList(),
     selectedId: String? = null,
     onPickPhoto: (() -> Unit)? = null,
 ) {
-    BoxWithConstraints(modifier.fillMaxSize().background(RudeusColors.Paper)) {
-        val rows = if (maxHeight >= TWO_ROWS_MIN_SCREEN_HEIGHT) 2 else 1
-        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(bottom = RudeusSpacing.smd)) {
-            Column(Modifier.weight(1f).padding(horizontal = RudeusSpacing.screenEdge)) {
-                Wordmark(onOpenSettings)
-                Spacer(Modifier.height(RudeusSpacing.xs))
-                Text(t(StringId.capture_title), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
-                Spacer(Modifier.height(6.dp))
-                Text(t(StringId.capture_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
-                Spacer(Modifier.height(RudeusSpacing.screenEdge))
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(RudeusRadius.hero))
-                        .background(RudeusColors.Cream)
-                        .padding(RudeusSpacing.smd),
-                    verticalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
-                ) {
-                    ExampleWell(Modifier.weight(1f).heightIn(min = 96.dp).fillMaxWidth())
-                    PrimaryButton(
-                        text = t(StringId.capture_take_photo),
-                        glyph = Glyph.CAMERA,
-                        enabled = true, // offline: still enabled, a tap is the retry (the note below says why)
-                        onClick = onTakePhoto,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (onPickPhoto != null) {
-                        GhostButton(
-                            text = t(StringId.capture_pick_gallery),
-                            glyph = Glyph.GALLERY,
-                            onClick = onPickPhoto,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    Text(
-                        t(StringId.capture_privacy_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = RudeusColors.InkSoft,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Spacer(Modifier.height(22.dp))
-                if (offline) {
-                    Pill(t(StringId.capture_offline_note), dot = RudeusColors.Leaf)
-                    Spacer(Modifier.height(RudeusSpacing.sm))
-                }
-                Text(t(StringId.capture_or_pick), style = MaterialTheme.typography.titleMedium, color = RudeusColors.Ink)
-                Spacer(Modifier.height(RudeusSpacing.smd))
-            }
-            if (bundled.isEmpty()) {
-                EmptyCard(t(StringId.capture_empty), modifier = Modifier.padding(horizontal = RudeusSpacing.screenEdge))
-            } else {
-                CharacterGrid(bundled, selectedId, rows, onPickBundled)
-            }
-        }
+    // Inside the insets, so the pinned row never slides under the status bar.
+    BoxWithConstraints(modifier.fillMaxSize().background(RudeusColors.Paper).safeDrawingPadding()) {
+        val heroHeight = max(maxHeight - SHELF_PEEK, HERO_MIN_HEIGHT * LocalDensity.current.fontScale)
+        CaptureGrid(
+            bundled = bundled,
+            saved = saved,
+            selectedId = selectedId,
+            onPick = onPickBundled,
+            hero = {
+                Hero(offline, onOpenSettings, onTakePhoto, onPickPhoto, Modifier.height(heroHeight))
+            },
+        )
     }
 }
 
-/** Below this the second row would squeeze the hero's example drawing under its 96 dp. */
-private val TWO_ROWS_MIN_SCREEN_HEIGHT = 960.dp
+/** What the shelf shows; the chips pinned over the cards switch it. */
+private enum class Shelf(val label: StringId) {
+    ALL(StringId.capture_shelf_all),
+    MINE(StringId.capture_shelf_mine),
+    READY(StringId.capture_shelf_ready),
+}
 
-/** Until a card has been measured; its real height follows the font scale. */
-private val CARD_HEIGHT_GUESS = 176.dp
-private val CARD_ROW_GAP = 10.dp
+/** How much of the shelf shows under the hero, so the first view reads as "there is more below". */
+private val SHELF_PEEK = 44.dp
+
+/** Below this (times the font scale) the hero stops shrinking and scrolls instead, keeping its example drawing visible. */
+private val HERO_MIN_HEIGHT = 560.dp
+
+private val CARD_MIN_WIDTH = 124.dp
+private val CARD_GAP = 10.dp
 
 private const val ENTRANCE_STAGGER_MS = 40L
 private const val ENTRANCE_MAX_STAGGER = 8
 
+private const val HERO_KEY = "capture_hero"
+private const val HEADLINE_KEY = "capture_headline"
+private const val FILTER_CHIPS_KEY = "capture_filter_chips"
+private const val EMPTY_KEY = "capture_empty"
+
+/** The items above the cards: hero, headline, filter chips. */
+private const val ITEMS_ABOVE_CARDS = 3
+
 /**
- * The shelf: [rows] rows scrolling sideways, bleeding off the right edge so it reads as "there is more". A card pops in
- * the first time it shows on this visit, one after another while the grid is still; the others make room with a spring
- * when a card is added in front.
+ * One grid for every shelf, so a filter change moves the cards it keeps with a spring, fades the ones it drops and pops the
+ * new ones in one after another.
  */
 @Composable
-private fun CharacterGrid(characters: List<BundledCharacter>, selectedId: String?, rows: Int, onPick: (BundledCharacter) -> Unit) {
+private fun CaptureGrid(
+    bundled: List<BundledCharacter>,
+    saved: List<BundledCharacter>,
+    selectedId: String?,
+    onPick: (BundledCharacter) -> Unit,
+    hero: @Composable () -> Unit,
+) {
     val reduced = LocalReducedMotion.current
     val density = LocalDensity.current
     val grid = rememberLazyGridState()
     val entered = remember { mutableSetOf<String>() }
-    var cardHeight by remember { mutableStateOf<Dp?>(null) }
-    // A keyed grid holds its scroll on the old first card, so a card added in front would sit off-screen left.
-    LaunchedEffect(characters.first().id) {
-        if (reduced) grid.scrollToItem(0) else grid.animateScrollToItem(0)
+    var shelf by remember { mutableStateOf(Shelf.ALL) }
+    val characters = when (shelf) {
+        Shelf.ALL -> saved + bundled
+        Shelf.MINE -> saved
+        Shelf.READY -> bundled
     }
-    LazyHorizontalGrid(
-        rows = GridCells.Fixed(rows),
-        modifier = Modifier.fillMaxWidth().height((cardHeight ?: CARD_HEIGHT_GUESS) * rows + CARD_ROW_GAP * (rows - 1)),
+    fun show(next: Shelf) {
+        // A card that comes back pops in again; the ones both shelves share stay composed and only move.
+        if (next != shelf) entered.clear()
+        shelf = next
+    }
+    var chipsHeight by remember { mutableIntStateOf(0) }
+    var cardHeight by remember { mutableIntStateOf(0) }
+    val shown by rememberUpdatedState(characters.size)
+    // A short shelf still has to scroll up to the pinned chips, or switching to it would make them jump.
+    val bottomPadding by remember(grid, density) {
+        derivedStateOf {
+            val info = grid.layoutInfo
+            val columns = max(1, info.maxSpan)
+            val rows = (shown + columns - 1) / columns
+            val free = info.viewportSize.height - chipsHeight - rows * (cardHeight + with(density) { CARD_GAP.roundToPx() })
+            with(density) { max(RudeusSpacing.md.roundToPx(), free).toDp() }
+        }
+    }
+    DisposableEffect(shelf) {
+        grid.requestScrollToChipsIfScrolledPast()
+        onDispose { }
+    }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(CARD_MIN_WIDTH),
+        modifier = Modifier.fillMaxSize(),
         state = grid,
-        contentPadding = PaddingValues(horizontal = RudeusSpacing.screenEdge),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(CARD_ROW_GAP),
+        contentPadding = PaddingValues(start = RudeusSpacing.screenEdge, end = RudeusSpacing.screenEdge, bottom = bottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
+        verticalArrangement = Arrangement.spacedBy(CARD_GAP),
     ) {
+        fullWidthItem(HERO_KEY) { hero() }
+        fullWidthItem(HEADLINE_KEY) {
+            Text(t(StringId.capture_or_pick), style = MaterialTheme.typography.titleMedium, color = RudeusColors.Ink)
+        }
+        stickyHeader(key = FILTER_CHIPS_KEY) {
+            Row(
+                Modifier
+                    .onSizeChanged { chipsHeight = it.height }
+                    .fillMaxWidth()
+                    .background(RudeusColors.Paper)
+                    .padding(vertical = RudeusSpacing.sm),
+                horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+            ) {
+                Shelf.entries.forEach { filter ->
+                    Chip(t(filter.label), isOn = filter == shelf, onClick = { show(filter) })
+                }
+            }
+        }
+        if (characters.isEmpty()) {
+            item(key = EMPTY_KEY, span = { GridItemSpan(maxLineSpan) }) {
+                EmptyCard(
+                    t(StringId.capture_empty),
+                    hint = if (shelf == Shelf.MINE) t(StringId.capture_empty_mine_hint) else null,
+                    modifier = Modifier.animateItem(),
+                )
+            }
+        }
         itemsIndexed(characters, key = { _, c -> c.id }) { index, c ->
             val entranceDelayMs = remember {
                 when {
                     !entered.add(c.id) -> null
                     reduced || grid.isScrollInProgress -> 0L
-                    else -> (index - grid.firstVisibleItemIndex).coerceIn(0, ENTRANCE_MAX_STAGGER) * ENTRANCE_STAGGER_MS
+                    else -> (index + ITEMS_ABOVE_CARDS - grid.firstVisibleItemIndex).coerceIn(0, ENTRANCE_MAX_STAGGER) * ENTRANCE_STAGGER_MS
                 }
             }
             BundledCard(
@@ -223,13 +261,77 @@ private fun CharacterGrid(characters: List<BundledCharacter>, selectedId: String
                 onClick = { onPick(c) },
                 // The card's own entrance replaces the fade in.
                 modifier = (if (reduced) Modifier.animateItem(fadeInSpec = null, placementSpec = null) else Modifier.animateItem(fadeInSpec = null))
-                    // A cell has the grid's height, so the card measures itself free of it and the grid follows.
-                    .wrapContentHeight(Alignment.Top, unbounded = true)
-                    .onSizeChanged { size ->
-                        val measured = with(density) { size.height.toDp() }
-                        if (measured > (cardHeight ?: 0.dp)) cardHeight = measured
-                    },
+                    .fillMaxWidth()
+                    .onSizeChanged { cardHeight = it.height },
             )
+        }
+    }
+}
+
+private fun LazyGridState.requestScrollToChipsIfScrolledPast() {
+    val chips = layoutInfo.visibleItemsInfo.firstOrNull { it.key == FILTER_CHIPS_KEY } ?: return
+    if (firstVisibleItemIndex > chips.index) {
+        requestScrollToItem(index = chips.index, scrollOffset = -layoutInfo.viewportStartOffset)
+    }
+}
+
+private fun LazyGridScope.fullWidthItem(key: String, content: @Composable () -> Unit) {
+    item(key = key, span = { GridItemSpan(maxLineSpan) }) { content() }
+}
+
+/** Wordmark, title and the hero card; the example drawing takes all the height the rest leaves in [modifier]. */
+@Composable
+private fun Hero(
+    offline: Boolean,
+    onOpenSettings: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onPickPhoto: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        Wordmark(onOpenSettings)
+        Spacer(Modifier.height(RudeusSpacing.xs))
+        Text(t(StringId.capture_title), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
+        Spacer(Modifier.height(6.dp))
+        Text(t(StringId.capture_hint), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
+        Spacer(Modifier.height(RudeusSpacing.screenEdge))
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(RudeusRadius.hero))
+                .background(RudeusColors.Cream)
+                .padding(RudeusSpacing.smd),
+            verticalArrangement = Arrangement.spacedBy(RudeusSpacing.sm),
+        ) {
+            ExampleWell(Modifier.weight(1f).heightIn(min = 96.dp).fillMaxWidth())
+            PrimaryButton(
+                text = t(StringId.capture_take_photo),
+                glyph = Glyph.CAMERA,
+                enabled = true, // offline: still enabled, a tap is the retry (the note below says why)
+                onClick = onTakePhoto,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (onPickPhoto != null) {
+                GhostButton(
+                    text = t(StringId.capture_pick_gallery),
+                    glyph = Glyph.GALLERY,
+                    onClick = onPickPhoto,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Text(
+                t(StringId.capture_privacy_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = RudeusColors.InkSoft,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.height(RudeusSpacing.md))
+        if (offline) {
+            Pill(t(StringId.capture_offline_note), dot = RudeusColors.Leaf)
+            Spacer(Modifier.height(RudeusSpacing.sm))
         }
     }
 }

@@ -153,15 +153,18 @@ The robe is brand, never a character in the game (principle: the child's drawing
 story the hero is a drawn star. Drawn over Capture, so nothing waits behind it; no sound. Motion row above.
 
 ### Capture — `CaptureScreen`
-Paper. Top-left wordmark "Rudeus ⌄" (the arrow in Sky) opens the Settings sheet. Display title "Drawing or toy", hint "Put the drawing on
-the table and take a photo". Hero card (Cream, radius 28): example drawing with Paper viewfinder brackets, **Photo**
-(Sun, full width, camera glyph), ghost **From gallery**, and under them the caption "The photo goes to Meta AI…"
-(`capture_privacy_note`). Then the headline "Or pick a ready one" and a shelf of character cards bleeding off the right
-edge. The card draws the character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph. Without a
-host the demo pair is shown. Characters made from the child's photos come first, newest first: one joins the shelf when
-it passes the check, or when the child taps "Play anyway" (below the check, Retry adds nothing). The 30 newest stay on
-the phone across restarts.
-- *API offline*: Paper pill with a Leaf dot "No internet — ready characters" above the shelf; the bundled shelf is the
+Paper. One vertical grid is the whole screen. The first view: top-left wordmark "Rudeus ⌄" (the arrow in Sky) opens the
+Settings sheet. Display title "Drawing or toy", hint "Put the drawing on the table and take a photo". Hero card (Cream,
+radius 28): big example drawing with Paper viewfinder brackets, taking all the height left, **Photo** (Sun, full width,
+camera glyph), ghost **From gallery**, and under them the caption "The photo goes to Meta AI…" (`capture_privacy_note`).
+The headline "Or pick a ready one" peeks under the hero, so the view reads as "scroll for more". Scrolling brings the
+filter chips All · Mine · Ready, which pin to the top, over the character cards (as many columns as fit at 124 dp). On a
+filter change the cards both shelves share move with a spring, the dropped ones fade and the new ones pop in.
+The card draws the character's own sprite PNG (shipped in the APK), else a host thumbnail, else a glyph.
+Without a host the demo pair is shown. Characters made from the child's photos are Mine; All shows them first, newest
+first: one joins when it passes the check, or when the child taps "Play anyway" (below the check, Retry adds nothing).
+The 30 newest stay on the phone across restarts. An empty Mine says "Nothing yet" and to take a photo.
+- *API offline*: Paper pill with a Leaf dot "No internet — ready characters" above the headline; the bundled shelf is the
   primary path. Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call
   succeeds). A failed attempt lands on the Processing error sheet as today. Never show a spinner.
 - *No bundled characters* (should not happen; assets ship in the APK): an empty Cream card "Nothing yet".
@@ -289,6 +292,10 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | capture_or_pick | Немесе дайынын таңда | Или выбери готового | Or pick a ready one |
 | capture_offline_note | Интернет жоқ — дайын кейіпкерлер | Нет интернета — готовые герои | No internet — ready characters |
 | capture_empty | Әзірге жоқ | Пока пусто | Nothing yet |
+| capture_empty_mine_hint | Суретті фотоға түсір — осында шығады | Сфотографируй рисунок — он появится здесь | Take a photo of a drawing and it shows up here |
+| capture_shelf_all | Бәрі | Все | All |
+| capture_shelf_mine | Менікі | Мои | Mine |
+| capture_shelf_ready | Дайын | Готовые | Ready |
 | metrics_button | Метрика | Метрика | Metrics |
 | processing_title | Кейіпкер жасалып жатыр | Делаем героя | Making your character |
 | stage_cutout | Қиып аламыз | Вырезаем | Cutting out |

@@ -52,6 +52,10 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     capture_or_pick("Немесе дайынын таңда", "Или выбери готового", "Or pick a ready one"),
     capture_offline_note("Интернет жоқ — дайын кейіпкерлер", "Нет интернета — готовые герои", "No internet — ready characters"),
     capture_empty("Әзірге жоқ", "Пока пусто", "Nothing yet"),
+    capture_empty_mine_hint("Суретті фотоға түсір — осында шығады", "Сфотографируй рисунок — он появится здесь", "Take a photo of a drawing and it shows up here"),
+    capture_shelf_all("Бәрі", "Все", "All"),
+    capture_shelf_mine("Менікі", "Мои", "Mine"),
+    capture_shelf_ready("Дайын", "Готовые", "Ready"),
     metrics_button("Метрика", "Метрика", "Metrics"),
 
     processing_title("Кейіпкер жасалып жатыр", "Делаем героя", "Making your character"),
