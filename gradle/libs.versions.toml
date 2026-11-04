@@ -1,5 +1,6 @@
 [versions]
-agp = "9.1.1"
+# HAND-REVIEW: dependency refresh — AGP 9.3.x is the newest line Kotlin 2.4.21 supports (9.5.0 is outside its range); Gradle moves to 9.7.0, its max.
+agp = "9.3.3"
 android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "37"
@@ -16,7 +17,7 @@ kotlin = "2.4.21"
 material3 = "1.12.0-alpha03"
 coroutines = "1.11.0"
 serialization = "1.12.0"
-ktor = "3.6.0"
+ktor = "3.6.1"
 sceneview = "4.31.0"
 
 [libraries]
