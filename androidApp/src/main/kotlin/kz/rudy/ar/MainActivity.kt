@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity() {
             val host = remember(intake) {
                 AndroidCaptureHost(applicationContext, intake, requestMic = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) })
             }
+            DisposableEffect(host) { onDispose { host.close() } } // HAND-REVIEW: memory audit 2026-11-03 — see AndroidCaptureHost.close
             val sounds = remember { Sounds(applicationContext) }
             DisposableEffect(Unit) { onDispose { sounds.release() } }
             CompositionLocalProvider(LocalReducedMotion provides systemReducedMotion) {

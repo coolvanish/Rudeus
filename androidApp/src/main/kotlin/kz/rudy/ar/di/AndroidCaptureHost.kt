@@ -40,6 +40,7 @@ import kz.rudy.ar.core.pipeline.CharacterPipeline
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.core.pipeline.StyleGate
+import kz.rudy.ar.core.pipeline.StyleRefs
 import kz.rudy.ar.scan.TableScanner
 import kz.rudy.ar.ui.screens.BundledCharacter
 import kz.rudy.ar.voice.VoiceRecorder
@@ -94,18 +95,31 @@ class AndroidCaptureHost(
     // `saved_character=` / `saved_characters=`, never a name.
     private val saved = SavedCharacters(FileCharacterFolder(File(app.filesDir, SAVED_DIR)))
 
-    private val styleRefs: List<ByteArray> by lazy {
-        loadStyleRefs(app.assets).also { Log.i(TAG, "style_refs=${it.size}") }
+    // HAND-REVIEW: memory audit 2026-11-03 — one StyleRefs for the host's life: the 8 refs are scaled and matted for the first
+    // character only. The pipelines built in makeCharacter all use the same AndroidImages functions, as StyleRefs requires.
+    private val styleRefs: StyleRefs by lazy {
+        StyleRefs(loadStyleRefs(app.assets)).also { Log.i(TAG, "style_refs=${it.originals.size}") }
     }
 
     /** Built on first use; `check` fails fast (and loudly, without the key) when the build had no key. */
-    private val api: MetaApi by lazy {
+    private val lazyApi = lazy {
         val key = BuildConfig.META_API_KEY
         check(key.isNotBlank()) { "META_API_KEY missing: put it in local.properties and rebuild" }
         // HAND-REVIEW: T16 measured the six table prompts from the Mac at 4.1-5.3 s with 3 SAM requests in flight
         // (two rounds) and 2.5 s with 6 (one round); the Day 4 gate is scan < 6 s including the frame grab and the
         // mobile link. 6 is the proposal; if the Pixel sees 429s on "segment[...]", go back to the default (3).
         MetaApi(MetaConfig(apiKey = key, samConcurrency = 6), costMeter = metrics)
+    }
+    private val api: MetaApi by lazyApi
+
+    /**
+     * HAND-REVIEW: memory audit 2026-11-03 — each Activity builds a host, and each host's first model call built a client
+     * that nothing closed. MainActivity calls this when its content leaves. On a thread of its own: closing a TLS socket on
+     * main can throw NetworkOnMainThreadException, and a failed close must cost nothing.
+     */
+    fun close() {
+        if (!lazyApi.isInitialized()) return
+        Thread({ runCatching { api.close() }.onFailure { Log.w(TAG, "api close failed: ${it.message}") } }, "rudeus-api-close").start()
     }
 
     // HAND-REVIEW: T22 — every model call (pipeline and table scan) goes through one OfflineGuard, whose flag feeds
