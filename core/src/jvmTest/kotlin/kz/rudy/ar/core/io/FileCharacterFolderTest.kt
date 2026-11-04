@@ -1,5 +1,8 @@
 package kz.rudy.ar.core.io
 
+import kotlin.test.assertNull
+import kz.rudy.ar.core.emote.ChoreographyParser
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
@@ -56,5 +59,27 @@ class FileCharacterFolderTest {
     @Test
     fun aMissingFolderHasNoCharacters() {
         assertEquals(emptyList(), SavedCharacters(FileCharacterFolder(File(tempDir(), "nope"))).load().map { it.id })
+    }
+
+
+    @Test
+    fun fileFolderWritesChoreoBesideTheSheet() {
+        val dir = tempDir()
+        val folder = FileCharacterFolder(dir)
+        val text = ChoreographyParser.toJson(EmoteSet.defaults())
+        folder.write("saved-1", byteArrayOf(1), "{}", text)
+        assertEquals(text, File(dir, "saved-1/choreo.json").readText())
+        assertTrue(File(dir, "saved-1/sheet.json").isFile)
+        assertEquals(text, folder.readChoreo("saved-1"))
+        assertFalse(File(dir, ".writing").exists(), "written in the same atomic step as the sheet")
+
+        folder.write("saved-2", byteArrayOf(2), "{}")
+        assertFalse(File(dir, "saved-2/choreo.json").exists())
+        assertNull(folder.readChoreo("saved-2"))
+        assertNull(folder.readChoreo("nobody"))
+
+        val id = SavedCharacters(FileCharacterFolder(dir), clock = { 5L }).save(byteArrayOf(3), sheet).id
+        assertTrue(File(dir, "$id/choreo.json").isFile)
+        assertEquals(EmoteSet.defaults(), SavedCharacters(FileCharacterFolder(dir)).load().first().emotes)
     }
 }

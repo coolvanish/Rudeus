@@ -4,6 +4,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.ChoreographyParser
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.io.joinPath
 import kotlin.time.Instant
 
@@ -24,6 +26,10 @@ fun interface FixtureWriter {
  * | scoreStyle    | `spark-score/<ref>.fixture.json` `scores`, in call order                 |
  * | scoreTechnique| the same file's `techniqueScores`, in call order                          |
  * | characterSheet| `spark-sheet/<ref>.fixture.json` `sheet` in the model JSON shape         |
+ * | choreograph   | `spark-choreo/<ref>.fixture.json` `text`: the set in the reply shape      |
+ *
+ * The choreo `text` is [ChoreographyParser.toJson] of the sanitised set (the raw reply never leaves [MetaApi]); it
+ * replays to the same choreographies, with source `spark` since all five then come from the "reply".
  *
  * Only the first segment call per ref is recorded, and only when its prompts are [Jobs.CUTOUT_PROMPTS]: later
  * segment calls for the same ref (the matte fallback on the stylized sprite) and table scans pass through
@@ -94,6 +100,12 @@ class RecordingModels(
         val (sheet, ms) = timed { inner.characterSheet(ref, description, image) }
         write(Jobs.SPARK_SHEET, ref, latency(Jobs.SPARK_SHEET, ref, ms)) { it.copy(sheet = sheetJson(sheet)) }
         return sheet
+    }
+
+    override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet {
+        val (set, ms) = timed { inner.choreograph(ref, sheet, image) }
+        write(Jobs.SPARK_CHOREO, ref, latency(Jobs.SPARK_CHOREO, ref, ms)) { it.copy(text = ChoreographyParser.toJson(set)) }
+        return set
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String =

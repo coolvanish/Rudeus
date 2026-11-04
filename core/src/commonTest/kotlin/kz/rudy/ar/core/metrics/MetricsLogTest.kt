@@ -48,16 +48,16 @@ class MetricsLogTest {
         assertEquals(StageCost(0.0, measured = true), log.costSince(mark2, 0.02))
         assertEquals(0.01, log.measuredUsd(Jobs.MUSE_STYLIZE), 1e-12)
 
-        // Through the pipeline: cutout, stylize and gate are measured, the sheet (no usage) falls back to the table.
+        // Through the pipeline: cutout, stylize and gate are measured, the sheet and the choreography (no usage) fall back to the table.
         val models = FakeModels(scores = listOf(0.5f, 0.9f))
         val run = MetricsLog("cli", "meta", "mac", clock = { 0L })
         CharacterPipeline(MeteredModels(models, run), StyleGate(), run).run("cat-01", byteArrayOf(1), emptyList(), "")
         val stages = run.toRun().characters.single().stages
         // The two looks run at once; each stage gets its own call's cost (the colour-free one meters under its own job).
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), stages.map { it.name })
-        assertEquals(listOf(0.005, 0.01, 0.0031, 0.0029, 0.01, 0.0031, 0.0029, run.costs.sheetUsd), stages.map { it.costUsd })
-        assertEquals(listOf(true, true, true, true, true, true, true, false), stages.map { it.measured })
-        assertEquals(0.0370 + run.costs.sheetUsd, run.toRun().characters.single().totalCostUsd, 1e-9)
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet", "choreo"), stages.map { it.name })
+        assertEquals(listOf(0.005, 0.01, 0.0031, 0.0029, 0.01, 0.0031, 0.0029, run.costs.sheetUsd, run.costs.choreoUsd), stages.map { it.costUsd })
+        assertEquals(listOf(true, true, true, true, true, true, true, false, false), stages.map { it.measured })
+        assertEquals(0.0370 + run.costs.sheetUsd + run.costs.choreoUsd, run.toRun().characters.single().totalCostUsd, 1e-9)
     }
 
     @Test

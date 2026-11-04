@@ -1,6 +1,7 @@
 package kz.rudy.ar.core.meta
 
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.EmoteSet
 
 /**
  * The five model jobs Rudeus needs, provider-agnostic. Implementations: [MetaApi] (Ktor, real calls),
@@ -37,6 +38,13 @@ interface MetaModels {
      */
     suspend fun characterSheet(ref: String, description: String, image: ByteArray? = null): CharacterSheet
 
+    /**
+     * Spark: the five choreographies for a character, from its sheet and (when given) the cutout/sprite image.
+     * Every implementation and decorator in core/meta overrides it; the body here only keeps implementations outside
+     * :core (the app's DeferredModels) compiling until they forward it, and ships the hand-authored defaults.
+     */
+    suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray? = null): EmoteSet = EmoteSet.defaults()
+
     /** Voice Transcribe: [pcm16kMono] 16-bit little-endian PCM, 16 kHz mono, in language [lang] ("kk", "ru"). */
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String
 }
@@ -56,6 +64,9 @@ object Jobs {
     const val SPARK_SCORE_TECHNIQUE = "spark-score-technique"
 
     const val SPARK_SHEET = "spark-sheet"
+
+    /** [MetaModels.choreograph]: the five emote choreographies (fixtures in docs/api-samples/spark-choreo). */
+    const val SPARK_CHOREO = "spark-choreo"
     const val VOICE = "voice"
 
     /** Prompts that distinguish a cutout call from a table scan. */
@@ -65,5 +76,5 @@ object Jobs {
     fun segmentJob(prompts: List<String>): String =
         if (prompts.isNotEmpty() && prompts.all { it in CUTOUT_PROMPTS }) SAM_CUTOUT else SAM_TABLE
 
-    val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, SPARK_SCORE, SPARK_SHEET, VOICE)
+    val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, SPARK_SCORE, SPARK_SHEET, SPARK_CHOREO, VOICE)
 }

@@ -1,0 +1,367 @@
+# path: /v1/chat/completions
+# base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
+# content-type: json
+# model: muse-spark-1.3-contributor   (same Spark model and tier as spark-sheet)
+# input: the character cutout image (PNG/JPEG, <= 512 px long side, the image the sheet call saw) -> {{INPUT_MIME}}/{{INPUT_B64}}
+# added 2026-11-04 (T29): MetaApi.choreograph = ChatRequest.choreograph(model, sheet, image). The text part is
+#   Prompts.choreograph(sheet, withImage = true) for the spark-sheet/sample-01 sheet (normalised by SheetParser, so its
+#   lines are the generic English fallback); a live call carries the character's own sheet. Without an image the
+#   message has the text part only.
+# shape: response_format json_schema "Choreographies", strict, every object additionalProperties:false with all its
+#   properties required; keys are arrays of objects of numbers. Bounds live in the prompt text, not in the schema;
+#   core/emote ChoreographyRules.sanitize enforces them on whatever comes back.
+# unverified: not probed yet (T30 probes it live): whether strict:true accepts five nested objects of arrays of objects,
+#   whether 4096 max_completion_tokens is enough with reasoning_effort low, latency and cost.
+# generated from the code (core/meta MetaDtos.kt); RequestShapeTest checks this body against it.
+{
+    "model": "muse-spark-1.3-contributor",
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "The image shows Мысық, a character a child drew. Personality: Curious and brave; never scared of cups. Ability: jump. Its lines, by index: 0: \"Hi!\", 1: \"Let's go!\", 2: \"I'm here!\", 3: \"Look!\", 4: \"Well done!\". In an AR game the character is a flat picture standing on a table, and you move the whole picture. Write five short emotes for it: hello (a greeting), bye (a goodbye, a bow or a wave), dance (bounces to a beat), spin (turns around at least once), roar (puffs up and shakes). Each emote is {\"durationMs\": 300 to 4000, \"keys\": 2 to 16 poses sorted by atMs, the first at atMs 0 and the last at atMs durationMs, \"line\": the index 0 to 4 of the line it says when it starts, \"sound\": one of \"none\",\"hello\",\"roar\",\"dance\"}. A pose is {\"atMs\": ms from the start, \"scaleX\": 0.6 to 1.5 width, \"scaleY\": 0.6 to 1.5 height, \"yawDeg\": turn about the vertical axis in degrees, counted up (360 is one full turn, at most 360 between two poses), \"tiltDeg\": -35 to 35 lean sideways (a wave, a bow), \"hop\": 0 to 0.5 lift in character heights}. The rest pose is scaleX 1, scaleY 1, yawDeg 0, tiltDeg 0, hop 0; the last pose is the rest pose with yawDeg a whole number of turns, so the picture faces the camera again. Between poses the picture moves smoothly. Fit the moves to the personality: a shy character waves small, a wild one roars big. Reply with JSON only: {\"hello\": emote, \"bye\": emote, \"dance\": emote, \"spin\": emote, \"roar\": emote}."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}"
+                    }
+                }
+            ]
+        }
+    ],
+    "max_completion_tokens": 4096,
+    "reasoning_effort": "low",
+    "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "Choreographies",
+            "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "hello": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "durationMs": {
+                                "type": "integer"
+                            },
+                            "keys": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "atMs": {
+                                            "type": "number"
+                                        },
+                                        "scaleX": {
+                                            "type": "number"
+                                        },
+                                        "scaleY": {
+                                            "type": "number"
+                                        },
+                                        "yawDeg": {
+                                            "type": "number"
+                                        },
+                                        "tiltDeg": {
+                                            "type": "number"
+                                        },
+                                        "hop": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "atMs",
+                                        "scaleX",
+                                        "scaleY",
+                                        "yawDeg",
+                                        "tiltDeg",
+                                        "hop"
+                                    ]
+                                }
+                            },
+                            "line": {
+                                "type": "integer"
+                            },
+                            "sound": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "hello",
+                                    "roar",
+                                    "dance"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "durationMs",
+                            "keys",
+                            "line",
+                            "sound"
+                        ]
+                    },
+                    "bye": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "durationMs": {
+                                "type": "integer"
+                            },
+                            "keys": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "atMs": {
+                                            "type": "number"
+                                        },
+                                        "scaleX": {
+                                            "type": "number"
+                                        },
+                                        "scaleY": {
+                                            "type": "number"
+                                        },
+                                        "yawDeg": {
+                                            "type": "number"
+                                        },
+                                        "tiltDeg": {
+                                            "type": "number"
+                                        },
+                                        "hop": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "atMs",
+                                        "scaleX",
+                                        "scaleY",
+                                        "yawDeg",
+                                        "tiltDeg",
+                                        "hop"
+                                    ]
+                                }
+                            },
+                            "line": {
+                                "type": "integer"
+                            },
+                            "sound": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "hello",
+                                    "roar",
+                                    "dance"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "durationMs",
+                            "keys",
+                            "line",
+                            "sound"
+                        ]
+                    },
+                    "dance": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "durationMs": {
+                                "type": "integer"
+                            },
+                            "keys": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "atMs": {
+                                            "type": "number"
+                                        },
+                                        "scaleX": {
+                                            "type": "number"
+                                        },
+                                        "scaleY": {
+                                            "type": "number"
+                                        },
+                                        "yawDeg": {
+                                            "type": "number"
+                                        },
+                                        "tiltDeg": {
+                                            "type": "number"
+                                        },
+                                        "hop": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "atMs",
+                                        "scaleX",
+                                        "scaleY",
+                                        "yawDeg",
+                                        "tiltDeg",
+                                        "hop"
+                                    ]
+                                }
+                            },
+                            "line": {
+                                "type": "integer"
+                            },
+                            "sound": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "hello",
+                                    "roar",
+                                    "dance"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "durationMs",
+                            "keys",
+                            "line",
+                            "sound"
+                        ]
+                    },
+                    "spin": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "durationMs": {
+                                "type": "integer"
+                            },
+                            "keys": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "atMs": {
+                                            "type": "number"
+                                        },
+                                        "scaleX": {
+                                            "type": "number"
+                                        },
+                                        "scaleY": {
+                                            "type": "number"
+                                        },
+                                        "yawDeg": {
+                                            "type": "number"
+                                        },
+                                        "tiltDeg": {
+                                            "type": "number"
+                                        },
+                                        "hop": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "atMs",
+                                        "scaleX",
+                                        "scaleY",
+                                        "yawDeg",
+                                        "tiltDeg",
+                                        "hop"
+                                    ]
+                                }
+                            },
+                            "line": {
+                                "type": "integer"
+                            },
+                            "sound": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "hello",
+                                    "roar",
+                                    "dance"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "durationMs",
+                            "keys",
+                            "line",
+                            "sound"
+                        ]
+                    },
+                    "roar": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "durationMs": {
+                                "type": "integer"
+                            },
+                            "keys": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "atMs": {
+                                            "type": "number"
+                                        },
+                                        "scaleX": {
+                                            "type": "number"
+                                        },
+                                        "scaleY": {
+                                            "type": "number"
+                                        },
+                                        "yawDeg": {
+                                            "type": "number"
+                                        },
+                                        "tiltDeg": {
+                                            "type": "number"
+                                        },
+                                        "hop": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "atMs",
+                                        "scaleX",
+                                        "scaleY",
+                                        "yawDeg",
+                                        "tiltDeg",
+                                        "hop"
+                                    ]
+                                }
+                            },
+                            "line": {
+                                "type": "integer"
+                            },
+                            "sound": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "hello",
+                                    "roar",
+                                    "dance"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "durationMs",
+                            "keys",
+                            "line",
+                            "sound"
+                        ]
+                    }
+                },
+                "required": [
+                    "hello",
+                    "bye",
+                    "dance",
+                    "spin",
+                    "roar"
+                ]
+            },
+            "strict": true
+        }
+    }
+}

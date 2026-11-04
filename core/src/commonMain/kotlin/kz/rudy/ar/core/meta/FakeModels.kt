@@ -3,6 +3,7 @@ package kz.rudy.ar.core.meta
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.EmoteSet
 
 /**
  * Scripted [MetaModels] for tests: [scores] are returned in order (last one repeats), [techniqueScores] likewise
@@ -24,6 +25,10 @@ class FakeModels(
     var sheetError: Throwable? = null,
     /** When set, [stylize] throws it (after its delay). */
     var stylizeError: Throwable? = null,
+    /** What [choreograph] returns. */
+    var emotes: EmoteSet = EmoteSet.defaults(),
+    /** When set, [choreograph] throws it (after its delay); any Throwable, like [sheetError]. */
+    var choreoError: Throwable? = null,
     var delays: Map<String, Long> = emptyMap(),
 ) : MetaModels {
     val calls = ArrayList<String>()
@@ -31,6 +36,9 @@ class FakeModels(
     val scoredImages = ArrayList<ByteArray>()
     val scoredRefs = ArrayList<List<ByteArray>>()
     val sheetImages = ArrayList<ByteArray?>()
+    /** The sheet and image each [choreograph] call received. */
+    val choreoSheets = ArrayList<CharacterSheet>()
+    val choreoImages = ArrayList<ByteArray?>()
     private var scoreIndex = 0
     private var techniqueIndex = 0
 
@@ -84,6 +92,15 @@ class FakeModels(
         pause("characterSheet")
         sheetError?.let { throw it }
         return sheet
+    }
+
+    override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet {
+        calls += "choreograph:$ref"
+        choreoSheets += sheet
+        choreoImages += image
+        pause("choreograph")
+        choreoError?.let { throw it }
+        return emotes
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String {

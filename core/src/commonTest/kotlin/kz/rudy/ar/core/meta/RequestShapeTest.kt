@@ -1,5 +1,6 @@
 package kz.rudy.ar.core.meta
 
+import kz.rudy.ar.core.emote.Emote
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -206,5 +207,54 @@ class RequestShapeTest {
         }
         assertTrue("finish_reason=length" in fx.message!!, fx.message)
         assertEquals("0.8", MetaApi.json.decodeFromString(ChatResponse.serializer(), """{"choices":[{"message":{"content":"0.8"}}]}""").contentText())
+    }
+
+
+    @Test
+    fun requestShapeChoreographHasStrictSchemaAndImage() {
+        val model = MetaConfig(apiKey = "test-key").sparkModel
+        val pngBytes = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A)
+        val sheet = FakeModels.DEFAULT_SHEET.copy(names = mapOf("kk" to "Мысық", "ru" to "Кошка", "en" to "Kitty"))
+        val body = encode(ChatRequest.serializer(), ChatRequest.choreograph(model, sheet, pngBytes))
+        assertEquals(setOf("model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"), body.keys)
+        assertEquals("muse-spark-1.3-contributor", body["model"]!!.jsonPrimitive.content)
+        assertEquals(4096, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals("low", body["reasoning_effort"]!!.jsonPrimitive.content)
+        val parts = body["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
+        assertTrue(parts[1]["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content.startsWith("data:image/png;base64,"))
+        val text = parts[0]["text"]!!.jsonPrimitive.content
+        assertEquals(Prompts.choreograph(sheet, withImage = true), text)
+        for (word in listOf("Kitty", "Curious and brave", "durationMs", "atMs", "scaleX", "scaleY", "yawDeg", "tiltDeg", "hop", "a shy character waves small", "JSON only")) {
+            assertTrue(word in text, "prompt names $word")
+        }
+
+        val js = body["response_format"]!!.jsonObject.also { assertEquals("json_schema", it["type"]!!.jsonPrimitive.content) }["json_schema"]!!.jsonObject
+        assertEquals("true", js["strict"]!!.jsonPrimitive.content)
+        val schema = js["schema"]!!.jsonObject
+        assertEquals(Emote.entries.map { it.name.lowercase() }, schema["required"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("false", schema["additionalProperties"]!!.jsonPrimitive.content)
+        val emote = schema["properties"]!!.jsonObject["roar"]!!.jsonObject
+        assertEquals("false", emote["additionalProperties"]!!.jsonPrimitive.content)
+        assertEquals(listOf("durationMs", "keys", "line", "sound"), emote["required"]!!.jsonArray.map { it.jsonPrimitive.content })
+        val key = emote["properties"]!!.jsonObject["keys"]!!.jsonObject["items"]!!.jsonObject
+        assertEquals("false", key["additionalProperties"]!!.jsonPrimitive.content)
+        assertEquals(listOf("atMs", "scaleX", "scaleY", "yawDeg", "tiltDeg", "hop"), key["required"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertTrue(key["properties"]!!.jsonObject.values.all { it.jsonObject["type"]!!.jsonPrimitive.content == "number" })
+
+        // Without an image: the text part only.
+        val plain = encode(ChatRequest.serializer(), ChatRequest.choreograph(model, sheet, null))
+        val plainParts = plain["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray
+        assertEquals(listOf("text"), plainParts.map { it.jsonObject["type"]!!.jsonPrimitive.content })
+
+        // The probe template is the same body (keys, schema, one text + one image_url part).
+        val tmpl = DiskFixtureSource.repoRoot().readText("docs/api-samples/spark-choreo/request.json.tmpl")!!
+            .lines().filterNot { it.startsWith("#") }.joinToString("\n")
+        val tmplBody = MetaApi.json.parseToJsonElement(tmpl).jsonObject
+        assertEquals(body.keys, tmplBody.keys)
+        assertEquals(body["response_format"], tmplBody["response_format"])
+        assertEquals(body["max_completion_tokens"], tmplBody["max_completion_tokens"])
+        val tmplParts = tmplBody["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("text", "image_url"), tmplParts.map { it["type"]!!.jsonPrimitive.content })
     }
 }
