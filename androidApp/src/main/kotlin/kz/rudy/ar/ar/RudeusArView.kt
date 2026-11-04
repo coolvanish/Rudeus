@@ -18,13 +18,17 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.google.ar.core.Anchor
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
+import com.google.ar.core.Pose
+import android.opengl.Matrix as GlMatrix
 import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.recording.rememberARRecorder
@@ -138,6 +142,25 @@ import kotlin.math.abs
 // (CharacterNode.kt); its sound plays through `sounds` when `slot.soundsOn`. Physics never sees an emote.
 // Locked decisions untouched: one anchor per session; PAUSED freezes every member and every emote clock, never resets;
 // scan stays a button; plane coords live in :core, the Pose conversions in PlaneCoords.kt only.
+// HAND-REVIEW: T32 review fixes — (a) the grab is tested in SCREEN space: each ground member's feet and head are projected
+// with ARCore `Camera.getViewMatrix` / `getProjectionMatrix` (display-rotation aware; near/far do not touch x, y) into the
+// view's pixels (`viewSize` from onSizeChanged on the ARSceneView's AndroidView, ARSceneView.kt:1512), the quad's width at
+// the feet depth is `P00 * w / 2 / depth` px per metre, and the touch must fall in that rectangle widened by GRAB_MARGIN_DP;
+// nearest centre wins. Without a view size yet the old table-point test is the fallback. (b) A lead is refused past a
+// depth edge like a tap (`depthGap` at the target + `depthGapsOnWay` with LEAD_DEPTH_SAMPLES from the member's feet,
+// `SurfaceBoundary.crossesEdge`, log `lead_past_edge`): before a scan `boundary` is null and nothing else clamps. (c) With
+// exactly one member there is no grab and no tap-select, so the v1.0 small steps next to the character still walk it.
+// (d) A new node starts invisible; the poser shows it once it is placed, so it is never drawn unposed at the origin.
+
+/** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
+private const val GRAB_MARGIN_DP = 16f
+
+/** Depth readings on the way of a lead (a tap takes WALK_DEPTH_SAMPLES; a lead runs up to 16 times a second). */
+private const val LEAD_DEPTH_SAMPLES = 2
+
+/** Clip planes for the grab projection; x and y of a point do not depend on them. */
+private const val PROJECTION_NEAR_M = 0.01f
+private const val PROJECTION_FAR_M = 30f
 
 /** HAND-REVIEW: T32 — the cast cut switch: false shows only the first member of `slot.characters` (v1.0 flow). */
 private const val CAST_ENABLED = true
@@ -186,6 +209,38 @@ private class MemberRig(val id: String, val sprite: CharacterSprite) {
     var node: PlaneNode? = null
 }
 
+/**
+ * T32 review fix: world -> view pixels through this frame's ARCore camera (column-major GL matrices, `android.opengl.Matrix`).
+ * Scratch arrays are reused: main thread only, one grab test at a time.
+ */
+private class ScreenProjector {
+    private val view = FloatArray(16)
+    private val proj = FloatArray(16)
+    private val world = FloatArray(4)
+    private val eye = FloatArray(4)
+    private val clip = FloatArray(4)
+
+    fun load(frame: Frame) {
+        frame.camera.getViewMatrix(view, 0)
+        frame.camera.getProjectionMatrix(proj, 0, PROJECTION_NEAR_M, PROJECTION_FAR_M)
+    }
+
+    /** [out] = (x px, y px, eye depth m) of [pose]'s position in a [w] x [h] view; false when it is behind the camera. */
+    fun project(pose: Pose, w: Int, h: Int, out: FloatArray): Boolean {
+        world[0] = pose.tx(); world[1] = pose.ty(); world[2] = pose.tz(); world[3] = 1f
+        GlMatrix.multiplyMV(eye, 0, view, 0, world, 0)
+        GlMatrix.multiplyMV(clip, 0, proj, 0, eye, 0)
+        if (clip[3] <= 1e-4f) return false
+        out[0] = (clip[0] / clip[3] + 1f) * 0.5f * w
+        out[1] = (1f - clip[1] / clip[3]) * 0.5f * h
+        out[2] = -eye[2]
+        return true
+    }
+
+    /** Pixels per metre across the view at eye depth [depth] (P00 = 2 * focal / width). */
+    fun pxPerM(depth: Float, w: Int): Float = proj[0] * w * 0.5f / depth
+}
+
 /** T32: the members this host renders: the slot's cast (the first only with CAST_ENABLED off), else the legacy fields as one member. */
 private fun ArSlot.members(): List<ArCharacter> = when {
     characters.isEmpty() -> listOf(ArCharacter(LEGACY_ID, "", spritePng, ability, EmoteSet.defaults()))
@@ -214,6 +269,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val anchorPlane = remember { arrayOfNulls<Plane>(1) } // the plane the anchor was created on (scan boundary)
     val rigs = remember { HashMap<String, MemberRig>() } // T32: id -> rig, written in composition, read per frame
     val touch = remember { CastTouch() }
+    val viewSize = remember { intArrayOf(0, 0) } // the ARSceneView's pixels, for the screen-space grab (0 until laid out)
+    val grabMarginPx = remember { floatArrayOf(0f) }
+    grabMarginPx[0] = GRAB_MARGIN_DP * LocalDensity.current.density
+    val projector = remember { ScreenProjector() }
     val loop = remember { GameLoop() }
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
     val scanBusy = remember { booleanArrayOf(false) } // one scan at a time; a request meanwhile joins it
@@ -463,27 +522,69 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             currentSlot.onCastEvent(c.id, CharacterEvent.PLACED)
         }
     }
-    // T32: what CastTouch needs; the hit test is the tap's, the grab radius the brief's, the lead a boundary-clamped walkTo.
+    // T32: what CastTouch needs; the hit test is the tap's, the grab a screen-space quad test (review fix (a)), the lead a
+    // boundary-clamped, edge-checked walkTo (review fix (b)).
     val table = remember {
         object : CastTable {
-            override fun hitUv(x: Float, y: Float): Vec2? {
+            private val feet = FloatArray(3)
+            private val head = FloatArray(3)
+
+            override fun hitUv(x: Float, y: Float): TableHit? {
                 val frame = latestFrame[0] ?: return null
                 val a = anchorRef[0] ?: return null
-                val hit = tableHit(frame.hitTest(x, y), a) ?: return null
-                return planeCoords(a, hit.hitPose)
+                val hits = frame.hitTest(x, y)
+                val hit = tableHit(hits, a) ?: return null
+                val depthGap = hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) }
+                return TableHit(planeCoords(a, hit.hitPose), depthGap)
             }
 
-            override fun grabbable(uv: Vec2): String? {
+            override fun grabbable(x: Float, y: Float): String? {
+                if (loop.cast.members.size < 2) return null // review fix (c): one character walks as in v1.0, no grab
+                val frame = latestFrame[0] ?: return null
+                val a = anchorRef[0] ?: return null
+                val ground = loop.cast.members.filter { it.body.state.mode == Mode.IDLE || it.body.state.mode == Mode.WALKING }
+                val w = viewSize[0]
+                val h = viewSize[1]
+                if (w <= 0 || h <= 0) return hitUv(x, y)?.let { hit -> nearestOnGround(ground, hit.uv) }
+                projector.load(frame)
+                val size = currentSlot.characterSize
+                val margin = grabMarginPx[0]
+                var best: String? = null
+                var bestD2 = Float.MAX_VALUE
+                for (m in ground) {
+                    val s = m.body.state
+                    val sprite = rigs[m.id]?.sprite ?: continue
+                    if (!projector.project(toWorld(a, s.pos, s.h), w, h, feet)) continue
+                    if (!projector.project(toWorld(a, s.pos, s.h + sprite.heightM * size), w, h, head)) continue
+                    val halfW = projector.pxPerM(feet[2], w) * sprite.widthM * size * 0.5f + margin
+                    val cx = (feet[0] + head[0]) * 0.5f
+                    val cy = (feet[1] + head[1]) * 0.5f
+                    if (abs(x - cx) > halfW) continue
+                    if (y < minOf(feet[1], head[1]) - margin || y > maxOf(feet[1], head[1]) + margin) continue
+                    val d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy)
+                    if (d2 < bestD2) { bestD2 = d2; best = m.id }
+                }
+                return best
+            }
+
+            /** The fallback before the view is laid out: the brief's table-point grab radius. */
+            private fun nearestOnGround(ground: List<kz.rudy.ar.core.physics.CastMember>, uv: Vec2): String? {
                 val profile = slotState.profile
                 val reach = maxOf(profile.radiusAt(currentSlot.characterSize) * 1.5f, GRAB_MIN_M * profile.scale)
-                return loop.cast.members
-                    .filter { it.body.state.mode == Mode.IDLE || it.body.state.mode == Mode.WALKING }
-                    .minByOrNull { it.body.state.pos.distanceTo(uv) }
-                    ?.takeIf { it.body.state.pos.distanceTo(uv) <= reach }?.id
+                return ground.minByOrNull { it.body.state.pos.distanceTo(uv) }?.takeIf { it.body.state.pos.distanceTo(uv) <= reach }?.id
             }
 
-            override fun lead(id: String, uv: Vec2) {
-                loop.walkTo(id, loop.level.nearestInside(uv)) // inside the scanned hull: no depth-gap check per move
+            override fun lead(id: String, hit: TableHit) {
+                val frame = latestFrame[0] ?: return
+                val a = anchorRef[0] ?: return
+                val from = loop.state(id)?.pos ?: return
+                val target = loop.level.nearestInside(hit.uv) // inside the scanned hull (null boundary before a scan: unclamped)
+                val gaps = depthGapsOnWay(frame, a, from, target, LEAD_DEPTH_SAMPLES) + hit.depthGapM
+                if (SurfaceBoundary.crossesEdge(gaps, slotState.profile)) {
+                    Log.i(GATE_TAG, "lead_past_edge id=$id u=${target.u} v=${target.v} way=$gaps")
+                    return // the last target stays
+                }
+                loop.walkTo(id, target)
             }
 
             override fun onGrabbed(id: String) = currentSlot.onActiveChanged(id)
@@ -497,7 +598,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
 
     Box(modifier.fillMaxSize()) {
         ARSceneView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().onSizeChanged { viewSize[0] = it.width; viewSize[1] = it.height },
             engine = engine,
             modelLoader = modelLoader,
             materialLoader = materialLoader,
@@ -626,8 +727,9 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     } else if (hit != null) {
                         val uv = planeCoords(a, hit.hitPose)
                         probe.onTap(a, hit.hitPose, uv)
-                        // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first).
-                        val tapped = table.grabbable(uv)
+                        // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first;
+                        // with one member on the table `grabbable` is always null and the tap walks it, as v1.0).
+                        val tapped = table.grabbable(event.x, event.y)
                         if (tapped != null) {
                             if (tapped != activeId()) currentSlot.onActiveChanged(tapped)
                             return
@@ -676,6 +778,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                                 materialInstance = sprite.material,
                                 apply = {
                                     isTouchable = false // taps go through to the table hit test, drags never reach a node
+                                    isVisible = false // review fix (d): shown by the poser on its first placed frame
                                     rig.node = this
                                 },
                             )
