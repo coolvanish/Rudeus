@@ -1,5 +1,10 @@
 package kz.rudy.ar.core.meta
 
+import kz.rudy.ar.core.emote.ChoreographyRules
+import kz.rudy.ar.core.emote.Choreographies
+import kz.rudy.ar.core.emote.EmoteSound
+import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.Emote
 import kotlinx.coroutines.test.runTest
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.io.MapFixtureSource
@@ -151,5 +156,24 @@ class FixtureApiTest {
         val toy = seg.byLabel("toy")!!
         assertNull(toy.rle)
         assertNull(toy.bbox)
+    }
+
+
+    /** T29: the hand-written docs/api-samples/spark-choreo/sample-01 reply replays into a Spark set. */
+    @Test
+    fun fixtureApiReplaysTheChoreoFixture() = runTest {
+        val api = FixtureApi(DiskFixtureSource.repoRoot(), root)
+        assertTrue(api.load(Jobs.SPARK_CHOREO, "sample-01").synthetic, "sample-01 is synthetic, not a real reply")
+        assertTrue(assertNotNull(api.meta(Jobs.SPARK_CHOREO)).synthetic)
+        val set = api.choreograph("sample-01", FakeModels.DEFAULT_SHEET)
+        assertEquals(EmoteSet.SOURCE_SPARK, set.source)
+        assertEquals(Emote.entries.toSet(), set.choreographies.keys)
+        for (e in Emote.entries) {
+            assertEquals(set[e], ChoreographyRules.sanitize(set[e]), "$e is sanitised")
+            assertFalse(set[e] == Choreographies.DEFAULT[e], "$e came from the fixture, not the defaults")
+        }
+        assertEquals(EmoteSound.ROAR, set[Emote.ROAR].sound)
+        assertEquals(720f, set[Emote.SPIN].keys.last().pose.yawDeg)
+        assertFailsWith<MetaError.FixtureMissing> { api.choreograph("nobody", FakeModels.DEFAULT_SHEET) }
     }
 }

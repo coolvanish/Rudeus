@@ -1,5 +1,6 @@
 package kz.rudy.ar.core.meta
 
+import kz.rudy.ar.core.emote.EmoteSet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -76,6 +77,26 @@ class OfflineGuardTest {
         assertFalse(guard.offline.value)
         assertFailsWith<CancellationException> { guard.characterSheet("s", "") }
         assertFalse(guard.offline.value, "online stays online")
+        assertEquals(2, guard.transitions)
+    }
+
+
+    @Test
+    fun offlineGuardForwardsChoreograph() = runTest {
+        val set = EmoteSet(EmoteSet.SOURCE_SPARK, EmoteSet.defaults().choreographies)
+        val fake = FakeModels(emotes = set)
+        val guard = OfflineGuard(fake)
+        assertSame(set, guard.choreograph("g", fake.sheet, img))
+        assertEquals(listOf("choreograph:g"), fake.calls)
+        assertEquals(listOf(fake.sheet), fake.choreoSheets)
+        assertSame(img, fake.choreoImages.single())
+
+        fake.choreoError = MetaError.Network("down")
+        assertFailsWith<MetaError.Network> { guard.choreograph("g", fake.sheet, img) }
+        assertTrue(guard.offline.value, "the offline rule applies as for the sheet")
+        fake.choreoError = null
+        guard.choreograph("g", fake.sheet)
+        assertFalse(guard.offline.value)
         assertEquals(2, guard.transitions)
     }
 }

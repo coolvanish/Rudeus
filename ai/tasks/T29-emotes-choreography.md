@@ -1,6 +1,6 @@
 # T29 — emotes-choreography
 
-status: todo
+status: review
 created: 2026-11-04
 day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md)
 gate: v1.1 gate "every emote plays on the active character and says a line; a new character arrives with its five choreographies (logcat `choreo source=spark`), offline it shows `source=default`"
@@ -127,5 +127,24 @@ Tests not required: Compose, AR, the CLI.
 - Commit: `core: emotes — Choreography, EmotePlayer, defaults, Spark choreograph job, choreo.json (T29)`.
 
 ## Result (filled on acceptance)
-- measured:
-- cut/deferred:
+- measured: `scripts/verify.sh` exit 0 (run with `ANDROID_HOME` set, the worktree has no SDK file): core 292 tests, shared 16,
+  android 2, 0 failed; APK built. All 24 tests above green (emote 13, meta 4, pipeline 2, bundle 4, io 1).
+  `spark-choreo/sample-01.fixture.json` (hand-written, `synthetic: true`) replays through FixtureApi with `source == "spark"`.
+  Not probed live: the prompt, the strict schema, 4096 tokens, latency 8000 ms and $0.003 in meta.json are estimates (T30 probes).
+- stage event: ProcessingEvents ignores unknown stage names (`stageOf` -> null, `StageFinished` else-branch), so the
+  pipeline emits `StageStarted("choreo", 1)` + `StageFinished("choreo", ...)`; both back to back right after `Finished(sheet)`,
+  because the call runs inside the sheet coroutine and events stay on the calling coroutine.
+- contract notes: `MetaModels.choreograph` has a default body (`EmoteSet.defaults()`): androidApp's `DeferredModels`
+  implements the interface explicitly and would not compile otherwise. Every core implementation overrides it, but the
+  phone ships defaults until T32 adds the forwarding line (HAND-REVIEW zone):
+  `override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet = delegate.choreograph(ref, sheet, image)`.
+  `sanitize` also rejects when the REST key it inserts at 0 would make MAX_KEYS + 1 (keeps the output within MAX_KEYS
+  and idempotent); a lone key at 0 gets the final key appended rather than moved. EmotePlayer blends yaw linearly in
+  time (even spin), the other fields with smoothstep. `costs.choreoUsd` lives in `CostTable`, which is not in the runs
+  JSON; the JSON only gains the `choreo` stage (last, after `sheet`). RecordingModels writes `toJson(set)` as `text`
+  (the raw reply never leaves MetaApi). MetricsLogTest updated for the new trailing stage.
+- follow-ups (not owned here): T30 — cli `Record.RECORDED_JOBS` / probe-meta.sh / docs/api-samples/README.md for
+  spark-choreo, and writing `<ref>/choreo.json` into the bundle (`Bundle.entry` now fills `choreo`, so new index files point
+  at that file); the metrics skill's stage list should gain `choreo`. A failed character whose sheet coroutine is still
+  in the choreography call records `sheet` ok=false and no `choreo` stage.
+- cut/deferred: nothing cut.

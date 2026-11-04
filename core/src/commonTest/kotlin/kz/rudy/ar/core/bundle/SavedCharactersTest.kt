@@ -1,5 +1,8 @@
 package kz.rudy.ar.core.bundle
 
+import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.Choreographies
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.io.MemoryCharacterFolder
@@ -80,5 +83,31 @@ class SavedCharactersTest {
 
         assertEquals(listOf("newer"), saved.load().map { it.sheet.name })
         assertEquals(setOf(".writing", "saved-abc"), folder.ids().toSet() - saved.load().map { it.id }.toSet())
+    }
+
+
+    @Test
+    fun savedCharacterRoundTripsItsEmotes() {
+        val folder = MemoryCharacterFolder()
+        val emotes = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT + (Emote.ROAR to Choreographies.ROAR.copy(line = 0)))
+        val saved = SavedCharacters(folder, clock = { 1000L }).save(sprite(1), sheet("Арыстан"), emotes)
+        assertEquals(emotes, saved.emotes)
+        assertEquals(emotes, Bundle.decodeEmotes(folder.choreos.getValue(saved.id)))
+
+        val loaded = SavedCharacters(folder).load().single()
+        assertEquals(emotes, loaded.emotes)
+        assertEquals(EmoteSet.SOURCE_SPARK, loaded.emotes.source)
+    }
+
+    @Test
+    fun aSavedCharacterWithoutChoreoLoadsDefaults() {
+        val folder = MemoryCharacterFolder()
+        folder.write("saved-1000", sprite(1), Bundle.encodeSheet(sheet("old"))) // saved before T29: no choreo.json
+        folder.write("saved-2000", sprite(2), Bundle.encodeSheet(sheet("broken")), "{not json")
+
+        val loaded = SavedCharacters(folder).load()
+        assertEquals(listOf("broken", "old"), loaded.map { it.sheet.name }, "neither character is dropped")
+        assertEquals(listOf(EmoteSet.defaults(), EmoteSet.defaults()), loaded.map { it.emotes })
+        assertEquals(EmoteSet.defaults(), SavedCharacters(MemoryCharacterFolder()).save(sprite(3), sheet("new")).emotes)
     }
 }

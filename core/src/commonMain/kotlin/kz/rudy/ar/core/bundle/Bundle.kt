@@ -4,6 +4,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.ChoreographyParser
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.pipeline.CharacterResult
 
 /*
@@ -12,6 +14,7 @@ import kz.rudy.ar.core.pipeline.CharacterResult
  *   <bundle>/index.json          BundleIndex, characters sorted by ref
  *   <bundle>/<ref>/sprite.png    the stylized sprite
  *   <bundle>/<ref>/sheet.json    CharacterSheet JSON
+ *   <bundle>/<ref>/choreo.json   the five emote choreographies (ChoreographyParser.toJson; absent before T29)
  *
  * Paths inside the index are relative to the bundle dir, '/'-separated. Keep this format boring.
  */
@@ -33,6 +36,8 @@ data class BundleEntry(
     val provider: String,
     /** The runs/<runId>.json that produced this character. */
     val runId: String,
+    /** Relative path of the choreographies JSON, e.g. "cat-01/choreo.json"; null in indexes written before T29. */
+    val choreo: String? = null,
 )
 
 @Serializable
@@ -54,6 +59,7 @@ object Bundle {
 
     fun spritePath(ref: String): String = "$ref/$SPRITE"
     fun sheetPath(ref: String): String = "$ref/$SHEET"
+    fun choreoPath(ref: String): String = "$ref/$CHOREO"
 
     fun entry(result: CharacterResult, provider: String, runId: String): BundleEntry = BundleEntry(
         ref = result.ref,
@@ -66,6 +72,7 @@ object Bundle {
         sheet = sheetPath(result.ref),
         provider = provider,
         runId = runId,
+        choreo = choreoPath(result.ref),
     )
 
     /** Parses an existing index; null text (no index yet) yields an empty one. */
@@ -78,6 +85,12 @@ object Bundle {
 
     fun decodeSheet(text: String): CharacterSheet = json.decodeFromString(CharacterSheet.serializer(), text)
 
+    fun encodeEmotes(emotes: EmoteSet): String = ChoreographyParser.toJson(emotes)
+
+    /** Never throws: unreadable text yields the defaults. */
+    fun decodeEmotes(text: String): EmoteSet = ChoreographyParser.fromJson(text)
+
     private const val SPRITE = "sprite.png"
     private const val SHEET = "sheet.json"
+    private const val CHOREO = "choreo.json"
 }
