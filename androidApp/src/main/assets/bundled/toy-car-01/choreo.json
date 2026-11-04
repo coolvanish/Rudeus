@@ -1,0 +1,254 @@
+{
+    "source": "spark",
+    "hello": {
+        "durationMs": 1200,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 300,
+                "scaleX": 1.1,
+                "scaleY": 0.85,
+                "yawDeg": 0.0,
+                "tiltDeg": -8.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 600,
+                "scaleX": 0.95,
+                "scaleY": 1.1,
+                "yawDeg": 0.0,
+                "tiltDeg": 8.0,
+                "hop": 0.25
+            },
+            {
+                "atMs": 900,
+                "scaleX": 1.05,
+                "scaleY": 0.95,
+                "yawDeg": 0.0,
+                "tiltDeg": -5.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 0,
+        "sound": "hello"
+    },
+    "bye": {
+        "durationMs": 1500,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 400,
+                "scaleX": 1.1,
+                "scaleY": 0.8,
+                "yawDeg": 0.0,
+                "tiltDeg": 12.0,
+                "hop": 0.05
+            },
+            {
+                "atMs": 800,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": -12.0,
+                "hop": 0.15
+            },
+            {
+                "atMs": 1100,
+                "scaleX": 1.05,
+                "scaleY": 0.85,
+                "yawDeg": 0.0,
+                "tiltDeg": 10.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 1500,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 4,
+        "sound": "hello"
+    },
+    "dance": {
+        "durationMs": 2000,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 400,
+                "scaleX": 0.9,
+                "scaleY": 1.2,
+                "yawDeg": 0.0,
+                "tiltDeg": -15.0,
+                "hop": 0.3
+            },
+            {
+                "atMs": 800,
+                "scaleX": 1.1,
+                "scaleY": 0.9,
+                "yawDeg": 0.0,
+                "tiltDeg": 15.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 0.9,
+                "scaleY": 1.2,
+                "yawDeg": 0.0,
+                "tiltDeg": -15.0,
+                "hop": 0.3
+            },
+            {
+                "atMs": 1600,
+                "scaleX": 1.1,
+                "scaleY": 0.9,
+                "yawDeg": 0.0,
+                "tiltDeg": 15.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 2000,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 3,
+        "sound": "dance"
+    },
+    "spin": {
+        "durationMs": 1600,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 400,
+                "scaleX": 1.1,
+                "scaleY": 0.9,
+                "yawDeg": 180.0,
+                "tiltDeg": 0.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 800,
+                "scaleX": 1.0,
+                "scaleY": 1.05,
+                "yawDeg": 360.0,
+                "tiltDeg": 0.0,
+                "hop": 0.15
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 1.1,
+                "scaleY": 0.9,
+                "yawDeg": 540.0,
+                "tiltDeg": 0.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 1600,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 720.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 2,
+        "sound": "none"
+    },
+    "roar": {
+        "durationMs": 1200,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 300,
+                "scaleX": 1.3,
+                "scaleY": 1.3,
+                "yawDeg": 0.0,
+                "tiltDeg": -10.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 500,
+                "scaleX": 1.4,
+                "scaleY": 1.4,
+                "yawDeg": 0.0,
+                "tiltDeg": 10.0,
+                "hop": 0.15
+            },
+            {
+                "atMs": 700,
+                "scaleX": 1.35,
+                "scaleY": 1.35,
+                "yawDeg": 0.0,
+                "tiltDeg": -12.0,
+                "hop": 0.15
+            },
+            {
+                "atMs": 900,
+                "scaleX": 1.4,
+                "scaleY": 1.4,
+                "yawDeg": 0.0,
+                "tiltDeg": 12.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 1,
+        "sound": "roar"
+    }
+}

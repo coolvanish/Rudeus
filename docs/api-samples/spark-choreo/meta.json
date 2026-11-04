@@ -1,11 +1,11 @@
 {
-  "job": "spark-choreo",
-  "endpoint": "POST /v1/chat/completions",
-  "model": "muse-spark-1.3-contributor",
-  "requestShape": "{model, messages:[{role:user, content:[text (Prompts.choreograph(sheet)), image_url(cutout <=512px)]}], response_format:{type:json_schema, json_schema:{name:Choreographies, strict:true, schema}}, reasoning_effort:low, max_completion_tokens:4096}",
-  "latencyMs": 8000,
-  "costUsd": 0.003,
-  "probedAt": "",
-  "synthetic": true,
-  "notes": "Not probed. sample-01.fixture.json is a hand-written, synthetic reply (not a real API response) in the shape the prompt asks for, so FixtureApi and the tests have a Spark set to replay. latencyMs and costUsd are estimates (the sheet's order of magnitude: one Spark call with one image and ~1-2k output tokens); T30 probes the job live and replaces both."
+    "job": "spark-choreo",
+    "endpoint": "POST /v1/chat/completions",
+    "model": "muse-spark-1.3-contributor",
+    "requestShape": "{model, messages:[{role:user, content:[text (Prompts.choreograph(sheet)), image_url(cutout <=512px)]}], response_format:{type:json_schema, json_schema:{name:Choreographies, strict:true, schema}}, reasoning_effort:low, max_completion_tokens:4096}",
+    "latencyMs": 15329,
+    "costUsd": 0.011,
+    "probedAt": "2026-11-04T12:19:04Z",
+    "synthetic": false,
+    "notes": "Recorded by cli choreo --live --record on 2026-11-04: 1 call(s), latency min 15329 / median 15329 / max 15329 ms, cost mean $0.0110 per call (measured from the replies' token usage when reported). The fixtures' text is ChoreographyParser.toJson of the sanitised set (RecordingModels), not the raw reply. sample-01.fixture.json stays the hand-written synthetic sample (its own synthetic flag)."
 }

@@ -1,0 +1,222 @@
+{
+    "source": "spark",
+    "hello": {
+        "durationMs": 1200,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 400,
+                "scaleX": 1.05,
+                "scaleY": 1.05,
+                "yawDeg": 0.0,
+                "tiltDeg": 12.0,
+                "hop": 0.12
+            },
+            {
+                "atMs": 800,
+                "scaleX": 1.02,
+                "scaleY": 1.02,
+                "yawDeg": 0.0,
+                "tiltDeg": -8.0,
+                "hop": 0.08
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 3,
+        "sound": "hello"
+    },
+    "bye": {
+        "durationMs": 1500,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 500,
+                "scaleX": 1.05,
+                "scaleY": 1.05,
+                "yawDeg": 0.0,
+                "tiltDeg": 14.0,
+                "hop": 0.12
+            },
+            {
+                "atMs": 1000,
+                "scaleX": 1.0,
+                "scaleY": 0.85,
+                "yawDeg": 0.0,
+                "tiltDeg": -10.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 1500,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 4,
+        "sound": "none"
+    },
+    "dance": {
+        "durationMs": 2000,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 400,
+                "scaleX": 1.08,
+                "scaleY": 0.95,
+                "yawDeg": 0.0,
+                "tiltDeg": 12.0,
+                "hop": 0.22
+            },
+            {
+                "atMs": 800,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": -10.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 1.1,
+                "scaleY": 0.94,
+                "yawDeg": 0.0,
+                "tiltDeg": -12.0,
+                "hop": 0.25
+            },
+            {
+                "atMs": 1600,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 10.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 2000,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 1,
+        "sound": "dance"
+    },
+    "spin": {
+        "durationMs": 1400,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 450,
+                "scaleX": 1.05,
+                "scaleY": 1.05,
+                "yawDeg": 120.0,
+                "tiltDeg": 8.0,
+                "hop": 0.2
+            },
+            {
+                "atMs": 950,
+                "scaleX": 1.05,
+                "scaleY": 1.05,
+                "yawDeg": 240.0,
+                "tiltDeg": -8.0,
+                "hop": 0.2
+            },
+            {
+                "atMs": 1400,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 360.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 2,
+        "sound": "none"
+    },
+    "roar": {
+        "durationMs": 1200,
+        "keys": [
+            {
+                "atMs": 0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            },
+            {
+                "atMs": 400,
+                "scaleX": 1.25,
+                "scaleY": 1.2,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.1
+            },
+            {
+                "atMs": 650,
+                "scaleX": 1.25,
+                "scaleY": 1.2,
+                "yawDeg": 0.0,
+                "tiltDeg": 14.0,
+                "hop": 0.12
+            },
+            {
+                "atMs": 900,
+                "scaleX": 1.25,
+                "scaleY": 1.2,
+                "yawDeg": 0.0,
+                "tiltDeg": -14.0,
+                "hop": 0.12
+            },
+            {
+                "atMs": 1200,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "yawDeg": 0.0,
+                "tiltDeg": 0.0,
+                "hop": 0.0
+            }
+        ],
+        "line": 0,
+        "sound": "roar"
+    }
+}

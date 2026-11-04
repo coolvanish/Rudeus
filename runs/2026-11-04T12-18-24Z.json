@@ -1,0 +1,36 @@
+{
+    "schema": 1,
+    "runId": "2026-11-04T12-18-24Z",
+    "source": "cli",
+    "provider": "meta",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "toy_fox",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 22740,
+                    "costUsd": 0.0136,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 22740,
+            "totalCostUsd": 0.0136,
+            "aborted": false
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 1,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 22740,
+        "p90Ms": 22740,
+        "costPerCharacterUsd": 0.0136
+    }
+}

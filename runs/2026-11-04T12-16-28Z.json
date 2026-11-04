@@ -1,0 +1,92 @@
+{
+    "schema": 1,
+    "runId": "2026-11-04T12-16-28Z",
+    "source": "cli",
+    "provider": "meta",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "toy_dino.pose",
+            "stages": [
+                {
+                    "name": "stylize",
+                    "ms": 12987,
+                    "costUsd": 0.01,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 394,
+                    "costUsd": 0.0,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 11163,
+                    "costUsd": 0.01,
+                    "attempt": 2,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 347,
+                    "costUsd": 0.0,
+                    "attempt": 2,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 12806,
+                    "costUsd": 0.01,
+                    "attempt": 3,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 334,
+                    "costUsd": 0.0,
+                    "attempt": 3,
+                    "ok": true,
+                    "measured": false
+                },
+                {
+                    "name": "stylize",
+                    "ms": 11473,
+                    "costUsd": 0.01,
+                    "attempt": 4,
+                    "ok": true,
+                    "measured": true
+                },
+                {
+                    "name": "matte",
+                    "ms": 335,
+                    "costUsd": 0.0,
+                    "attempt": 4,
+                    "ok": true,
+                    "measured": false
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 50417,
+            "totalCostUsd": 0.04,
+            "aborted": false
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 1,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 50417,
+        "p90Ms": 50417,
+        "costPerCharacterUsd": 0.04
+    }
+}
