@@ -30,9 +30,11 @@ import kotlin.math.min
 /**
  * Debug 2D view of the [Level] in plane coordinates (u, v) with the per-kind footprint tints
  * from DESIGN.md. The AR footprints are drawn by :androidApp with the same [RudeusColors.footprint] tints.
+ * [character] is the active member's live physics state (the bright dot); [others] are the rest of the cast (dimmer dots).
+ * Both come from the host's `ArSlot.onCastState`, so the dots walk with the sprites.
  */
 @Composable
-fun FootprintMiniMap(level: Level, character: CharacterState?, modifier: Modifier = Modifier) {
+fun FootprintMiniMap(level: Level, character: CharacterState?, modifier: Modifier = Modifier, others: List<CharacterState> = emptyList()) {
     val shape = RoundedCornerShape(RudeusRadius.tile)
     Box(
         modifier
@@ -45,7 +47,7 @@ fun FootprintMiniMap(level: Level, character: CharacterState?, modifier: Modifie
         Canvas(Modifier.fillMaxSize()) {
             val all = level.objects.flatMap { it.footprint.points } +
                 (level.boundary?.points ?: emptyList()) +
-                listOfNotNull(character?.pos) + level.spawn
+                listOfNotNull(character?.pos) + others.map { it.pos } + level.spawn
             var minU = Float.MAX_VALUE; var minV = Float.MAX_VALUE; var maxU = -Float.MAX_VALUE; var maxV = -Float.MAX_VALUE
             for (p in all) { minU = min(minU, p.u); minV = min(minV, p.v); maxU = max(maxU, p.u); maxV = max(maxV, p.v) }
             val span = max(maxU - minU, maxV - minV).coerceAtLeast(0.2f)
@@ -72,6 +74,10 @@ fun FootprintMiniMap(level: Level, character: CharacterState?, modifier: Modifie
                 drawPath(p, tint.copy(alpha = RudeusColors.FootOutlineAlpha), style = Stroke(outline))
             }
             drawCircle(RudeusColors.Sun, 3.dp.toPx(), map(level.spawn), style = Stroke(outline))
+            for (o in others) {
+                drawCircle(RudeusColors.Sky.copy(alpha = 0.2f), (o.radiusM * scale).coerceAtLeast(4.dp.toPx()), map(o.pos))
+                drawCircle(RudeusColors.Sky.copy(alpha = 0.55f), 3.dp.toPx(), map(o.pos))
+            }
             character?.let { c ->
                 drawCircle(RudeusColors.Sky.copy(alpha = 0.35f), (c.radiusM * scale).coerceAtLeast(4.dp.toPx()), map(c.pos))
                 drawCircle(RudeusColors.Sky, 3.dp.toPx(), map(c.pos))

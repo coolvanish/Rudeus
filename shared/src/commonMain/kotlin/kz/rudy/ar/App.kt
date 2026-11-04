@@ -178,6 +178,8 @@ fun App(
     // T04: one scan per increment (ArSlot.scanRequest); the level the host last built (for the mini-map).
     var scanRequest by remember { mutableStateOf(0) }
     var level by remember { mutableStateOf<Level?>(null) }
+    // Every member's physics state from the host (ArSlot.onCastState, footprints on only): the mini-map's dots.
+    var castStates by remember { mutableStateOf<Map<String, CharacterState>>(emptyMap()) }
     // T20: one Physics.jump / one Scenarios.DAY5 replay per increment (ArSlot.jumpRequest / scenarioRequest).
     var jumpRequest by remember { mutableStateOf(0) }
     var scenarioRequest by remember { mutableStateOf(0) }
@@ -479,6 +481,7 @@ fun App(
         }
     }
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
+    val onCastState = rememberUpdatedState<(Map<String, CharacterState>) -> Unit> { castStates = it }
     val debug = hud.showFootprints
     val active = CastUi.active(cast, activeId)
     val spritePng = active?.spritePng // legacy mirror: the active member's (null = the host's built-in dino)
@@ -509,6 +512,7 @@ fun App(
             onActiveChanged = { onActiveChanged.value(it) },
             command = command,
             onCastEvent = { id, e -> onCastEvent.value(id, e) },
+            onCastState = { onCastState.value(it) },
         )
     }
     val arOn = screen == Screen.SCANNING || screen == Screen.PLAY || (screen == Screen.METRICS && lastScreen == Screen.PLAY)
@@ -522,6 +526,7 @@ fun App(
             speech = HudSpeech.State()
             walkedOnce = false
             level = null
+            castStates = emptyMap()
             scanRequest = 0 // a new session's first composition must not see a stale request
             jumpRequest = 0
             scenarioRequest = 0
@@ -720,6 +725,7 @@ fun App(
                             character = CharacterState(ability = playSheet.ability),
                             sheet = playSheet,
                             level = level,
+                            castStates = castStates,
                             hud = hud.copy(
                                 speech = speech.text,
                                 surface = surface,
