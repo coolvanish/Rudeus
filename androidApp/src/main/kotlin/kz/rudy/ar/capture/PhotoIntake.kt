@@ -21,10 +21,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kz.rudy.ar.core.pipeline.BatchImport
 import java.io.File
 
 // HAND-REVIEW: T03 (a) — photo in via the system camera (ActivityResultContracts.TakePicture into a FileProvider URI
@@ -35,6 +38,10 @@ import java.io.File
 // HAND-REVIEW: review fix — the manifest declares CAMERA, so ACTION_IMAGE_CAPTURE throws SecurityException until the
 // permission is granted (fresh install: the AR screens ask for it later). takePhoto asks first; a denial or a missing
 // camera app hands back null instead of crashing.
+// HAND-REVIEW: T38 — a third launcher, ActivityResultContracts.PickMultipleVisualMedia(BatchImport.MAX_PHOTOS): the system
+// picker itself caps the choice at 7 (the contract needs a fixed maxItems >= 2, so `pickPhotos(max)` cannot widen it). The
+// URIs are decoded in parallel on IO through the same loadPhoto (<= 2048 px, upright) and arrive as one list on
+// `photoBatches`, unreadable ones left out; a cancelled picker sends an empty list. No shutter time: a batch is never played.
 
 private const val TAG = "RudeusGate"
 private const val CAPTURE_DIR = "capture"
@@ -44,6 +51,7 @@ class PhotoIntake internal constructor(
     private val context: Context,
     private val camera: ActivityResultLauncher<Uri>,
     private val picker: ActivityResultLauncher<PickVisualMediaRequest>,
+    private val manyPicker: ActivityResultLauncher<PickVisualMediaRequest>,
     private val permission: ActivityResultLauncher<String>,
     private val pending: Pending,
 ) {
@@ -51,6 +59,8 @@ class PhotoIntake internal constructor(
         // Results can arrive before App starts collecting after Activity restoration.
         val results = Channel<ByteArray?>(Channel.BUFFERED)
         val photos = results.receiveAsFlow()
+        val batches = Channel<List<ByteArray>>(Channel.BUFFERED)
+        val photoBatches = batches.receiveAsFlow()
 
         companion object {
             val saver = Saver<Pending, String>(
@@ -64,6 +74,7 @@ class PhotoIntake internal constructor(
     }
 
     val photos get() = pending.photos
+    val photoBatches get() = pending.photoBatches
 
     /** The last shutter time, once: Play logs `capture_to_play_ms` only for the capture that led to it. */
     fun takeShutterAtMs(): Long = pending.shutterAtMs.also { pending.shutterAtMs = 0L }
@@ -78,6 +89,12 @@ class PhotoIntake internal constructor(
 
     fun pickPhoto() {
         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
+    /** Up to `min(max, BatchImport.MAX_PHOTOS)` photos; the launcher's cap is fixed, a larger [max] only logs. */
+    fun pickPhotos(max: Int) {
+        if (max > BatchImport.MAX_PHOTOS) Log.w(TAG, "pick_photos max=$max capped=${BatchImport.MAX_PHOTOS}")
+        manyPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
 }
 
@@ -124,6 +141,19 @@ fun rememberPhotoIntake(): PhotoIntake {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         deliver { uri?.let { AndroidImages.loadPhoto(context.contentResolver, it) } }
     }
+    val manyPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(BatchImport.MAX_PHOTOS)) { uris ->
+        scope.launch {
+            val t0 = SystemClock.elapsedRealtime()
+            val photos = withContext(Dispatchers.IO) {
+                uris.take(BatchImport.MAX_PHOTOS)
+                    .map { uri -> async { runCatching { AndroidImages.loadPhoto(context.contentResolver, uri) }.getOrNull() } }
+                    .awaitAll()
+                    .filterNotNull()
+            }
+            Log.i(TAG, "photo_batch_ms=${SystemClock.elapsedRealtime() - t0} picked=${uris.size} photos=${photos.size}")
+            pending.batches.send(photos)
+        }
+    }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             launchCamera(context, camera, pending)
@@ -132,5 +162,5 @@ fun rememberPhotoIntake(): PhotoIntake {
             pending.results.trySend(null)
         }
     }
-    return remember(camera, picker, permission) { PhotoIntake(context.applicationContext, camera, picker, permission, pending) }
+    return remember(camera, picker, manyPicker, permission) { PhotoIntake(context.applicationContext, camera, picker, manyPicker, permission, pending) }
 }

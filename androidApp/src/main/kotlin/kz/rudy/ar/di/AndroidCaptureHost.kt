@@ -14,6 +14,9 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kz.rudy.ar.BuildConfig
@@ -69,6 +72,13 @@ import java.io.File
 // defaults when the file is missing or unreadable, still off the main thread), saved characters carry the EmoteSet
 // :core's SavedCharacters reads and writes, and DeferredModels forwards `choreograph` (without it a photo character
 // always shipped source=default).
+// HAND-REVIEW: T38 — "Add toys": `pickPhotos` / `photoBatches` are the intake's multi-picker, and `importCharacter` runs
+// one batch character with no reviewer and `maxRetries = maxAttempts - 1` (2 attempts, BatchImport.MAX_ATTEMPTS). Three run at
+// once (BatchImport.CONCURRENCY, App's side), so what was single-threaded gets a lock: the ref counter is atomic, each batch
+// pipeline records on a MetricsLog of its own (`startCharacter`…`endCharacter` are one-pipeline-per-log) and its finished
+// character is appended to the session log — its stage costs are therefore the table estimates, the session's metered
+// totals stay exact —, the run file is written under one lock, and the saves go through a mutex (SavedCharacters is one
+// call at a time). The single-photo path, scans and voice are untouched.
 
 private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
@@ -94,7 +104,9 @@ class AndroidCaptureHost(
     private val app = context.applicationContext
     private val metrics = MetricsLog(source = "app", provider = Provider.META.metricsName, device = "pixel")
     private val sink = FileMetricsSink(File(app.filesDir, RUNS_DIR))
-    @Volatile private var characters = 0 // written on IO (makeCharacter), read on main (latestRun)
+    private val characters = java.util.concurrent.atomic.AtomicInteger(0) // bumped on IO (makeCharacter, importCharacter), read on main (latestRun)
+    private val runLock = Any() // T38: three batch pipelines end at once; one writer of <runId>.json at a time
+    private val saveLock = Mutex() // T38: SavedCharacters is one call at a time; a batch saves as its results land
     @Volatile private var scans = 0 // written on IO (recordScan), read on main (latestRun)
     private val recorder = VoiceRecorder()
     private val voiceCalls = java.util.concurrent.atomic.AtomicInteger(0)
@@ -157,6 +169,12 @@ class AndroidCaptureHost(
 
     override fun pickPhoto() = intake.pickPhoto()
 
+    override val canPickMany: Boolean get() = true
+
+    override fun pickPhotos(max: Int) = intake.pickPhotos(max)
+
+    override val photoBatches: Flow<List<ByteArray>> get() = intake.photoBatches
+
     // ---- VoiceHost (T24) ----
 
     /**
@@ -205,7 +223,7 @@ class AndroidCaptureHost(
         withContext(Dispatchers.IO) {
             // HAND-REVIEW: review fix — a plain "01", "02"… ref: SheetParser.fallback names a character from its ref
             // ("app/<run>/1" became "App"; "01" gives the default "Dos"), and the CLI only allows refs without '/'.
-            val ref = (++characters).toString().padStart(2, '0')
+            val ref = characters.incrementAndGet().toString().padStart(2, '0')
             val t0 = SystemClock.elapsedRealtime()
             val pipeline = CharacterPipeline(
                 models = guard,
@@ -229,13 +247,50 @@ class AndroidCaptureHost(
                     )
                 }
             } finally {
-                try {
-                    sink.write("${metrics.runId}.json", metrics.toJson())
-                } catch (e: Exception) {
-                    Log.w(TAG, "metrics write failed: ${e.message}")
-                }
+                writeRun()
             }
         }
+
+    override suspend fun importCharacter(photo: ByteArray, maxAttempts: Int, onEvent: (PipelineEvent) -> Unit): CharacterResult =
+        withContext(Dispatchers.IO) {
+            val ref = characters.incrementAndGet().toString().padStart(2, '0')
+            val t0 = SystemClock.elapsedRealtime()
+            // Its own log (see the T38 note above): same run identity fields, same cost table; `metrics` stays the cost meter.
+            val own = MetricsLog(source = metrics.source, provider = metrics.provider, device = metrics.device, costs = metrics.costs)
+            val pipeline = CharacterPipeline(
+                models = guard,
+                gate = StyleGate(),
+                metrics = own,
+                rasterDecoder = AndroidImages::decode,
+                maxRetries = (maxAttempts - 1).coerceAtLeast(0),
+                cutoutComposer = AndroidImages::cutout,
+                spriteMatter = AndroidImages::matte,
+                imageResizer = AndroidImages::downscale,
+                onEvent = { event -> logEvent(event, t0); onEvent(event) },
+                review = null, // nobody in the loop: a failed gate ships the best sprite after the last attempt
+            )
+            try {
+                pipeline.run(ref, photo, styleRefs, description = "").also {
+                    Log.i(
+                        TAG,
+                        "pipeline_ms=${SystemClock.elapsedRealtime() - t0} gate=${it.gateScore} passed=${it.gatePassed} " +
+                            "attempts=${it.attempts} sprite_bytes=${it.sprite.size} name=${it.sheet.name} run=${metrics.runId} batch=true ref=$ref",
+                    )
+                }
+            } finally {
+                own.toRun().characters.forEach(metrics::appendCharacter) // an aborted one lands as aborted, as on the single path
+                writeRun()
+            }
+        }
+
+    /** The session run file, rewritten after every character (also on failure or cancel); never throws. */
+    private fun writeRun() {
+        try {
+            synchronized(runLock) { sink.write("${metrics.runId}.json", metrics.toJson()) }
+        } catch (e: Exception) {
+            Log.w(TAG, "metrics write failed: ${e.message}")
+        }
+    }
 
     override fun playEntered() {
         // Once per capture: coming back to Play from Metrics must not log a second, inflated number.
@@ -248,30 +303,30 @@ class AndroidCaptureHost(
 
     /** Never throws (CaptureHost contract): a folder it cannot read only leaves the row with the bundled characters. */
     override suspend fun savedCharacters(): List<BundledCharacter> = withContext(Dispatchers.IO) {
-        try {
+        saveLock.withLock { try {
             val t0 = SystemClock.elapsedRealtime()
             saved.load().filter { spriteDecodable(it.sprite) }.map { it.toCard() }
                 .also { Log.i(TAG, "saved_characters=${it.size} saved_ms=${SystemClock.elapsedRealtime() - t0}") }
         } catch (e: Exception) {
             Log.w(TAG, "saved characters unreadable: ${e.message}")
             emptyList()
-        }
+        } }
     }
 
     /** Never throws (CaptureHost contract): a failed save costs the card, not the game in progress. */
     override suspend fun saveCharacter(result: CharacterResult): BundledCharacter? = withContext(Dispatchers.IO) {
-        try {
+        saveLock.withLock { try {
             val sprite = AndroidImages.downscale(result.sprite, SavedCharacters.SPRITE_MAX_SIDE)
             saved.save(sprite, result.sheet, result.emotes).toCard()
                 .also { Log.i(TAG, "saved_character=${it.id} sprite_bytes=${sprite.size} passed=${result.gatePassed}") }
         } catch (e: Exception) {
             Log.w(TAG, "save character failed: ${e.message}")
             null
-        }
+        } }
     }
 
     /** The run so far once a character was started or a scan recorded this session, else null. */
-    override fun latestRun(): MetricsRun? = if (characters > 0 || scans > 0) metrics.toRun() else null
+    override fun latestRun(): MetricsRun? = if (characters.get() > 0 || scans > 0) metrics.toRun() else null
 
     // ---- TableScanner (T04): the AR view's scan goes through the same MetaApi and MetricsLog. ----
 
