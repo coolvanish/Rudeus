@@ -51,7 +51,16 @@ data class CharacterMetrics(
 )
 
 @Serializable
-data class ScanMetrics(val objects: Int, val ms: Long, val withinCm: List<Float>)
+data class ScanMetrics(
+    val objects: Int,
+    val ms: Long,
+    val withinCm: List<Float>,
+    /**
+     * true = a quiet scan the AR host fired on its own (`AutoScanPolicy`), false = the player pressed Scan. README scan
+     * figures are over manual scans only. Runs written before the field existed parse as false (they had no other kind).
+     */
+    val background: Boolean = false,
+)
 
 @Serializable
 data class Summary(
@@ -60,6 +69,11 @@ data class Summary(
     val p50Ms: Long,
     val p90Ms: Long,
     val costPerCharacterUsd: Double,
+    /**
+     * Background scans in the run ([ScanMetrics.background]); every other figure is over characters, so none of them
+     * moves with it. Runs written before the field existed parse as 0, which is right: there were none.
+     */
+    val backgroundScans: Int = 0,
 )
 
 @Serializable
@@ -232,8 +246,9 @@ class MetricsLog(
         return c
     }
 
-    fun recordScan(objects: Int, ms: Long, withinCm: List<Float>) {
-        scans += ScanMetrics(objects, ms, withinCm)
+    /** [background] = fired by the AR host's auto-scan, not the Scan button (see [ScanMetrics.background]). */
+    fun recordScan(objects: Int, ms: Long, withinCm: List<Float>, background: Boolean = false) {
+        scans += ScanMetrics(objects, ms, withinCm, background)
     }
 
     fun toRun(): MetricsRun = MetricsRun(
@@ -243,7 +258,7 @@ class MetricsLog(
         device = device,
         characters = characters.toList(),
         scans = scans.toList(),
-        summary = summaryOf(characters),
+        summary = summaryOf(characters, scans),
     )
 
     fun toJson(): String = json.encodeToString(MetricsRun.serializer(), toRun())
@@ -262,11 +277,13 @@ class MetricsLog(
         /**
          * Summary over the finished characters: aborted ones ([CharacterMetrics.aborted]) count in neither `n`, the
          * pass rate, p50/p90 nor the cost per character (their cost is still in the JSON, under the character).
+         * [scans] only feed `backgroundScans`, the count of background ones; a manual scan changes nothing here.
          */
-        fun summaryOf(characters: List<CharacterMetrics>): Summary {
+        fun summaryOf(characters: List<CharacterMetrics>, scans: List<ScanMetrics> = emptyList()): Summary {
+            val backgroundScans = scans.count { it.background }
             val finished = characters.filterNot { it.aborted }
             val n = finished.size
-            if (n == 0) return Summary(0, 0f, 0, 0, 0.0)
+            if (n == 0) return Summary(0, 0f, 0, 0, 0.0, backgroundScans)
             val firstTry = finished.count { it.gatePassed && it.retries == 0 }
             val sorted = finished.map { it.totalMs }.sorted()
             return Summary(
@@ -275,6 +292,7 @@ class MetricsLog(
                 p50Ms = percentile(sorted, 0.5),
                 p90Ms = percentile(sorted, 0.9),
                 costPerCharacterUsd = round4(finished.sumOf { it.totalCostUsd } / n),
+                backgroundScans = backgroundScans,
             )
         }
 

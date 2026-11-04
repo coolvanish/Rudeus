@@ -247,4 +247,41 @@ class MetricsLogTest {
         assertFalse(run.characters.single().aborted)
         assertEquals(run.summary, MetricsLog.summaryOf(run.characters))
     }
+
+    @Test
+    fun backgroundScansAreMarkedAndKeptOutOfTheManualFigures() {
+        val log = log(totals = listOf(31_200, 28_000), passFirst = listOf(true, false))
+        val manualOnly = log.toRun().summary
+        log.recordScan(5, 4800, listOf(1.2f, 0.8f))
+        log.recordScan(3, 4100, emptyList(), background = true)
+        log.recordScan(2, 3900, emptyList(), background = true)
+        val run = log.toRun()
+        assertEquals(listOf(false, true, true), run.scans.map { it.background })
+        assertEquals(ScanMetrics(3, 4100, emptyList(), background = true), run.scans[1])
+        // The character figures are untouched by any scan; only the background count moves.
+        assertEquals(manualOnly.copy(backgroundScans = 2), run.summary)
+        assertEquals(0, manualOnly.backgroundScans)
+        assertEquals(run.summary, MetricsLog.summaryOf(run.characters, run.scans))
+        assertEquals(1, run.scans.count { !it.background }, "manual scans are the scans[] entries without the flag")
+
+        val json = log.toJson()
+        assertTrue(json.contains("\"background\": true"), json)
+        assertTrue(json.contains("\"backgroundScans\": 2"), json)
+        assertEquals(run, MetricsLog.fromJson(json))
+        // Summary field order: the new count comes last.
+        assertTrue(json.indexOf("\"costPerCharacterUsd\"") < json.indexOf("\"backgroundScans\""))
+        // The README table is unchanged by background scans.
+        assertEquals(MetricsLog.summarise(listOf(run.copy(summary = manualOnly))), MetricsLog.summarise(listOf(run)))
+    }
+
+    @Test
+    fun runsWithoutTheBackgroundFieldParseAsManualScans() {
+        val old = """{"schema":1,"runId":"r","source":"app","provider":"meta","device":"Pixel 8","characters":[],
+            "scans":[{"objects":5,"ms":4800,"withinCm":[1.2,0.8]}],
+            "summary":{"n":0,"gatePassRateFirstTry":0.0,"p50Ms":0,"p90Ms":0,"costPerCharacterUsd":0.0}}"""
+        val run = MetricsLog.fromJson(old)
+        assertEquals(ScanMetrics(5, 4800, listOf(1.2f, 0.8f), background = false), run.scans.single())
+        assertEquals(0, run.summary.backgroundScans)
+        assertEquals(run.summary, MetricsLog.summaryOf(run.characters, run.scans))
+    }
 }
