@@ -15,6 +15,7 @@ import kz.rudy.ar.core.meta.SheetParser
 import kz.rudy.ar.core.metrics.CostMark
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.StageCost
+import kotlin.concurrent.Volatile
 
 /** Output of [CharacterPipeline.run]. `gatePassed=false` means the sprite shipped after exhausting retries. */
 data class CharacterResult(
@@ -28,6 +29,17 @@ data class CharacterResult(
     val attempts: Int,
     val cutoutMask: MaskResult?,
 )
+
+/**
+ * Style refs that several [CharacterPipeline.run]s share: the first run to get this far scales and mattes them and the
+ * others reuse that, so a character starts without redoing it. Share one only between pipelines built with the same
+ * `imageResizer`, `spriteMatter` and `rasterDecoder`. A run that fails while preparing leaves nothing behind.
+ */
+class StyleRefs(val originals: List<ByteArray>) {
+    @Volatile internal var prepared: PreparedRefs? = null
+}
+
+internal class PreparedRefs(val muse: List<ByteArray>, val spark: List<ByteArray>, val matted: List<ByteArray>)
 
 /**
  * photo -> cutout (SAM) -> stylize (Muse) -> gate (Spark score + deterministic half) -> retry stylize
@@ -49,7 +61,7 @@ data class CharacterResult(
  * stylize attempt (stage `matte`) and the gate scores the matted sprite. When it returns null (degenerate matte) the
  * stylized image gets one SAM pass ([Jobs.CUTOUT_PROMPTS] + [cutoutComposer]); if that fails too the unmatted sprite
  * ships and the `matte` stage is recorded with `ok=false`. The deterministic gate half decodes the style refs matted
- * by the same matter (once per run), so the sprite and the refs are both measured over the character only.
+ * by the same matter (once per [StyleRefs]), so the sprite and the refs are both measured over the character only.
  *
  * A failed stage (an exception, not a gate below threshold) is charged only what was metered, else 0. When the
  * character fails, the sheet stage is still recorded (its outcome if done, else cancelled with `ok=false`). When [run]
@@ -76,7 +88,7 @@ data class CharacterResult(
  *
  * [imageResizer] (e.g. `JvmRaster::downscale`: keeps aspect, never upscales) bounds what each model receives: Muse
  * gets the cutout and the style refs at <= [MUSE_INPUT_MAX_SIDE], the Spark score the sprite and refs at
- * <= [SPARK_IMAGE_MAX_SIDE], the sheet the cutout at <= [SHEET_IMAGE_MAX_SIDE]; the refs are scaled once per [run].
+ * <= [SPARK_IMAGE_MAX_SIDE], the sheet the cutout at <= [SHEET_IMAGE_MAX_SIDE]; the refs are scaled once per [StyleRefs].
  * SAM always gets the full photo, and [CharacterResult.sprite] stays full size.
  *
  * [onEvent] receives [PipelineEvent]s (stage started/finished, gate scored, finished/failed) on the calling coroutine
@@ -102,7 +114,11 @@ class CharacterPipeline(
 ) {
     init { require(maxRetries >= 0) }
 
-    suspend fun run(ref: String, image: ByteArray, styleRefs: List<ByteArray>, description: String): CharacterResult {
+    suspend fun run(ref: String, image: ByteArray, styleRefs: List<ByteArray>, description: String): CharacterResult =
+        run(ref, image, StyleRefs(styleRefs), description)
+
+    /** As above, reusing the work a previous run did on [styleRefs]. */
+    suspend fun run(ref: String, image: ByteArray, styleRefs: StyleRefs, description: String): CharacterResult {
         metrics.startCharacter(ref)
         var attempt = 0
         val result = try {
@@ -123,16 +139,12 @@ class CharacterPipeline(
 
                 // 2-3. stylize + matte + gate, with retries. Inputs are downscaled once here, not per attempt.
                 val museCutout = fit(cutout, MUSE_INPUT_MAX_SIDE)
-                val museRefs = styleRefs.map { fit(it, MUSE_INPUT_MAX_SIDE) }
-                val sparkRefs = styleRefs.map { fit(it, SPARK_IMAGE_MAX_SIDE) }
+                val prepared = prepare(styleRefs)
+                val museRefs = prepared.muse
                 // Spark sees the first SPARK_MAX_REFS refs (callers order them best first, e.g. by cull.json); the
                 // deterministic half still compares against all of them.
-                val modelRefs = sparkRefs.take(SPARK_MAX_REFS)
-                // The deterministic half compares like with like: the sprite is matted, so the refs are matted too
-                // (same matter, once per run; a ref whose matte fails is used as is).
-                val refRasters: List<RasterImage?> = rasterDecoder?.let { d ->
-                    sparkRefs.map { r -> d(spriteMatter?.invoke(r) ?: r) }
-                } ?: emptyList()
+                val modelRefs = prepared.spark.take(SPARK_MAX_REFS)
+                val refRasters: List<RasterImage?> = rasterDecoder?.let { d -> prepared.matted.map(d) } ?: emptyList()
                 var best: ByteArray? = null
                 var bestScore = 0f
                 var passed = false
@@ -261,6 +273,18 @@ class CharacterPipeline(
 
     /** [bytes] scaled to at most [maxSide] px on the long side by [imageResizer]; unchanged without one. */
     private fun fit(bytes: ByteArray, maxSide: Int): ByteArray = imageResizer?.invoke(bytes, maxSide) ?: bytes
+
+    /**
+     * The refs as the models and the gate want them, worked out on the first run of a [StyleRefs]. The deterministic
+     * half compares like with like: the sprite is matted, so the refs are matted too (same matter; a ref whose matte
+     * fails is used as is). Without a decoder nobody reads them, so nothing is matted.
+     */
+    private fun prepare(refs: StyleRefs): PreparedRefs = refs.prepared ?: run {
+        val muse = refs.originals.map { fit(it, MUSE_INPUT_MAX_SIDE) }
+        val spark = refs.originals.map { fit(it, SPARK_IMAGE_MAX_SIDE) }
+        val matted = if (rasterDecoder == null) emptyList() else spark.map { spriteMatter?.invoke(it) ?: it }
+        PreparedRefs(muse, spark, matted).also { refs.prepared = it }
+    }
 
     /** A sheet call that failed is charged only what was metered (0 when nothing was), never the estimate. */
     private fun sheetCost(mark: CostMark, ok: Boolean): StageCost =

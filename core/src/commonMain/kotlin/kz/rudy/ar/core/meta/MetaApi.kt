@@ -57,6 +57,9 @@ class MetaApi(
     private val costMeter: CostMeter? = null,
 ) : MetaModels {
 
+    /** Closes [client], an injected one too. It may touch sockets, so on Android call it off the main thread. */
+    fun close() = client.close()
+
     override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>): SegmentResult {
         requireServed(Jobs.SAM_TABLE, "segment")
         val mime = sniffImageMime(image)

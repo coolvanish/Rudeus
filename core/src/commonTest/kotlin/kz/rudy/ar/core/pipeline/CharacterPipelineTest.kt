@@ -588,6 +588,50 @@ class CharacterPipelineTest {
     }
 
     @Test
+    fun sharedStyleRefsArePreparedOnce() = runTest {
+        val originals = listOf("r1".encodeToByteArray(), "r2".encodeToByteArray())
+        val shared = StyleRefs(originals)
+        val resized = ArrayList<String>()
+        val matted = ArrayList<String>()
+        val decoded = ArrayList<String>()
+        fun pipeline(models: FakeModels) = CharacterPipeline(
+            models, StyleGate(), metrics(),
+            rasterDecoder = { b -> decoded += b.decodeToString(); null },
+            spriteMatter = { b -> matted += b.decodeToString(); "${b.decodeToString()}#".encodeToByteArray() },
+            imageResizer = { b, max -> "${b.decodeToString()}@$max".also { resized += it }.encodeToByteArray() },
+        )
+        val first = FakeModels(scores = listOf(0.9f), sprite = "PNG".encodeToByteArray())
+        val second = FakeModels(scores = listOf(0.9f), sprite = "PNG".encodeToByteArray())
+
+        pipeline(first).run("cat-01", image, shared, "")
+        pipeline(second).run("cat-02", image, shared, "")
+
+        assertEquals(listOf("r1@1024", "r1@512"), resized.filter { it.startsWith("r1") }, "scaled once, not per character")
+        assertEquals(1, matted.count { it == "r1@512" }, "matted once, not per character")
+        assertEquals(2, decoded.count { it == "r1@512#" }, "each run decodes its own rasters from the matted bytes")
+        assertEquals(first.scoredRefs.map { r -> r.map { it.decodeToString() } }, second.scoredRefs.map { r -> r.map { it.decodeToString() } })
+    }
+
+    @Test
+    fun failedPreparationLeavesStyleRefsToTheNextRun() = runTest {
+        val shared = StyleRefs(listOf("r1".encodeToByteArray()))
+        val log = metrics()
+        var broken = true
+        val models = FakeModels(scores = listOf(0.9f), sprite = "PNG".encodeToByteArray())
+        val pipeline = CharacterPipeline(
+            models, StyleGate(), log,
+            rasterDecoder = { null },
+            spriteMatter = { b -> if (broken && b.decodeToString() == "r1") error("out of memory") else b },
+        )
+
+        assertFailsWith<MetaError.Provider> { pipeline.run("cat-01", image, shared, "") }
+        broken = false
+        val result = pipeline.run("cat-02", image, shared, "")
+
+        assertTrue(result.gatePassed, "the run after a failed preparation prepares the refs itself")
+    }
+
+    @Test
     fun eventsFollowStageOrder() = runTest {
         fun label(e: PipelineEvent): String = when (e) {
             is PipelineEvent.StageStarted -> "+${e.stage}${e.attempt}"
