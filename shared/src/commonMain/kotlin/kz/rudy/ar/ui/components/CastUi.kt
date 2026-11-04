@@ -14,7 +14,7 @@ import kz.rudy.ar.ui.screens.BundledCharacter
 object CastUi {
     /** [c] as a cast member, its name in [lang]. */
     fun member(c: BundledCharacter, lang: Lang): ArCharacter =
-        ArCharacter(id = c.id, name = c.sheet.nameIn(lang.code), spritePng = c.spritePng, ability = c.sheet.ability, emotes = c.emotes)
+        ArCharacter(id = c.id, name = c.sheet.nameIn(lang.code), spritePng = c.spritePng, ability = c.sheet.ability, emotes = c.emotes, frames = c.frames)
 
     /** Room for one more at the table (`Cast.MAX`). */
     fun canAdd(cast: List<ArCharacter>): Boolean = cast.size < Cast.MAX

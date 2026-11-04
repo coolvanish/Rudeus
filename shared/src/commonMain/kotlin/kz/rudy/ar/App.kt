@@ -35,6 +35,7 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.metrics.CharacterMetrics
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
@@ -304,6 +305,7 @@ fun App(
             spritePng = r?.sprite,
             ability = sheet.ability,
             emotes = r?.emotes ?: EmoteSet.defaults(),
+            frames = r?.frames ?: PoseFrames.EMPTY,
         )
         go(Screen.SCANNING)
         startCast(member, sheet)

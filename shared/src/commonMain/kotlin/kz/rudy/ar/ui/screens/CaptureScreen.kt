@@ -68,6 +68,7 @@ import kotlin.math.max
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.CharacterCard
@@ -105,6 +106,8 @@ data class BundledCharacter(
     val spritePng: ByteArray? = null,
     /** T31: its five emote choreographies (the host reads choreo.json in T32); the defaults until then. */
     val emotes: EmoteSet = EmoteSet.defaults(),
+    /** T33: its drawn pose frames (bundled `frames/`, saved `frames/`, or the pipeline's); empty = base sprite only. */
+    val frames: PoseFrames = PoseFrames.EMPTY,
 )
 
 /** The hero's viewfinder corner: 32 dp, 4 dp stroke, on a dp grid. */

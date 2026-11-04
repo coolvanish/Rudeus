@@ -6,6 +6,7 @@ import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
 
 /** How one scan request ended. */
 sealed interface ScanAnswer {
@@ -24,9 +25,17 @@ sealed interface ScanAnswer {
 
 /**
  * T31: one character the host puts on the table. [id] is the saved id, the bundled ref, or "photo-<ref>" for a fresh
- * pipeline result. [name] is already in the player's language.
+ * pipeline result. [name] is already in the player's language. [frames] (T33): the drawn pose frames its [emotes]
+ * are keyed for; the host shows them on the quad while an emote key holds one, and the base sprite otherwise.
  */
-data class ArCharacter(val id: String, val name: String, val spritePng: ByteArray?, val ability: Ability, val emotes: EmoteSet) {
+data class ArCharacter(
+    val id: String,
+    val name: String,
+    val spritePng: ByteArray?,
+    val ability: Ability,
+    val emotes: EmoteSet,
+    val frames: PoseFrames = PoseFrames.EMPTY,
+) {
     // ByteArray is compared by identity; like the slot, a plain carrier.
     override fun equals(other: Any?): Boolean = this === other
     override fun hashCode(): Int = System.identityHashCode(this)
