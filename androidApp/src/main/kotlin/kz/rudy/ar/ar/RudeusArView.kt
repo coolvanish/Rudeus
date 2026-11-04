@@ -42,12 +42,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kz.rudy.ar.ArSlot
+import kz.rudy.ar.CharacterAction
 import kz.rudy.ar.ScanAnswer
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.emote.EmotePlayer
+import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.geometry.PlaneFrame
 import kz.rudy.ar.core.pipeline.ScanAngle
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
@@ -63,6 +67,7 @@ import kz.rudy.ar.scan.grabScanFrame
 import kz.rudy.ar.scan.runTableScan
 import kz.rudy.ar.scan.toPose3
 import kz.rudy.ar.ui.StringId
+import kz.rudy.ar.ui.components.CastUi
 import kz.rudy.ar.ui.components.ScrimPill
 import kz.rudy.ar.ui.t
 import kotlin.math.abs
@@ -114,6 +119,11 @@ import kotlin.math.abs
 // HAND-REVIEW: T24 — voice "go": each `slot.walkForwardRequest` increment is one loop.walkTo 10 cm x profile.scale
 // along the character's `facing`, from where it stands; a target outside `loop.level.boundary` is skipped and logged
 // `voice_walk_outside_boundary` (no hit test confirms that surface, unlike a tap); before the anchor it is dropped.
+// HAND-REVIEW: T33 — emotes with drawn frames on the single quad: `slot.command` (Emote only) -> GameLoop.playEmote;
+// per frame EmotePlayer.sample / frameAt on the simulated clock -> CharacterPoser (scale x, yaw +, tilt about the
+// quad's Z, hop, and the material swap to the drawn frame the key holds). The sprite is rebuilt when the active
+// member's frames change (CharacterNode.kt). Logs `emote id= emote= source= ms= frames= keyed=`, `frames_loaded`.
+// Not here yet (T32, still todo): the cast as several quads, finger grab, emote sounds.
 
 /** How long the "wait, finding the table" hint stays after a premature tap. */
 private const val HINT_VISIBLE_MS = 1_500L
@@ -192,9 +202,13 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         loop.configure(profile, slot.characterSize)
         Log.i(GATE_TAG, "character_size size=${slot.characterSize} radius=${loop.state.radiusM}")
     }
-    val sprite = remember(engine, materialLoader, slot.spritePng, surface) {
+    // HAND-REVIEW: T33 — the active member's drawn frames ride along with its sprite (`slot.spritePng` is the legacy
+    // mirror of the same member); a member without frames builds exactly the sprite it did before.
+    val activeMember = CastUi.active(slot.characters, slot.activeId)
+    val activeFrames = activeMember?.frames ?: PoseFrames.EMPTY
+    val sprite = remember(engine, materialLoader, slot.spritePng, activeFrames, surface) {
         val png = slot.spritePng
-        if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
+        if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT, activeFrames)
         else spriteFromAssets(engine, materialLoader, context.assets, profile.characterHeightM)
     }
     // Never destroys the sprite in use: the effect for the previous one runs only when a new sprite was remembered,
@@ -271,6 +285,28 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             return@LaunchedEffect
         }
         loop.walkTo(target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+    }
+    // HAND-REVIEW: T33 — the emote row (T31's `slot.command`, edge-triggered on its serial). Only Emote is taken from
+    // the command: Jump and WalkForward still arrive through the legacy counters above (App mirrors both), so a jump
+    // is never applied twice. The choreography is the commanded member's (its choreo.json / pipeline result), the
+    // defaults for a member without one; it plays on the one quad this v1.0-shaped host has (the cast of T32 is still
+    // todo), as presentation only (GameLoop.playEmote). Before the anchor there is nothing to animate: dropped, logged.
+    LaunchedEffect(slot.command?.serial) {
+        val cmd = slot.command ?: return@LaunchedEffect
+        val action = cmd.action as? CharacterAction.Emote ?: return@LaunchedEffect
+        if (anchorRef[0] == null) {
+            Log.i(GATE_TAG, "emote_ignored anchored=false emote=${action.emote}")
+            return@LaunchedEffect
+        }
+        val member = slot.characters.firstOrNull { it.id == cmd.id } ?: CastUi.active(slot.characters, slot.activeId)
+        val emotes = member?.emotes ?: EmoteSet.defaults()
+        val c = emotes[action.emote]
+        loop.playEmote(c)
+        Log.i(
+            GATE_TAG,
+            "emote id=${cmd.id} emote=${action.emote} source=${emotes.source} ms=${c.durationMs} " +
+                "frames=${member?.frames?.count(action.emote) ?: 0} keyed=${c.keys.count { it.frame != null }}",
+        )
     }
     // T21 (c): one increment = one replay from spawn (restartAtSpawn); a replay in progress is restarted.
     LaunchedEffect(slot.scenarioRequest) {
@@ -436,11 +472,17 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
                     // While not tracking the camera pose is meaningless and the AnchorNode hides its children.
                     if (tracking && node != null) {
+                        // T33: the running emote sampled on the simulated clock (null when none); the frame it holds.
+                        val emoteT = loop.emoteTimeMs()
+                        val choreography = loop.emote
                         poser.apply(
                             node, state, planeCoords(a, frame.camera.pose), planeHeight(a, frame.camera.pose), loop.walkPhaseMs,
                             verticalVelocity = loop.body.verticalVelocity,
                             sinceLandedMs = now - loop.landedAtMs,
                             size = currentSlot.characterSize,
+                            emote = if (emoteT != null && choreography != null) EmotePlayer.sample(choreography, emoteT) else null,
+                            emoteKind = choreography?.emote,
+                            frame = if (emoteT != null && choreography != null) EmotePlayer.frameAt(choreography, emoteT) else null,
                         )
                         val visible = now >= reappearAtMs[0]
                         if (node.isVisible != visible) node.isVisible = visible

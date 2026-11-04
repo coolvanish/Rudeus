@@ -7,9 +7,10 @@ import android.util.Log
 import com.google.android.filament.Engine
 import com.google.android.filament.MaterialInstance
 import com.google.android.filament.Texture
+import dev.romainguy.kotlin.math.Float3
+import dev.romainguy.kotlin.math.Quaternion
 import io.github.sceneview.loaders.MaterialLoader
 import io.github.sceneview.safeDestroyTexture
-import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
 import io.github.sceneview.node.PlaneNode
 import io.github.sceneview.texture.ImageTexture
@@ -17,6 +18,9 @@ import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.EmotePose
+import kz.rudy.ar.core.emote.PoseFrames
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -73,15 +77,34 @@ private const val FEET_DEPTH_BIAS = 0.6f
 /** |facing · right| below this keeps the previous flip, so walking straight at/away from the camera cannot flicker. */
 private const val FLIP_DEADBAND = 0.15f
 
+// HAND-REVIEW: T33 — model-drawn pose frames. A character may carry up to PoseFrames.MAX_PER_CHARACTER extra pictures
+// (two HELLO, two ROAR, each <= 768 px like the sprite: about 2.3 MB of texture with mips apiece). Each is its own
+// Texture + image MaterialInstance built once with the sprite, and the poser swaps the quad's material on the frame
+// an emote key holds (`setMaterialInstanceAt(0, ...)`, RenderableComponent.kt:266 in the shipped 4.31.0 sources) and
+// back to the base when the key or the emote ends. A frame's canvas is its own matte crop, so it is shown at the
+// quad's HEIGHT with its own aspect (the X scale is multiplied by frameAspect / spriteAspect): the feet stay on the
+// table and nothing stretches; a raised arm makes the body a little smaller for that key. Pixel question: is that
+// visible at 6 cm? A character without frames never reaches this code (frames is empty) and renders exactly as before.
+/** One drawn pose frame: its texture, the image material bound to it, and its pixel aspect (width / height). */
+internal class FrameSprite(val texture: Texture, val material: MaterialInstance, val aspect: Float)
+
 internal class CharacterSprite(
     val texture: Texture,
     val material: MaterialInstance,
     val widthM: Float,
     val heightM: Float,
     val facesRight: Boolean,
+    /** T33: the drawn frames per emote in index order (`EmoteKey.frame`); empty for a character without any. */
+    val frames: Map<Emote, List<FrameSprite>> = emptyMap(),
 ) {
+    val aspect: Float get() = widthM / heightM
+
     /** Releases the GPU resources. Main thread; only after no node uses [material] (RudeusArView keys the node on the sprite). */
     fun destroy(engine: Engine, materialLoader: MaterialLoader) {
+        for (f in frames.values.flatten()) {
+            materialLoader.destroyMaterialInstance(f.material)
+            engine.safeDestroyTexture(f.texture)
+        }
         materialLoader.destroyMaterialInstance(material)
         engine.safeDestroyTexture(texture)
     }
@@ -109,13 +132,31 @@ internal fun spriteFromBytes(
     png: ByteArray,
     heightM: Float,
     facesRight: Boolean,
+    /** T33: the character's drawn frames; one that does not decode ends that emote's list (a log line, never a crash). */
+    frames: PoseFrames = PoseFrames.EMPTY,
 ): CharacterSprite {
     val bitmap = BitmapFactory.decodeByteArray(png, 0, png.size)
     if (bitmap == null) {
         Log.w(GATE_TAG, "sprite_undecodable bytes=${png.size}: showing the demo sprite")
         return spriteFromAssets(engine, materialLoader, assets, heightM)
     }
-    return spriteFromBitmap(engine, materialLoader, boundedForTexture(bitmap), heightM, facesRight)
+    val frameSprites = LinkedHashMap<Emote, List<FrameSprite>>()
+    for ((emote, list) in frames.byEmote) {
+        val built = ArrayList<FrameSprite>()
+        for ((index, bytes) in list.withIndex()) {
+            val b = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (b == null) {
+                Log.w(GATE_TAG, "frame_undecodable emote=$emote index=$index bytes=${bytes.size}")
+                break // EmoteKey.frame past this index falls back to the base sprite, as without the frame
+            }
+            val bounded = boundedForTexture(b)
+            val texture = ImageTexture.Builder().bitmap(bounded).build(engine)
+            built += FrameSprite(texture, materialLoader.createImageInstance(texture), bounded.width.toFloat() / bounded.height)
+        }
+        if (built.isNotEmpty()) frameSprites[emote] = built
+    }
+    if (frameSprites.isNotEmpty()) Log.i(GATE_TAG, "frames_loaded " + frameSprites.entries.joinToString(" ") { "${it.key.name.lowercase()}=${it.value.size}" })
+    return spriteFromBitmap(engine, materialLoader, boundedForTexture(bitmap), heightM, facesRight, frameSprites)
 }
 
 /**
@@ -139,6 +180,7 @@ private fun spriteFromBitmap(
     bitmap: Bitmap,
     heightM: Float,
     facesRight: Boolean,
+    frames: Map<Emote, List<FrameSprite>> = emptyMap(),
 ): CharacterSprite {
     val texture = ImageTexture.Builder().bitmap(bitmap).build(engine)
     val material = materialLoader.createImageInstance(texture)
@@ -148,15 +190,17 @@ private fun spriteFromBitmap(
         widthM = heightM * bitmap.width / bitmap.height,
         heightM = heightM,
         facesRight = facesRight,
+        frames = frames,
     )
 }
 
 /**
- * Writes a [CharacterState] into the billboard node every frame. Keeps only the flip sign between frames.
- * The node must be a child of the session AnchorNode (local frame = plane frame, see PlaneCoords.kt).
+ * Writes a [CharacterState] into the billboard node every frame. Keeps only the flip sign and the material in use
+ * between frames. The node must be a child of the session AnchorNode (local frame = plane frame, see PlaneCoords.kt).
  */
 internal class CharacterPoser(private val sprite: CharacterSprite) {
     private var flip = 1f
+    private var material: MaterialInstance = sprite.material
 
     /**
      * @param cameraLocal camera position in plane coords: `planeCoords(anchor, frame.camera.pose)`.
@@ -165,6 +209,11 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
      * @param verticalVelocity feet velocity along h, m/s (`PhysicsBody.verticalVelocity`); only read while JUMPING.
      * @param sinceLandedMs host clock minus [GameLoop.landedAtMs]; drives the landing squash while < JUMP_LAND_MS.
      * @param size the player's Bigger / Smaller step (`ArSlot.characterSize`).
+     * @param emote the running emote's pose (`EmotePlayer.sample`), null when none runs: scale multiplies, yaw adds
+     *   to the billboard yaw, tilt turns the quad about its own Z, hop lifts it by hop x height x size; the walk bob
+     *   is suppressed meanwhile, the landing squash still wins. Physics never sees it.
+     * @param emoteKind which emote runs (its frames); @param frame the drawn frame the current key holds
+     *   (`EmotePlayer.frameAt`), null = the base sprite. A frame the sprite does not have is the base sprite too.
      */
     fun apply(
         node: PlaneNode,
@@ -175,18 +224,30 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         verticalVelocity: Float = 0f,
         sinceLandedMs: Long = Long.MAX_VALUE,
         size: Float = 1f,
+        emote: EmotePose? = null,
+        emoteKind: Emote? = null,
+        frame: Int? = null,
     ) {
         val toCam = cameraLocal - state.pos
         val upToCam = cameraHeightM - state.h
         // See FEET_DEPTH_BIAS. At most half way, for a camera right over the sprite.
         val camDist = sqrt(toCam.lengthSquared + upToCam * upToCam)
         val pull = if (camDist > 1e-3f) minOf(sprite.heightM * FEET_DEPTH_BIAS / camDist, 0.5f) else 0f
-        node.position = localPosition(state.pos + toCam * pull, state.h + upToCam * pull)
+        // HAND-REVIEW: T33 — the hop is a presentation lift in character heights (EmotePose.hop), added after the pull.
+        val hop = (emote?.hop ?: 0f) * sprite.heightM * size
+        node.position = localPosition(state.pos + toCam * pull, state.h + upToCam * pull + hop)
 
         // Y-only billboard. After a yaw of θ about Y the node's +Z (the quad's front) is (sin θ, 0, cos θ) in
-        // plane coords; point it at the camera. Rotation is Euler degrees (SceneView Node.rotation).
+        // plane coords; point it at the camera.
+        // HAND-REVIEW: T33 — composed as quaternions instead of Node.rotation (Euler): the emote's yaw adds to the
+        // billboard yaw about Y, then the tilt turns the quad about its OWN Z (yaw * tilt: the tilt is applied in the
+        // quad's frame first). With no emote this is the same pure Y rotation as before (Node.kt:414 did
+        // Quaternion.fromEuler of it); kotlin-math angles are degrees.
         val yawRad = atan2(toCam.u, toCam.v)
-        node.rotation = Rotation(y = (yawRad * 180.0 / PI).toFloat())
+        val yawDeg = (yawRad * 180.0 / PI).toFloat() + (emote?.yawDeg ?: 0f)
+        val tiltDeg = emote?.tiltDeg ?: 0f
+        node.quaternion = if (tiltDeg == 0f) Quaternion.fromAxisAngle(Float3(0f, 1f, 0f), yawDeg)
+        else Quaternion.fromAxisAngle(Float3(0f, 1f, 0f), yawDeg) * Quaternion.fromAxisAngle(Float3(0f, 0f, 1f), tiltDeg)
 
         // Facing flip. The node's +X (the viewer's right) is (cos θ, -sin θ) in plane coords.
         val right = Vec2(cos(yawRad), -sin(yawRad))
@@ -208,11 +269,24 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         } else if (state.mode == Mode.JUMPING && verticalVelocity > 0f) {
             sx = JUMP_RISE_SX
             sy = JUMP_RISE_SY
-        } else if (state.mode == Mode.WALKING) {
+        } else if (state.mode == Mode.WALKING && emote == null) {
             val s = sin(2.0 * PI * (walkPhaseMs % WALK_BOB_PERIOD_MS) / WALK_BOB_PERIOD_MS).toFloat()
             sy = 1f + WALK_BOB_STRETCH * s
             sx = 1f - WALK_BOB_SQUASH * s
         }
+        // HAND-REVIEW: T33 — the emote's squash-stretch multiplies into whatever physics gave (the choreography is
+        // presentation over the physics pose, locked in T29); the frame swap below only changes the picture.
+        if (emote != null) {
+            sx *= emote.scaleX
+            sy *= emote.scaleY
+        }
+        val drawn = if (emoteKind != null && frame != null) sprite.frames[emoteKind]?.getOrNull(frame) else null
+        val wanted = drawn?.material ?: sprite.material
+        if (wanted !== material) {
+            node.setMaterialInstanceAt(0, wanted)
+            material = wanted
+        }
+        if (drawn != null) sx *= drawn.aspect / sprite.aspect // same height, own aspect: nothing stretches
         // HAND-REVIEW: T25 — Bigger / Smaller is a node scale, not a new sprite: no Texture rebuild, and the origin at
         // the feet keeps them on the table at every size.
         node.scale = Scale(x = flip * sx * (1f - pull) * size, y = sy * (1f - pull) * size, z = 1f)
