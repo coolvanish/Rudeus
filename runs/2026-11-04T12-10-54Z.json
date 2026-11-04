@@ -1,0 +1,283 @@
+{
+    "schema": 1,
+    "runId": "2026-11-04T12-10-54Z",
+    "source": "cli",
+    "provider": "meta",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "drawing_car",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 22211,
+                    "costUsd": 0.0131,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 22212,
+            "totalCostUsd": 0.0131,
+            "aborted": false
+        },
+        {
+            "input": "drawing_car_2",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 23880,
+                    "costUsd": 0.0148,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 23880,
+            "totalCostUsd": 0.0148,
+            "aborted": false
+        },
+        {
+            "input": "drawing_cowcow",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 19864,
+                    "costUsd": 0.0125,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 19864,
+            "totalCostUsd": 0.0125,
+            "aborted": false
+        },
+        {
+            "input": "drawing_god_cow",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 20535,
+                    "costUsd": 0.0122,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 20535,
+            "totalCostUsd": 0.0122,
+            "aborted": false
+        },
+        {
+            "input": "drawing_penguini",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 15227,
+                    "costUsd": 0.011,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 15227,
+            "totalCostUsd": 0.011,
+            "aborted": false
+        },
+        {
+            "input": "drawing_pink",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 16907,
+                    "costUsd": 0.0112,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 16907,
+            "totalCostUsd": 0.0112,
+            "aborted": false
+        },
+        {
+            "input": "drawing_watermelon",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 24238,
+                    "costUsd": 0.0156,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 24239,
+            "totalCostUsd": 0.0156,
+            "aborted": false
+        },
+        {
+            "input": "horse",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 25666,
+                    "costUsd": 0.0146,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 25666,
+            "totalCostUsd": 0.0146,
+            "aborted": false
+        },
+        {
+            "input": "toy-car-01",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 23088,
+                    "costUsd": 0.0129,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 23088,
+            "totalCostUsd": 0.0129,
+            "aborted": false
+        },
+        {
+            "input": "toy-car-02",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 22237,
+                    "costUsd": 0.0131,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 22237,
+            "totalCostUsd": 0.0131,
+            "aborted": false
+        },
+        {
+            "input": "toy_car2",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 17397,
+                    "costUsd": 0.0105,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 17397,
+            "totalCostUsd": 0.0105,
+            "aborted": false
+        },
+        {
+            "input": "toy_dino",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 23081,
+                    "costUsd": 0.0141,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 23081,
+            "totalCostUsd": 0.0141,
+            "aborted": false
+        },
+        {
+            "input": "toy_duck",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 22436,
+                    "costUsd": 0.0132,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 22436,
+            "totalCostUsd": 0.0132,
+            "aborted": false
+        },
+        {
+            "input": "toy_edinorog",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 19753,
+                    "costUsd": 0.0128,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 19753,
+            "totalCostUsd": 0.0128,
+            "aborted": false
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 14,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 22212,
+        "p90Ms": 24239,
+        "costPerCharacterUsd": 0.013
+    }
+}

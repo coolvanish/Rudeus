@@ -1,0 +1,36 @@
+{
+    "schema": 1,
+    "runId": "2026-11-04T12-18-48Z",
+    "source": "cli",
+    "provider": "meta",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "toy_one_dino",
+            "stages": [
+                {
+                    "name": "choreo",
+                    "ms": 15329,
+                    "costUsd": 0.011,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": true
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 15330,
+            "totalCostUsd": 0.011,
+            "aborted": false
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 1,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 15330,
+        "p90Ms": 15330,
+        "costPerCharacterUsd": 0.011
+    }
+}

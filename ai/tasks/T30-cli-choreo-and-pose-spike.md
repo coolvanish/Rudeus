@@ -80,6 +80,27 @@ Tests not required: everything.
   4. Optional raw sample: `scripts/probe-meta.sh spark-choreo docs/bundled/toy_dino/sprite.png` (one Spark call, ~$0.003).
   5. `scripts/verify.sh`, the pre-commit scan, then the two commits named under "Done when".
 
+- Phase 2 result (2026-11-04, main checkout, day9/cast-emotes, uncommitted):
+  - choreo live (`choreo --bundle docs/bundled --all --live --record docs/api-samples --budget-usd 0.20`, run
+    `runs/2026-11-04T12-10-54Z.json`): 14 of 16 refs choreographed, all 14 `source=spark` (0 default, 0 failed);
+    latency p50 22.2 s (min 15.2 s, max 25.7 s); measured cost $0.1816 total, $0.0130 per call (4x the $0.003
+    estimate; CostTable.choreoUsd should move to ~0.013). The budget guard ($0.02/ref worst case) stopped before
+    toy_fox and toy_one_dino (spent $0.1816 of $0.20): they have no choreo.json and `"choreo": null` in the index (the
+    app plays the defaults). To finish: `./gradlew :cli:run --args="choreo --bundle docs/bundled --ref toy_fox --live
+    --record docs/api-samples --budget-usd 0.05"`, the same for toy_one_dino, then re-mirror (~$0.026).
+    Durations seen: hello 1100-1200, bye 1400-1600, dance 2000-2400, spin 1200-1600, roar 1000-1500 ms.
+  - spark-choreo/: 14 real fixtures (synthetic=false) + sample-01 (synthetic) + meta.json (synthetic=false,
+    latencyMs 22224, costUsd 0.01298). The fixtures' `note` reads "recorded by cli character --live" (RecordingModels
+    hard-codes it; core follow-up). Token-shape scan of the new files: clean.
+  - Asset mirror: 14 choreo.json + index.json copied into androidApp/src/main/assets/bundled/; cmp: 0 mismatches.
+    index.json diffs only add the `choreo` field.
+  - pose-spike live (`pose-spike --bundle docs/bundled --ref toy_dino --out docs/api-samples/muse-pose --live
+    --budget-usd 0.10`, run `runs/2026-11-04T12-16-28Z.json`): 4/4 frames, every matte by SpriteMatte (no SAM
+    fallback), Muse latency 11.6-13.7 s per frame, $0.0100 each, $0.0400 total. Files: toy_dino.hello-1.png,
+    toy_dino.hello-2.png, toy_dino.roar-1.png, toy_dino.roar-2.png (0.76-0.99 MB each at 1024 px), contact.png,
+    README.md (human answers blank).
+  - pose spike verdict (human): 
+
 ## Addendum after T29 (2026-11-04)
 - Also owned: `cli/src/main/kotlin/kz/rudy/ar/cli/Record.kt` (add `Jobs.SPARK_CHOREO` to `RECORDED_JOBS`), `scripts/probe-meta.sh` (a `spark-choreo` job), `docs/api-samples/README.md` (the endpoints table row and the fixture list).
 - T29's `RecordingModels` writes the sanitised `ChoreographyParser.toJson(set)` as the fixture `text` (the raw reply stays inside MetaApi); a `scripts/probe-meta.sh spark-choreo` run may save one raw redacted `.response.json` beside it for the README's "saved real API responses".

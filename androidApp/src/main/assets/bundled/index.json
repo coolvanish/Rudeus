@@ -11,7 +11,8 @@
             "sprite": "drawing_car/sprite.png",
             "sheet": "drawing_car/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_car/choreo.json"
         },
         {
             "ref": "drawing_car_2",
@@ -23,7 +24,8 @@
             "sprite": "drawing_car_2/sprite.png",
             "sheet": "drawing_car_2/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_car_2/choreo.json"
         },
         {
             "ref": "drawing_cowcow",
@@ -35,7 +37,8 @@
             "sprite": "drawing_cowcow/sprite.png",
             "sheet": "drawing_cowcow/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_cowcow/choreo.json"
         },
         {
             "ref": "drawing_god_cow",
@@ -47,7 +50,8 @@
             "sprite": "drawing_god_cow/sprite.png",
             "sheet": "drawing_god_cow/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_god_cow/choreo.json"
         },
         {
             "ref": "drawing_penguini",
@@ -59,7 +63,8 @@
             "sprite": "drawing_penguini/sprite.png",
             "sheet": "drawing_penguini/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_penguini/choreo.json"
         },
         {
             "ref": "drawing_pink",
@@ -71,7 +76,8 @@
             "sprite": "drawing_pink/sprite.png",
             "sheet": "drawing_pink/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_pink/choreo.json"
         },
         {
             "ref": "drawing_watermelon",
@@ -83,7 +89,8 @@
             "sprite": "drawing_watermelon/sprite.png",
             "sheet": "drawing_watermelon/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "drawing_watermelon/choreo.json"
         },
         {
             "ref": "horse",
@@ -95,7 +102,8 @@
             "sprite": "horse/sprite.png",
             "sheet": "horse/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "horse/choreo.json"
         },
         {
             "ref": "toy-car-01",
@@ -107,7 +115,8 @@
             "sprite": "toy-car-01/sprite.png",
             "sheet": "toy-car-01/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T07-46-08Z"
+            "runId": "2026-10-28T07-46-08Z",
+            "choreo": "toy-car-01/choreo.json"
         },
         {
             "ref": "toy-car-02",
@@ -119,7 +128,8 @@
             "sprite": "toy-car-02/sprite.png",
             "sheet": "toy-car-02/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy-car-02/choreo.json"
         },
         {
             "ref": "toy_car2",
@@ -131,7 +141,8 @@
             "sprite": "toy_car2/sprite.png",
             "sheet": "toy_car2/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy_car2/choreo.json"
         },
         {
             "ref": "toy_dino",
@@ -143,7 +154,8 @@
             "sprite": "toy_dino/sprite.png",
             "sheet": "toy_dino/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy_dino/choreo.json"
         },
         {
             "ref": "toy_duck",
@@ -155,7 +167,8 @@
             "sprite": "toy_duck/sprite.png",
             "sheet": "toy_duck/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy_duck/choreo.json"
         },
         {
             "ref": "toy_edinorog",
@@ -167,7 +180,8 @@
             "sprite": "toy_edinorog/sprite.png",
             "sheet": "toy_edinorog/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy_edinorog/choreo.json"
         },
         {
             "ref": "toy_fox",
@@ -179,7 +193,8 @@
             "sprite": "toy_fox/sprite.png",
             "sheet": "toy_fox/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy_fox/choreo.json"
         },
         {
             "ref": "toy_one_dino",
@@ -191,7 +206,8 @@
             "sprite": "toy_one_dino/sprite.png",
             "sheet": "toy_one_dino/sheet.json",
             "provider": "meta",
-            "runId": "2026-10-28T09-11-21Z"
+            "runId": "2026-10-28T09-11-21Z",
+            "choreo": "toy_one_dino/choreo.json"
         }
     ]
 }
