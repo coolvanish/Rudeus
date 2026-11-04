@@ -21,17 +21,14 @@ import kz.rudy.ar.CaptureHost
 import kz.rudy.ar.VoiceHost
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.capture.PhotoIntake
-import kz.rudy.ar.core.bundle.SavedCharacter
 import kz.rudy.ar.core.bundle.Bundle
+import kz.rudy.ar.core.bundle.SavedCharacter
 import kz.rudy.ar.core.bundle.SavedCharacters
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.io.FileCharacterFolder
 import kz.rudy.ar.core.io.FileMetricsSink
 import kotlinx.coroutines.flow.StateFlow
 import kz.rudy.ar.core.domain.CharacterSheet
-import kz.rudy.ar.core.emote.Emote
-import kz.rudy.ar.core.emote.EmoteSet
-import kz.rudy.ar.core.emote.PoseFrames
-import kz.rudy.ar.core.emote.PoseSpec
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.OfflineGuard
@@ -63,24 +60,20 @@ import java.io.File
 // HAND-REVIEW: T04 — also the AR view's TableScanner: the scan's SAM call goes through the same MetaApi (metered
 // under Jobs.SAM_TABLE) and a successful scan lands in the same run file (`scans[]`), so a bundled-character session
 // with only scans now has a run to show/export (`latestRun` counts scans too).
-// HAND-REVIEW: T33 — bundled characters now carry their choreo.json (`Bundle.decodeEmotes`, the defaults when the entry
-// has none) and their drawn frames (`frames` in index.json -> assets/bundled/<ref>/frames/*.png, PoseFrames.of), parsed
-// with the sprites off the main thread; saved characters carry both through :core's SavedCharacters; a photo result
-// saves its emotes and frames (the pipeline draws them with `poseFrames = true`: four Muse edits, ~+26 s, +$0.04 per
-// character, stage `frames` in the run JSON). DeferredModels forwards choreograph and drawPose (the T32 addendum).
 // HAND-REVIEW: T24 — also the Play HUD's VoiceHost (push-to-talk). VoiceRecorder records <= 5 s of 16 kHz mono PCM;
 // `stopAndTranscribe` sends it through the same `guard` (so a network failure flips the offline badge) on IO within
 // VOICE_TIMEOUT_MS, and logs only `voice_ms=` and `text_len=` — never the key, never the transcript. Under
 // MIN_VOICE_BYTES (a tap, not a phrase) nothing is sent. `requestMic` is MainActivity's RECORD_AUDIO launcher.
+// HAND-REVIEW: T32 — emotes ride along: a bundled entry with `choreo` has its choreo.json read (Bundle.decodeEmotes, the
+// defaults when the file is missing or unreadable, still off the main thread), saved characters carry the EmoteSet
+// :core's SavedCharacters reads and writes, and DeferredModels forwards `choreograph` (without it a photo character
+// always shipped source=default).
 
 private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
 private const val RUNS_DIR = "runs"
 private const val BUNDLED_DIR = "bundled"
 private const val SAVED_DIR = "characters"
-
-/** T33 switch: draw the pose frames for a photo character (false = the v1.1 pipeline, no `frames` stage). */
-private const val POSE_FRAMES = true
 
 /** Where the exported run lands on API >= 29 (relative to the primary external volume), as the player sees it in Files. */
 private const val EXPORT_RELATIVE_DIR = "Download/Rudeus"
@@ -204,15 +197,13 @@ class AndroidCaptureHost(
                 spriteMatter = AndroidImages::matte,
                 imageResizer = AndroidImages::downscale,
                 onEvent = { event -> logEvent(event, t0); onEvent(event) },
-                poseFrames = POSE_FRAMES,
             )
             try {
                 pipeline.run(ref, photo, styleRefs, description = "").also {
                     Log.i(
                         TAG,
                         "pipeline_ms=${SystemClock.elapsedRealtime() - t0} gate=${it.gateScore} passed=${it.gatePassed} " +
-                            "attempts=${it.attempts} sprite_bytes=${it.sprite.size} name=${it.sheet.name} " +
-                            "choreo=${it.emotes.source} frames=${it.frames.count} run=${metrics.runId}",
+                            "attempts=${it.attempts} sprite_bytes=${it.sprite.size} name=${it.sheet.name} run=${metrics.runId}",
                     )
                 }
             } finally {
@@ -249,9 +240,8 @@ class AndroidCaptureHost(
     override suspend fun saveCharacter(result: CharacterResult): BundledCharacter? = withContext(Dispatchers.IO) {
         try {
             val sprite = AndroidImages.downscale(result.sprite, SavedCharacters.SPRITE_MAX_SIDE)
-            // T33: the frames are already <= PoseFrames.MAX_SIDE (the pipeline bounds them); the emotes are keyed for them.
-            saved.save(sprite, result.sheet, result.emotes, result.frames).toCard()
-                .also { Log.i(TAG, "saved_character=${it.id} sprite_bytes=${sprite.size} passed=${result.gatePassed} frames=${result.frames.count}") }
+            saved.save(sprite, result.sheet, result.emotes).toCard()
+                .also { Log.i(TAG, "saved_character=${it.id} sprite_bytes=${sprite.size} passed=${result.gatePassed}") }
         } catch (e: Exception) {
             Log.w(TAG, "save character failed: ${e.message}")
             null
@@ -354,7 +344,7 @@ class AndroidCaptureHost(
     }
 }
 
-private fun SavedCharacter.toCard() = BundledCharacter(id = id, sheet = sheet, thumbnail = null, spritePng = sprite, emotes = emotes, frames = frames)
+private fun SavedCharacter.toCard() = BundledCharacter(id = id, sheet = sheet, thumbnail = null, spritePng = sprite, emotes = emotes)
 
 /** A sprite BitmapFactory cannot size is skipped when listing, not discovered as a decode failure on the table. */
 private fun spriteDecodable(sprite: ByteArray): Boolean {
@@ -404,11 +394,10 @@ object BundledAssets {
 }
 
 /**
- * assets/bundled/index.json (`characters[]`: ref, sprite, sheet, gatePassed, choreo, frames) -> [BundledCharacter]s,
- * gate-passed ones first, then the rest, each group in index order. A character whose sprite or sheet is missing or
- * unreadable is skipped with a log line; a missing or broken index yields an empty list. The sheet is parsed by :core's
- * SheetParser (same normalisation as the pipeline: 5 lines kk/ru, unknown ability -> JUMP). T33: a missing or broken
- * choreo.json means the default emotes, a missing or broken frame file means no frames; neither drops the character.
+ * assets/bundled/index.json (`characters[]`: ref, sprite, sheet, gatePassed) -> [BundledCharacter]s, gate-passed
+ * ones first, then the rest, each group in index order. A character whose sprite or sheet is missing or unreadable
+ * is skipped with a log line; a missing or broken index yields an empty list. The sheet is parsed by :core's
+ * SheetParser (same normalisation as the pipeline: 5 lines kk/ru, unknown ability -> JUMP).
  */
 private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
     val entries = try {
@@ -426,27 +415,14 @@ private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
             val sprite = assets.open("$BUNDLED_DIR/$spritePath").use { it.readBytes() }
             check(spriteDecodable(sprite)) { "sprite undecodable: $spritePath" }
             val sheet = SheetParser.parse(assets.open("$BUNDLED_DIR/$sheetPath").bufferedReader().use { it.readText() })
-            val emotes = o.optString("choreo", "").takeIf { it.isNotEmpty() }?.let { path ->
-                try {
-                    Bundle.decodeEmotes(assets.open("$BUNDLED_DIR/$path").bufferedReader().use { it.readText() })
-                } catch (e: Exception) {
-                    Log.w(TAG, "bundled choreo unreadable ref=$ref: ${e.message}")
-                    null
-                }
-            } ?: EmoteSet.defaults()
-            val frames = try {
-                val fo = o.optJSONObject("frames")
-                if (fo == null) PoseFrames.EMPTY else PoseFrames.of(
-                    Emote.entries.associateWith { e ->
-                        val arr = fo.optJSONArray(e.name)
-                        List(arr?.length() ?: 0) { i -> assets.open("$BUNDLED_DIR/${arr!!.getString(i)}").use { it.readBytes() } }
-                    },
-                )
+            val choreoPath = if (o.isNull("choreo")) "" else o.optString("choreo", "")
+            val emotes = if (choreoPath.isEmpty()) EmoteSet.defaults() else try {
+                Bundle.decodeEmotes(assets.open("$BUNDLED_DIR/$choreoPath").bufferedReader().use { it.readText() })
             } catch (e: Exception) {
-                Log.w(TAG, "bundled frames unreadable ref=$ref: ${e.message}")
-                PoseFrames.EMPTY
+                Log.w(TAG, "bundled choreo unreadable ref=$ref: ${e.message}")
+                EmoteSet.defaults()
             }
-            Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite, emotes = emotes, frames = frames))
+            Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite, emotes = emotes))
         } catch (e: Exception) {
             Log.w(TAG, "bundled skipped ref=$ref: ${e.message}")
             null
@@ -465,9 +441,8 @@ private class DeferredModels(make: () -> MetaModels) : MetaModels {
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreStyle(ref, image, refs)
     override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreTechnique(ref, image, refs)
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet = delegate.characterSheet(ref, description, image)
-    // HAND-REVIEW: T33 (the T32 addendum) — without these two lines the interface defaults throw on the phone: every photo
-    // character would ship `source=default` emotes and no frames, and the gate line `choreo=spark` could never show.
+    // HAND-REVIEW: T32 (T29 addendum) — forwards the choreography call; the interface default returns EmoteSet.defaults() and
+    // would make every photo character on the phone `source=default`.
     override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet = delegate.choreograph(ref, sheet, image)
-    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray = delegate.drawPose(ref, sprite, refs, spec)
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String = delegate.transcribe(ref, pcm16kMono, lang)
 }

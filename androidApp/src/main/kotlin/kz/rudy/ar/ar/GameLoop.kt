@@ -2,7 +2,6 @@ package kz.rudy.ar.ar
 
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
-import kz.rudy.ar.core.domain.CharacterEvents
 import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
@@ -11,7 +10,10 @@ import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.emote.Choreography
 import kz.rudy.ar.core.emote.EmotePlayer
-import kz.rudy.ar.core.physics.Physics
+import kz.rudy.ar.core.emote.EmotePose
+import kz.rudy.ar.core.physics.Cast
+import kz.rudy.ar.core.physics.CastEvents
+import kz.rudy.ar.core.physics.CastPhysics
 import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.physics.PhysicsParams
 
@@ -33,6 +35,14 @@ import kz.rudy.ar.core.physics.PhysicsParams
 // player runs on it, not on the wall clock, so a tracking stall or a frame hitch cannot push a scripted tap out of its
 // beat window. `restartAtSpawn` is the debug scenario replay putting the body back at `level.spawn` (every run starts
 // the same); it is NOT the tracking path — PAUSED still freezes and never resets (locked decision, untouched).
+// HAND-REVIEW: T32 — the loop holds a `Cast` (T28) instead of one body: `CastPhysics.step` steps every member with the
+// same dt clamp, `CastPhysics.pause` / `resume` on tracking (PAUSED still freezes every member and never resets), and the
+// events come from `CastEvents.between(lastReported, cast)` per member. Everything per member (walk phase, landing clock,
+// the running emote) lives in `MemberClocks`, keyed by id. `add` / `remove` are the host's cast sync; a new member is
+// also put into `lastReported`, so joining yields no event (the host announces PLACED itself). The emote clock is the
+// SIMULATED clock (start = simMs at `emote`, sampled at simMs), so a pause freezes a running emote with the physics;
+// physics never sees an emote (the poser applies it to the node only). `restartAtSpawn`, `state` and the scenario act
+// on the FIRST member only.
 
 /** `landedAtMs` before any landing: far in the past, but `now - NEVER_LANDED` cannot overflow. */
 internal const val NEVER_LANDED = Long.MIN_VALUE / 2
@@ -40,31 +50,60 @@ internal const val NEVER_LANDED = Long.MIN_VALUE / 2
 /** Frame-to-frame dt is clamped so a hitch (GC, app switch, slow frame) cannot teleport the character. */
 internal const val MAX_STEP_DT_MS = 50L
 
+/** HAND-REVIEW: T32 — cut line 4: false steps the cast without `CastPhysics.separate` (members may overlap). */
+internal const val SEPARATION_ENABLED = true
+
+/** Host-side clocks of one member (main thread only). */
+internal class MemberClocks {
+    /** Milliseconds spent in [Mode.WALKING]; drives the walk bob. Never reset (a pause just stops it). */
+    var walkPhaseMs: Long = 0L
+
+    /** Host clock (`SystemClock.elapsedRealtime`) of the last [CharacterEvent.LANDED]; [NEVER_LANDED] before any. */
+    var landedAtMs: Long = NEVER_LANDED
+
+    /** The running emote and the simulated time it started at; null when none runs. */
+    var emote: Choreography? = null
+    var emoteStartSimMs: Long = 0L
+}
+
 internal class GameLoop(
     /** Empty table until T04 wires SceneBuilder: no objects and `boundary = null` (unbounded, no cliffs). */
     var level: Level = Level(objects = emptyList(), boundary = null, spawn = Vec2.ZERO),
 ) {
-    var body: PhysicsBody = PhysicsBody()
+    var cast: Cast = Cast()
         private set
 
     /** Physics constants of the chosen surface ([configure]); the table defaults until then. */
     var params: PhysicsParams = PhysicsParams.DEFAULT
         private set
 
-    /** Milliseconds spent in [Mode.WALKING]; drives the walk bob. Never reset (a pause just stops it). */
-    var walkPhaseMs: Long = 0L
-        private set
+    private var profile: SurfaceProfile = SurfaceProfile.TABLE
+    private var size: Float = CharacterSize.DEFAULT
 
-    /** Simulated time: milliseconds physics has stepped (clamped dt, tracking only). The scenario clock. */
+    /** Simulated time: milliseconds physics has stepped (clamped dt, tracking only). The scenario and emote clock. */
     var simMs: Long = 0L
         private set
 
     private var lastStepMs: Long? = null
 
-    /** The body whose state was last diffed for events; see [onFrame]. */
-    private var lastReported: PhysicsBody = body
+    /** The cast whose state was last diffed for events; see [onFrame]. */
+    private var lastReported: Cast = cast
 
-    val state: CharacterState get() = body.state
+    private val clocks = HashMap<String, MemberClocks>()
+
+    /** Member ids in cast order (the first is the one Play started with). */
+    val ids: List<String> get() = cast.ids
+
+    val firstId: String? get() = cast.members.firstOrNull()?.id
+
+    fun has(id: String): Boolean = cast[id] != null
+
+    fun body(id: String): PhysicsBody? = cast[id]
+
+    fun state(id: String): CharacterState? = cast[id]?.state
+
+    /** The FIRST member's state (scenario, scan and legacy logs); a default state while the cast is empty. */
+    val state: CharacterState get() = cast.members.firstOrNull()?.body?.state ?: CharacterState()
 
     /**
      * Size the physics for [profile] and the player's [size]: walk speed, gravity, arrive epsilon and the collision radius.
@@ -73,107 +112,132 @@ internal class GameLoop(
      * circle out of any object.
      */
     fun configure(profile: SurfaceProfile, size: Float = CharacterSize.DEFAULT) {
+        this.profile = profile
+        this.size = size
         params = PhysicsParams.forProfile(profile, size)
-        body = body.copy(state = body.state.copy(radiusM = profile.radiusAt(size)))
+        val r = profile.radiusAt(size)
+        for (m in cast.members) if (m.body.state.radiusM != r) cast = cast.with(m.id, m.body.copy(state = m.body.state.copy(radiusM = r)))
     }
 
-    /** Later taps: route via :core. Plane coords come from `planeCoords(anchor, hitPose)`. */
-    fun walkTo(target: Vec2) {
-        body = Physics.walkTo(body, target)
+    /** Collision radius of a member at the configured size. */
+    val radiusM: Float get() = profile.radiusAt(size)
+
+    /**
+     * Where a new member stands: the first member at [Vec2.ZERO] (as v1.0), later ones at `CastPhysics.spawnNear`
+     * [near] (the active member), trying [preferred] (camera-right in plane coords) first.
+     */
+    fun spawnFor(near: Vec2, preferred: Vec2): Vec2 =
+        if (cast.members.isEmpty()) Vec2.ZERO else CastPhysics.spawnNear(level, cast, radiusM, near, preferred, params)
+
+    /** Adds member [id] at [pos], IDLE with [ability]; an id already on the table is left alone. No event: the host says PLACED. */
+    fun add(id: String, pos: Vec2, ability: Ability) {
+        if (cast[id] != null) return
+        val body = PhysicsBody(state = CharacterState(pos = pos, ability = ability, radiusM = radiusM))
+        cast = cast.with(id, body)
+        lastReported = lastReported.with(id, body)
+        clocks[id] = MemberClocks()
     }
 
-    /** Host clock (`SystemClock.elapsedRealtime`) of the last [CharacterEvent.LANDED]; [NEVER_LANDED] before any (safe to subtract). */
-    var landedAtMs: Long = NEVER_LANDED
-        private set
+    /** Drops member [id] (unknown: no-op). Its node is the host's to detach. */
+    fun remove(id: String) {
+        cast = cast.without(id)
+        lastReported = lastReported.without(id)
+        clocks.remove(id)
+    }
 
-    /** The Jump button: `Physics.jump`. Returns false when physics ignored it (ROLL, airborne, paused, respawning). */
-    fun jump(): Boolean {
-        val before = body
-        body = Physics.jump(body, params)
-        return body !== before
+    /** Later taps and the finger lead: route via :core. Plane coords come from `planeCoords(anchor, hitPose)`. */
+    fun walkTo(id: String, target: Vec2) {
+        cast = CastPhysics.walkTo(cast, id, target)
+    }
+
+    /** The Jump button: `Physics.jump`. Returns false when physics ignored it (ROLL, airborne, paused, respawning, unknown id). */
+    fun jump(id: String): Boolean {
+        val before = cast
+        cast = CastPhysics.jump(cast, id, params)
+        return cast !== before
     }
 
     /** The character sheet's ability; physics reads it on every step (ROLL speed, FLY gravity, jump permission). */
-    fun setAbility(ability: Ability) {
-        if (body.state.ability != ability) body = body.copy(state = body.state.copy(ability = ability))
+    fun setAbility(id: String, ability: Ability) {
+        val b = cast[id] ?: return
+        if (b.state.ability != ability) cast = cast.with(id, b.copy(state = b.state.copy(ability = ability)))
     }
 
-    // HAND-REVIEW: T33 (the emote half of T32's contract) — the running emote is presentation only: a choreography and
-    // its start on the SIMULATED clock, so PAUSED freezes it and never resets it (locked), exactly like the scenario.
-    // Physics never reads it; the view samples EmotePlayer on it per frame and hands the pose to CharacterPoser. A new
-    // emote replaces the running one; `restartAtSpawn` drops it with the rest of the presentation.
-    /** The choreography now playing, null when none; read only through [emoteTimeMs]. */
-    var emote: Choreography? = null
-        private set
-    private var emoteStartSimMs = 0L
-
-    fun playEmote(c: Choreography) {
-        emote = c
-        emoteStartSimMs = simMs
+    /** Starts [c] on member [id] now (simulated time); a running emote is replaced. Unknown id: no-op. */
+    fun emote(id: String, c: Choreography) {
+        val k = clocks[id] ?: return
+        k.emote = c
+        k.emoteStartSimMs = simMs
     }
 
-    /** Milliseconds into [emote] on [simMs], or null when none runs; an emote past its duration is dropped here. */
-    fun emoteTimeMs(): Long? {
-        val c = emote ?: return null
-        val t = simMs - emoteStartSimMs
+    /** The running emote's pose for the poser, null when none runs (a finished one is dropped here). */
+    fun emotePose(id: String): EmotePose? {
+        val k = clocks[id] ?: return null
+        val c = k.emote ?: return null
+        val t = simMs - k.emoteStartSimMs
         if (EmotePlayer.finished(c, t)) {
-            emote = null
+            k.emote = null
             return null
         }
-        return t
+        return EmotePlayer.sample(c, t)
     }
 
+    fun walkPhaseMs(id: String): Long = clocks[id]?.walkPhaseMs ?: 0L
+
+    fun landedAtMs(id: String): Long = clocks[id]?.landedAtMs ?: NEVER_LANDED
+
     /**
-     * Debug scenario replay only: feet at [Level.spawn], h = 0, no target, IDLE, no vertical velocity, ability and
-     * radius kept. A paused body stays paused (the restored mode becomes IDLE) so a replay requested under the Paused
-     * scrim still waits for tracking. Not a tracking reset.
+     * Debug scenario replay only, FIRST member only: feet at [Level.spawn], h = 0, no target, IDLE, no vertical velocity,
+     * ability and radius kept. A paused body stays paused (the restored mode becomes IDLE) so a replay requested under
+     * the Paused scrim still waits for tracking. Not a tracking reset.
      */
     fun restartAtSpawn() {
-        val s = body.state
+        val first = cast.members.firstOrNull() ?: return
+        val s = first.body.state
         val paused = s.mode == Mode.PAUSED
-        body = PhysicsBody(
+        val body = PhysicsBody(
             state = s.copy(pos = level.spawn, h = 0f, target = null, mode = if (paused) Mode.PAUSED else Mode.IDLE),
             verticalVelocity = 0f,
             modeBeforePause = if (paused) Mode.IDLE else null,
         )
+        cast = cast.with(first.id, body)
         // HAND-REVIEW: T21 review fix — the teleport is not a transition: no LANDED / RESPAWNED for the HUD or the poser.
-        lastReported = body
-        emote = null
+        lastReported = cast
     }
 
     /**
      * One AR frame at [nowMs] (SystemClock.elapsedRealtime). [tracking] = camera and session anchor both
-     * TRACKING. Returns the state to render. While not tracking the body is paused and the gap is not
-     * simulated: the first step after resume uses dt = 0. Every [CharacterEvent] implied since the previous
-     * frame's report (including a tap's walkTo) goes to [onEvent], in order, before this returns.
+     * TRACKING. Returns the cast to render. While not tracking every member is paused and the gap is not
+     * simulated: the first step after resume uses dt = 0. Every (id, [CharacterEvent]) implied since the previous
+     * frame's report (including a tap's walkTo) goes to [onEvent], in cast order, before this returns.
      */
     fun onFrame(
         nowMs: Long,
         tracking: Boolean,
-        onEvent: (CharacterEvent) -> Unit = {},
+        onEvent: (String, CharacterEvent) -> Unit = { _, _ -> },
         /** HAND-REVIEW: T21 review fix — scripted taps run here, AFTER resume and BEFORE the step, so a Jump due on the first frame back from a pause is not dropped by `canJump`. */
         beforeStep: (() -> Unit)? = null,
-    ): CharacterState {
+    ): Cast {
         if (!tracking) {
-            body = Physics.pause(body)
+            cast = CastPhysics.pause(cast)
             lastStepMs = null
         } else {
-            body = Physics.resume(body) // no-op unless paused
+            cast = CastPhysics.resume(cast) // no-op unless paused
             beforeStep?.invoke()
             val dt = lastStepMs?.let { (nowMs - it).coerceIn(0L, MAX_STEP_DT_MS) } ?: 0L
             lastStepMs = nowMs
-            body = Physics.step(body, level, dt, params)
+            cast = CastPhysics.step(cast, level, dt, params, separate = SEPARATION_ENABLED)
             simMs += dt
-            if (body.state.mode == Mode.WALKING) walkPhaseMs += dt
+            for (m in cast.members) if (m.body.state.mode == Mode.WALKING) clocks[m.id]?.let { it.walkPhaseMs += dt }
         }
         // PhysicsBody overload (T12): adds BLOCKED on the rising edge of `PhysicsBody.blocked` and per new target.
-        if (lastReported !== body) {
-            for (e in CharacterEvents.between(lastReported, body)) {
-                if (e == CharacterEvent.LANDED) landedAtMs = nowMs
-                onEvent(e)
+        if (lastReported !== cast) {
+            for ((id, e) in CastEvents.between(lastReported, cast)) {
+                if (e == CharacterEvent.LANDED) clocks[id]?.landedAtMs = nowMs
+                onEvent(id, e)
             }
-            lastReported = body
+            lastReported = cast
         }
-        return body.state
+        return cast
     }
 }
