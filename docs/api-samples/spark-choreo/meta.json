@@ -3,9 +3,9 @@
     "endpoint": "POST /v1/chat/completions",
     "model": "muse-spark-1.3-contributor",
     "requestShape": "{model, messages:[{role:user, content:[text (Prompts.choreograph(sheet)), image_url(cutout <=512px)]}], response_format:{type:json_schema, json_schema:{name:Choreographies, strict:true, schema}}, reasoning_effort:low, max_completion_tokens:4096}",
-    "latencyMs": 15329,
-    "costUsd": 0.011,
+    "latencyMs": 22224,
+    "costUsd": 0.0129,
     "probedAt": "2026-11-04T12:19:04Z",
     "synthetic": false,
-    "notes": "Recorded by cli choreo --live --record on 2026-11-04: 1 call(s), latency min 15329 / median 15329 / max 15329 ms, cost mean $0.0110 per call (measured from the replies' token usage when reported). The fixtures' text is ChoreographyParser.toJson of the sanitised set (RecordingModels), not the raw reply. sample-01.fixture.json stays the hand-written synthetic sample (its own synthetic flag)."
+    "notes": "Recorded by cli choreo --live --record on 2026-11-04 over all 16 bundled characters (runs 12-10-54Z, 12-18-24Z, 12-18-48Z): latency min 15227 / median 22224 / max 25666 ms, cost mean $0.0129 per call (measured from the replies' token usage; CostTable.choreoUsd = 0.013). 16 of 16 replies parsed with source=spark. The fixtures' text is ChoreographyParser.toJson of the sanitised set (RecordingModels), not the raw reply. sample-01.fixture.json stays the hand-written synthetic sample (its own synthetic flag)."
 }
