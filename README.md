@@ -16,6 +16,7 @@ Then the character walks, jumps and flies around the real objects.
 | Gate | Spark 1.3 vision + deterministic palette/outline check | score ≥ 0.7 or retry (≤ 2) |
 | Sheet | Spark 1.3 | name, personality, ability (jump / fly / roll / hide), 5 lines in kk and ru |
 | Table scan | SAM 3.1 | one mask per prompt → footprints on the table plane via ray–plane |
+| Choreography (v1.1) | Spark 1.3 | five emote choreographies (hi, bye, dance, spin, roar) from the sprite and the personality; sanitised in `:core`, hand-authored defaults offline |
 | Voice (disabled in Android) | Voice Transcribe | implementation retained; mic hidden pending device fixes |
 
 The whole pipeline is pure Kotlin in `:core` and runs identically on the phone and from the Mac (`:cli`).
@@ -80,6 +81,19 @@ Generated with `metrics summarise` over the runs listed below (the five empty Oc
 
 Day 2 targets were ≥ 7/10 passing the gate first try, p50 < 40 s and ≤ $0.05 per character. The largest live
 run (15 drawings, 2026-10-28T09-11-21Z) missed the pass-rate and latency targets; the cost target held.
+
+## Cast and emotes (v1.1, Nov 4)
+Several characters on one table, and emotes the model choreographs. Up to four characters stand on the table (`+` on
+Play picks from the saved and bundled grid); a finger that lands on a character leads it and a second finger leads a
+second one, so two kids can play on one tablet; characters push each other apart and are never pushed over the edge.
+Five emotes (hi, bye, dance, spin, roar) are choreographies of the billboard quad: scale, yaw, tilt, a hop, a sound and
+a line from the sheet. Spark 1.3 writes all five for a new character in one structured-output call from the sprite
+and the personality; `:core` sanitises the reply within hard bounds and falls back to hand-authored defaults offline,
+and the set is saved next to the sprite, so Play never calls a model. Measured on the Mac over the 16 bundled
+characters (runs `2026-11-04T12-10-54Z`, `12-18-24Z`, `12-18-48Z`): 16/16 choreographed by Spark, p50 22.2 s,
+$0.013 per character. A spike also had Muse Image edit draw pose frames of the same character
+(`docs/api-samples/muse-pose/`: 4 frames, $0.01 and 12–14 s each, identity kept); wiring those frames into the
+choreographies is the next step. Device evidence and open checks: [`ai/day9-human.md`](ai/day9-human.md).
 
 ## Platform statement
 Android only, by choice: ARCore is the AR runtime. The Kotlin Multiplatform split (`:core` on android + jvm) is what
