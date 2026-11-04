@@ -275,7 +275,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val grabMarginPx = remember { floatArrayOf(0f) }
     grabMarginPx[0] = GRAB_MARGIN_DP * LocalDensity.current.density
     val projector = remember { ScreenProjector() }
-    val spriteProbe = remember(engine) { SpriteProbe(engine) } // HAND-REVIEW: Pixel 2026-11-04 — logs only, why the first sprite freezes (SpriteProbe.kt)
     val loop = remember { GameLoop() }
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
     val scanBusy = remember { booleanArrayOf(false) } // one scan at a time; a request meanwhile joins it
@@ -311,14 +310,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             val png = c.spritePng
             val sprite = if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
             else spriteFromAssets(engine, materialLoader, context.assets, profile.characterHeightM)
-            MemberRig(c.id, sprite).also {
-                rigs[c.id] = it
-                spriteProbe.onRig("created", c.id, it)
-            }
+            MemberRig(c.id, sprite).also { rigs[c.id] = it }
         }
         DisposableEffect(rig) {
             onDispose {
-                spriteProbe.onRig("disposed", c.id, rig)
                 if (rigs[c.id] === rig) rigs.remove(c.id)
                 rig.sprite.destroy(engine, materialLoader)
             }
@@ -369,7 +364,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     /** T32: whose taps and buttons: the slot's active member when it is on the table, else the first. */
     fun activeId(): String? = currentSlot.activeId?.takeIf(loop::has) ?: loop.firstId
     LaunchedEffect(slot.activeId) { slot.activeId?.let { Log.i(GATE_TAG, "active id=$it") } }
-    LaunchedEffect(slot.debug) { Log.i(GATE_TAG, "footprints_on=${slot.debug}") } // HAND-REVIEW: Pixel 2026-11-04 — off destroys nodes; see SpriteProbe.kt
     // T32: abilities are per member (set again at add time; before the anchor the id is not in the loop yet).
     LaunchedEffect(members) { for (c in members) loop.setAbility(c.id, c.ability) }
     // T32: one command per serial (T31 edge trigger). Jump keeps T21's `jump_ignored` (before the anchor the body is
@@ -644,7 +638,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 recorder.recordFrame(session) // AtomicReference.set; no-op unless recording
                 probe.onFrame(session)
                 val now = SystemClock.elapsedRealtime()
-                spriteProbe.onFrame(now, session)
                 val a = anchorRef[0]
                 if (a == null) {
                     settle.onFrame(frame, now)
@@ -692,12 +685,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         val cameraHeightM = planeHeight(a, frame.camera.pose)
                         val visible = now >= reappearAtMs[0]
                         for (m in cast.members) {
-                            val rig = rigs[m.id]
-                            val node = rig?.node
-                            if (rig == null || node == null) {
-                                spriteProbe.onSkipped(now, m.id, hasRig = rig != null)
-                                continue
-                            }
+                            val rig = rigs[m.id] ?: continue
+                            val node = rig.node ?: continue
                             rig.poser.apply(
                                 node, m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
                                 verticalVelocity = m.body.verticalVelocity,
@@ -706,7 +695,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                                 emotePose = loop.emotePose(m.id),
                             )
                             if (node.isVisible != visible) node.isVisible = visible
-                            spriteProbe.onPosed(now, m.id, m.body.state, node, rig, a)
                         }
                     }
                 }
@@ -800,7 +788,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                                     isTouchable = false // taps go through to the table hit test, drags never reach a node
                                     isVisible = false // review fix (d): shown by the poser on its first placed frame
                                     rig.node = this
-                                    spriteProbe.onNode(c.id, rig, this)
                                 },
                             )
                         }
