@@ -9,7 +9,8 @@ import com.google.android.filament.MaterialInstance
 import com.google.android.filament.Texture
 import io.github.sceneview.loaders.MaterialLoader
 import io.github.sceneview.safeDestroyTexture
-import io.github.sceneview.math.Rotation
+import dev.romainguy.kotlin.math.Float3
+import dev.romainguy.kotlin.math.Quaternion
 import io.github.sceneview.math.Scale
 import io.github.sceneview.node.PlaneNode
 import io.github.sceneview.texture.ImageTexture
@@ -17,6 +18,7 @@ import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.emote.EmotePose
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -72,6 +74,24 @@ private const val FEET_DEPTH_BIAS = 0.6f
 
 /** |facing · right| below this keeps the previous flip, so walking straight at/away from the camera cannot flicker. */
 private const val FLIP_DEADBAND = 0.15f
+
+// HAND-REVIEW: T32 — the emote pose (core EmotePose, sampled by GameLoop on the simulated clock) is node transform only,
+// on top of the physics pose: scaleX/scaleY multiply the node scale, yawDeg adds to the billboard yaw, tiltDeg rotates
+// about the quad's OWN Z (its normal, so a bow leans in the quad's plane and still faces the camera), hop raises the quad
+// by hop * sprite height * size. The walk bob is off while an emote runs; the landing squash still wins over the bob.
+// The rotation is `quaternion = Q_y(yaw) * Q_z(tilt)` (kotlin-math 1.8.0 Quaternion.fromAxisAngle, degrees; Node.quaternion
+// Node.kt:370) and NOT `Rotation(y, z)`: Node.rotation's Euler setter (Node.kt:414) is kotlin-math ZYX, which composes
+// Q_z * Q_y and would tilt about the anchor's Z, not the quad's. With tilt 0 the product is exactly Q_y(yaw), the v1.0 pose.
+private val Y_AXIS = Float3(0f, 1f, 0f)
+private val Z_AXIS = Float3(0f, 0f, 1f)
+
+/** `a * b` of kotlin-math (Quaternion.kt:432), spelled out: its `times` is inline and built for JVM 21, which our JVM 11 bytecode cannot inline. */
+private fun hamilton(a: Quaternion, b: Quaternion) = Quaternion(
+    a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+)
 
 internal class CharacterSprite(
     val texture: Texture,
@@ -165,6 +185,7 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
      * @param verticalVelocity feet velocity along h, m/s (`PhysicsBody.verticalVelocity`); only read while JUMPING.
      * @param sinceLandedMs host clock minus [GameLoop.landedAtMs]; drives the landing squash while < JUMP_LAND_MS.
      * @param size the player's Bigger / Smaller step (`ArSlot.characterSize`).
+     * @param emotePose the running emote's pose from [GameLoop.emotePose]; null when none runs.
      */
     fun apply(
         node: PlaneNode,
@@ -175,18 +196,21 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         verticalVelocity: Float = 0f,
         sinceLandedMs: Long = Long.MAX_VALUE,
         size: Float = 1f,
+        emotePose: EmotePose? = null,
     ) {
         val toCam = cameraLocal - state.pos
         val upToCam = cameraHeightM - state.h
         // See FEET_DEPTH_BIAS. At most half way, for a camera right over the sprite.
         val camDist = sqrt(toCam.lengthSquared + upToCam * upToCam)
         val pull = if (camDist > 1e-3f) minOf(sprite.heightM * FEET_DEPTH_BIAS / camDist, 0.5f) else 0f
-        node.position = localPosition(state.pos + toCam * pull, state.h + upToCam * pull)
+        val hopM = (emotePose?.hop ?: 0f) * sprite.heightM * size
+        node.position = localPosition(state.pos + toCam * pull, state.h + hopM + upToCam * pull)
 
         // Y-only billboard. After a yaw of θ about Y the node's +Z (the quad's front) is (sin θ, 0, cos θ) in
-        // plane coords; point it at the camera. Rotation is Euler degrees (SceneView Node.rotation).
+        // plane coords; point it at the camera. The emote's yaw (a spin) adds; its tilt is about the quad's own Z.
         val yawRad = atan2(toCam.u, toCam.v)
-        node.rotation = Rotation(y = (yawRad * 180.0 / PI).toFloat())
+        val yawDeg = (yawRad * 180.0 / PI).toFloat() + (emotePose?.yawDeg ?: 0f)
+        node.quaternion = hamilton(Quaternion.fromAxisAngle(Y_AXIS, yawDeg), Quaternion.fromAxisAngle(Z_AXIS, emotePose?.tiltDeg ?: 0f))
 
         // Facing flip. The node's +X (the viewer's right) is (cos θ, -sin θ) in plane coords.
         val right = Vec2(cos(yawRad), -sin(yawRad))
@@ -208,10 +232,14 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         } else if (state.mode == Mode.JUMPING && verticalVelocity > 0f) {
             sx = JUMP_RISE_SX
             sy = JUMP_RISE_SY
-        } else if (state.mode == Mode.WALKING) {
+        } else if (state.mode == Mode.WALKING && emotePose == null) {
             val s = sin(2.0 * PI * (walkPhaseMs % WALK_BOB_PERIOD_MS) / WALK_BOB_PERIOD_MS).toFloat()
             sy = 1f + WALK_BOB_STRETCH * s
             sx = 1f - WALK_BOB_SQUASH * s
+        }
+        if (emotePose != null) {
+            sx *= emotePose.scaleX
+            sy *= emotePose.scaleY
         }
         // HAND-REVIEW: T25 — Bigger / Smaller is a node scale, not a new sprite: no Texture rebuild, and the origin at
         // the feet keeps them on the table at every size.

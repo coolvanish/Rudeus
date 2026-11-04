@@ -73,11 +73,17 @@ class MainActivity : ComponentActivity() {
                         // HAND-REVIEW: T23 — sounds ride on the slot's event callback; the AR view is unchanged.
                         // HAND-REVIEW: T26 —slot.soundsOn gates only the player; the event still reaches the HUD. A
                         // new slot does not recreate the session (RudeusArView reads it through rememberUpdatedState).
+                        // HAND-REVIEW: T32 — the cast host reports per member through onCastEvent (never onCharacterEvent):
+                        // same sounds, same soundsOn gate; the old wrapper stays so a v1.0 slot still sounds. The emote
+                        // sounds need the player itself, so RudeusArView gets it.
                         val withSound = remember(slot) {
-                            slot.copy(onCharacterEvent = { e -> if (slot.soundsOn) sounds.play(e); slot.onCharacterEvent(e) })
+                            slot.copy(
+                                onCharacterEvent = { e -> if (slot.soundsOn) sounds.play(e); slot.onCharacterEvent(e) },
+                                onCastEvent = { id, e -> if (slot.soundsOn) sounds.play(e); slot.onCastEvent(id, e) },
+                            )
                         }
                         LaunchedEffect(slot.soundsOn) { android.util.Log.i("RudeusGate", "sounds_on=${slot.soundsOn}") }
-                        WithCameraPermission(modifier) { RudeusArView(modifier, withSound, scanner = host) }
+                        WithCameraPermission(modifier) { RudeusArView(modifier, withSound, scanner = host, sounds = sounds) }
                     },
                     // HAND-REVIEW: system/predictive Back goes through App's one back() rule (Metrics -> where it came
                     // from, Play/Scanning/Processing -> Capture); :shared has no activity-compose, so the host lends it.

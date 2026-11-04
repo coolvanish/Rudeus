@@ -21,8 +21,10 @@ import kz.rudy.ar.CaptureHost
 import kz.rudy.ar.VoiceHost
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.capture.PhotoIntake
+import kz.rudy.ar.core.bundle.Bundle
 import kz.rudy.ar.core.bundle.SavedCharacter
 import kz.rudy.ar.core.bundle.SavedCharacters
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.io.FileCharacterFolder
 import kz.rudy.ar.core.io.FileMetricsSink
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +64,10 @@ import java.io.File
 // `stopAndTranscribe` sends it through the same `guard` (so a network failure flips the offline badge) on IO within
 // VOICE_TIMEOUT_MS, and logs only `voice_ms=` and `text_len=` — never the key, never the transcript. Under
 // MIN_VOICE_BYTES (a tap, not a phrase) nothing is sent. `requestMic` is MainActivity's RECORD_AUDIO launcher.
+// HAND-REVIEW: T32 — emotes ride along: a bundled entry with `choreo` has its choreo.json read (Bundle.decodeEmotes, the
+// defaults when the file is missing or unreadable, still off the main thread), saved characters carry the EmoteSet
+// :core's SavedCharacters reads and writes, and DeferredModels forwards `choreograph` (without it a photo character
+// always shipped source=default).
 
 private const val TAG = "RudeusGate"
 private const val STYLE_REFS_DIR = "style-refs"
@@ -234,7 +240,7 @@ class AndroidCaptureHost(
     override suspend fun saveCharacter(result: CharacterResult): BundledCharacter? = withContext(Dispatchers.IO) {
         try {
             val sprite = AndroidImages.downscale(result.sprite, SavedCharacters.SPRITE_MAX_SIDE)
-            saved.save(sprite, result.sheet).toCard()
+            saved.save(sprite, result.sheet, result.emotes).toCard()
                 .also { Log.i(TAG, "saved_character=${it.id} sprite_bytes=${sprite.size} passed=${result.gatePassed}") }
         } catch (e: Exception) {
             Log.w(TAG, "save character failed: ${e.message}")
@@ -338,7 +344,7 @@ class AndroidCaptureHost(
     }
 }
 
-private fun SavedCharacter.toCard() = BundledCharacter(id = id, sheet = sheet, thumbnail = null, spritePng = sprite)
+private fun SavedCharacter.toCard() = BundledCharacter(id = id, sheet = sheet, thumbnail = null, spritePng = sprite, emotes = emotes)
 
 /** A sprite BitmapFactory cannot size is skipped when listing, not discovered as a decode failure on the table. */
 private fun spriteDecodable(sprite: ByteArray): Boolean {
@@ -409,7 +415,14 @@ private fun loadBundled(assets: AssetManager): List<BundledCharacter> {
             val sprite = assets.open("$BUNDLED_DIR/$spritePath").use { it.readBytes() }
             check(spriteDecodable(sprite)) { "sprite undecodable: $spritePath" }
             val sheet = SheetParser.parse(assets.open("$BUNDLED_DIR/$sheetPath").bufferedReader().use { it.readText() })
-            Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite))
+            val choreoPath = if (o.isNull("choreo")) "" else o.optString("choreo", "")
+            val emotes = if (choreoPath.isEmpty()) EmoteSet.defaults() else try {
+                Bundle.decodeEmotes(assets.open("$BUNDLED_DIR/$choreoPath").bufferedReader().use { it.readText() })
+            } catch (e: Exception) {
+                Log.w(TAG, "bundled choreo unreadable ref=$ref: ${e.message}")
+                EmoteSet.defaults()
+            }
+            Pair(o.optBoolean("gatePassed", false), BundledCharacter(id = ref, sheet = sheet, thumbnail = null, spritePng = sprite, emotes = emotes))
         } catch (e: Exception) {
             Log.w(TAG, "bundled skipped ref=$ref: ${e.message}")
             null
@@ -428,5 +441,8 @@ private class DeferredModels(make: () -> MetaModels) : MetaModels {
     override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreStyle(ref, image, refs)
     override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>): Float = delegate.scoreTechnique(ref, image, refs)
     override suspend fun characterSheet(ref: String, description: String, image: ByteArray?): CharacterSheet = delegate.characterSheet(ref, description, image)
+    // HAND-REVIEW: T32 (T29 addendum) — forwards the choreography call; the interface default returns EmoteSet.defaults() and
+    // would make every photo character on the phone `source=default`.
+    override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet = delegate.choreograph(ref, sheet, image)
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String = delegate.transcribe(ref, pcm16kMono, lang)
 }
