@@ -9,6 +9,8 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.emote.Choreography
+import kz.rudy.ar.core.emote.EmotePlayer
 import kz.rudy.ar.core.physics.Physics
 import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.physics.PhysicsParams
@@ -96,6 +98,31 @@ internal class GameLoop(
         if (body.state.ability != ability) body = body.copy(state = body.state.copy(ability = ability))
     }
 
+    // HAND-REVIEW: T33 (the emote half of T32's contract) — the running emote is presentation only: a choreography and
+    // its start on the SIMULATED clock, so PAUSED freezes it and never resets it (locked), exactly like the scenario.
+    // Physics never reads it; the view samples EmotePlayer on it per frame and hands the pose to CharacterPoser. A new
+    // emote replaces the running one; `restartAtSpawn` drops it with the rest of the presentation.
+    /** The choreography now playing, null when none; read only through [emoteTimeMs]. */
+    var emote: Choreography? = null
+        private set
+    private var emoteStartSimMs = 0L
+
+    fun playEmote(c: Choreography) {
+        emote = c
+        emoteStartSimMs = simMs
+    }
+
+    /** Milliseconds into [emote] on [simMs], or null when none runs; an emote past its duration is dropped here. */
+    fun emoteTimeMs(): Long? {
+        val c = emote ?: return null
+        val t = simMs - emoteStartSimMs
+        if (EmotePlayer.finished(c, t)) {
+            emote = null
+            return null
+        }
+        return t
+    }
+
     /**
      * Debug scenario replay only: feet at [Level.spawn], h = 0, no target, IDLE, no vertical velocity, ability and
      * radius kept. A paused body stays paused (the restored mode becomes IDLE) so a replay requested under the Paused
@@ -111,6 +138,7 @@ internal class GameLoop(
         )
         // HAND-REVIEW: T21 review fix — the teleport is not a transition: no LANDED / RESPAWNED for the HUD or the poser.
         lastReported = body
+        emote = null
     }
 
     /**
