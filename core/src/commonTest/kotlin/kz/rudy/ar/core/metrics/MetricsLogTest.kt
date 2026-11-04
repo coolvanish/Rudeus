@@ -284,4 +284,32 @@ class MetricsLogTest {
         assertEquals(0, run.summary.backgroundScans)
         assertEquals(run.summary, MetricsLog.summaryOf(run.characters, run.scans))
     }
+
+    @Test
+    fun charactersAppendedFromManyCoroutinesAreAllThere() = runTest {
+        // T38: a batch runs one pipeline per log and appends each finished character to the session log from its own
+        // coroutine, on a real multi-threaded dispatcher; a plain list would lose some.
+        val session = MetricsLog("app", "meta", "pixel", clock = { 0L })
+        val n = 200
+        withContext(Dispatchers.Default) {
+            val jobs = List(n) { i ->
+                launch {
+                    val own = MetricsLog("app", "meta", "pixel", clock = { 0L })
+                    own.startCharacter("photo-$i")
+                    own.stage("stylize", 10L, costUsd = 0.01)
+                    val c = own.endCharacter(gateScore = 0.8f, gatePassed = true, retries = 0)
+                    session.appendCharacter(c)
+                    if (i % 50 == 0) session.recordScan(objects = i, ms = 1L, withinCm = emptyList())
+                }
+            }
+            jobs.forEach { it.join() }
+        }
+        val run = session.toRun()
+        assertEquals(n, session.characterCount)
+        assertEquals(n, run.characters.size)
+        assertEquals((0 until n).map { "photo-$it" }.toSet(), run.characters.map { it.input }.toSet())
+        assertEquals(4, run.scans.size)
+        assertEquals(n, run.summary.n)
+        assertEquals(1f, run.summary.gatePassRateFirstTry)
+    }
 }

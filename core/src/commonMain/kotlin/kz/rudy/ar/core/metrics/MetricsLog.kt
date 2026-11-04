@@ -141,8 +141,10 @@ data class StageCost(val usd: Double, val measured: Boolean) {
  * As a [CostMeter] (pass it to `MetaApi`), it accumulates the measured cost of every model call per job, from any
  * thread: an immutable map of per-job tallies in nano-USD behind one atomic reference, updated by compare-and-set,
  * so concurrent records sum exactly and no lock or extra dependency is needed. A stage takes its measured cost as
- * [costSince] a [costMark] of its job; the character pipeline's two coroutines use disjoint jobs. Everything else
- * (`stage`, `startCharacter`, ...) is single-threaded: call it from one coroutine.
+ * [costSince] a [costMark] of its job; the character pipeline's two coroutines use disjoint jobs. The finished
+ * characters and scans are immutable lists behind atomic references too (T38: a batch appends from several
+ * coroutines, see [appendCharacter]). Everything else (`stage`, `startCharacter`, ...) is single-threaded: one
+ * pipeline per log, from one coroutine.
  */
 @OptIn(ExperimentalAtomicApi::class)
 class MetricsLog(
@@ -182,8 +184,8 @@ class MetricsLog(
         return StageCost((t.nanoUsd - mark.nanoUsd) / NANO, measured = true)
     }
 
-    private val characters = ArrayList<CharacterMetrics>()
-    private val scans = ArrayList<ScanMetrics>()
+    private val characters = AtomicReference(emptyList<CharacterMetrics>())
+    private val scans = AtomicReference(emptyList<ScanMetrics>())
     private var currentInput: String? = null
     private var currentStart = 0L
     private val currentStages = ArrayList<StageMetrics>()
@@ -191,7 +193,7 @@ class MetricsLog(
     fun now(): Long = clock()
 
     /** Characters in the run so far, aborted ones included. */
-    val characterCount: Int get() = characters.size
+    val characterCount: Int get() = characters.load().size
 
     fun startCharacter(input: String) {
         currentInput = input
@@ -240,15 +242,23 @@ class MetricsLog(
             totalCostUsd = round4(currentStages.sumOf { it.costUsd }),
             aborted = aborted,
         )
-        characters += c
+        appendCharacter(c)
         currentInput = null
         currentStages.clear()
         return c
     }
 
+    /**
+     * T38: a character finished on another [MetricsLog] (a batch runs one pipeline per log, all appended to the session's)
+     * joins this run as it is. Thread-safe; the order is arrival order.
+     */
+    fun appendCharacter(c: CharacterMetrics) {
+        characters.update { it + c }
+    }
+
     /** [background] = fired by the AR host's auto-scan, not the Scan button (see [ScanMetrics.background]). */
     fun recordScan(objects: Int, ms: Long, withinCm: List<Float>, background: Boolean = false) {
-        scans += ScanMetrics(objects, ms, withinCm, background)
+        scans.update { it + ScanMetrics(objects, ms, withinCm, background) }
     }
 
     fun toRun(): MetricsRun = MetricsRun(
@@ -256,9 +266,9 @@ class MetricsLog(
         source = source,
         provider = provider,
         device = device,
-        characters = characters.toList(),
-        scans = scans.toList(),
-        summary = summaryOf(characters, scans),
+        characters = characters.load(),
+        scans = scans.load(),
+        summary = summaryOf(characters.load(), scans.load()),
     )
 
     fun toJson(): String = json.encodeToString(MetricsRun.serializer(), toRun())
