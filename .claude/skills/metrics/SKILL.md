@@ -20,7 +20,7 @@ p50 < 40 s, <= $0.05 per character.
   "characters": [
     {
       "input": "drawings/cat-01.jpg",
-      "stages": [ { "name": "cutout|stylize|matte|gate|sheet", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
+      "stages": [ { "name": "cutout|stylize|matte|gate|sheet|choreo", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
       "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031, "aborted": false
     }
   ],

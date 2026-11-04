@@ -53,3 +53,8 @@ Tests not required: everything.
 - measured:
 - pose spike verdict (human):
 - cut/deferred:
+
+## Addendum after T29 (2026-11-04)
+- Also owned: `cli/src/main/kotlin/kz/rudy/ar/cli/Record.kt` (add `Jobs.SPARK_CHOREO` to `RECORDED_JOBS`), `scripts/probe-meta.sh` (a `spark-choreo` job), `docs/api-samples/README.md` (the endpoints table row and the fixture list).
+- T29's `RecordingModels` writes the sanitised `ChoreographyParser.toJson(set)` as the fixture `text` (the raw reply stays inside MetaApi); a `scripts/probe-meta.sh spark-choreo` run may save one raw redacted `.response.json` beside it for the README's "saved real API responses".
+- Two phases: (1) the code, tested offline against `sample-01`, in the T30 worktree (no key there: `KeySource` reads the environment or the key file in the working dir, and `:cli:run` sets the working dir to the checkout root); (2) the live run (`choreo --all --live --record`, the asset mirror, `pose-spike`) from the MAIN checkout on `day9/cast-emotes` after the code is merged, outputs committed there.
