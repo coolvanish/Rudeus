@@ -16,7 +16,7 @@ internal object Record {
     /** Stylize attempts a character can make (1 + the pipeline's 2 retries); one `<ref>.out-<n>.png` each. */
     const val MAX_ATTEMPTS = 3
 
-    private val RECORDED_JOBS = listOf(Jobs.SAM_CUTOUT, Jobs.MUSE_STYLIZE, Jobs.SPARK_SCORE, Jobs.SPARK_SHEET)
+    private val RECORDED_JOBS = listOf(Jobs.SAM_CUTOUT, Jobs.MUSE_STYLIZE, Jobs.SPARK_SCORE, Jobs.SPARK_SHEET, Jobs.SPARK_CHOREO)
 
     /**
      * Recorded Muse outputs are stored at most this many px on the long side. The originals are 1.4-1.8k px and
@@ -32,7 +32,7 @@ internal object Record {
     }
 
     /**
-     * With `--force`, right before [ref]'s paid run: removes its old recording (the four fixtures, every
+     * With `--force`, right before [ref]'s paid run: removes its old recording (the five fixtures, every
      * `out-<n>.png`, input copies with another extension than [input]'s), so the new one never mixes with the old and
      * no fixture lists a file that is gone. Only called after [preflight], which refuses synthetic fixtures.
      */
