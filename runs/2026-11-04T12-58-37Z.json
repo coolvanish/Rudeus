@@ -1,0 +1,36 @@
+{
+    "schema": 1,
+    "runId": "2026-11-04T12-58-37Z",
+    "source": "cli",
+    "provider": "fixture",
+    "device": "mac",
+    "characters": [
+        {
+            "input": "toy_dino",
+            "stages": [
+                {
+                    "name": "frames",
+                    "ms": 1395,
+                    "costUsd": 0.04,
+                    "attempt": 1,
+                    "ok": true,
+                    "measured": false
+                }
+            ],
+            "gateScore": 0.0,
+            "gatePassed": false,
+            "retries": 0,
+            "totalMs": 1429,
+            "totalCostUsd": 0.04,
+            "aborted": false
+        }
+    ],
+    "scans": [],
+    "summary": {
+        "n": 1,
+        "gatePassRateFirstTry": 0.0,
+        "p50Ms": 1429,
+        "p90Ms": 1429,
+        "costPerCharacterUsd": 0.04
+    }
+}

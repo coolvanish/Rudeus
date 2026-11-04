@@ -13,6 +13,7 @@ import kz.rudy.ar.core.io.JvmRaster
 import kz.rudy.ar.core.meta.Fixture
 import kz.rudy.ar.core.meta.FixtureApi
 import kz.rudy.ar.core.meta.FixtureConverter
+import kz.rudy.ar.core.emote.PoseSpec
 import kz.rudy.ar.core.meta.Jobs
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaConfig
@@ -35,7 +36,7 @@ import kotlin.system.exitProcess
  * rudeus CLI — runs the same :core pipeline as the phone, from the Mac. Working dir = repo root (`:cli:run`).
  *
  *   character [--fixtures <dir>] --out <dir> [--ref <name> | --all | --drawings <dir>] [--refs <dir>]
- *             [--bundle <dir>] [--replay-latency]
+ *             [--bundle <dir>] [--replay-latency] [--frames]
  *             [--live [--provider meta|fireworks] [--budget-usd <x>] [--record <fixturesDir> [--force]]]
  *       offline (default): FixtureApi over --fixtures (default docs/api-samples), provider "fixture".
  *       --live: MetaApi, key from META_API_KEY env or repo-root local.properties (KeySource, never printed);
@@ -43,6 +44,8 @@ import kotlin.system.exitProcess
  *       --record: live-only; writes replayable fixtures (RecordingModels) + the input photo; refuses to
  *       overwrite synthetic fixtures, and real ones without --force, before the first API call.
  *       --bundle: <dir>/<ref>/sprite.png (<= 768 px) + sheet.json + choreo.json and an upserted <dir>/index.json (BundleIndex).
+ *       --frames (T33): the pipeline also draws the pose frames (stage `frames`, 4 Muse edits, +$0.04 worst case);
+ *       with --bundle they land in <dir>/<ref>/frames/ and the entry's `frames`. Offline needs muse-pose/<ref>.fixture.json.
  *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
  *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
@@ -53,10 +56,12 @@ import kotlin.system.exitProcess
  *        [--camera-height-m 0.5] [--pitch-deg 45] [--hfov-deg 60] [--out runs] [--repeat 1]
  *       the phone's Day 4 scan path (ScanCommand.kt): prints segment_ms, scan_ms, one line per level object and
  *       writes <out>/<runId>.json with scans[]; --record writes sam-table/<ref>.fixture.json + <ref>.input.jpg.
- *   choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs]
+ *   choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs] [--frames | --frames-only] [--refs <dir>]
  *          [--live [--budget-usd 0.20] [--record <fixturesDir> [--force]]]
  *       bundled sprite + sheet -> Spark choreography -> <bundle>/<ref>/choreo.json + the index entry's `choreo`
  *       (ChoreoCommand.kt); offline replays spark-choreo/<ref>.fixture.json, a missing one skips the ref.
+ *       --frames (T33): also draws the pose frames into <bundle>/<ref>/frames/ and keys choreo.json for them;
+ *       --frames-only draws them without a new Spark call (offline: muse-pose/<ref>.fixture.json).
  *   pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
  *       four Muse pose edits of one sprite, matted, + contact.png + README.md for a human verdict (PoseSpike.kt).
  *   metrics summarise <runsDir>
@@ -91,7 +96,7 @@ internal fun usage(error: String? = null): Int {
         """
         usage:
           character [--fixtures <dir>] --out <dir> [--ref <name> | --all | --drawings <dir>] [--refs <dir>]
-                    [--bundle <dir>] [--replay-latency]
+                    [--bundle <dir>] [--replay-latency] [--frames]
                     [--live [--provider meta|fireworks] [--budget-usd <x>] [--record <fixturesDir> [--force]]]
           fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
           fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
@@ -101,7 +106,7 @@ internal fun usage(error: String? = null): Int {
           scan --image <jpg> [--prompts a,b,c | --floor] [--live [--provider meta|fireworks] [--budget-usd 0.30]
                [--record <fixturesDir> [--force]] [--ref <name>] | --fixtures <dir> --ref <ref>] [--concurrency 3]
                [--camera-height-m 0.5] [--pitch-deg 45] [--hfov-deg 60] [--out runs] [--repeat 1]
-          choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs]
+          choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs] [--frames | --frames-only] [--refs <dir>]
                  [--live [--budget-usd 0.20] [--record <fixturesDir> [--force]]]
           pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
           metrics summarise <runsDir>
@@ -174,6 +179,7 @@ private fun character(flags: Flags): Int {
     val budgetUsd = flags.budget("budget-usd") ?: if (live) DEFAULT_LIVE_BUDGET_USD else null
     if (!live && budgetUsd != null) System.err.println("warning: --budget-usd is unused offline (fixtures cost nothing)")
     val bundleDir = flags.get("bundle")?.let(::File)
+    val frames = flags.has("frames")
 
     // Anchored at the filesystem root with an absolute fixtures path: FileFixtureSource strips a leading '/', so a
     // relative anchor turned `--fixtures /abs/dir` into ./abs/dir.
@@ -230,15 +236,16 @@ private fun character(flags: Flags): Int {
     } else {
         fixtureApi
     }
-    val pipeline = JvmPipeline.create(models, metrics)
+    val pipeline = JvmPipeline.create(models, metrics, poseFrames = frames)
     val spritesDir = File(outDir, "sprites").apply { mkdirs() }
     val c = metrics.costs
     // Each attempt may add a matte SAM pass on the stylized sprite (T07) and a colour-free rescore (T11), hence the
-    // cutout and the second score inside the bracket.
-    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + 2 * c.scoreUsd + c.cutoutUsd) + c.sheetUsd
+    // cutout and the second score inside the bracket. T33: four Muse pose edits when --frames.
+    val worstCaseUsd = c.cutoutUsd + Record.MAX_ATTEMPTS * (c.stylizeUsd + 2 * c.scoreUsd + c.cutoutUsd) + c.sheetUsd + c.choreoUsd +
+        (if (frames) PoseSpec.DRAWN.size * c.poseUsd else 0.0)
 
     println(
-        "run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency" +
+        "run ${metrics.runId}: ${inputs.size} input(s), provider=$providerName, replayLatency=$replayLatency" + (if (frames) ", frames=on" else "") +
             (budgetUsd?.let { ", budget=$${fmtUsd(it)} (worst case $${fmtUsd(worstCaseUsd)}/character)" } ?: "") +
             (recordDir?.let { ", record=${it.path}" } ?: "") + (bundleDir?.let { ", bundle=${it.path}" } ?: ""),
     )
@@ -264,7 +271,8 @@ private fun character(flags: Flags): Int {
                     spriteFile.writeBytes(result.sprite)
                     println(
                         "  $ref: gate=${result.gateScore} ${if (result.gatePassed) "PASS" else "FAIL"} attempts=${result.attempts} " +
-                            "ability=${result.sheet.ability} name=${result.sheet.name} -> ${spriteFile.path}",
+                            "ability=${result.sheet.ability} name=${result.sheet.name}" +
+                            (if (frames) " frames=${result.frames.count}/${PoseSpec.DRAWN.size}" else "") + " -> ${spriteFile.path}",
                     )
                     if (bundleDir != null) {
                         File(bundleDir, ref).mkdirs()
@@ -272,6 +280,13 @@ private fun character(flags: Flags): Int {
                         File(bundleDir, Bundle.sheetPath(ref)).writeText(Bundle.encodeSheet(result.sheet))
                         // Bundle.entry sets `choreo`; write the file so that path never dangles.
                         File(bundleDir, Bundle.choreoPath(ref)).writeText(Bundle.encodeEmotes(result.emotes))
+                        // T33: the frames the entry lists (the old folder goes, so no file outlives its index entry).
+                        val framesDir = File(bundleDir, ref).resolve("frames")
+                        framesDir.deleteRecursively()
+                        if (!result.frames.isEmpty) {
+                            framesDir.mkdirs()
+                            for ((name, bytes) in result.frames.files()) File(framesDir, name).writeBytes(bytes)
+                        }
                         val index = checkNotNull(bundleIndex).upsert(Bundle.entry(result, providerName, metrics.runId))
                         File(bundleDir, Bundle.INDEX).writeText(Bundle.encodeIndex(index))
                         bundleIndex = index
