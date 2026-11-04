@@ -139,7 +139,30 @@ data class Level(
     val boundary: Polygon? = null,
     /** Spawn / respawn point in plane coordinates. */
     val spawn: Vec2 = Vec2.ZERO,
-)
+) {
+    /**
+     * [p] when there is no boundary or it contains [p]; else the closest point on the boundary's edges, nudged 1 mm
+     * toward the boundary centroid so that `boundary.contains(result)` holds (the boundary is a convex hull; a
+     * boundary too small for the nudge gets its centroid).
+     */
+    fun nearestInside(p: Vec2): Vec2 {
+        val b = boundary ?: return p
+        if (b.contains(p)) return p
+        var closest = p
+        var bestD2 = Float.MAX_VALUE
+        for ((a, c) in b.edges()) {
+            val ac = c - a
+            val len2 = ac.lengthSquared
+            val t = if (len2 < Vec2.EPS * Vec2.EPS) 0f else ((p - a).dot(ac) / len2).coerceIn(0f, 1f)
+            val q = a + ac * t
+            val d2 = (p - q).lengthSquared
+            if (d2 < bestD2) { bestD2 = d2; closest = q }
+        }
+        val centre = b.centroid()
+        val nudged = closest + (centre - closest).normalized() * 0.001f
+        return if (b.contains(nudged) || !b.contains(centre)) nudged else centre
+    }
+}
 
 /** Character abilities from the Spark character sheet. Exactly one per character. */
 @Serializable
