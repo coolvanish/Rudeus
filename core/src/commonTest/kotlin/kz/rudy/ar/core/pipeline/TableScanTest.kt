@@ -7,6 +7,7 @@ import kz.rudy.ar.core.domain.Polygon
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.geometry.BooleanMask
+import kz.rudy.ar.core.geometry.projectToPixel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -64,12 +65,33 @@ class TableScanTest {
         assertEquals(0, r.missed)
     }
 
+    /**
+     * Since T34 a rescan merges: a known object the scan does not rebuild is carried unless its place was in the frame,
+     * uncovered and empty, and only two such scans in a row forget it (one bad mask must not delete a cup). So the cup
+     * that moved away sits in the middle of the frame, under no mask: carried once with `unseen == 1`, gone the next
+     * time. The steep cup mask, which nothing known stands in for, is still missed.
+     */
     @Test
     fun aCupThatMovedAwayLeavesNoGhostBehind() {
-        val elsewhere = obj("cup-2", "cup", Vec2(-0.60f, -0.60f))
-        val r = build(steepCup, usableBook, previous = Level(listOf(elsewhere)))
-        assertTrue(r.carried.isEmpty())
-        assertEquals(1, r.missed)
+        val elsewhere = obj("cup-2", "cup", Vec2(0.10f, -0.04f))
+        for (h in listOf(0f, elsewhere.heightM)) for (p in elsewhere.footprint.points) {
+            val px = assertNotNull(projectToPixel(view.plane.fromPlane(p, h), view.intr, steepPose), "in front of the camera")
+            assertTrue(px.u in 10f..view.intr.width - 10f && px.v in 10f..view.intr.height - 10f, "its place is in the frame: $px")
+        }
+        val middle = assertNotNull(projectToPixel(view.plane.fromPlane(elsewhere.centroid, elsewhere.heightM / 2f), view.intr, steepPose))
+        for (m in listOf(steepCup, usableBook)) {
+            val box = assertNotNull(m.mask.boundingBox())
+            assertTrue(middle.u !in box.minX.toFloat()..box.maxX + 1f || middle.v !in box.minY.toFloat()..box.maxY + 1f, "no ${m.label} mask covers it")
+        }
+
+        val once = build(steepCup, usableBook, previous = Level(listOf(elsewhere)))
+        assertEquals(listOf(elsewhere.copy(unseen = 1)), once.carried)
+        assertEquals(1, once.missed)
+        val twice = build(steepCup, usableBook, previous = once.level)
+        assertEquals(listOf("cup-2"), twice.removed)
+        assertTrue(twice.carried.isEmpty())
+        assertTrue(assertNotNull(twice.level).objects.none { it.id == "cup-2" }, "no ghost")
+        assertEquals(1, twice.missed)
     }
 
     @Test
@@ -91,11 +113,15 @@ class TableScanTest {
         assertEquals(0, build(speck, usableBook).missed)
     }
 
+    /**
+     * Since T34 any mask hides what is behind it, whatever its label: the old book under the steep cup is carried (it may
+     * well still be there). The cup is still missed, nothing of its label stands in for it.
+     */
     @Test
-    fun aSteepMaskOfAnotherLabelDoesNotKeepAnObject() {
+    fun aSteepMaskOfAnotherLabelKeepsTheObjectUnderItButIsStillMissed() {
         val old = obj("book-1", "book", cup)
         val r = build(steepCup, usableBook, previous = Level(listOf(old)))
-        assertTrue(r.carried.isEmpty())
+        assertEquals(listOf(old), r.carried)
         assertEquals(1, r.missed)
     }
 

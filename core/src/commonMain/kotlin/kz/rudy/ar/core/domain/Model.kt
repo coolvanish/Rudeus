@@ -127,6 +127,10 @@ data class LevelObject(
     val footprint: Polygon,
     /** Height of the object's top above the plane, metres. */
     val heightM: Float,
+    /** How well the view that produced [footprint] saw this object, 0..1 ([kz.rudy.ar.core.pipeline.ViewQuality]); 0 = unknown (fixtures, old levels). */
+    val quality: Float = 0f,
+    /** Scans in a row whose frame held this object's place, uncovered and empty. Reset to 0 on every sighting. */
+    val unseen: Int = 0,
 ) {
     val centroid: Vec2 get() = footprint.centroid()
 }
