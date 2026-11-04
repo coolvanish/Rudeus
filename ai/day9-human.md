@@ -76,3 +76,11 @@ Notes from the review: an emote sound plays at once even under the Paused scrim 
 
 ## 7. Device results (<date>, device, who)
 (appended after your run)
+
+### Update 19:40 Almaty — main merged and pushed before the Pixel run (user's call)
+`day9/cast-emotes` is merged into `main` as b367873 and pushed (fast-forward over the T33 commits that had reached
+`origin/main` on a rebased day9 snapshot without T32). The host files on `main` are byte-identical to `day9` (T32); the
+T33 core/shared/cli additions stay (the pipeline's `frames` stage is off by default). The T33 single-quad host draft is
+kept on the branch `t33/pose-frames-main` (1318bdb) and its work in progress in `git stash` ("T33 wip from the main
+checkout"); redo it on top of T32 in a worktree after v1.1 ships. §5 now also lists: the `main-merge` worktree, the
+`t33/pose-frames-main` branch and that stash entry; `git tag v1.1` and `release/` still wait for your PASS.
