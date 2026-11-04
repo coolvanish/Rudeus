@@ -40,10 +40,12 @@ interface MetaModels {
 
     /**
      * Spark: the five choreographies for a character, from its sheet and (when given) the cutout/sprite image.
-     * Every implementation and decorator in core/meta overrides it; the body here only keeps implementations outside
-     * :core (the app's DeferredModels) compiling until they forward it, and ships the hand-authored defaults.
+     * Every implementation and decorator in core/meta overrides it. The body here only keeps implementations outside
+     * :core (the app's DeferredModels) compiling until they forward it; it throws, so the pipeline ships the defaults
+     * as a failed `choreo` stage (ok=false, $0) instead of pretending Spark answered.
      */
-    suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray? = null): EmoteSet = EmoteSet.defaults()
+    suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray? = null): EmoteSet =
+        throw MetaError.Provider("choreograph not forwarded by ${this::class.simpleName}")
 
     /** Voice Transcribe: [pcm16kMono] 16-bit little-endian PCM, 16 kHz mono, in language [lang] ("kk", "ru"). */
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String

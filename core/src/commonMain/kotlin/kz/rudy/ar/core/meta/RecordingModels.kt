@@ -29,7 +29,8 @@ fun interface FixtureWriter {
  * | choreograph   | `spark-choreo/<ref>.fixture.json` `text`: the set in the reply shape      |
  *
  * The choreo `text` is [ChoreographyParser.toJson] of the sanitised set (the raw reply never leaves [MetaApi]); it
- * replays to the same choreographies, with source `spark` since all five then come from the "reply".
+ * replays to the same choreographies with source `spark`; a set whose five emotes all fell back (source `default`)
+ * is recorded as `{}` and replays as the defaults with source `default`.
  *
  * Only the first segment call per ref is recorded, and only when its prompts are [Jobs.CUTOUT_PROMPTS]: later
  * segment calls for the same ref (the matte fallback on the stylized sprite) and table scans pass through
@@ -104,7 +105,9 @@ class RecordingModels(
 
     override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet {
         val (set, ms) = timed { inner.choreograph(ref, sheet, image) }
-        write(Jobs.SPARK_CHOREO, ref, latency(Jobs.SPARK_CHOREO, ref, ms)) { it.copy(text = ChoreographyParser.toJson(set)) }
+        // A reply that fell back entirely is recorded as an empty object, so it replays as source=default too.
+        val text = if (set.source == EmoteSet.SOURCE_SPARK) ChoreographyParser.toJson(set) else "{}"
+        write(Jobs.SPARK_CHOREO, ref, latency(Jobs.SPARK_CHOREO, ref, ms)) { it.copy(text = text) }
         return set
     }
 
