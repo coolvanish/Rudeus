@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
@@ -30,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kz.rudy.ar.ArCharacter
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.CharacterSize
@@ -37,8 +41,12 @@ import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.Surface
+import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.AbilityChip
+import kz.rudy.ar.ui.components.BottomSheet
+import kz.rudy.ar.ui.components.CastChips
+import kz.rudy.ar.ui.components.EmoteRow
 import kz.rudy.ar.ui.components.Chip
 import kz.rudy.ar.ui.components.FootprintMiniMap
 import kz.rudy.ar.ui.components.Glyph
@@ -81,6 +89,8 @@ data class HudState(
     val speechFromVoice: Boolean = false,
     /** T25: the character's size step; the Bigger / Smaller buttons go disabled at the ends of [CharacterSize.STEPS]. */
     val characterSize: Float = CharacterSize.DEFAULT,
+    /** T31: the character stands on the table (the anchor exists): the emote row is enabled. */
+    val anchored: Boolean = false,
 )
 
 /**
@@ -99,6 +109,12 @@ data class HudState(
  *
  * T25: [onBigger] / [onSmaller] back the round plus / minus buttons at the left edge (the host's debug Rec button owns
  * the right edge). Disabled while tracking is lost, like Jump, and at the ends of [CharacterSize.STEPS].
+ *
+ * T31: with a non-empty [cast] the top-left shows [CastChips] instead of the ability chip (its name pill carries the
+ * ability and calls [onAbilityTap]); a chip calls [onPickActive], `+` [onAddOpen]. [addOpen] shows the Add sheet over
+ * the HUD with [addable] (tap = [onAdd], scrim or drag = [onAddDismiss]); the AR session keeps running under it.
+ * [onEmote], when given, adds the emote row above the Scan / Jump row, enabled once [HudState.anchored] and while
+ * tracking holds.
  */
 @Composable
 fun PlayScreen(
@@ -118,6 +134,16 @@ fun PlayScreen(
     onScenario: (() -> Unit)? = null,
     onVoiceDown: (() -> Unit)? = null,
     onVoiceUp: () -> Unit = {},
+    cast: List<ArCharacter> = emptyList(),
+    activeId: String? = null,
+    canAdd: Boolean = false,
+    onPickActive: (String) -> Unit = {},
+    onAddOpen: () -> Unit = {},
+    addOpen: Boolean = false,
+    addable: List<BundledCharacter> = emptyList(),
+    onAdd: (BundledCharacter) -> Unit = {},
+    onAddDismiss: () -> Unit = {},
+    onEmote: ((Emote) -> Unit)? = null,
 ) {
     val paused = hud.trackingLost || character.mode == Mode.PAUSED
     Box(modifier.fillMaxSize()) {
@@ -126,7 +152,11 @@ fun PlayScreen(
         if (!paused) Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = RudeusSpacing.md, vertical = RudeusSpacing.smd)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AbilityChip(character.ability, onClick = onAbilityTap)
+                    if (cast.isEmpty()) {
+                        AbilityChip(character.ability, onClick = onAbilityTap)
+                    } else {
+                        CastChips(cast, activeId, canAdd, onPick = onPickActive, onAdd = onAddOpen, onNameTap = onAbilityTap)
+                    }
                     if (onVoiceDown != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             MicButton(
@@ -189,6 +219,10 @@ fun PlayScreen(
                 Pill(t(hint), Modifier.align(Alignment.CenterHorizontally))
                 Spacer(Modifier.height(14.dp))
             }
+            if (onEmote != null) {
+                EmoteRow(enabled = hud.anchored && !hud.trackingLost, onEmote = onEmote, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Spacer(Modifier.height(RudeusSpacing.smd))
+            }
             val scanLabel = t(if (hud.scanned) StringId.rescan else StringId.scan_button)
             Row(
                 Modifier.fillMaxWidth(),
@@ -216,6 +250,10 @@ fun PlayScreen(
         ) {
             SizeButton(Glyph.PLUS, t(StringId.play_bigger), !hud.trackingLost && hud.characterSize < CharacterSize.MAX, onBigger)
             SizeButton(Glyph.MINUS, t(StringId.play_smaller), !hud.trackingLost && hud.characterSize > CharacterSize.MIN, onSmaller)
+        }
+        BottomSheet(visible = addOpen && !paused, onDismiss = onAddDismiss) {
+            Text(t(StringId.play_add_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
+            CharacterCardGrid(addable, onPick = onAdd, modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp))
         }
         PausedOverlay(
             visible = paused,

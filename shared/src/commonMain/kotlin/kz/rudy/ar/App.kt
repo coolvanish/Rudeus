@@ -33,6 +33,8 @@ import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.metrics.CharacterMetrics
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
@@ -45,6 +47,7 @@ import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.Strings
+import kz.rudy.ar.ui.components.CastUi
 import kz.rudy.ar.ui.screens.BundledCharacter
 import kz.rudy.ar.ui.screens.CaptureScreen
 import kz.rudy.ar.ui.screens.ExportStatus
@@ -121,6 +124,13 @@ private const val VOICE_BUBBLE_MS = 2000L
  * Back rule: the Settings sheet closes first; Metrics -> where it came from; Play / Scanning / Processing -> Capture;
  * Capture -> system (exit).
  *
+ * Cast and emotes (T31): Play starts with one member (the picked card or the photo result) in `ArSlot.characters`;
+ * the `+` chip's Add sheet adds saved / bundled ones up to `Cast.MAX`, a chip (or the host's [ArSlot.onActiveChanged])
+ * picks the active one. Jump, voice and the emote row send `ArSlot.command` for the active member (serial strictly
+ * rising, never lowered), and the legacy counters and `spritePng` / `ability` keep mirroring it for a v1.0 host. Both
+ * `onCharacterEvent` (v1.0: the active member) and `onCastEvent` feed the one bubble, name-first with two or more.
+ * The session end keeps only the first member and clears `command`; Capture clears the cast.
+ *
  * Settings (T26): the sheet opens from Capture's wordmark. Reduce motion here ORs with whatever a host provides through
  * [LocalReducedMotion] above `App`; both last for this process only. Sounds reaches the host as `ArSlot.soundsOn`.
  */
@@ -148,7 +158,6 @@ fun App(
     // T03: the photo being turned into a character, the sprite Play shows (null = bundled default), and a counter
     // that restarts the pipeline effect (ProcessingState.attempt now follows the pipeline's own retries).
     var photo by remember { mutableStateOf<ByteArray?>(null) }
-    var spritePng by remember { mutableStateOf<ByteArray?>(null) }
     var pipelineRun by remember { mutableStateOf(0) }
     var pendingResult by remember { mutableStateOf<CharacterResult?>(null) }
     // T13: the surface (kept across Back), the picked bundled card, what the character says, and the first walk.
@@ -176,6 +185,14 @@ fun App(
     // T26: characters made on this phone (shown ahead of the bundled ones) and the result last sent to disk.
     var saved by remember { mutableStateOf<List<BundledCharacter>>(emptyList()) }
     var keptRun by remember { mutableStateOf(-1) } // the pipelineRun last sent to disk; a number, so it holds no sprite
+    // T31: who is on the table (first = the one Play started with; its sprite is what `spritePng` used to hold), each
+    // member's sheet for its lines, whose buttons they are, the last command and its serial, and the Add sheet.
+    var cast by remember { mutableStateOf<List<ArCharacter>>(emptyList()) }
+    var castSheets by remember { mutableStateOf<Map<String, CharacterSheet>>(emptyMap()) }
+    var activeId by remember { mutableStateOf<String?>(null) }
+    var command by remember { mutableStateOf<CharacterCommand?>(null) }
+    var commandSerial by remember { mutableStateOf(0) }
+    var addOpen by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -193,7 +210,45 @@ fun App(
         // Nothing returns to Processing without a new photo, and every way from Capture into AR sets the sprite: the
         // bytes (a 2048 px photo, a sprite of up to 5 MB) are not held for the rest of the session.
         if (to != Screen.PROCESSING) { photo = null; pendingResult = null }
-        if (to == Screen.CAPTURE) spritePng = null
+        addOpen = false
+        if (to == Screen.CAPTURE) { cast = emptyList(); castSheets = emptyMap(); activeId = null; command = null }
+    }
+    /** T31: Play starts with [member] alone (Scanning keeps it). */
+    fun startCast(member: ArCharacter, memberSheet: CharacterSheet) {
+        cast = listOf(member)
+        castSheets = mapOf(member.id to memberSheet)
+        activeId = member.id
+        command = null
+    }
+    /** T31: the active member's sheet (its ability, its lines); the started one's before any cast exists. */
+    fun activeSheet(): CharacterSheet = CastUi.active(cast, activeId)?.let { castSheets[it.id] } ?: sheet
+    /** T31: the bubble's name prefix for member [id] (null with a cast of one). */
+    fun speakerOf(id: String?): String? = cast.firstOrNull { it.id == id }?.let { HudSpeech.speaker(it.name, cast.size) }
+    /** T31: one command for the active member (no-op without one). */
+    fun act(action: CharacterAction) {
+        val id = CastUi.active(cast, activeId)?.id ?: return
+        val c = CastUi.next(commandSerial, id, action)
+        commandSerial = c.serial
+        command = c
+    }
+    fun jump() { jumpRequest++; act(CharacterAction.Jump) }
+    fun walkForward() { walkForwardRequest++; act(CharacterAction.WalkForward) }
+    /** T31 emote row: the active member plays [e] and says its choreography's line at once. */
+    fun emote(e: Emote) {
+        val member = CastUi.active(cast, activeId) ?: return
+        act(CharacterAction.Emote(e))
+        val line = HudSpeech.emoteLine(member.emotes[e], Strings.sheetLines(activeSheet().lines, lang))
+        if (line != null) speech = HudSpeech.say(speech, line, nowMs(), speakerOf(member.id))
+    }
+    /** T31 Add sheet: [c] joins the table (ignored when full or already on it) and the sheet closes. */
+    fun addToCast(c: BundledCharacter) {
+        val member = CastUi.member(c, lang)
+        val next = CastUi.add(cast, member)
+        if (next !== cast) {
+            cast = next
+            castSheets = castSheets + (c.id to c.sheet)
+        }
+        addOpen = false
     }
     fun startPipeline(bytes: ByteArray?) {
         if (bytes == null) return
@@ -233,8 +288,15 @@ fun App(
         // A gate-passed result is already kept; one below the gate is kept only because the child chose to play it.
         if (r != null) keep(r)
         sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
-        spritePng = r?.sprite
+        val member = ArCharacter(
+            id = "photo-${r?.ref ?: "demo"}",
+            name = sheet.nameIn(lang.code),
+            spritePng = r?.sprite,
+            ability = sheet.ability,
+            emotes = r?.emotes ?: EmoteSet.defaults(),
+        )
         go(Screen.SCANNING)
+        startCast(member, sheet)
     }
     /**
      * The one Back rule, shared by the on-screen Back buttons and the system back gesture: an open Settings sheet closes;
@@ -244,6 +306,7 @@ fun App(
      */
     fun back() {
         if (settingsOpen) { settingsOpen = false; return }
+        if (addOpen) { addOpen = false; return }
         when (screen) {
             Screen.CAPTURE -> Unit
             Screen.METRICS -> {
@@ -300,8 +363,8 @@ fun App(
                 voiceSerial = speech.serial
             }
             when (command) {
-                VoiceCommand.JUMP -> jumpRequest++
-                VoiceCommand.WALK -> walkForwardRequest++
+                VoiceCommand.JUMP -> jump()
+                VoiceCommand.WALK -> walkForward()
                 null -> Unit
             }
         }
@@ -337,10 +400,16 @@ fun App(
             if (ok && scan.status == ScanStatus.PAUSED) scan = scan.copy(status = ScanStatus.IDLE)
         }
     }
-    val onCharacterEvent = rememberUpdatedState<(CharacterEvent) -> Unit> { e ->
+    // T31: one bubble logic for both callbacks; a v1.0 host's onCharacterEvent is the active member's (the one it draws).
+    val onCastEvent = rememberUpdatedState<(String, CharacterEvent) -> Unit> { id, e ->
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
-        speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(sheet.lines, lang), lang)
+        val memberSheet = castSheets[id] ?: activeSheet()
+        speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(memberSheet.lines, lang), lang, speakerOf(id))
     }
+    val onCharacterEvent = rememberUpdatedState<(CharacterEvent) -> Unit> { e ->
+        onCastEvent.value(CastUi.active(cast, activeId)?.id ?: "", e)
+    }
+    val onActiveChanged = rememberUpdatedState<(String) -> Unit> { id -> if (cast.any { it.id == id }) activeId = id }
     // Scanning: the real count -> DONE; 0 -> EMPTY (table found, nothing on it; not a failure); Failed -> NO_PLANE
     // (Skip appears after two); TooSteep -> TOO_STEEP (not a failure either: only the angle has to change). A late
     // answer after tracking loss (PAUSED) or Back is ignored. Play: the Rescan overlay ends; an empty rescan says
@@ -383,8 +452,13 @@ fun App(
     }
     val onLevel = rememberUpdatedState<(Level) -> Unit> { level = it }
     val debug = hud.showFootprints
-    val ability = sheet.ability
-    val slot = remember(spritePng, surface, debug, soundsOn, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize) {
+    val active = CastUi.active(cast, activeId)
+    val spritePng = active?.spritePng // legacy mirror: the active member's (null = the host's built-in dino)
+    val ability = active?.ability ?: sheet.ability
+    val slot = remember(
+        spritePng, surface, debug, soundsOn, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize,
+        cast, active?.id, command,
+    ) {
         ArSlot(
             spritePng = spritePng,
             surface = surface,
@@ -402,6 +476,11 @@ fun App(
             scenarioRequest = scenarioRequest,
             walkForwardRequest = walkForwardRequest,
             characterSize = characterSize,
+            characters = cast,
+            activeId = active?.id,
+            onActiveChanged = { onActiveChanged.value(it) },
+            command = command,
+            onCastEvent = { id, e -> onCastEvent.value(id, e) },
         )
     }
     val arOn = screen == Screen.SCANNING || screen == Screen.PLAY || (screen == Screen.METRICS && lastScreen == Screen.PLAY)
@@ -419,6 +498,12 @@ fun App(
             jumpRequest = 0
             scenarioRequest = 0
             walkForwardRequest = 0
+            // T31: the next session starts with the one Play started with; commandSerial is never lowered.
+            cast = cast.take(1)
+            castSheets = castSheets.filterKeys { k -> cast.any { it.id == k } }
+            activeId = cast.firstOrNull()?.id
+            command = null
+            addOpen = false
         }
     }
     LaunchedEffect(walkedOnce) {
@@ -459,9 +544,9 @@ fun App(
                         onPickPhoto = capture?.let { host -> { host.pickPhoto() } },
                         onPickBundled = { c: BundledCharacter ->
                             sheet = c.sheet
-                            spritePng = c.spritePng // null keeps the host's built-in dino
                             selectedBundled = c.id
                             go(Screen.SCANNING)
+                            startCast(CastUi.member(c, lang), c.sheet) // a null sprite keeps the host's built-in dino
                         },
                         selectedId = selectedBundled,
                     )
@@ -557,7 +642,7 @@ fun App(
                     Screen.PLAY -> {
                         // T03 gate: shutter -> Play. Logged by the host (RudeusGate capture_to_play_ms) once per entry
                         // from Scanning (coming back from Metrics is not a new entry).
-                        LaunchedEffect(Unit) { if (spritePng != null && lastScreen == Screen.SCANNING) capture?.playEntered() }
+                        LaunchedEffect(Unit) { if (cast.firstOrNull()?.spritePng != null && lastScreen == Screen.SCANNING) capture?.playEntered() }
                         // Rescan: same arc as Scanning, ended by the host's onScanned (or the timer without a host).
                         LaunchedEffect(hud.scanning) {
                             if (hud.scanning) {
@@ -573,12 +658,13 @@ fun App(
                                 }
                             }
                         }
+                        val playSheet = activeSheet()
                         PlayScreen(
                             arView = noAr,
-                            // Minimal until the host reports physics state: the ability is the character's own. The
+                            // Minimal until the host reports physics state: the ability is the active character's. The
                             // level is the host's last scan (ArSlot.onLevel); the mini-map draws it with footprints on.
-                            character = CharacterState(ability = sheet.ability),
-                            sheet = sheet,
+                            character = CharacterState(ability = playSheet.ability),
+                            sheet = playSheet,
                             level = level,
                             hud = hud.copy(
                                 speech = speech.text,
@@ -587,21 +673,33 @@ fun App(
                                 voice = voicePhase,
                                 speechFromVoice = speech.text != null && speech.serial == voiceSerial,
                                 characterSize = characterSize,
+                                // The host-less shell has no AR to place anything: the emote row demos without it.
+                                anchored = scan.anchored || capture == null,
                             ),
                             onScan = { hud = hud.copy(scanning = true, scanProgress = 0f, showTapHint = false); scanRequest++ },
-                            onJump = { jumpRequest++ },
+                            onJump = ::jump,
                             onBigger = { characterSize = CharacterSize.bigger(characterSize) },
                             onSmaller = { characterSize = CharacterSize.smaller(characterSize) },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
                             onAbilityTap = {
-                                val lines = Strings.sheetLines(sheet.lines, lang)
+                                val lines = Strings.sheetLines(playSheet.lines, lang)
                                 val line = lines.getOrNull(1) ?: lines.firstOrNull()
-                                if (line != null) speech = HudSpeech.say(speech, line, nowMs())
+                                if (line != null) speech = HudSpeech.say(speech, line, nowMs(), speakerOf(active?.id))
                             },
                             onOpenMetrics = ::openMetrics,
                             onScenario = if (hud.showFootprints) ({ scenarioRequest++ }) else null,
                             onVoiceDown = if (voice != null && scan.anchored) ::voiceDown else null,
                             onVoiceUp = ::voiceUp,
+                            cast = cast,
+                            activeId = active?.id,
+                            canAdd = CastUi.canAdd(cast),
+                            onPickActive = { id -> activeId = id },
+                            onAddOpen = { addOpen = true },
+                            addOpen = addOpen,
+                            addable = CastUi.addable(saved, bundled, cast),
+                            onAdd = ::addToCast,
+                            onAddDismiss = { addOpen = false },
+                            onEmote = ::emote,
                         )
                     }
 

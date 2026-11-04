@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.max
 import kotlin.math.max
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.CharacterCard
@@ -102,6 +103,8 @@ data class BundledCharacter(
     val thumbnail: (@Composable (Modifier) -> Unit)? = null,
     /** The matted sprite PNG that Play shows for this character; null = the host's default sprite. */
     val spritePng: ByteArray? = null,
+    /** T31: its five emote choreographies (the host reads choreo.json in T32); the defaults until then. */
+    val emotes: EmoteSet = EmoteSet.defaults(),
 )
 
 /** The hero's viewfinder corner: 32 dp, 4 dp stroke, on a dp grid. */
@@ -269,6 +272,27 @@ private fun CaptureGrid(
                     .fillMaxWidth()
                     .onSizeChanged { cardHeight = it.height },
             )
+        }
+    }
+}
+
+/**
+ * T31: the Play Add sheet's grid: the same cards as Capture's shelf, no hero, no filters, no entrance (the sheet's
+ * own slide is the entrance). [characters] already in order (saved, then bundled) and without those on the table.
+ */
+@Composable
+internal fun CharacterCardGrid(characters: List<BundledCharacter>, onPick: (BundledCharacter) -> Unit, modifier: Modifier = Modifier) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(CARD_MIN_WIDTH),
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(CARD_GAP),
+        verticalArrangement = Arrangement.spacedBy(CARD_GAP),
+    ) {
+        if (characters.isEmpty()) {
+            item(key = EMPTY_KEY, span = { GridItemSpan(maxLineSpan) }) { EmptyCard(t(StringId.capture_empty)) }
+        }
+        itemsIndexed(characters, key = { _, c -> c.id }) { _, c ->
+            BundledCard(c, selected = false, entranceDelayMs = null, onClick = { onPick(c) }, modifier = Modifier.fillMaxWidth())
         }
     }
 }
