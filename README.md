@@ -17,8 +17,9 @@ Then the character walks, jumps and flies around the real objects.
 ## Try it
 The demo video shows the full flow on a real table. To run it yourself you need an ARCore-capable Android phone.
 
-APKs are not committed to this repository: the API key is compiled into the app, so a build with a key must not be
-public. Build your own:
+Working APKs [link](https://github.com/coolvanish/Rudeus/releases. ) 
+
+Build your own:
 
 1. Add your key as described in [API key handling](#api-key-handling).
 2. Run `./gradlew :androidApp:installDebug`.
