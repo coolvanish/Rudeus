@@ -7,7 +7,7 @@ import com.google.ar.core.TrackingState
 // HAND-REVIEW: T02 — anchor placement gate. Measured on the Pixel 9 Pro XL on Oct 28 (Day 1 probes): an anchor
 // placed 3.7 s after plane detection jumped 4.7 cm in its first 10 s; one placed later drifted 0.07 cm over 50 s.
 // So the first tap creates the session anchor only once the hit plane has been TRACKING for ANCHOR_PLANE_SETTLE_MS;
-// earlier taps show a hint and do nothing (RudeusArView). Plain holder, main thread only, no Compose state.
+// an earlier tap shows a hint and is held until then (HOLD_EARLY_TAP, RudeusArView). Plain holder, main thread only, no Compose state.
 
 /**
  * How long a horizontal plane must have been continuously TRACKING before a tap on it may create the anchor.

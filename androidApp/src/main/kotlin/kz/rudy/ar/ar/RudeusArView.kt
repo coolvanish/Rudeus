@@ -177,6 +177,16 @@ private const val LEGACY_ID = "legacy"
 private const val HINT_VISIBLE_MS = 1_500L
 
 /**
+ * HAND-REVIEW: 2026-11-04 — cut switch. A tap before the plane settled was refused, so the child waited and tapped again.
+ * true: the tap is held and the anchor lands at that screen point once a settled plane is under it, same settle gate
+ * (ANCHOR_PLANE_SETTLE_MS), still one anchor per session. false: refused with the hint, as before.
+ */
+private const val HOLD_EARLY_TAP = true
+
+/** A tap waiting for a settled plane: view pixels, and when it came (`anchor_tap_held_ms=`). */
+private class HeldTap(val x: Float, val y: Float, val atMs: Long)
+
+/**
  * HAND-REVIEW: after a tracking loss (camera covered, too little texture) ARCore re-localises and corrects the anchor
  * pose over the next frames; on the Pixel the dino visibly slid ~20 cm when the hand came off the camera. Keep the
  * character hidden this long after tracking returns, so the correction happens while it is invisible.
@@ -252,8 +262,8 @@ private fun ArSlot.members(): List<ArCharacter> = when {
 
 /**
  * The AR view behind Scanning and Play. [slot] carries the sprite, the surface and the HUD callbacks (ArSlot.kt):
- * `onSurfaceReady` once a settled upward plane exists (false again if it goes away before the anchor),
- * `onAnchorPlaced` + `onCharacterEvent(PLACED)` on the first accepted tap, `onTracking` on every change after that,
+ * `onSurfaceReady` once a settled upward plane exists (false again if it goes away before the anchor, or while a tap is held),
+ * `onAnchorPlaced` + `onCharacterEvent(PLACED)` on the first accepted tap (or when a held one lands), `onTracking` on every change after that,
  * `onCharacterEvent` for each physics transition. The ARSceneView, the session and the anchor survive slot changes.
  * [scanner] (T04) runs the SAM call and records the scan; null (no host) answers every scan request with failure.
  * [sounds] (T32) plays the emote sounds; the event sounds ride on the slot's callbacks (MainActivity).
@@ -322,6 +332,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     var anchor by remember { mutableStateOf<Anchor?>(null) }
     var showHint by remember { mutableStateOf(false) }
     var hintTaps by remember { mutableIntStateOf(0) } // each premature tap restarts the hint timer
+    val heldTap = remember { arrayOfNulls<HeldTap>(1) } // read by the frame callback, so a plain holder
+    var holdHint by remember { mutableStateOf(false) } // the "wait" pill while a tap is held; written per tap, never per frame
     val probe = remember { GateProbe() }
     val recorder = rememberARRecorder()
     // T21 (a): the camera stream is ours so `sessionConfiguration` can flip depth occlusion once depth support is known.
@@ -338,6 +350,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             delay(HINT_VISIBLE_MS)
             showHint = false
         }
+    }
+    // HAND-REVIEW: 2026-11-04 — a new surface chip means the child is aiming somewhere else: a held tap must not land on it.
+    LaunchedEffect(slot.surface) {
+        heldTap[0] = null
+        holdHint = false
     }
     /** Answers every request owed so far with [answer] (exactly one onScanned per request). Main thread. */
     fun answerOwed(answer: ScanAnswer) {
@@ -524,6 +541,23 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             currentSlot.onCastEvent(c.id, CharacterEvent.PLACED)
         }
     }
+    /** The session's one anchor, on [hit]: from a tap on a settled plane, or from the frame that lands a held tap. Main thread. */
+    fun placeAnchor(hit: HitResult, plane: Plane, frame: Frame, ageMs: Long?) {
+        heldTap[0] = null
+        holdHint = false
+        val created = hit.createAnchor()
+        anchorRef[0] = created
+        anchorPlane[0] = plane
+        anchor = created
+        slotState.anchored = true // the surface is now locked (sprite, physics, tolerance)
+        slotState.tracking = true
+        probe.onAnchorPlaced(created)
+        Log.i(GATE_TAG, "anchor_plane_age_ms=$ageMs surface=${slotState.surface}")
+        val s = currentSlot
+        s.onAnchorPlaced()
+        syncCast(created, frame) // T32: every waiting member is placed now, each with onCastEvent(id, PLACED)
+        s.onTracking(true)
+    }
     // T32: what CastTouch needs; the hit test is the tap's, the grab a screen-space quad test (review fix (a)), the lead a
     // boundary-clamped, edge-checked walkTo (review fix (b)).
     val table = remember {
@@ -641,10 +675,24 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 val a = anchorRef[0]
                 if (a == null) {
                     settle.onFrame(frame, now)
-                    val ready = settle.anySettled(now)
+                    val settled = settle.anySettled(now)
+                    val held = heldTap[0]
+                    // HAND-REVIEW: 2026-11-04 — while a tap is held nothing more is asked of the child: "tap to place" stays off and
+                    // Scanning keeps saying "look at the table", which is the right ask if the held point is off the plane.
+                    val ready = settled && held == null
                     if (ready != slotState.surfaceReady) {
                         slotState.surfaceReady = ready
                         currentSlot.onSurfaceReady(ready)
+                    }
+                    // HAND-REVIEW: 2026-11-04 — same hit rule and settle gate as a tap. One hit test per frame, only while a tap is held
+                    // and a plane has settled. createAnchor needs a tracking camera.
+                    if (settled && held != null && frame.camera.trackingState == TrackingState.TRACKING) {
+                        val hit = tableHit(frame.hitTest(held.x, held.y), null)
+                        val plane = hit?.trackable as? Plane
+                        if (hit != null && plane != null && settle.isSettled(plane, now)) {
+                            Log.i(GATE_TAG, "anchor_tap_held_ms=${now - held.atMs}")
+                            placeAnchor(hit, plane, frame, settle.trackingAgeMs(plane, now))
+                        }
                     }
                 } else {
                     val tracking = frame.camera.trackingState == TrackingState.TRACKING &&
@@ -716,22 +764,15 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         val plane = hit?.trackable as? Plane
                         val age = plane?.let { settle.trackingAgeMs(it, now) }
                         if (hit == null || plane == null || !settle.isSettled(plane, now)) {
-                            Log.i(GATE_TAG, "anchor_rejected plane_age_ms=$age need_ms=$ANCHOR_PLANE_SETTLE_MS")
+                            Log.i(GATE_TAG, "anchor_rejected plane_age_ms=$age need_ms=$ANCHOR_PLANE_SETTLE_MS held=$HOLD_EARLY_TAP")
                             hintTaps++
+                            if (HOLD_EARLY_TAP) {
+                                heldTap[0] = HeldTap(event.x, event.y, now) // a newer tap replaces it
+                                holdHint = true
+                            }
                             return
                         }
-                        val created = hit.createAnchor()
-                        anchorRef[0] = created
-                        anchorPlane[0] = plane
-                        anchor = created
-                        slotState.anchored = true // the surface is now locked (sprite, physics, tolerance)
-                        slotState.tracking = true
-                        probe.onAnchorPlaced(created)
-                        Log.i(GATE_TAG, "anchor_plane_age_ms=$age surface=${slotState.surface}")
-                        val s = currentSlot
-                        s.onAnchorPlaced()
-                        syncCast(created, frame) // T32: every waiting member is placed now, each with onCastEvent(id, PLACED)
-                        s.onTracking(true)
+                        placeAnchor(hit, plane, frame, age)
                     } else if (hit != null) {
                         val uv = planeCoords(a, hit.hitPose)
                         probe.onTap(a, hit.hitPose, uv)
@@ -799,7 +840,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 }
             }
         }
-        if (showHint) {
+        if (showHint || holdHint) {
             val hint = if (surface == Surface.FLOOR) StringId.ar_wait_floor else StringId.ar_wait_table
             ScrimPill(t(hint), modifier = Modifier.align(Alignment.Center))
         }

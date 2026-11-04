@@ -29,6 +29,7 @@ import kz.rudy.ar.core.io.FileCharacterFolder
 import kz.rudy.ar.core.io.FileMetricsSink
 import kotlinx.coroutines.flow.StateFlow
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaModels
 import kz.rudy.ar.core.meta.OfflineGuard
@@ -74,6 +75,8 @@ private const val STYLE_REFS_DIR = "style-refs"
 private const val RUNS_DIR = "runs"
 private const val BUNDLED_DIR = "bundled"
 private const val SAVED_DIR = "characters"
+private const val PREFS_NAME = "rudeus"
+private const val KEY_SURFACE = "surface"
 
 /** Where the exported run lands on API >= 29 (relative to the primary external volume), as the player sees it in Files. */
 private const val EXPORT_RELATIVE_DIR = "Download/Rudeus"
@@ -100,6 +103,18 @@ class AndroidCaptureHost(
     // 30-character cap; this only moves files on IO, scales the sprite to the bundled 768 px and logs
     // `saved_character=` / `saved_characters=`, never a name.
     private val saved = SavedCharacters(FileCharacterFolder(File(app.filesDir, SAVED_DIR)))
+    // HAND-REVIEW: 2026-11-04 — the table/floor choice survives a restart. Only the choice: ARCore cannot restore the plane
+    // itself in a new session. A one-line prefs file, read once on the main thread when App starts. An unknown value counts as never chosen.
+    private val prefs by lazy { app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+
+    override fun lastSurface(): Surface? =
+        prefs.getString(KEY_SURFACE, null)?.let { s -> Surface.entries.firstOrNull { it.name == s } }
+            .also { Log.i(TAG, "surface_restored=$it") }
+
+    override fun rememberSurface(surface: Surface) {
+        prefs.edit().putString(KEY_SURFACE, surface.name).apply()
+        Log.i(TAG, "surface_saved=$surface")
+    }
 
     // HAND-REVIEW: memory audit 2026-11-03 — one StyleRefs for the host's life: the 8 refs are scaled and matted for the first
     // character only. The pipelines built in makeCharacter all use the same AndroidImages functions, as StyleRefs requires.
