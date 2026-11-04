@@ -255,9 +255,13 @@ class SceneBuilderTest {
         val view = ScanViewFixture(ScanViewFixture.CPU_IMAGE)
         val centre = Vec2(0.10f, 0.20f)
         val p = view.pose(centre, 45f)
-        val flat = SceneBuilder().build(view.input(p, LabeledMask("remote", view.boxMask(p, centre, 0.15f, 0.10f, 0.001f)))).objects.single()
+        // "object" is no platform label, so a 1 mm one is an obstacle (since Day 10 a 1 mm "remote" is a platform).
+        val flat = SceneBuilder().build(view.input(p, LabeledMask("object", view.boxMask(p, centre, 0.15f, 0.10f, 0.001f)))).objects.single()
         assertTrue(flat.heightM >= 0.005f, "height ${flat.heightM}")
         assertTrue(Physics.blocks(flat, feetH = 0f), "an obstacle a character can walk through is no obstacle")
+        val remote = SceneBuilder().build(view.input(p, LabeledMask("remote", view.boxMask(p, centre, 0.15f, 0.10f, 0.001f)))).objects.single()
+        assertTrue(remote.heightM >= 0.005f, "height ${remote.heightM}")
+        assertEquals(ObjectKind.PLATFORM, remote.kind, "a flat remote is walked onto")
     }
 
     @Test

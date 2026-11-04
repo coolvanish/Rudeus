@@ -24,10 +24,13 @@ interface TableScanner {
 object ScanPrompts {
     // HAND-REVIEW: prompt list — SAM finds only what is named, and "object" matched nothing in 7/7 live scans, so it
     // is replaced by "toy" (ai/day4-human.md decision 2) plus common table things. Unlisted labels become obstacles
-    // (Semantics.kindFor). Floor stays at 10 prompts: each 6 prompts add a round at samConcurrency = 6 (scan gate < 6 s).
+    // (Semantics.kindFor). Floor stays at 11 prompts (table 12): each 6 prompts add a round at samConcurrency = 6 (scan gate < 6 s).
     private val COMMON = listOf("cup", "book", "phone", "bottle", "hand", "toy")
-    val TABLE: List<String> = COMMON + listOf("laptop", "remote", "plate", "bowl", "keyboard")
-    val FLOOR: List<String> = COMMON + listOf("box", "shoe", "bag", "ball")
+    // HAND-REVIEW: Day 10 probe (2026-11-04, docs/api-samples/sam-table/table3-day10): "object" found nothing again, but
+    // "small object" found the speaker and the bread no named prompt had, without duplicating the named ones ("item" also
+    // pulled the sofa behind the table). It is 12th so the table stays at two rounds; ScanMasks.GENERIC_LABELS knows it.
+    val TABLE: List<String> = COMMON + listOf("laptop", "remote", "plate", "bowl", "keyboard", "small object")
+    val FLOOR: List<String> = COMMON + listOf("box", "shoe", "bag", "ball", "small object")
 
     fun of(surface: Surface): List<String> = when (surface) {
         Surface.TABLE -> TABLE

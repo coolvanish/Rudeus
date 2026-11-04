@@ -108,7 +108,7 @@ data class Polygon(val points: List<Vec2>) {
 enum class ObjectKind {
     /** Cup, bottle: solid, taller than a step. Character is pushed out. */
     OBSTACLE,
-    /** Book, phone (a box on the floor): walkable if its top is <= the profile's platform height (table: [Semantics.PLATFORM_MAX_HEIGHT_M]). */
+    /** Book, phone, a low remote or knife (a box on the floor): walkable if its top is <= the profile's platform height (table: [Semantics.PLATFORM_MAX_HEIGHT_M]). */
     PLATFORM,
     /** Hand: moves between scans; treated as an obstacle that can be re-placed. */
     DYNAMIC,
@@ -121,7 +121,7 @@ enum class ObjectKind {
 data class LevelObject(
     /** Stable across re-scans (matched by centroid, see SceneBuilder). */
     val id: String,
-    /** SAM prompt that produced it: "cup", "book", "phone", "bottle", "hand", "object". */
+    /** SAM prompt that produced it: "cup", "book", "phone", "bottle", "hand", "remote", "small object", ... */
     val label: String,
     val kind: ObjectKind,
     val footprint: Polygon,
@@ -215,15 +215,31 @@ object Semantics {
     /** Height the character can step up without jumping. */
     const val STEP_UP_MAX_M = 0.04f
 
-    /** Flat things a character can stand on when low enough. "box" is for the floor (a shoebox); the table scan never prompts it. */
-    private val platformLabels = setOf("book", "phone", "notebook", "card", "paper", "box")
+    /**
+     * Things a character can stand on when low enough (top <= [SurfaceProfile.platformMaxHeightM]); taller ones are
+     * obstacles. "box" is for the floor (a shoebox); the table scan never prompts it. `remote`, `plate`, `keyboard`,
+     * `knife` and the generic `small object` / `item` come from the Day 10 probe (2026-11-04,
+     * `docs/api-samples/sam-table/table3-day10`): an OBSTACLE blocks at any height, so a 1.9 cm remote or a 0.5 cm
+     * knife was a wall. A tall one (a remote standing up, a big speaker) still is one.
+     */
+    private val platformLabels = setOf(
+        "book", "phone", "notebook", "card", "paper", "box",
+        "remote", "plate", "keyboard", "knife", "small object", "item",
+    )
     private val dynamicLabels = setOf("hand", "finger")
 
-    /** Things that normally lie flat, however they are labelled for play: a box stands, a book mostly does not. */
-    private val flatLabels = setOf("book", "phone", "notebook", "card", "paper")
+    /**
+     * Things that normally lie flat, however they are labelled for play: a box stands, a book mostly does not.
+     * `remote`, `plate`, `keyboard`, `knife`: Day 10 probe (see [platformLabels]).
+     */
+    private val flatLabels = setOf("book", "phone", "notebook", "card", "paper", "remote", "plate", "keyboard", "knife")
 
-    /** Things about as deep as they are wide, whatever a single view shows beyond the near edge. A toy is a guess: it can be anything, and too short beats an invisible wall. */
-    private val compactLabels = setOf("cup", "mug", "glass", "bottle", "can", "bowl", "ball", "toy")
+    /**
+     * Things about as deep as they are wide, whatever a single view shows beyond the near edge. A toy is a guess: it
+     * can be anything, and too short beats an invisible wall. The generic `small object` / `item` are the same guess
+     * (on the Day 10 probe "small object" found a knife, a speaker and a piece of bread).
+     */
+    private val compactLabels = setOf("cup", "mug", "glass", "bottle", "can", "bowl", "ball", "toy", "small object", "item")
 
     /** [label] normally lies flat, so what a single view shows beyond its near edge is more likely depth than height. */
     fun liesFlat(label: String): Boolean = label.lowercase() in flatLabels

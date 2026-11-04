@@ -47,8 +47,8 @@ import kotlin.math.tan
 
 /** Same lists as androidApp's `ScanPrompts` (the CLI cannot depend on :androidApp); keep them in step. */
 private val COMMON_PROMPTS = listOf("cup", "book", "phone", "bottle", "hand", "toy")
-private val TABLE_PROMPTS = COMMON_PROMPTS + listOf("laptop", "remote", "plate", "bowl", "keyboard")
-private val FLOOR_EXTRA_PROMPTS = listOf("box", "shoe", "bag", "ball")
+private val TABLE_PROMPTS = COMMON_PROMPTS + listOf("laptop", "remote", "plate", "bowl", "keyboard", "small object")
+private val FLOOR_EXTRA_PROMPTS = listOf("box", "shoe", "bag", "ball", "small object")
 
 /** The phone's `SCAN_MAX_SIDE` / `SCAN_JPEG_QUALITY` (ScanCapture.kt). */
 private const val SCAN_MAX_SIDE = 1280

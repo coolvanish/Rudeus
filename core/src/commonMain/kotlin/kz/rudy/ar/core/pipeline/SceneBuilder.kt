@@ -39,11 +39,13 @@ object ScanMasks {
     const val MAX_CONTAINMENT = 0.8f
 
     /**
-     * Catch-all prompts that also match the named objects (the generic "object" finds the cup and the book again).
-     * They have the lowest priority across labels; every other label (including "hand") keeps the input order.
-     * Compared lower-case.
+     * Catch-all prompts that also match the named objects (the generic "object" finds the cup and the book again; on
+     * the Day 10 probe, 2026-11-04 `docs/api-samples/sam-table/table3-day10`, "small object" found the toy, the remote
+     * and the phone again plus a knife, a speaker and a piece of bread that no named prompt had). They have the lowest
+     * priority across labels; every other label (including "hand") keeps the input order. Compared lower-case.
+     * "object" itself returned nothing on four probes; it stays generic for old fixtures and levels.
      */
-    val GENERIC_LABELS: Set<String> = setOf("object")
+    val GENERIC_LABELS: Set<String> = setOf("object", "small object", "item")
 
     /**
      * One [LabeledMask] per [MaskResult.instances] entry (label = the prompt, best score first as stored); a prompt
