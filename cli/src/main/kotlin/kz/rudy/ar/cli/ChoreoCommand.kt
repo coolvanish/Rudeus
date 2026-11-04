@@ -50,8 +50,11 @@ import java.time.temporal.ChronoUnit
 private const val CHOREO_DEFAULT_FIXTURES = "docs/api-samples"
 private const val CHOREO_DEFAULT_BUDGET_USD = 0.20
 
-/** Per-call worst case for the budget guard: ~3x the CostTable estimate (one Spark call, ~1-2k output tokens). */
-private const val CHOREO_WORST_CASE_USD = 0.01
+/**
+ * Per-call worst case for the budget guard: the reply's ceiling, 4096 output tokens x $4.25/M ~ $0.0174, plus 1-2k input
+ * tokens (prompt + one <= 512 px image). 16 bundled refs x $0.02 still fit the $0.20 default.
+ */
+private const val CHOREO_WORST_CASE_USD = 0.02
 
 private val metaJson = Json { prettyPrint = true; encodeDefaults = true }
 

@@ -8,6 +8,7 @@ import kz.rudy.ar.core.io.JvmRaster
 import kz.rudy.ar.core.meta.Jobs
 import kz.rudy.ar.core.meta.MetaApi
 import kz.rudy.ar.core.meta.MetaConfig
+import kz.rudy.ar.core.meta.MetaError
 import kz.rudy.ar.core.meta.Provider
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.pipeline.CharacterPipeline
@@ -94,8 +95,9 @@ internal fun poseSpike(flags: Flags): Int {
                     continue
                 }
                 val t0 = metrics.now()
+                // Above the try: MetaApi meters a billed reply before decoding it, so a decode failure still costs.
+                val museMark = metrics.costMark(Jobs.MUSE_STYLIZE)
                 try {
-                    val museMark = metrics.costMark(Jobs.MUSE_STYLIZE)
                     val stylized = api.stylize("$ref.${frame.name}", museSprite, styleRefs, frame.prompt + POSE_SUFFIX)
                     val museMs = metrics.now() - t0
                     val museCost = metrics.costSince(museMark, c.stylizeUsd)
@@ -124,7 +126,8 @@ internal fun poseSpike(flags: Flags): Int {
                     metrics.stage(CharacterPipeline.STAGE_MATTE, metrics.now() - m0, attempt, how != "none", samCost, measured = samCost > 0)
 
                     val file = File(outDir, "$ref.${frame.name}.png")
-                    file.writeBytes(matted ?: stylized)
+                    // Muse's native 1.4-1.8k px frames are 2-3 MB; stored at Record.OUTPUT_MAX_SIDE like recorded outputs.
+                    file.writeBytes(JvmRaster.downscale(matted ?: stylized, Record.OUTPUT_MAX_SIDE))
                     val usd = museCost.usd + samCost
                     spent += usd
                     val ms = metrics.now() - t0
@@ -134,8 +137,12 @@ internal fun poseSpike(flags: Flags): Int {
                     throw e
                 } catch (e: Exception) {
                     val ms = metrics.now() - t0
-                    metrics.stage(CharacterPipeline.STAGE_STYLIZE, ms, attempt, false, 0.0)
-                    results += FrameResult(frame, null, ms, 0.0, "-", "${e::class.simpleName}: ${e.message}")
+                    val lost = metrics.costSince(museMark, 0.0)
+                    spent += lost.usd
+                    metrics.stage(CharacterPipeline.STAGE_STYLIZE, ms, attempt, false, lost)
+                    // README.md is committed: the class and HTTP status only, never a reply body (that goes to stdout).
+                    val brief = e::class.simpleName.orEmpty() + ((e as? MetaError.Http)?.let { " HTTP ${it.code}" } ?: "")
+                    results += FrameResult(frame, null, ms, lost.usd, "-", brief)
                     println("  ${frame.name}: FAILED ${e::class.simpleName}: ${e.message}")
                 }
             }
