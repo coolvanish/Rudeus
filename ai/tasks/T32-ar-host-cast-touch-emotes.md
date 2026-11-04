@@ -2,8 +2,8 @@
 
 status: review
 created: 2026-11-04
-day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md). Starts after T28, T29, T31 are merged. HAND-REVIEW draft: an agent writes it, the user approves every file and runs it on the Pixel.
-gate: v1.1 gate — two characters, two fingers, each walks to its own finger at the same time, never through each other, never off the edge; every emote plays on the active character within a frame and ends in the idle pose; the v1.0 single-character flow and the Day 5 scenario are unchanged
+day: Day 9 (Nov 4, v1.0 minimal cut; see ai/plan-cast-emotes.md). Starts after T28, T29, T31 are merged. HAND-REVIEW draft: an agent writes it, the user approves every file and runs it on the Pixel.
+gate: v1.0 gate — two characters, two fingers, each walks to its own finger at the same time, never through each other, never off the edge; every emote plays on the active character within a frame and ends in the idle pose; the Day 7 single-character flow and the Day 5 scenario are unchanged
 cut-if-slips: cut line 5 (multi-touch grab -> tap-select only: a tap on a character makes it active, a tap on the table walks the active), then cut line 4 (separation off), then the cast (`CAST_ENABLED = false`: one member)
 
 ## Goal
@@ -23,7 +23,7 @@ Must NOT touch: `core/`, `shared/`, `cli/`, Gradle files, the manifest.
 ## Contract
 - `GameLoop` holds a `Cast` (T28) instead of one body. `onFrame` steps it with `CastPhysics.step` (same dt clamp, pause / resume on tracking) and reports `CastEvents.between(lastReported, cast)` per member through `slot.onCastEvent(id, e)`; the legacy `onCharacterEvent` is never called by this host. Per member: `walkPhaseMs`, `landedAtMs`, the running emote (choreography + start on `simMs`). `walkTo(id, target)`, `jump(id)`, `walkForward(id)`, `emote(id, choreography)`, `setAbility(id, ability)`, `configure(profile, size)` for every member. `restartAtSpawn` and the scenario act on the FIRST member only.
 - Members come from `slot.characters` (keyed by id, identity of `spritePng` for rebuilds). A new id: sprite built as today (bytes, else the demo asset), node under the AnchorNode (`key(id, sprite)`), body spawned at `CastPhysics.spawnNear(level, cast, radius, near = active member pos (ZERO when none), preferred = camera-right in plane coords, params)` once the anchor exists; before the anchor every member waits and is placed on the frame the anchor appears (first member at ZERO, the others via spawnNear). `slot.onCastEvent(id, PLACED)` per member when placed. A removed id: node detached, then `CharacterSprite.destroy` in T14's order. `CAST_ENABLED = true` is the cut switch (false: only the first character).
-- Touch (CastTouch.kt): `ARSceneView(onTouchEvent = ...)` (ARSceneView.kt:758 in the shipped 4.31.0 sources; returning true keeps the event from the gesture detector). Binding `pointerId -> memberId`. ACTION_DOWN / ACTION_POINTER_DOWN: hit test at that pointer's x/y (`frame.hitTest(x, y)`, plane hit within `profile.tapHeightToleranceM` of the anchor plane as `tableTap` does) -> uv; the nearest ground member within `max(profile.radiusAt(size) * 1.5f, GRAB_MIN_M * profile.scale)` (`GRAB_MIN_M = 0.03f`) is grabbed: bind, `slot.onActiveChanged(id)`, log `grab pointer= id=`, return true. No member near: return false (the gesture detector's single tap keeps placing the anchor and walking the ACTIVE member, as v1.0). ACTION_MOVE: for each bound pointer, at most every `GRAB_MOVE_MS = 60` ms or when the uv moved ≥ 5 mm: hit test -> `level.nearestInside(uv)` -> `confirmSurface` -> `loop.walkTo(id, target)`; no depth-gap sampling per move (document it; the boundary clamp keeps the walk on the scanned surface). ACTION_POINTER_UP / ACTION_UP / ACTION_CANCEL: unbind (the last target stays), log `release pointer= id=`. Return true only for events that touch a bound pointer.
+- Touch (CastTouch.kt): `ARSceneView(onTouchEvent = ...)` (ARSceneView.kt:758 in the shipped 4.31.0 sources; returning true keeps the event from the gesture detector). Binding `pointerId -> memberId`. ACTION_DOWN / ACTION_POINTER_DOWN: hit test at that pointer's x/y (`frame.hitTest(x, y)`, plane hit within `profile.tapHeightToleranceM` of the anchor plane as `tableTap` does) -> uv; the nearest ground member within `max(profile.radiusAt(size) * 1.5f, GRAB_MIN_M * profile.scale)` (`GRAB_MIN_M = 0.03f`) is grabbed: bind, `slot.onActiveChanged(id)`, log `grab pointer= id=`, return true. No member near: return false (the gesture detector's single tap keeps placing the anchor and walking the ACTIVE member, as Day 7). ACTION_MOVE: for each bound pointer, at most every `GRAB_MOVE_MS = 60` ms or when the uv moved ≥ 5 mm: hit test -> `level.nearestInside(uv)` -> `confirmSurface` -> `loop.walkTo(id, target)`; no depth-gap sampling per move (document it; the boundary clamp keeps the walk on the scanned surface). ACTION_POINTER_UP / ACTION_UP / ACTION_CANCEL: unbind (the last target stays), log `release pointer= id=`. Return true only for events that touch a bound pointer.
 - Emotes: `slot.command` edge-triggered on `serial` (a `LaunchedEffect(slot.command?.serial)`): `Jump` -> `loop.jump(id)` (`jump_ignored` as today), `WalkForward` -> 10 cm × scale along that member's facing, `Emote(e)` -> `loop.emote(id, member.emotes[e])`, log `emote id= emote= source= ms=`. The running emote is sampled with `EmotePlayer.sample(c, simMs - startSimMs)` (simulated clock: PAUSED freezes it, as the scenario) and handed to `CharacterPoser.apply(..., emotePose)`: scale multiplies (`sx * pose.scaleX`, `sy * pose.scaleY`), `pose.yawDeg` adds to the billboard yaw, `pose.tiltDeg` is a rotation about the quad's local Z (`Rotation(z = ...)`, applied with the yaw as Euler degrees), `pose.hop * sprite.heightM * size` adds to the position's height; the walk bob is suppressed while an emote runs; the landing squash still wins. A new emote on the same member replaces the running one. Physics never sees an emote (locked: PAUSED freezes and never resets; one anchor per session; scan is a button).
 - Sounds: extend `scripts/gen-sounds.py` with `hello` (two rising chirps), `roar` (low noisy growl, ≤ 0.5 s), `dance` (three-note jingle); `Sounds.play(sound: EmoteSound)` with the same gap guard; `soundsOn` respected.
 - `AndroidCaptureHost`: `bundled()` reads `choreo.json` when the index entry has `choreo` (`Bundle.decodeEmotes`, defaults when missing; off the main thread like the sprites); `savedCharacters()` / `saveCharacter()` carry `emotes` through T29's `SavedCharacters`.
@@ -32,7 +32,7 @@ Must NOT touch: `core/`, `shared/`, `cli/`, Gradle files, the manifest.
 
 ## Tests required
 None in JVM (AR rendering is not tested). `./gradlew :androidApp:assembleDebug` and `scripts/verify.sh` must pass.
-Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key): two characters added from the grid stand on the table; two fingers lead them at once; they stop touching and nobody falls off; each of the five emotes plays on the active one and ends in the idle pose; a single character still walks, jumps and runs the Day 5 scenario 3× as in v1.0.
+Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key): two characters added from the grid stand on the table; two fingers lead them at once; they stop touching and nobody falls off; each of the five emotes plays on the active one and ends in the idle pose; a single character still walks, jumps and runs the Day 5 scenario 3× as in Day 7.
 
 ## Steps
 1. Load `hand-review` and `ar-sceneview`; read T28 `Cast.kt`, T29 `Emote.kt` / `EmotePlayer.kt`, T31 `ArSlot.kt`, then `GameLoop.kt`, `CharacterNode.kt`, `RudeusArView.kt` in full.
@@ -45,7 +45,7 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
 
 ## Result (draft 2026-11-04 evening, hand-review; the Pixel run is still owed)
 - measured: `scripts/verify.sh` OK — core 305 tests, shared 20, androidApp 2, all green; debug APK 61 MB. Nothing measured on
-  the Pixel yet. The five v1.0 WAVs regenerated byte-identical (gen-sounds.py is deterministic); hello 260 ms, roar 450 ms,
+  the Pixel yet. The five Day 7 WAVs regenerated byte-identical (gen-sounds.py is deterministic); hello 260 ms, roar 450 ms,
   dance 390 ms, all under the 0.5 s cap.
 - APIs relied on (file:line, shipped sources in the Gradle cache):
   - `arsceneview-4.31.0-sources.jar` ARSceneView.kt:758 `onTouchEvent: ((e: MotionEvent, hitResult: HitResult?) -> Boolean)?`;
@@ -58,7 +58,7 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
     RotationsOrder Matrix.kt:37-46): `Rotation(y, z)` composes `Q_z * Q_y`, a tilt about the ANCHOR's Z. The poser therefore
     sets `node.quaternion = Q_y(yaw) * Q_z(tilt)` (`fromAxisAngle` Quaternion.kt:68, degrees), the product written out from
     Quaternion.kt:432-437 because `times` is `inline` built for JVM 21 and the app compiles for JVM 11 (compiler error
-    INLINE_FROM_HIGHER_PLATFORM). With tilt 0 it equals the v1.0 `Rotation(y = yaw)` pose. PlaneNode.kt:65-67 / SceneScope.kt:906
+    INLINE_FROM_HIGHER_PLATFORM). With tilt 0 it equals the Day 7 `Rotation(y = yaw)` pose. PlaneNode.kt:65-67 / SceneScope.kt:906
     unchanged use (size, center, normal, materialInstance).
   - ARCore (Context7 `/websites/developers_google_ar`): `Frame.hitTest(float xPx, float yPx)` (same pixel space as the
     `hitTest(MotionEvent)` the taps use; nearest first), `Camera.getDisplayOrientedPose()` (+X = right in the display's
@@ -85,7 +85,7 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
      laid out (`viewSize` = 0): the brief's table-point radius.
   3. Tap-select lives in `tableTap` always: a tap on a member's quad makes it active and does not walk. With
      CAST_TOUCH_ENABLED the grab consumes that tap first, so this is exactly the cut-line-5 behaviour when flipped.
-     Review fix (c): with exactly ONE member on the table `grabbable` is always null — no grab, no tap-select — so the v1.0
+     Review fix (c): with exactly ONE member on the table `grabbable` is always null — no grab, no tap-select — so the Day 7
      small steps next to the character still walk it and the Day 5 scenario sees the same taps as before.
   3b. Detector edge case (reviewer): when a stream is consumed after the detector saw its DOWN, Android's GestureDetector
      keeps that DOWN as `mCurrentDownEvent`; the NEXT tap, if it comes within the double-tap timeout, is classified as a
@@ -95,8 +95,8 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
      so a fresh member is never drawn unposed at the anchor origin for a frame.
   3d. Review fix (bow): the emote tilt is multiplied by the facing sign (`flip`, and `-flip` for a sprite drawn facing
      right), so BYE bows forward whichever way the sprite looks.
-  4. A slot with an empty `characters` (a v1.0 slot) renders one member `legacy` from `spritePng` / `ability`; App never
-     sends that, it only keeps previews and a v1.0 caller alive.
+  4. A slot with an empty `characters` (a Day 7 slot) renders one member `legacy` from `spritePng` / `ability`; App never
+     sends that, it only keeps previews and a Day 7 caller alive.
   5. Scan swap: `SurfaceBoundary.afterScan` is folded over every member's state (it only ever grows the hull it is given).
   6. Emote finish: `GameLoop.emotePose` drops a finished choreography (simMs - start >= durationMs); the last key is REST
      by `ChoreographyRules.sanitize`, so the quad ends in the idle pose. A `MIN_GAP_MS` of 150 ms applies per emote sound.
@@ -109,7 +109,7 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
   `SEPARATION_ENABLED` (GameLoop.kt, cut line 4). The bundled index.json still has no `choreo` entries, so bundled
   characters play the defaults (the read path is there; the saved/photo ones carry Spark's set).
 - Pixel checks (build from the main checkout with the key; `adb logcat -s RudeusGate`):
-  1. v1.0 flow: pick a card -> Scanning -> tap the table: `anchor_plane_age_ms`, then `cast_add id=<card> n=1 u=0.0 v=0.0`;
+  1. Day 7 flow: pick a card -> Scanning -> tap the table: `anchor_plane_age_ms`, then `cast_add id=<card> n=1 u=0.0 v=0.0`;
      tap-to-walk, Jump (`jump id=`), Scenario 3x (`scenario_done ms=`) as before; feet on the table, no slide.
   2. `+` chip -> add a second (and third) character: `cast_add id=… n=2 u= v=` with the new one standing to the right of
      the active one, not overlapping; `cast_remove id=` when a chip is removed (if the HUD offers it) and the quad is gone.

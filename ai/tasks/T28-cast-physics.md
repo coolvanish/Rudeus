@@ -2,8 +2,8 @@
 
 status: done
 created: 2026-11-04
-day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md)
-gate: v1.1 gate "two characters walk to two fingers at once, never through each other, never off the edge"; the v1.0 single-character physics stays byte-identical
+day: Day 9 (Nov 4, v1.0 minimal cut; see ai/plan-cast-emotes.md)
+gate: v1.0 gate "two characters walk to two fingers at once, never through each other, never off the edge"; the Day 7 single-character physics stays byte-identical
 cut-if-slips: cut line 4 (separation off: `CastPhysics.step(separate = false)`), then the cast itself (the host keeps one member)
 
 ## Goal

@@ -1,6 +1,8 @@
 # Day 9 — what only a human can do (2026-11-04)
 
-`day9/cast-emotes` (from `main` at 93ce667): v1.1 "a cast on the table, and emotes the model choreographs". Verify in the
+> Naming (Nov 5): no 1.0 was ever published. The single-character build of Day 7 is called "Day 7" in this file, and what was planned as v1.1 (cast and emotes) shipped as v1.0, tag `v1.0` on the final commit.
+
+`day9/cast-emotes` (from `main` at 93ce667): v1.0 "a cast on the table, and emotes the model choreographs". Verify in the
 main checkout at fdf4aac: core 310, shared 22, androidApp 2 tests, 0 failed; APK 60 MB. Device rows are UNTESTED: the
 Pixel was not on adb during the run and you said you will build the APK and check the device yourself.
 
@@ -26,18 +28,18 @@ Second terminal first: `scripts/device.sh log` (or `adb logcat -s RudeusGate`). 
 textured cloth, as on Day 5.
 
 ## 3. Gates
-### v1.1 gate (ai/plan-cast-emotes.md)
+### v1.0 gate (ai/plan-cast-emotes.md)
 | Criterion | Status | Evidence |
 |---|---|---|
 | Two characters added from the grid stand on the table, each walks to its own finger at the same time | UNTESTED | `docs/evidence/day9-cast-two-fingers.png` + logcat `grab pointer=0 id=`, `grab pointer=1 id=` |
 | They do not pass through each other and neither is pushed off the edge | UNTESTED (JVM PASS: `CastTest`) | same screenshot; no `FELL` bubble while they meet |
 | Every emote plays on the active character within a frame and ends in the idle pose, says a line | UNTESTED | `docs/evidence/day9-emote-{hello,bye,dance,spin,roar}.png`, logcat `emote id= emote= source= ms=` |
 | A new photo character arrives with Spark choreographies (`choreo source=spark`); offline `source=default` | UNTESTED (JVM PASS: pipeline tests; CLI PASS 16/16) | logcat `emote ... source=spark` on a fresh photo; `source=default` with Wi-Fi off |
-| The v1.0 single-character flow and the Day 5 scenario are unchanged | UNTESTED (JVM PASS: `castOfOneStepsExactlyLikeASingleBody`) | `scenario_done ms≈15000` 3× |
+| The Day 7 single-character flow and the Day 5 scenario are unchanged | UNTESTED (JVM PASS: `castOfOneStepsExactlyLikeASingleBody`) | `scenario_done ms≈15000` 3× |
 | `scripts/verify.sh` green | PASS | fdf4aac: core 310 / shared 22 / android 2 |
 
 Pixel steps, in order (keys on `RudeusGate`):
-1. v1.0 flow: pick a bundled card → Scanning → tap: `anchor_plane_age_ms` then `cast_add id=<card> n=1 u=0.0 v=0.0`; tap-to-walk; Jump logs `jump id=`; footprints on → Scenario 3×: `scenario_done ms=`; feet on the table, no slide.
+1. Day 7 flow: pick a bundled card → Scanning → tap: `anchor_plane_age_ms` then `cast_add id=<card> n=1 u=0.0 v=0.0`; tap-to-walk; Jump logs `jump id=`; footprints on → Scenario 3×: `scenario_done ms=`; feet on the table, no slide.
 2. `+` chip: a second and a third character: `cast_add id= n=2 u= v=` standing to the right of the active one, not overlapping. (Chips also work before the anchor: they are placed on the frame the anchor appears.)
 3. Two fingers: finger on character A → `grab pointer=0 id=` and `active id=`, the chip rings; drag, A follows within ~60 ms; second finger on B while the first is down → `grab pointer=1 id=`; both follow at once, stop touching, never leave the boundary; lift → `release pointer= id=`, each finishes its walk. Screenshot `day9-cast-two-fingers.png`.
 4. Mixed stream: finger A on the TABLE first, B grabs a character, both lift: the NEXT single tap must still walk the active member (the touch path returns true for the whole stream once a pointer is bound).
@@ -49,7 +51,7 @@ Pixel steps, in order (keys on `RudeusGate`):
 
 ### Added after the T32 review (merged as 83cf561; verify at HEAD: core 310 / shared 22 / android 2, APK 60 MB)
 The reviewer found nothing to fix first; the two "look at on the Pixel" majors were fixed before your build:
-10. Grab by the head: with TWO characters, put a finger on character 1's HEAD, not its feet → `grab pointer=0 id=` and `active id=`; drag, it follows within ~60 ms. A finger landing beside a character (outside its quad + 16 dp) must NOT grab: no `grab` line, the active member walks there as a tap. Lift → `release pointer=0 id=` and the character finishes at the finger's last point (a flick does not stop short). With ONE character there are no `grab` lines at all; small taps right next to it still walk it (v1.0) and the Scenario runs 3× unchanged.
+10. Grab by the head: with TWO characters, put a finger on character 1's HEAD, not its feet → `grab pointer=0 id=` and `active id=`; drag, it follows within ~60 ms. A finger landing beside a character (outside its quad + 16 dp) must NOT grab: no `grab` line, the active member walks there as a tap. Lift → `release pointer=0 id=` and the character finishes at the finger's last point (a flick does not stop short). With ONE character there are no `grab` lines at all; small taps right next to it still walk it (Day 7) and the Scenario runs 3× unchanged.
 11. Edge while dragging: drag a character toward and past the real table edge, once BEFORE any scan and once after → `lead_past_edge id= u= v= way=` as the finger crosses the edge; the character stops at its last good target and never walks into the air. During an ordinary drag on the table the line must not appear (if it does, `LEAD_DEPTH_SAMPLES` / the tap's edge drop threshold need a look, same as `tap_past_edge`).
 12. BYE on a right-facing (flipped) sprite bows forward; a freshly added member never flashes at the anchor origin on its first frame.
 Notes from the review: an emote sound plays at once even under the Paused scrim while the pose waits for tracking (expected); if a drag starts within 300 ms of a previous tap and is then grabbed, the gesture detector's double-tap flag stays set and the next table drag may walk the active member to where it lifts (rare, documented in the T32 brief).
@@ -59,11 +61,11 @@ Notes from the review: an emote sound plays at once even under the Paused scrim 
 2. Characters jitter or get pushed off a book by a friend → `SEPARATION_ENABLED = false` in `GameLoop.kt` (cut line 4: they overlap).
 3. The cast itself fails → `CAST_ENABLED = false` in `RudeusArView.kt` (one member; the HUD still shows chips).
 4. Spark choreographies look worse than the defaults → in `AndroidCaptureHost.kt` drop the `DeferredModels.choreograph` override (cut line 6: `source=default` everywhere, the row stays).
-5. Merge to `main` and tag `v1.1`, rebuild `release/` (APK from the main checkout, the four runs JSON), README v1.1 section (drafted, see `git log`): after your PASS, not before.
+5. Merge to `main` and tag `v1.0`, rebuild `release/` (APK from the main checkout, the four runs JSON), README v1.0 section (drafted, see `git log`): after your PASS, not before.
 
 ## 5. Housekeeping only you can do
 - Worktrees to remove: `.claude/worktrees/T28`, `T29`, `T30`, `T31`, `T32` (`git worktree remove <path>`), branches `task/T28-cast-physics`, `task/T29-emotes-choreography`, `task/T30-cli-choreo`, `task/T31-shared-cast-emote-hud`, `task/T32-ar-host-cast` (`git branch -d`).
-- `git merge --no-ff day9/cast-emotes` into `main` after the Pixel PASS; `git tag v1.1`.
+- `git merge --no-ff day9/cast-emotes` into `main` after the Pixel PASS; `git tag v1.0`.
 - Fork leftovers (the archived session's briefs and seed) sit in the session scratchpad, not in the repo; nothing to do.
 
 ## 6. Known limits (by design today)
@@ -72,7 +74,7 @@ Notes from the review: an emote sound plays at once even under the Paused scrim 
 - Emotes are squash-stretch choreographies on the one quad; the Muse pose frames (GO) are a post-deadline brief (card proposed).
 - Spark choreography costs $0.013 and ~22 s per character, hidden behind the stylize loop in the pipeline; the recorded fixtures carry the sanitised set, not the raw reply, and their `note` text still says "cli character --live" (cosmetic, `RecordingModels`).
 - Voice emote words and the long-press wheel are cut (user decision 16:30).
-- `ArSlot` keeps the v1.0 fields (`spritePng`, `ability`, `jumpRequest`, `walkForwardRequest`, `onCharacterEvent`) mirrored for compatibility; removing them is post-deadline cleanup.
+- `ArSlot` keeps the Day 7 fields (`spritePng`, `ability`, `jumpRequest`, `walkForwardRequest`, `onCharacterEvent`) mirrored for compatibility; removing them is post-deadline cleanup.
 
 ## 7. Device results (<date>, device, who)
 (appended after your run)
@@ -82,5 +84,5 @@ Notes from the review: an emote sound plays at once even under the Paused scrim 
 `origin/main` on a rebased day9 snapshot without T32). The host files on `main` are byte-identical to `day9` (T32); the
 T33 core/shared/cli additions stay (the pipeline's `frames` stage is off by default). The T33 single-quad host draft is
 kept on the branch `t33/pose-frames-main` (1318bdb) and its work in progress in `git stash` ("T33 wip from the main
-checkout"); redo it on top of T32 in a worktree after v1.1 ships. §5 now also lists: the `main-merge` worktree, the
-`t33/pose-frames-main` branch and that stash entry; `git tag v1.1` and `release/` still wait for your PASS.
+checkout"); redo it on top of T32 in a worktree after v1.0 ships. §5 now also lists: the `main-merge` worktree, the
+`t33/pose-frames-main` branch and that stash entry; `git tag v1.0` and `release/` still wait for your PASS.

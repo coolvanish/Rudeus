@@ -71,4 +71,4 @@ Library docs: use Context7 (`/sceneview/sceneview`, `/websites/developers_google
 - Kotlin official style. Distances in metres as `Float`. Angles in radians. Times in ms as `Long`.
 - Serializable data classes for anything that crosses a module boundary or lands in JSON.
 - Language strings: `kk` (Kazakh) first, `ru`, then `en`. Keep copy short — the player is a child.
-- Commit messages: `area: what changed` (`core: circle-vs-polygon push-out`). Tag `v1.0` at code freeze (Day 7).
+- Commit messages: `area: what changed` (`core: circle-vs-polygon push-out`). Tag `v1.0` on the final commit that ships (Nov 4); it is the only release.

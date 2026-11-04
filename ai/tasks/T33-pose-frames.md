@@ -2,8 +2,8 @@
 
 status: review
 created: 2026-11-04
-day: post-deadline (v1.1 follow-up; the T30 pose spike's GO, see docs/api-samples/muse-pose/README.md)
-gate: a bundled character with frames waves with its drawn arm (HELLO) and roars with its open mouth (ROAR); a character without frames plays the v1.1 squash-stretch choreographies unchanged; the run JSON shows the `frames` stage and its cost
+day: post-deadline (follow-up after v1.0; the T30 pose spike's GO, see docs/api-samples/muse-pose/README.md)
+gate: a bundled character with frames waves with its drawn arm (HELLO) and roars with its open mouth (ROAR); a character without frames plays the v1.0 squash-stretch choreographies unchanged; the run JSON shows the `frames` stage and its cost
 cut-if-slips: `POSE_FRAMES = false` in AndroidCaptureHost (no stage, no Muse cost) and drop `frames/` from the bundle; the choreographies keep playing
 
 ## Goal

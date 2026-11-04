@@ -17,7 +17,7 @@ Then the character walks, jumps and flies around the real objects.
 ## Try it
 The demo video shows the full flow on a real table. To run it yourself you need an ARCore-capable Android phone.
 
-Working APKs [link](https://github.com/coolvanish/Rudeus/releases. ) 
+Working APKs [link](https://github.com/coolvanish/Rudeus/releases)
 
 Build your own:
 
@@ -35,7 +35,7 @@ Without a key the bundled characters are still playable; generating a character 
 | Gate | Spark 1.3 vision + deterministic palette/outline check | score ≥ 0.7 or retry (≤ 2) |
 | Sheet | Spark 1.3 | name, personality, ability (jump / fly / roll / hide), 5 lines in kk and ru |
 | Table scan | SAM 3.1 | one mask per prompt → footprints on the table plane via ray–plane |
-| Choreography (v1.1) | Spark 1.3 | five emote choreographies (hi, bye, dance, spin, roar) from the sprite and the personality; sanitised in `:core`, hand-authored defaults offline |
+| Choreography | Spark 1.3 | five emote choreographies (hi, bye, dance, spin, roar) from the sprite and the personality; sanitised in `:core`, hand-authored defaults offline |
 | Voice (disabled in Android) | Voice Transcribe | implementation retained; mic hidden pending device fixes |
 
 The whole pipeline is pure Kotlin in `:core` and runs identically on the phone and from the Mac (`:cli`).
@@ -139,7 +139,7 @@ run (15 drawings, 2026-10-28T09-11-21Z) missed the pass-rate and latency targets
 Scans are logged in `scans[]`. `scans[].background = true` marks a quiet background scan; any scan figure
 quoted from a run means manual (button) scans only, and `summary.backgroundScans` counts the quiet ones separately.
 
-## Cast and emotes (v1.1, Nov 4)
+## Cast and emotes (Nov 4)
 Several characters on one table, and emotes the model choreographs. Up to four characters stand on the table (`+` on
 Play picks from the saved and bundled grid); a finger that lands on a character leads it and a second finger leads a
 second one, so two kids can play on one tablet; characters push each other apart and are never pushed over the edge.

@@ -2,8 +2,8 @@
 
 status: review
 created: 2026-11-04
-day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md)
-gate: v1.1 gate "every emote plays on the active character and says a line; a new character arrives with its five choreographies (logcat `choreo source=spark`), offline it shows `source=default`"
+day: Day 9 (Nov 4, v1.0 minimal cut; see ai/plan-cast-emotes.md)
+gate: v1.0 gate "every emote plays on the active character and says a line; a new character arrives with its five choreographies (logcat `choreo source=spark`), offline it shows `source=default`"
 cut-if-slips: cut line 6 — Spark choreography off (`MetaModels.choreograph` never called by the pipeline; `EmoteSet.defaults()` ships). The emote vocabulary, player and defaults are never cut.
 
 ## Goal

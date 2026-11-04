@@ -2,8 +2,8 @@
 
 status: review
 created: 2026-11-04
-day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md). Starts after T29 is merged.
-gate: v1.1 gate "bundled characters play Spark-made emotes offline"; the pose-frame spike answers go/no-go for cut line 1
+day: Day 9 (Nov 4, v1.0 minimal cut; see ai/plan-cast-emotes.md). Starts after T29 is merged.
+gate: v1.0 gate "bundled characters play Spark-made emotes offline"; the pose-frame spike answers go/no-go for cut line 1
 cut-if-slips: the pose spike first (cut line 1); then the live run (bundled characters ship with `source=default`)
 
 ## Goal

@@ -1,5 +1,7 @@
 # План: несколько персонажей на столе + действия (эмоции)
 
+> Naming (Nov 5): no 1.0 was ever published. The single-character build of Day 7 is called "Day 7" in this file, and what was planned as v1.1 (cast and emotes) shipped as v1.0, tag `v1.0` on the final commit.
+
 Составлен 4 ноя 2026, 16:20 (+05). Дедлайн хакатона: 9 PM ET = 07:00 5 ноя по Алматы, то есть ~14,5 ч.
 `release/rudeus-debug.apk` собран 3 ноя 01:01; после него в main только полировка памяти и зависимостей.
 
@@ -121,4 +123,4 @@ Status line: `status: in progress` — briefs T28–T32 in `ai/tasks/`.
    (`PoseFrames`, two HELLO + two ROAR per character), the pipeline draws them as stage `frames` after `choreo`
    (`poseFrames = true` on the phone, `cli character --frames`), `cli choreo --frames[-only]` draws them for bundled
    characters, and the host swaps the quad's material on the keyed frame (single quad; the T32 cast is still todo).
-   A character without frames plays the v1.1 choreographies unchanged.
+   A character without frames plays the v1.0 choreographies unchanged.

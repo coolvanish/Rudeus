@@ -56,7 +56,7 @@ Gate: scenario runs 3× in a row without code changes.
 **Day 6 — Sun Nov 1: voice, metrics, polish.** Speech bubbles from sheet lines (event-triggered); Voice only if Day 1 passed (AudioRecord PCM 16 kHz mono); SAM rigging stretch; Metrics screen + Export JSON; offline mode (bundled characters + scene); 5 CC0 sounds.
 Gate: fresh install → character → full scenario with Wi-Fi off halfway, no crash.
 
-**Day 7 — Mon Nov 2: video + README.** ≤3 min: 0:00–0:15 hook ("your drawing, your table"), 0:15–1:15 pipeline + gate score, 1:15–2:15 gameplay, 2:15–3:00 architecture + metrics. Tripod second camera + scrcpy, textured cloth, daylight, own drawings/generic toys only. README: pitch, model table, diagram, metrics from runs/, cost, new-work statement, iOS out of scope, key handling, licenses. Tag v1.0, code freeze.
+**Day 7 — Mon Nov 2: video + README.** ≤3 min: 0:00–0:15 hook ("your drawing, your table"), 0:15–1:15 pipeline + gate score, 1:15–2:15 gameplay, 2:15–3:00 architecture + metrics. Tripod second camera + scrcpy, textured cloth, daylight, own drawings/generic toys only. README: pitch, model table, diagram, metrics from runs/, cost, new-work statement, iOS out of scope, key handling, licenses. Code freeze; the `v1.0` tag went on the final commit on Nov 4, after the cast and emotes work.
 
 **Day 8 — Tue Nov 3: buffer + submit.** Fix only what the shoot exposed; rerun Day 6 gate; `release/` with APK, video, metrics JSON; submit evening of Nov 3.
 

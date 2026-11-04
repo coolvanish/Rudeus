@@ -2,15 +2,15 @@
 
 status: review
 created: 2026-11-04
-day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md). Starts after T28 and T29 are merged.
-gate: v1.1 gate "characters are added from the grid on Play; the emote row plays on the active character and the bubble names the speaker"
-cut-if-slips: the Add sheet (one character, as v1.0) before the emote row; the emote row is never cut
+day: Day 9 (Nov 4, v1.0 minimal cut; see ai/plan-cast-emotes.md). Starts after T28 and T29 are merged.
+gate: v1.0 gate "characters are added from the grid on Play; the emote row plays on the active character and the bubble names the speaker"
+cut-if-slips: the Add sheet (one character, as Day 7) before the emote row; the emote row is never cut
 
 ## Goal
 On Play the child sees who is on the table (a row of round chips with the sprites, the active one ringed), adds
 another character from the saved / bundled grid with a `+` chip (up to four), and makes the active one say hi,
 say bye, dance, spin or roar with a row of five buttons. The speech bubble shows the character's line and, with two
-or more on the table, its name first. The v1.0 AR host keeps working unchanged until T32 lands: the old slot fields
+or more on the table, its name first. The Day 7 AR host keeps working unchanged until T32 lands: the old slot fields
 keep mirroring the active character.
 
 ## Owns (exact paths)
@@ -21,7 +21,7 @@ keep mirroring the active character.
 Must NOT touch: `core/`, `androidApp/`, `cli/`, Gradle files.
 
 ## Contract
-`ArSlot` — additive, nothing removed (the v1.0 host compiles and runs against it):
+`ArSlot` — additive, nothing removed (the Day 7 host compiles and runs against it):
 ```kotlin
 /** One character the host puts on the table. [id] is the saved id, the bundled ref, or "photo-<ref>" for a fresh pipeline result. */
 data class ArCharacter(val id: String, val name: String, val spritePng: ByteArray?, val ability: Ability, val emotes: EmoteSet)
@@ -41,7 +41,7 @@ val onActiveChanged: (String) -> Unit = {}              // host -> UI: a finger 
 val command: CharacterCommand? = null                   // null when nothing is pending; resets to null when the AR session ends
 val onCastEvent: (String, CharacterEvent) -> Unit = { _, _ -> }   // per member; a T32 host calls this and NEVER onCharacterEvent
 ```
-- Legacy mirror: `spritePng` and `ability` are the active character's; `jumpRequest` / `walkForwardRequest` keep incrementing alongside the matching `command` (a v1.0 host obeys them; a T32 host ignores them). `onCharacterEvent` keeps working for a v1.0 host: App routes both callbacks into the same bubble logic, so a host that calls one or the other produces one bubble.
+- Legacy mirror: `spritePng` and `ability` are the active character's; `jumpRequest` / `walkForwardRequest` keep incrementing alongside the matching `command` (a Day 7 host obeys them; a T32 host ignores them). `onCharacterEvent` keeps working for a Day 7 host: App routes both callbacks into the same bubble logic, so a host that calls one or the other produces one bubble.
 - `BundledCharacter` gains `emotes: EmoteSet = EmoteSet.defaults()` (CaptureHost.kt); the Android host fills it in T32.
 - App state: `cast: List<ArCharacter>`, `activeId`, `commandSerial`. Play starts with one member (the picked bundled / saved character, or the photo result). `+` adds `ArCharacter` from a `BundledCharacter` or a saved one (same type). The session end (`arOn` false) resets the cast to its first member and `command` to null; Back to Capture clears everything as today.
 - Play HUD (DESIGN.md house style: Paper, Ink 2 dp strokes, Sun for the active ring, touch targets ≥ `RudeusSpacing.touchTarget`):
@@ -61,15 +61,15 @@ Tests not required: Compose screens, HUD layout, the AR host.
 ## Steps
 1. Read `ArSlot.kt`, `App.kt` (the slot wiring, the session-end reset, HudSpeech use, `onPickBundled`), `PlayScreen.kt`, `HudSpeech.kt`, `CaptureScreen.kt` (`CaptureGrid`), `BottomSheet.kt`, `Glyph.kt`, `Strings.kt`, DESIGN.md (Play, Motion, copy table), T28's `Cast.MAX` and T29's `Emote` / `EmoteSet`.
 2. Contract first (ArSlot, CaptureHost, App state), then the components, then PlayScreen, then DESIGN.md.
-3. `./gradlew :shared:testAndroidHostTest :androidApp:assembleDebug --console=plain -q` while iterating (the v1.0 host must keep compiling); `scripts/verify.sh` at the end.
+3. `./gradlew :shared:testAndroidHostTest :androidApp:assembleDebug --console=plain -q` while iterating (the Day 7 host must keep compiling); `scripts/verify.sh` at the end.
 
 ## Done when
-- `scripts/verify.sh` exit 0; the v1.0 host still builds and, on the emulator (`Pixel_7_Pro` AVD, the host-less shell is fine), Play shows the chips, the `+` sheet adds a second character to the list, and the emote row says a line in the bubble.
+- `scripts/verify.sh` exit 0; the Day 7 host still builds and, on the emulator (`Pixel_7_Pro` AVD, the host-less shell is fine), Play shows the chips, the `+` sheet adds a second character to the list, and the emote row says a line in the bubble.
 - Commit: `shared: cast chips, Add sheet, emote row; ArSlot cast + command contract (T31)`.
 
 ## Result (filled on acceptance)
 - measured: `scripts/verify.sh` exit 0 (core 305, shared 20 incl. HudSpeechTest 7 / CastUiTest 2, android 2; debug APK built).
-  The v1.0 host compiles unchanged against the additive ArSlot. No new dependency.
+  The Day 7 host compiles unchanged against the additive ArSlot. No new dependency.
 - built: ArSlot `characters` / `activeId` / `onActiveChanged` / `command` / `onCastEvent` + `ArCharacter`,
   `CharacterAction`, `CharacterCommand`; `BundledCharacter.emotes` (it lives in CaptureScreen.kt, as before). Pure
   helpers in `ui/components/CastUi.kt` (member, canAdd, addable, add, active, next) and `HudSpeech.speaker` /
@@ -83,7 +83,7 @@ Tests not required: Compose screens, HUD layout, the AR host.
 - review follow-up: a photo member hides its own saved card in the Add sheet (`CastUi.addable(alsoOnTable)`, App
   remembers the kept card id); `+` moved to the start of the name-pill line (top line <= 248 dp); tracking lost closes
   the Add sheet; emote / name-pill lines wait while "Back up" is queued (`HudSpeech.holdsFall`); `onCastEvent` ignores
-  ids not on the table ("" stays the v1.0 path); ArSlot KDoc: a member added before the anchor is placed on the
+  ids not on the table ("" stays the Day 7 path); ArSlot KDoc: a member added before the anchor is placed on the
   anchor's frame. Tests: HudSpeechTest 8, CastUiTest 3.
 - Pixel checks: the bottom stack grew ~94 dp (emote row), so the bubble / mini-map may reach the size buttons; the
   emote labels may truncate at font scale > 1.0 ("Сау бол", "Крутись"); the chips and `+` before the anchor exists.
