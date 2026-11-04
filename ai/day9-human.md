@@ -47,6 +47,13 @@ Pixel steps, in order (keys on `RudeusGate`):
 8. T31 looks: with a two-line bubble and footprints on, does the bottom stack reach the Plus/Minus buttons or the Rec button? With the system font at 1.3×, are "Сау бол" / "Крутись" cut under the emote buttons? With four members, is the Offline badge intact?
 9. Fresh photo with Wi-Fi on: Processing shows the usual stages; on Play `emote ... source=spark`. Then Wi-Fi off, another photo: `source=default`, no crash.
 
+### Added after the T32 review (merged as 83cf561; verify at HEAD: core 310 / shared 22 / android 2, APK 60 MB)
+The reviewer found nothing to fix first; the two "look at on the Pixel" majors were fixed before your build:
+10. Grab by the head: with TWO characters, put a finger on character 1's HEAD, not its feet → `grab pointer=0 id=` and `active id=`; drag, it follows within ~60 ms. A finger landing beside a character (outside its quad + 16 dp) must NOT grab: no `grab` line, the active member walks there as a tap. Lift → `release pointer=0 id=` and the character finishes at the finger's last point (a flick does not stop short). With ONE character there are no `grab` lines at all; small taps right next to it still walk it (v1.0) and the Scenario runs 3× unchanged.
+11. Edge while dragging: drag a character toward and past the real table edge, once BEFORE any scan and once after → `lead_past_edge id= u= v= way=` as the finger crosses the edge; the character stops at its last good target and never walks into the air. During an ordinary drag on the table the line must not appear (if it does, `LEAD_DEPTH_SAMPLES` / the tap's edge drop threshold need a look, same as `tap_past_edge`).
+12. BYE on a right-facing (flipped) sprite bows forward; a freshly added member never flashes at the anchor origin on its first frame.
+Notes from the review: an emote sound plays at once even under the Paused scrim while the pose waits for tracking (expected); if a drag starts within 300 ms of a previous tap and is then grabbed, the gesture detector's double-tap flag stays set and the next table drag may walk the active member to where it lifts (rare, documented in the T32 brief).
+
 ## 4. Decisions only you can make
 1. Finger grab misbehaves → `CAST_TOUCH_ENABLED = false` in `RudeusArView.kt` (cut line 5: tap-select + tap-to-walk only).
 2. Characters jitter or get pushed off a book by a friend → `SEPARATION_ENABLED = false` in `GameLoop.kt` (cut line 4: they overlap).
