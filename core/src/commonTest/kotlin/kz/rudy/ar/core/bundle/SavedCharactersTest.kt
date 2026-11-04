@@ -9,6 +9,7 @@ import kz.rudy.ar.core.io.MemoryCharacterFolder
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class SavedCharactersTest {
     private fun sheet(name: String) = CharacterSheet(
@@ -109,5 +110,37 @@ class SavedCharactersTest {
         assertEquals(listOf("broken", "old"), loaded.map { it.sheet.name }, "neither character is dropped")
         assertEquals(listOf(EmoteSet.defaults(), EmoteSet.defaults()), loaded.map { it.emotes })
         assertEquals(EmoteSet.defaults(), SavedCharacters(MemoryCharacterFolder()).save(sprite(3), sheet("new")).emotes)
+    }
+}
+
+class SavedFramesTest {
+    private fun sheet(name: String) = CharacterSheet(name = name, personality = "", ability = Ability.JUMP, lines = emptyMap())
+    private fun png(n: Int) = byteArrayOf(n.toByte(), 0x50, 0x4E, 0x47)
+
+    @Test
+    fun savedCharacterRoundTripsItsFramesAndKeyedEmotes() {
+        val folder = MemoryCharacterFolder()
+        val frames = kz.rudy.ar.core.emote.PoseFrames.of(mapOf(Emote.HELLO to listOf(png(1), png(2)), Emote.ROAR to listOf(png(3))))
+        val emotes = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT).withFrames(frames.counts())
+        val saved = SavedCharacters(folder, clock = { 1000L }).save(png(0), sheet("Арыстан"), emotes, frames)
+        assertEquals(frames, saved.frames)
+        assertEquals(setOf("hello-1.png", "hello-2.png", "roar-1.png"), folder.frames.getValue(saved.id).keys)
+
+        val loaded = SavedCharacters(folder).load().single()
+        assertEquals(frames, loaded.frames)
+        assertEquals(emotes, loaded.emotes)
+        assertTrue(loaded.emotes[Emote.HELLO].keys.any { it.frame == 1 })
+    }
+
+    @Test
+    fun aSavedCharacterWithoutFramesLoadsEmpty() {
+        val folder = MemoryCharacterFolder()
+        folder.write("saved-1000", png(1), Bundle.encodeSheet(sheet("old")), Bundle.encodeEmotes(EmoteSet.defaults()))
+        folder.write("saved-2000", png(2), Bundle.encodeSheet(sheet("odd files")), null, mapOf("hello-2.png" to png(5), "notes.txt" to png(6)))
+
+        val loaded = SavedCharacters(folder).load()
+        assertEquals(listOf("odd files", "old"), loaded.map { it.sheet.name })
+        assertEquals(listOf(kz.rudy.ar.core.emote.PoseFrames.EMPTY, kz.rudy.ar.core.emote.PoseFrames.EMPTY), loaded.map { it.frames })
+        assertEquals(kz.rudy.ar.core.emote.PoseFrames.EMPTY, SavedCharacters(MemoryCharacterFolder()).save(png(3), sheet("new")).frames)
     }
 }

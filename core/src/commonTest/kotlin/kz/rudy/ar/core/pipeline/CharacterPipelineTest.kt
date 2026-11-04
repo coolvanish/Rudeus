@@ -2,6 +2,7 @@ package kz.rudy.ar.core.pipeline
 
 import kotlinx.coroutines.CancellationException
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.Choreographies
 import kotlinx.coroutines.awaitCancellation
@@ -988,5 +989,111 @@ class CharacterPipelineTest {
         assertEquals(log.costs.sheetUsd, sheet.costUsd, 1e-9)
         assertTrue(events.none { it is PipelineEvent.StageStarted && it.stage == "choreo" })
         assertEquals(3_000L, testScheduler.currentTime, "the choreography was cancelled, not waited for")
+    }
+}
+
+class PoseFramesStageTest {
+    private fun metrics(): MetricsLog {
+        var t = 1_000_000L
+        return MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { t += 10; t })
+    }
+
+    private val image = byteArrayOf(1, 2, 3)
+    private val refs = listOf(byteArrayOf(4), byteArrayOf(5))
+    private fun png(n: Int) = byteArrayOf(n.toByte(), 0x50, 0x4E, 0x47)
+    private val allFrames = mapOf("hello-1" to png(1), "hello-2" to png(2), "roar-1" to png(3), "roar-2" to png(4))
+
+    @Test
+    fun framesStageDrawsFourFramesAndKeysTheEmotes() = runTest {
+        val models = FakeModels(scores = listOf(0.9f), frames = allFrames)
+        val log = metrics()
+        val resized = ArrayList<Int>()
+        val events = ArrayList<PipelineEvent>()
+        val result = CharacterPipeline(
+            models, StyleGate(), log,
+            imageResizer = { b, side -> resized += side; b + side.toByte() },
+            onEvent = { events += it },
+            poseFrames = true,
+        ).run("cat-01", image, refs, "")
+
+        assertEquals(4, result.frames.count)
+        assertEquals(mapOf(Emote.HELLO to 2, Emote.ROAR to 2), result.frames.counts())
+        assertTrue(result.frames.frame(Emote.ROAR, 1)!!.contentEquals(png(4) + PoseFrames.MAX_SIDE.toByte()), "each frame bounded to MAX_SIDE")
+        assertTrue(result.emotes.hasFrames)
+        assertTrue(result.emotes[Emote.HELLO].keys.any { it.frame == 1 })
+        assertTrue(result.emotes[Emote.ROAR].keys.any { it.frame == 1 })
+        assertFalse(result.emotes[Emote.DANCE].keys.any { it.frame != null })
+        assertEquals(listOf("hello-1", "hello-2", "roar-1", "roar-2"), models.poseInputs.keys.toList())
+        assertTrue(models.poseInputs.values.all { it.contentEquals(models.sprite + CharacterPipeline.MUSE_INPUT_MAX_SIDE.toByte()) }, "Muse sees the sprite at <= 1024")
+
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo", "frames"), c.stages.map { it.name })
+        val frames = c.stages.last()
+        assertTrue(frames.ok)
+        assertEquals(1, frames.attempt)
+        assertEquals(4 * log.costs.poseUsd, frames.costUsd, 1e-9)
+        assertFalse(frames.measured)
+        assertEquals(0.051 + 4 * log.costs.poseUsd, c.totalCostUsd, 1e-9)
+        assertEquals(listOf("choreo", "frames"), events.filterIsInstance<PipelineEvent.StageFinished>().takeLast(2).map { it.stage })
+        assertEquals(result, (events.last() as PipelineEvent.Finished).result)
+    }
+
+    @Test
+    fun aMissingFrameIsNotAFailedCharacter() = runTest {
+        val models = FakeModels(scores = listOf(0.9f), frames = allFrames - "hello-2")
+        val log = metrics()
+        val result = CharacterPipeline(models, StyleGate(), log, poseFrames = true).run("cat-01", image, refs, "")
+
+        assertTrue(result.gatePassed)
+        assertEquals(mapOf(Emote.HELLO to 1, Emote.ROAR to 2), result.frames.counts())
+        assertTrue(result.emotes[Emote.HELLO].keys.none { it.frame == 1 }, "keyed for the one HELLO frame that exists")
+        assertTrue(result.emotes[Emote.ROAR].keys.any { it.frame == 1 })
+        val frames = log.toRun().characters.single().stages.single { it.name == CharacterPipeline.STAGE_FRAMES }
+        assertFalse(frames.ok)
+        assertEquals(3 * log.costs.poseUsd, frames.costUsd, 1e-9, "only what Muse returned is billed")
+    }
+
+    @Test
+    fun framesThatFailAltogetherShipNothingAndCostNothing() = runTest {
+        for (error in listOf<Throwable>(MetaError.Http(500, "muse down"), MetaError.Network("offline"), CancellationException("timeout"))) {
+            val models = FakeModels(scores = listOf(0.9f), frames = allFrames, poseError = error)
+            val log = metrics()
+            val result = CharacterPipeline(models, StyleGate(), log, poseFrames = true).run("cat-01", image, refs, "")
+
+            assertEquals(PoseFrames.EMPTY, result.frames, "$error")
+            assertEquals(EmoteSet.defaults(), result.emotes, "no frames: the choreography is the plain one")
+            assertTrue(result.gatePassed)
+            val frames = log.toRun().characters.single().stages.single { it.name == CharacterPipeline.STAGE_FRAMES }
+            assertFalse(frames.ok)
+            assertEquals(0.0, frames.costUsd)
+        }
+        // A frame whose matte is degenerate is dropped too, but Muse was paid for it.
+        val models = FakeModels(scores = listOf(0.9f), frames = allFrames)
+        val log = metrics()
+        val result = CharacterPipeline(models, StyleGate(), log, spriteMatter = { if (it[0] == 3.toByte()) null else it }, poseFrames = true)
+            .run("cat-01", image, refs, "")
+        assertEquals(mapOf(Emote.HELLO to 2), result.frames.counts(), "roar-1 failed its matte, so roar-2 is unreachable too")
+        assertEquals(4 * log.costs.poseUsd, log.toRun().characters.single().stages.last().costUsd, 1e-9)
+    }
+
+    @Test
+    fun withoutPoseFramesNothingIsDrawn() = runTest {
+        val models = FakeModels(scores = listOf(0.9f), frames = allFrames)
+        val log = metrics()
+        val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "")
+        assertEquals(PoseFrames.EMPTY, result.frames)
+        assertTrue(models.calls.none { it.startsWith("drawPose") })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo"), log.toRun().characters.single().stages.map { it.name })
+    }
+
+    @Test
+    fun framesRunTwoAtATimeAfterTheLoop() = runTest {
+        val models = FakeModels(scores = listOf(0.9f), frames = allFrames, delays = mapOf("drawPose" to 1_000L, "stylize" to 5_000L))
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        CharacterPipeline(models, StyleGate(), log, poseFrames = true).run("cat-01", image, refs, "")
+        val frames = log.toRun().characters.single().stages.last()
+        assertEquals("frames", frames.name)
+        assertEquals(2_000L, frames.ms, "four 1 s edits, two in flight: two call latencies")
+        assertTrue(models.calls.indexOf("stylize:cat-01") < models.calls.indexOfFirst { it.startsWith("drawPose") }, "after the sprite exists")
     }
 }

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseSpec
 import kz.rudy.ar.core.io.FixtureSource
 import kz.rudy.ar.core.io.joinPath
 import kotlin.concurrent.atomics.AtomicReference
@@ -23,6 +24,7 @@ import kotlin.concurrent.atomics.update
  * | sam-cutout   | `masks`   | [MaskResult]s (RLE or bbox); the pipeline takes the largest         |
  * | sam-table    | `masks`   | one per prompt; an absent object is a mask with no rle/bbox         |
  * | muse-stylize | `outputs` | sibling PNG file names, one per attempt (last one repeats)          |
+ * | muse-pose    | `outputs` | sibling PNG file names, one per frame, named `<ref>.<emote>-<n>.png` |
  * | spark-score  | `scores`  | one score per call, in order (last one repeats)                     |
  * | spark-score  | `techniqueScores` | [scoreTechnique] calls, in order (last one repeats); absent in
  * |              |           | fixtures recorded before 2026-10-28, which then throw on that call   |
@@ -150,6 +152,19 @@ class FixtureApi(
         val fx = load(Jobs.SPARK_CHOREO, ref)
         replay(Jobs.SPARK_CHOREO, fx)
         return ChoreographyParser.parse(fx.text ?: throw MetaError.Parse("${fixturePath(Jobs.SPARK_CHOREO, ref)}: no text"))
+    }
+
+    /**
+     * `muse-pose/<ref>.fixture.json`: the output named for the frame (`<anything>.<spec.name>.png` or `<spec.name>.png`),
+     * whatever the call order, so the pipeline's concurrent frame calls replay deterministically.
+     */
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray {
+        val fx = load(Jobs.MUSE_POSE, ref)
+        val name = fx.outputs.orEmpty().firstOrNull { val stem = it.removeSuffix(".png"); stem == spec.name || stem.endsWith(".${spec.name}") }
+            ?: throw MetaError.Parse("${fixturePath(Jobs.MUSE_POSE, ref)}: no output for ${spec.name}")
+        val path = joinPath(root, Jobs.MUSE_POSE, name)
+        replay(Jobs.MUSE_POSE, fx)
+        return source.readBytes(path) ?: throw MetaError.FixtureMissing(path)
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String {

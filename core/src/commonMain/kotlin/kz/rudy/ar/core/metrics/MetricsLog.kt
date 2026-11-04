@@ -103,6 +103,8 @@ data class CostTable(
     val sheetUsd: Double = 0.005,
     /** Stage `choreo` ([kz.rudy.ar.core.meta.Jobs.SPARK_CHOREO]); not part of the JSON (the table never is). */
     val choreoUsd: Double = 0.013,
+    /** Per drawn frame of stage `frames` ([kz.rudy.ar.core.meta.Jobs.MUSE_POSE]): one Muse Image edit each. */
+    val poseUsd: Double = 0.010,
     val tableUsd: Double = 0.0125,
     val voiceUsd: Double = 0.0003,
 )

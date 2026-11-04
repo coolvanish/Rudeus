@@ -13,9 +13,10 @@ import kotlin.math.round
 /**
  * Spark's choreography reply and choreo.json, both in one shape:
  * `{"hello": C, "bye": C, "dance": C, "spin": C, "roar": C}` (choreo.json adds `"source"`), with
- * `C = {"durationMs": n, "keys": [{"atMs": n, "scaleX": f, "scaleY": f, "yawDeg": f, "tiltDeg": f, "hop": f}], "line": n, "sound": "none|hello|roar|dance"}`.
+ * `C = {"durationMs": n, "keys": [{"atMs": n, "scaleX": f, "scaleY": f, "yawDeg": f, "tiltDeg": f, "hop": f, "frame": n}], "line": n, "sound": "none|hello|roar|dance"}`.
  * Every field is optional (a missing pose field is its rest value), unknown keys are ignored, emote names are
  * case-insensitive. An emote that is missing or fails [ChoreographyRules.sanitize] gets `Choreographies.DEFAULT[emote]`.
+ * `frame` (T33, [EmoteKey.frame]) is written only when set, so a choreography without drawn frames reads and writes as before.
  */
 object ChoreographyParser {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -81,6 +82,7 @@ object ChoreographyParser {
                     tiltDeg = k.float("tiltDeg") ?: 0f,
                     hop = k.float("hop") ?: 0f,
                 ),
+                frame = k.long("frame")?.takeIf { it in 0L..ChoreographyRules.MAX_FRAME.toLong() }?.toInt(),
             )
         }
         val line = o.long("line")?.coerceIn(0L, ChoreographyRules.MAX_LINE.toLong())?.toInt() ?: 0
@@ -94,16 +96,16 @@ object ChoreographyParser {
             "durationMs" to JsonPrimitive(c.durationMs),
             "keys" to JsonArray(
                 c.keys.map { k ->
-                    JsonObject(
-                        linkedMapOf(
-                            "atMs" to JsonPrimitive(k.atMs),
-                            "scaleX" to JsonPrimitive(k.pose.scaleX),
-                            "scaleY" to JsonPrimitive(k.pose.scaleY),
-                            "yawDeg" to JsonPrimitive(k.pose.yawDeg),
-                            "tiltDeg" to JsonPrimitive(k.pose.tiltDeg),
-                            "hop" to JsonPrimitive(k.pose.hop),
-                        ),
+                    val fields = linkedMapOf<String, JsonElement>(
+                        "atMs" to JsonPrimitive(k.atMs),
+                        "scaleX" to JsonPrimitive(k.pose.scaleX),
+                        "scaleY" to JsonPrimitive(k.pose.scaleY),
+                        "yawDeg" to JsonPrimitive(k.pose.yawDeg),
+                        "tiltDeg" to JsonPrimitive(k.pose.tiltDeg),
+                        "hop" to JsonPrimitive(k.pose.hop),
                     )
+                    k.frame?.let { fields["frame"] = JsonPrimitive(it) }
+                    JsonObject(fields)
                 },
             ),
             "line" to JsonPrimitive(c.line),

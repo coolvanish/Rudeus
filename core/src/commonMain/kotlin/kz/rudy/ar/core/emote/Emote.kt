@@ -33,9 +33,13 @@ data class EmotePose(
     }
 }
 
-/** One key of a choreography: [pose] reached at [atMs] from the emote's start. */
+/**
+ * One key of a choreography: [pose] reached at [atMs] from the emote's start. [frame] (T33): the model-drawn frame of
+ * this emote ([PoseFrames.frame], index 0 = `<emote>-1.png`) the quad shows from this key until the next key, null =
+ * the base sprite; a character without that frame shows the base sprite, so the key is harmless without frames.
+ */
 @Serializable
-data class EmoteKey(val atMs: Long, val pose: EmotePose = EmotePose.REST)
+data class EmoteKey(val atMs: Long, val pose: EmotePose = EmotePose.REST, val frame: Int? = null)
 
 /** [line] = index (0..4) into CharacterSheet.lines[lang]: the line said when the emote starts. */
 @Serializable
@@ -52,6 +56,16 @@ data class Choreography(
 data class EmoteSet(val source: String, val choreographies: Map<Emote, Choreography>) {
     /** Never null: [Choreographies.DEFAULT] fills an emote the set does not hold. */
     operator fun get(emote: Emote): Choreography = choreographies[emote] ?: Choreographies.DEFAULT.getValue(emote)
+
+    /** Whether any choreography points at a drawn frame. */
+    val hasFrames: Boolean get() = choreographies.values.any { c -> c.keys.any { it.frame != null } }
+
+    /**
+     * T33: every choreography keyed for the drawn frames a character has ([counts] = [PoseFrames.counts]), through
+     * [Choreographies.withFrames]; an emote with no count loses its frame keys. The source stays.
+     */
+    fun withFrames(counts: Map<Emote, Int>): EmoteSet =
+        copy(choreographies = Emote.entries.associateWith { e -> Choreographies.withFrames(this[e], counts[e] ?: 0) })
 
     companion object {
         const val SOURCE_SPARK = "spark"
@@ -73,6 +87,9 @@ object ChoreographyRules {
     val HOP = 0f..0.5f
     const val MAX_LINE = 4
 
+    /** [EmoteKey.frame] is kept in 0..this; anything else becomes null (the base sprite). */
+    const val MAX_FRAME = PoseFrames.MAX_PER_EMOTE - 1
+
     /**
      * null when structurally unusable (no keys, durationMs outside DURATION_MS, more than MAX_KEYS keys after dedupe,
      * the REST key at 0 included when one has to be inserted); else: keys sorted by atMs (equal times keep the last),
@@ -80,19 +97,20 @@ object ChoreographyRules {
      * yaw steps clamped to MAX_YAW_STEP_DEG (the first key's from 0), a REST key inserted at 0 when no key is at 0,
      * and the LAST key forced to durationMs with pose REST except yaw, which is rounded to the nearest multiple of 360
      * within MAX_YAW_STEP_DEG of the key before it (the quad faces the camera again); a lone key at 0 gets that final
-     * key appended instead. line clamped to 0..MAX_LINE. sanitize(sanitize(x)) == sanitize(x).
+     * key appended instead. line clamped to 0..MAX_LINE. A frame outside 0..MAX_FRAME becomes null; the inserted key
+     * at 0 and the last key never carry one (an emote ends on the base sprite). sanitize(sanitize(x)) == sanitize(x).
      */
     fun sanitize(c: Choreography): Choreography? {
         if (c.keys.isEmpty() || c.durationMs !in DURATION_MS) return null
         val d = c.durationMs
         // Clamp times first, then a stable sort; among equal times the last one in input order wins.
-        val byTime = LinkedHashMap<Long, EmotePose>()
-        c.keys.map { EmoteKey(it.atMs.coerceIn(0L, d), it.pose) }.sortedBy { it.atMs }.forEach { byTime[it.atMs] = it.pose }
+        val byTime = LinkedHashMap<Long, EmoteKey>()
+        c.keys.map { EmoteKey(it.atMs.coerceIn(0L, d), it.pose, it.frame) }.sortedBy { it.atMs }.forEach { byTime[it.atMs] = it }
         if (byTime.size > MAX_KEYS) return null
 
         val keys = ArrayList<EmoteKey>(byTime.size + 2)
         if (0L !in byTime) keys += EmoteKey(0L, EmotePose.REST)
-        byTime.forEach { (at, pose) -> keys += EmoteKey(at, pose) }
+        byTime.forEach { (_, k) -> keys += k }
         if (keys.size == 1) keys += EmoteKey(d, keys[0].pose)
         if (keys.size > MAX_KEYS) return null
 
@@ -103,7 +121,7 @@ object ChoreographyRules {
             out += if (i == keys.lastIndex) {
                 EmoteKey(d, EmotePose.REST.copy(yawDeg = wholeTurns(prevYaw, yaw)))
             } else {
-                EmoteKey(k.atMs, clampPose(k.pose, yaw))
+                EmoteKey(k.atMs, clampPose(k.pose, yaw), k.frame?.takeIf { it in 0..MAX_FRAME })
             }
             prevYaw = yaw
         }

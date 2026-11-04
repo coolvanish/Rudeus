@@ -2,6 +2,7 @@ package kz.rudy.ar.core.meta
 
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseSpec
 
 /**
  * The five model jobs Rudeus needs, provider-agnostic. Implementations: [MetaApi] (Ktor, real calls),
@@ -47,6 +48,15 @@ interface MetaModels {
     suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray? = null): EmoteSet =
         throw MetaError.Provider("choreograph not forwarded by ${this::class.simpleName}")
 
+    /**
+     * Muse Image edit (T33): the matted [sprite] redrawn in the pose [spec] names (`Prompts.pose`), with the style
+     * [refs]; PNG bytes on Muse's opaque white background, matted by the caller as a stylize is. Metered under
+     * [Jobs.MUSE_POSE]. Like [choreograph], the body here only keeps implementations outside :core compiling until
+     * they forward it; it throws, so the pipeline records a failed `frames` stage and ships no frames.
+     */
+    suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray =
+        throw MetaError.Provider("drawPose not forwarded by ${this::class.simpleName}")
+
     /** Voice Transcribe: [pcm16kMono] 16-bit little-endian PCM, 16 kHz mono, in language [lang] ("kk", "ru"). */
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String
 }
@@ -69,6 +79,9 @@ object Jobs {
 
     /** [MetaModels.choreograph]: the five emote choreographies (fixtures in docs/api-samples/spark-choreo). */
     const val SPARK_CHOREO = "spark-choreo"
+
+    /** [MetaModels.drawPose]: a Muse edit per pose frame (fixtures in docs/api-samples/muse-pose, `outputs` named `<ref>.<emote>-<n>.png`). */
+    const val MUSE_POSE = "muse-pose"
     const val VOICE = "voice"
 
     /** Prompts that distinguish a cutout call from a table scan. */
@@ -78,5 +91,5 @@ object Jobs {
     fun segmentJob(prompts: List<String>): String =
         if (prompts.isNotEmpty() && prompts.all { it in CUTOUT_PROMPTS }) SAM_CUTOUT else SAM_TABLE
 
-    val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, SPARK_SCORE, SPARK_SHEET, SPARK_CHOREO, VOICE)
+    val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, MUSE_POSE, SPARK_SCORE, SPARK_SHEET, SPARK_CHOREO, VOICE)
 }

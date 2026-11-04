@@ -12,6 +12,8 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.PoseSpec
 import kotlin.io.encoding.Base64
 
 /*
@@ -465,6 +467,21 @@ object Prompts {
         "character's identity so the child recognises it: the same silhouette, pose and features, and the same colour " +
         "for each part in the references' softer tones. One character only, centred on a plain pure white background " +
         "with wide margins, no border, no text, no shadow."
+
+    /**
+     * T33 pose frames: the T30 spike's prompts, judged GO by the user on docs/api-samples/muse-pose/contact.png
+     * (same character, outline and colours kept, poses readable). The suffix keeps Muse's plain white background,
+     * which SpriteMatte floods from the border.
+     */
+    private const val POSE_BASE = "the very same character, identical colours, outline and proportions"
+    private const val POSE_SUFFIX = ". Keep the drawing style of the first image. Plain white background, nothing else in the picture."
+    val POSES: Map<Emote, List<String>> = mapOf(
+        Emote.HELLO to listOf("waving one arm high", "both arms up, happy"),
+        Emote.ROAR to listOf("mouth wide open, roaring, leaning forward", "eyes squeezed, roaring"),
+    )
+
+    /** The Muse edit prompt for [spec], or null for an emote or index nobody draws. */
+    fun pose(spec: PoseSpec): String? = POSES[spec.emote]?.getOrNull(spec.index)?.let { "$POSE_BASE, $it$POSE_SUFFIX" }
 
     /** JSON schema for the sheet, identical to docs/api-samples/spark-sheet/request.json.tmpl. */
     val CHARACTER_SHEET_SCHEMA: JsonObject = Json.parseToJsonElement(

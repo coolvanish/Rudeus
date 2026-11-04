@@ -62,4 +62,31 @@ object Choreographies {
         Emote.SPIN to SPIN,
         Emote.ROAR to ROAR,
     )
+
+    /**
+     * T33: [c] keyed for [n] drawn frames (a sanitized choreography in, one out). The span from the first interior
+     * key to the last key is cut into [n] equal parts, in time order; an interior key points at the part it falls in,
+     * so frame 0 shows first and frame n-1 last (a two-frame HELLO: the one-arm wave, then both arms up). The first
+     * and the last key never carry a frame: the emote starts and ends on the base sprite. A choreography with no
+     * interior key (REST at 0 and at the end) gets one at durationMs / 2 to hang frame 0 on. n <= 0 strips every
+     * frame; n above [PoseFrames.MAX_PER_EMOTE] is cut to it. The squash, tilt and hop of every key stay as they were.
+     */
+    fun withFrames(c: Choreography, n: Int): Choreography {
+        val count = n.coerceAtMost(PoseFrames.MAX_PER_EMOTE)
+        val stripped = c.copy(keys = c.keys.map { if (it.frame == null) it else it.copy(frame = null) })
+        if (count <= 0 || c.keys.size < 2) return stripped
+        var keys = stripped.keys
+        if (keys.size == 2) {
+            val mid = c.durationMs / 2
+            keys = (keys + EmoteKey(mid, EmotePlayer.sample(stripped, mid))).sortedBy { it.atMs }
+        }
+        val start = keys[1].atMs
+        val span = (keys.last().atMs - start).coerceAtLeast(1L)
+        val keyed = keys.mapIndexed { i, k ->
+            if (i == 0 || i == keys.lastIndex) k
+            else k.copy(frame = ((k.atMs - start) * count / span).toInt().coerceIn(0, count - 1))
+        }
+        val out = stripped.copy(keys = keyed)
+        return ChoreographyRules.sanitize(out) ?: out
+    }
 }

@@ -4,6 +4,7 @@ import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseSpec
 
 /**
  * Scripted [MetaModels] for tests: [scores] are returned in order (last one repeats), [techniqueScores] likewise
@@ -29,6 +30,10 @@ class FakeModels(
     var emotes: EmoteSet = EmoteSet.defaults(),
     /** When set, [choreograph] throws it (after its delay); any Throwable, like [sheetError]. */
     var choreoError: Throwable? = null,
+    /** What [drawPose] returns per [PoseSpec.name] (`hello-1`); a name not here throws [MetaError.Provider]. */
+    var frames: Map<String, ByteArray> = emptyMap(),
+    /** When set, every [drawPose] throws it (after its delay). */
+    var poseError: Throwable? = null,
     var delays: Map<String, Long> = emptyMap(),
 ) : MetaModels {
     val calls = ArrayList<String>()
@@ -39,6 +44,8 @@ class FakeModels(
     /** The sheet and image each [choreograph] call received. */
     val choreoSheets = ArrayList<CharacterSheet>()
     val choreoImages = ArrayList<ByteArray?>()
+    /** The sprite each [drawPose] call received, by [PoseSpec.name]. */
+    val poseInputs = LinkedHashMap<String, ByteArray>()
     private var scoreIndex = 0
     private var techniqueIndex = 0
 
@@ -101,6 +108,14 @@ class FakeModels(
         pause("choreograph")
         choreoError?.let { throw it }
         return emotes
+    }
+
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray {
+        calls += "drawPose:$ref:${spec.name}"
+        poseInputs[spec.name] = sprite
+        pause("drawPose")
+        poseError?.let { throw it }
+        return frames[spec.name] ?: throw MetaError.Provider("no fake frame ${spec.name}")
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String {

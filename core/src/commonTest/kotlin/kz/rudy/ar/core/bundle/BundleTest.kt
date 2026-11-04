@@ -74,3 +74,36 @@ class BundleTest {
         assertEquals(null, entry.choreo)
     }
 }
+
+class BundleFramesTest {
+    private fun png(n: Int) = byteArrayOf(n.toByte(), 0x50, 0x4E, 0x47)
+
+    @Test
+    fun bundleEntryListsTheFramePathsAndRoundTrips() {
+        val frames = kz.rudy.ar.core.emote.PoseFrames.of(mapOf(kz.rudy.ar.core.emote.Emote.HELLO to listOf(png(1), png(2)), kz.rudy.ar.core.emote.Emote.ROAR to listOf(png(3))))
+        val result = CharacterResult("cat-01", byteArrayOf(1), FakeModels.DEFAULT_SHEET, 0.8f, true, 1, null, frames = frames)
+        val e = Bundle.entry(result, "meta", "2026-11-04T12-00-00Z")
+        assertEquals(
+            mapOf(
+                kz.rudy.ar.core.emote.Emote.HELLO to listOf("cat-01/frames/hello-1.png", "cat-01/frames/hello-2.png"),
+                kz.rudy.ar.core.emote.Emote.ROAR to listOf("cat-01/frames/roar-1.png"),
+            ),
+            e.frames,
+        )
+        assertEquals("cat-01/frames/roar-2.png", Bundle.framePath("cat-01", kz.rudy.ar.core.emote.Emote.ROAR, 1))
+        val text = Bundle.encodeIndex(BundleIndex().upsert(e))
+        assertEquals(true, text.contains("\"HELLO\""), text)
+        assertEquals(e, Bundle.decodeIndex(text).characters.single())
+
+        val plain = Bundle.entry(result.copy(frames = kz.rudy.ar.core.emote.PoseFrames.EMPTY), "meta", "2026-11-04T12-00-00Z")
+        assertEquals(null, plain.frames)
+        assertEquals(plain, Bundle.decodeIndex(Bundle.encodeIndex(BundleIndex().upsert(plain))).characters.single())
+    }
+
+    @Test
+    fun anIndexWithoutFramesStillDecodes() {
+        val old = """{"schema":1,"characters":[{"ref":"cat-01","name":"Мысық","ability":"JUMP","gateScore":0.8,"gatePassed":true,
+            "attempts":1,"sprite":"cat-01/sprite.png","sheet":"cat-01/sheet.json","provider":"meta","runId":"2026-10-28T12-00-00Z","choreo":"cat-01/choreo.json"}]}"""
+        assertEquals(null, Bundle.decodeIndex(old).characters.single().frames)
+    }
+}

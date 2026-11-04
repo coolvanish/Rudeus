@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseSpec
 import kotlin.io.encoding.Base64
 
 /**
@@ -48,6 +49,7 @@ import kotlin.io.encoding.Base64
  *   character's picture when one is given.
  * - choreograph: `POST /chat/completions` on the same Spark model, one text part ([Prompts.choreograph]) + the
  *   picture when given, strict json_schema [Prompts.CHOREOGRAPHY_FORMAT]; metered under [Jobs.SPARK_CHOREO].
+ * - drawPose (T33): the stylize call with a pose prompt ([Prompts.pose]), the matted sprite + refs; metered under [Jobs.MUSE_POSE].
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(
@@ -85,10 +87,20 @@ class MetaApi(
         stylize(ref, cutout, refs, Prompts.STYLIZE_FALLBACK)
 
     /** [stylize] with any [prompt] (the CLI's pose spike asks for other edits of the same sprite). */
-    suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray {
-        requireServed(Jobs.MUSE_STYLIZE, "stylize")
+    suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray =
+        edit(ref, "stylize", Jobs.MUSE_STYLIZE, cutout, refs, prompt)
+
+    /** T33: the same edit call as [stylize] with the pose prompt of [spec], metered under [Jobs.MUSE_POSE]. */
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray {
+        val prompt = Prompts.pose(spec) ?: throw MetaError.Provider("no pose prompt for ${spec.name}")
+        return edit(ref, "drawPose[${spec.name}]", Jobs.MUSE_POSE, sprite, refs, prompt)
+    }
+
+    /** One Muse Image edit of [image] with [prompt] and up to [MAX_STYLE_REFS] [refs], metered under [job]. */
+    private suspend fun edit(ref: String, call: String, job: String, image: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray {
+        requireServed(job, call)
         val images = ArrayList<ImageInput>()
-        images += ImageInput(dataUrl(sniffImageMime(cutout), Base64.encode(cutout)))
+        images += ImageInput(dataUrl(sniffImageMime(image), Base64.encode(image)))
         refs.take(MAX_STYLE_REFS).forEach { images += ImageInput(dataUrl(sniffImageMime(it), Base64.encode(it))) }
         val req = StylizeRequest(
             model = config.museImageModel,
@@ -96,8 +108,8 @@ class MetaApi(
             images = images,
             reasoningStrength = config.museReasoningStrength,
         )
-        val resp: StylizeResponse = postJson(ref, "stylize", config.stylizePath, req)
-        meter(Jobs.MUSE_STYLIZE, ref, Pricing.museUsd(resp.data.size))
+        val resp: StylizeResponse = postJson(ref, call, config.stylizePath, req)
+        meter(job, ref, Pricing.museUsd(resp.data.size))
         return parseOrThrow { Base64.decode(parseStylize(resp)) }
     }
 
