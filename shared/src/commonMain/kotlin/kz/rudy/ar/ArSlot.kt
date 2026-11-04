@@ -5,6 +5,7 @@ import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
+import kz.rudy.ar.core.emote.EmoteSet
 
 /** How one scan request ended. */
 sealed interface ScanAnswer {
@@ -20,6 +21,26 @@ sealed interface ScanAnswer {
     /** Seen from too far above to trust the geometry (`ScanAngle`). The old level stays; another angle is the fix. */
     data object TooSteep : ScanAnswer
 }
+
+/**
+ * T31: one character the host puts on the table. [id] is the saved id, the bundled ref, or "photo-<ref>" for a fresh
+ * pipeline result. [name] is already in the player's language.
+ */
+data class ArCharacter(val id: String, val name: String, val spritePng: ByteArray?, val ability: Ability, val emotes: EmoteSet) {
+    // ByteArray is compared by identity; like the slot, a plain carrier.
+    override fun equals(other: Any?): Boolean = this === other
+    override fun hashCode(): Int = System.identityHashCode(this)
+}
+
+/** T31: what one [CharacterCommand] asks of one character. */
+sealed interface CharacterAction {
+    data object Jump : CharacterAction
+    data object WalkForward : CharacterAction
+    data class Emote(val emote: kz.rudy.ar.core.emote.Emote) : CharacterAction
+}
+
+/** T31: edge-triggered on [serial] (strictly rising within a session; the host applies each new serial once). */
+data class CharacterCommand(val serial: Int, val id: String, val action: CharacterAction)
 
 /**
  * Everything the shared UI hands to the AR view slot and everything it wants back. No ARCore/SceneView types:
@@ -81,6 +102,20 @@ data class ArSlot(
      * a request: the host applies it to the billboard, the collision circle and the walking speed whenever it changes.
      */
     val characterSize: Float = CharacterSize.DEFAULT,
+    /**
+     * T31: the cast in order (at most `Cast.MAX`); the first is the one Play started with. The legacy single-character
+     * fields above ([spritePng], [ability], [jumpRequest], [walkForwardRequest]) mirror the [activeId] member, so a
+     * v1.0 host keeps working; a T32 host reads these and ignores those.
+     */
+    val characters: List<ArCharacter> = emptyList(),
+    /** T31: whose taps and buttons; the first member until a chip or a finger ([onActiveChanged]) picks another. */
+    val activeId: String? = null,
+    /** T31: host -> UI: a finger landed on this character; the HUD makes it the active one. */
+    val onActiveChanged: (String) -> Unit = {},
+    /** T31: the last command (null when nothing is pending); resets to null when the AR session ends. */
+    val command: CharacterCommand? = null,
+    /** T31: physics transitions per member (id, event). A T32 host calls this and NEVER [onCharacterEvent]. */
+    val onCastEvent: (String, CharacterEvent) -> Unit = { _, _ -> },
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other

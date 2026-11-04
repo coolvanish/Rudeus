@@ -1,6 +1,7 @@
 package kz.rudy.ar.ui.screens
 
 import kz.rudy.ar.core.domain.CharacterEvent
+import kz.rudy.ar.core.emote.Choreography
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.StringId
 
@@ -14,6 +15,10 @@ import kz.rudy.ar.ui.StringId
  * Bubbles are at least [MIN_GAP_MS] apart, except FELL and RESPAWNED, which always replace the current one — but
  * "Back up" never cuts "Oops! Fell" short: a cliff fall respawns in ~0.26 s, so a RESPAWNED within [FELL_HOLD_MS] of
  * the FELL bubble is queued as [State.pending] and shown by [tick] when the hold ends.
+ *
+ * T31: with two or more characters on the table every line is name-first ("Мұрат: Сәлем!"), so the child knows who
+ * spoke: the caller passes [speaker] (null with a cast of one) to [next] and [say]. One bubble for the whole cast; the
+ * gap and the arrival count are shared.
  */
 object HudSpeech {
     const val MIN_GAP_MS = 2500L
@@ -52,12 +57,25 @@ object HudSpeech {
         CharacterEvent.PAUSED, CharacterEvent.RESUMED -> null
     }
 
+    /** T31: whose name prefixes a line: [name] with a cast of two or more, null (no prefix) with one. */
+    fun speaker(name: String, castSize: Int): String? = if (castSize > 1) name else null
+
+    /** T31: [line] as the bubble shows it: "[speaker]: [line]", or [line] alone when [speaker] is null. */
+    fun spoken(line: String, speaker: String?): String = if (speaker == null) line else "$speaker: $line"
+
+    /**
+     * T31: the line an emote says when it starts: [lines] (the sheet's, already for the language) at
+     * [Choreography.line]; the first line when the sheet is shorter; null when it has none.
+     */
+    fun emoteLine(choreography: Choreography, lines: List<String>): String? =
+        lines.getOrNull(choreography.line) ?: lines.firstOrNull()
+
     /** Applies [event] at [nowMs]; returns [state] with a new bubble, or unchanged apart from the arrival count. */
-    fun next(state: State, event: CharacterEvent, nowMs: Long, lines: List<String>, lang: Lang): State {
+    fun next(state: State, event: CharacterEvent, nowMs: Long, lines: List<String>, lang: Lang, speaker: String? = null): State {
         val arrivals = if (event == CharacterEvent.ARRIVED) state.arrivals + 1 else state.arrivals
         val counted = state.copy(arrivals = arrivals)
         if (event == CharacterEvent.ARRIVED && arrivals % ARRIVALS_PER_LINE != 0) return counted
-        val line = lineFor(event, lines, lang, arrivals) ?: return counted
+        val line = lineFor(event, lines, lang, arrivals)?.let { spoken(it, speaker) } ?: return counted
         val overrides = event == CharacterEvent.FELL || event == CharacterEvent.RESPAWNED
         if (!overrides && !gapElapsed(state, nowMs)) return counted
         if (event == CharacterEvent.RESPAWNED && state.event == CharacterEvent.FELL && state.text != null) {
@@ -76,7 +94,7 @@ object HudSpeech {
     }
 
     /** A bubble the child asked for (the ability chip): shown now, and it holds the gap like any other. */
-    fun say(state: State, text: String, nowMs: Long): State = show(state, text, nowMs, event = null)
+    fun say(state: State, text: String, nowMs: Long, speaker: String? = null): State = show(state, spoken(text, speaker), nowMs, event = null)
 
     private fun show(state: State, text: String, nowMs: Long, event: CharacterEvent?): State =
         state.copy(text = text, shownAtMs = nowMs, serial = state.serial + 1, event = event, pending = null, pendingAtMs = null)

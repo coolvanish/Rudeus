@@ -210,7 +210,16 @@ every "table" line below has a floor variant.
 
 ### Play — `PlayScreen(arView, …)`
 AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
-- Top-left: `AbilityChip` (glyph + "Jump"), Paper with Ink stroke. Tapping it says the ability line in a bubble.
+- Top-left: *Cast chips* (T31). One round 56 dp chip per character on the table (up to `Cast.MAX` = 4, in the order
+  they joined), Paper fill, 2 dp Ink stroke, the character's sprite inside (its ability glyph when it uses the host's
+  built-in sprite). The active one — whose taps, Jump, emotes and voice they are — is ringed 4 dp Sun; a tap on a chip
+  (or a finger landing on the character in AR) makes it active. Under the row its name pill takes the old
+  `AbilityChip`'s place: ability glyph + "Мұрат · Секір", Paper with Ink stroke; tapping it says the ability line. After
+  the members the round `+` chip (plus glyph, accessibility label `play_add`) opens the *Add sheet*; with four on the
+  table it is drawn InkMuted and a tap shows the pill "Table full" (`play_table_full`) for 2 s instead of the name pill.
+- *Add sheet* (T31): the one `BottomSheet`, titled "Who joins?" (`play_add_title`), over Play — the AR session keeps
+  running under it. The Capture cards, saved first then bundled, without those already on the table; a tap adds that
+  character and closes the sheet. Scrim tap, a downward drag or Back closes it.
 - Top-right: offline pill (Leaf dot, "Offline") when `offline`; `Footprints` toggle chip (debug; Sky when on).
   Footprints on (debug only): secondary **Metrics** and **Scenario** (`play_scenario`) under it; Scenario replays the
   Day 5 script from where the character stands (`ArSlot.scenarioRequest`). There is no on-screen Back: the system back
@@ -220,6 +229,13 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
   "Oops! Fell"; respawned -> "Back up"; every 3rd arrival -> a sheet line (deterministic); the ability chip -> line 2.
   Walking, landing, stepping up, pause/resume say nothing. Bubbles are ≥ 2.5 s apart; Fell and Back up always
   replace the current one, except that "Back up" waits until "Oops! Fell" has been up 1.2 s.
+- *Emote row* (T31): five round 56 dp buttons centred above the Scan / Jump row, Paper fill, 2 dp Ink stroke and
+  glyph (InkMuted when disabled), one word on a Paper label under each: Hi (open palm, `emote_hello`), Bye (a bow,
+  `emote_bye`), Dance (music note, `emote_dance`), Spin (round arrow, `emote_spin`), Roar (open mouth with sound waves,
+  `emote_roar`). A tap makes the active character play that emote (`ArSlot.command`) and its bubble says the
+  choreography's sheet line at once. Disabled before the character is placed and while tracking is lost, like Jump.
+  Press = the button press scale; reduced motion: no scale, the pressed fill only.
+- Bubble with two or more on the table: every line is name-first, "Мұрат: Сәлем!", so the child knows who spoke.
 - Bottom-left: secondary **Scan** (eye glyph), which reads **Rescan** once a scan has run in this session. Above the row
   the hint pill "Tap — it walks": appears when the character is placed, leaves 5 s after it first walks (or on Scan).
 - Bottom-right: the ability's action as the Sun primary, ≥ 156 dp wide, under the thumb: **Jump** ("Секір") for JUMP and
@@ -335,6 +351,14 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | play_jump | Секір | Прыгай | Jump |
 | play_fly | Ұш | Лети | Fly |
 | play_scenario | Сценарий | Сценарий | Scenario |
+| play_add | Қос | Добавить | Add |
+| play_add_title | Кімді қосамыз? | Кого добавить? | Who joins? |
+| play_table_full | Үстел толы | Стол полон | Table full |
+| emote_hello | Сәлем | Привет | Hi |
+| emote_bye | Сау бол | Пока | Bye |
+| emote_dance | Биле | Танцуй | Dance |
+| emote_spin | Айнал | Крутись | Spin |
+| emote_roar | Ақыр | Рычи | Roar |
 | voice_listening | Тыңдап тұрмын… | Слушаю… | Listening… |
 | voice_thinking | Ойланып тұрмын… | Думаю… | Thinking… |
 | voice_unknown | Түсінбедім | Не понял | Didn't catch that |
