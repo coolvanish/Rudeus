@@ -164,7 +164,7 @@ class FixtureApiTest {
     fun fixtureApiReplaysTheChoreoFixture() = runTest {
         val api = FixtureApi(DiskFixtureSource.repoRoot(), root)
         assertTrue(api.load(Jobs.SPARK_CHOREO, "sample-01").synthetic, "sample-01 is synthetic, not a real reply")
-        assertTrue(assertNotNull(api.meta(Jobs.SPARK_CHOREO)).synthetic)
+        // meta.json describes the folder: real probes since the 2026-11-04 live run (synthetic=false); only sample-01 is synthetic.
         val set = api.choreograph("sample-01", FakeModels.DEFAULT_SHEET)
         assertEquals(EmoteSet.SOURCE_SPARK, set.source)
         assertEquals(Emote.entries.toSet(), set.choreographies.keys)

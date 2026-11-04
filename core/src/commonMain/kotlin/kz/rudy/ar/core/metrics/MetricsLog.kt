@@ -102,7 +102,7 @@ data class CostTable(
     val scoreUsd: Double = 0.009,
     val sheetUsd: Double = 0.005,
     /** Stage `choreo` ([kz.rudy.ar.core.meta.Jobs.SPARK_CHOREO]); not part of the JSON (the table never is). */
-    val choreoUsd: Double = 0.003,
+    val choreoUsd: Double = 0.013,
     val tableUsd: Double = 0.0125,
     val voiceUsd: Double = 0.0003,
 )
