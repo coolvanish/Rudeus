@@ -20,7 +20,7 @@ p50 < 40 s, <= $0.05 per character.
   "characters": [
     {
       "input": "drawings/cat-01.jpg",
-      "stages": [ { "name": "cutout|stylize|matte|gate|sheet|choreo|frames", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
+      "stages": [ { "name": "cutout|stylize|matte|gate|review|sheet|choreo|frames", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
       "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031, "aborted": false
     }
   ],
@@ -33,6 +33,7 @@ p50 < 40 s, <= $0.05 per character.
 Stage order per character: `cutout`, then per attempt `stylize`, `matte`, `gate` [`rescore`], then `sheet`, then `choreo` last (the sheet call runs
 concurrently with the loop, so `totalMs` < the sum of stage `ms`; it is recorded after the loop; `choreo` (T29, the five emote choreographies from Spark) runs right after the sheet in the same coroutine and is recorded only when that coroutine finished, so a character that failed while the sheet was still running has no `choreo` stage). `matte` appears only
 when the pipeline has a sprite matter (the CLI and the app do); its cost is 0 unless it fell back to a SAM pass.
+`review` (app only, added 2026-11-04) is a person's look at a below-threshold sprite with attempts left: `ms` is the wait, `ok` the answer (true = that sprite shipped, `gatePassed` stays false; false = the next attempt ran), cost 0. The wait is left out of `totalMs`, so p50/p90 stay pipeline time.
 A sheet stage with `ok: false` means the character shipped the fallback sheet; a `choreo` stage with `ok: false` means it shipped the default emotes (`source=default`).
 `frames` (T33, only when the pipeline runs with `poseFrames` / `cli character --frames`, and the only stage of `cli choreo --frames`): the
 four model-drawn pose frames (hello-1, hello-2, roar-1, roar-2), one Muse edit each, drawn after the stylize loop and recorded last, after

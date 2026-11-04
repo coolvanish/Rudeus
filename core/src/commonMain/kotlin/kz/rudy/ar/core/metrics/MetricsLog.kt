@@ -19,7 +19,7 @@ import kotlin.time.Instant
 
 @Serializable
 data class StageMetrics(
-    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "sheet" | "choreo" (and "table" | "voice" when those jobs are measured). */
+    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "review" | "sheet" | "choreo" (and "table" | "voice" when those jobs are measured). */
     val name: String,
     val ms: Long,
     val costUsd: Double,
@@ -192,6 +192,11 @@ class MetricsLog(
 
     fun stage(name: String, ms: Long, attempt: Int, ok: Boolean, cost: StageCost) =
         stage(name, ms, attempt, ok, cost.usd, cost.measured)
+
+    /** Takes [ms] out of the current character's `totalMs`: waiting on a person is not pipeline time. */
+    fun excludeFromTotal(ms: Long) {
+        currentStart += ms
+    }
 
     fun endCharacter(gateScore: Float, gatePassed: Boolean, retries: Int): CharacterMetrics {
         val input = checkNotNull(currentInput) { "endCharacter without startCharacter" }

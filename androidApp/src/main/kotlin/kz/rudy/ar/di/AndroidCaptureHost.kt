@@ -182,7 +182,11 @@ class AndroidCaptureHost(
         return text
     }
 
-    override suspend fun makeCharacter(photo: ByteArray, onEvent: (PipelineEvent) -> Unit): CharacterResult =
+    override suspend fun makeCharacter(
+        photo: ByteArray,
+        review: suspend (attempt: Int, score: Float) -> Boolean,
+        onEvent: (PipelineEvent) -> Unit,
+    ): CharacterResult =
         withContext(Dispatchers.IO) {
             // HAND-REVIEW: review fix — a plain "01", "02"… ref: SheetParser.fallback names a character from its ref
             // ("app/<run>/1" became "App"; "01" gives the default "Dos"), and the CLI only allows refs without '/'.
@@ -197,6 +201,9 @@ class AndroidCaptureHost(
                 spriteMatter = AndroidImages::matte,
                 imageResizer = AndroidImages::downscale,
                 onEvent = { event -> logEvent(event, t0); onEvent(event) },
+                // HAND-REVIEW: below the threshold the app's run waits on the child's answer instead of retrying by itself
+                // (the CLI passes no reviewer and still retries). No AR or network code changes here; only this pass-through.
+                review = review,
             )
             try {
                 pipeline.run(ref, photo, styleRefs, description = "").also {
@@ -338,6 +345,8 @@ class AndroidCaptureHost(
             is PipelineEvent.StageStarted -> Log.i(TAG, "stage_start=${event.stage} attempt=${event.attempt} at_ms=$at")
             is PipelineEvent.StageFinished -> Log.i(TAG, "stage_end=${event.stage} attempt=${event.attempt} ok=${event.ok} ms=${event.ms} at_ms=$at")
             is PipelineEvent.GateScored -> Log.i(TAG, "gate_scored attempt=${event.attempt} score=${event.score} passed=${event.passed} at_ms=$at")
+            // HAND-REVIEW: evidence key for the preview: Muse's sprite reached the screen, at any score.
+            is PipelineEvent.SpriteReady -> Log.i(TAG, "sprite_ready attempt=${event.attempt} sprite_bytes=${event.sprite.size} at_ms=$at")
             is PipelineEvent.Finished -> Unit // summarised by the caller
             is PipelineEvent.Failed -> Log.w(TAG, "pipeline_failed at_ms=$at: ${event.message}")
         }

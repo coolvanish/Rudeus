@@ -30,8 +30,14 @@ interface CaptureHost {
     /**
      * Runs `CharacterPipeline` on [photo] off the main thread. [onEvent] is called in order on the pipeline's
      * thread; it must not throw. Throws (after writing metrics) when the character fails, including a missing key.
+     * [review] is the pipeline's reviewer: asked after a below-threshold attempt with attempts left, while that sprite is
+     * on screen; true ships it, false starts the next attempt.
      */
-    suspend fun makeCharacter(photo: ByteArray, onEvent: (PipelineEvent) -> Unit): CharacterResult
+    suspend fun makeCharacter(
+        photo: ByteArray,
+        review: suspend (attempt: Int, score: Float) -> Boolean,
+        onEvent: (PipelineEvent) -> Unit,
+    ): CharacterResult
 
     /** Play is on screen with the captured character: the host logs shutter -> Play for the Day 3 gate. */
     fun playEntered()

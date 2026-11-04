@@ -6,6 +6,7 @@ import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_CUTOUT
 import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_GATE
 import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_MATTE
 import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_RESCORE
+import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_REVIEW
 import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_SHEET
 import kz.rudy.ar.core.pipeline.CharacterPipeline.Companion.STAGE_STYLIZE
 import kz.rudy.ar.core.pipeline.CharacterResult
@@ -13,6 +14,7 @@ import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.core.pipeline.PipelineEvent.Failed
 import kz.rudy.ar.core.pipeline.PipelineEvent.Finished
 import kz.rudy.ar.core.pipeline.PipelineEvent.GateScored
+import kz.rudy.ar.core.pipeline.PipelineEvent.SpriteReady
 import kz.rudy.ar.core.pipeline.PipelineEvent.StageFinished
 import kz.rudy.ar.core.pipeline.PipelineEvent.StageStarted
 import kz.rudy.ar.ui.screens.PipelineStage
@@ -21,13 +23,16 @@ import kz.rudy.ar.ui.screens.ProcessingStatus
 import kz.rudy.ar.ui.screens.reduce
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class ProcessingEventsTest {
     private val sheet = CharacterSheet("Dino", "brave", Ability.JUMP, mapOf("kk" to listOf("Sälem")))
 
-    private fun result(score: Float, passed: Boolean, attempts: Int) =
-        CharacterResult("ref", ByteArray(0), sheet, score, passed, attempts, null)
+    private fun result(score: Float, passed: Boolean, attempts: Int, accepted: Boolean = false, sprite: ByteArray = ByteArray(0)) =
+        CharacterResult("ref", sprite, sheet, score, passed, attempts, null, accepted = accepted)
 
     private fun List<PipelineEvent>.reduce(start: ProcessingState = ProcessingState()) = fold(start) { s, e -> s.reduce(e) }
 
@@ -78,6 +83,7 @@ class ProcessingEventsTest {
         assertEquals(PipelineStage.STYLIZE, retry.stage)
         assertEquals(setOf(PipelineStage.CUTOUT), retry.completed)
         assertEquals(ProcessingStatus.RUNNING, retry.status)
+        assertNull(retry.gateScore, "no score until this attempt has one")
     }
 
     @Test
@@ -91,6 +97,54 @@ class ProcessingEventsTest {
         assertEquals(0.61f, shipped.gateScore)
         assertEquals(3, shipped.attempt)
         assertEquals(sheet, shipped.sheet)
+    }
+
+    @Test
+    fun museSpriteShowsAtOnceAndARetryTakesItOffTheHero() {
+        val sprite = byteArrayOf(1)
+        val painted = ProcessingState().reduce(StageStarted(STAGE_STYLIZE, 1)).reduce(SpriteReady(1, sprite))
+        assertSame(sprite, painted.sprite, "before the gate has scored it")
+        assertEquals(ProcessingStatus.RUNNING, painted.status)
+
+        val scored = painted.reduce(GateScored(1, 0.4f, false))
+        assertSame(sprite, scored.sprite, "a low score keeps it on screen")
+        assertNull(scored.reduce(StageStarted(STAGE_STYLIZE, 2)).sprite)
+    }
+
+    @Test
+    fun belowGateAsksAndYesLeavesOnlyNamingToWaitFor() {
+        val asking = (firstTry(0.55f, passed = false).dropLast(1) + StageStarted(STAGE_REVIEW, 1)).reduce()
+        assertEquals(ProcessingStatus.REVIEW, asking.status)
+        assertEquals(0.55f, asking.gateScore)
+        assertFalse(PipelineStage.GATE in asking.completed)
+
+        val yes = asking.reduce(StageFinished(STAGE_REVIEW, 1, ok = true, ms = 4_000))
+        assertEquals(ProcessingStatus.RUNNING, yes.status)
+        assertEquals(PipelineStage.SHEET, yes.stage)
+        assertTrue(PipelineStage.GATE in yes.completed)
+
+        val sheetAlreadyBack = asking.reduce(StageFinished(STAGE_SHEET, 1, true, 8_000))
+        assertEquals(ProcessingStatus.REVIEW, sheetAlreadyBack.status, "the sheet coming back does not end the question")
+        assertNull(sheetAlreadyBack.reduce(StageFinished(STAGE_REVIEW, 1, ok = true, ms = 4_000)).stage)
+    }
+
+    @Test
+    fun acceptedResultIsDoneAndKeepsTheGatesOwnScore() {
+        val sprite = byteArrayOf(2)
+        val done = ProcessingState(status = ProcessingStatus.RUNNING)
+            .reduce(Finished(result(0.55f, passed = false, attempts = 1, accepted = true, sprite = sprite)))
+        assertEquals(ProcessingStatus.DONE, done.status)
+        assertEquals(0.55f, done.gateScore)
+        assertSame(sprite, done.sprite)
+    }
+
+    @Test
+    fun noIsFollowedByTheNextAttempt() {
+        val asking = (firstTry(0.55f, passed = false).dropLast(1) + StageStarted(STAGE_REVIEW, 1)).reduce()
+        val next = asking.reduce(StageFinished(STAGE_REVIEW, 1, ok = false, ms = 4_000)).reduce(StageStarted(STAGE_STYLIZE, 2))
+        assertEquals(ProcessingStatus.RUNNING, next.status)
+        assertEquals(PipelineStage.STYLIZE, next.stage)
+        assertEquals(2, next.attempt)
     }
 
     @Test

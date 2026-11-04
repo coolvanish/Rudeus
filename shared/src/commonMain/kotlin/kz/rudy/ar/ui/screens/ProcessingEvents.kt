@@ -7,20 +7,24 @@ import kz.rudy.ar.core.pipeline.PipelineEvent
  * Pure mapping of core [PipelineEvent]s onto the Processing screen's [ProcessingState]. Stage names follow
  * `CharacterPipeline.STAGE_*`: `matte` is part of the "painting" step, `rescore` of the "checking" step, and the sheet
  * runs in the background (its start never steals the active row; its finish ticks the row even on a fallback sheet).
- * A retry (`stylize` started with attempt > 1) reopens the painting and checking rows. The gate row completes on
- * [PipelineEvent.GateScored] when the attempt passed or was the last one; the per-look `StageFinished(gate)` flags
- * are not the verdict and are ignored.
+ * A retry (`stylize` started with attempt > 1) reopens the painting and checking rows and takes the turned-down sprite
+ * off the hero. The gate row completes on [PipelineEvent.GateScored] when the attempt passed or was the last one; the
+ * per-look `StageFinished(gate)` flags are not the verdict and are ignored. A started `review` waits on the child; a yes
+ * settles the gate row and leaves only the naming row to wait for, a no is followed by the retry's `stylize`.
  */
 fun ProcessingState.reduce(event: PipelineEvent): ProcessingState = when (event) {
     is PipelineEvent.StageStarted -> {
         val stage = stageOf(event.stage)
         when {
+            event.stage == CharacterPipeline.STAGE_REVIEW -> copy(status = ProcessingStatus.REVIEW)
             stage == null || event.stage == CharacterPipeline.STAGE_SHEET -> this
             event.stage == CharacterPipeline.STAGE_STYLIZE && event.attempt > 1 -> copy(
                 status = ProcessingStatus.RUNNING,
                 stage = stage,
                 completed = completed - PipelineStage.STYLIZE - PipelineStage.GATE,
                 attempt = event.attempt,
+                sprite = null,
+                gateScore = null, // the last attempt's score must not sit under this attempt's sprite
             )
             else -> copy(status = ProcessingStatus.RUNNING, stage = stage, attempt = maxOf(attempt, event.attempt))
         }
@@ -30,8 +34,19 @@ fun ProcessingState.reduce(event: PipelineEvent): ProcessingState = when (event)
         CharacterPipeline.STAGE_CUTOUT -> if (event.ok) copy(completed = completed + PipelineStage.CUTOUT) else this
         CharacterPipeline.STAGE_STYLIZE -> if (event.ok) copy(completed = completed + PipelineStage.STYLIZE) else this
         CharacterPipeline.STAGE_SHEET -> copy(completed = completed + PipelineStage.SHEET)
+        CharacterPipeline.STAGE_REVIEW -> if (event.ok) {
+            copy(
+                status = ProcessingStatus.RUNNING,
+                stage = if (PipelineStage.SHEET in completed) null else PipelineStage.SHEET,
+                completed = completed + PipelineStage.GATE,
+            )
+        } else {
+            this
+        }
         else -> this
     }
+
+    is PipelineEvent.SpriteReady -> copy(sprite = event.sprite)
 
     is PipelineEvent.GateScored -> {
         val settled = event.passed || event.attempt >= maxAttempts
@@ -43,12 +58,13 @@ fun ProcessingState.reduce(event: PipelineEvent): ProcessingState = when (event)
     }
 
     is PipelineEvent.Finished -> copy(
-        status = if (event.result.gatePassed) ProcessingStatus.DONE else ProcessingStatus.GATE_FAILED,
+        status = if (event.result.gatePassed || event.result.accepted) ProcessingStatus.DONE else ProcessingStatus.GATE_FAILED,
         stage = null,
         completed = PipelineStage.entries.toSet(),
         gateScore = event.result.gateScore,
         attempt = event.result.attempts,
         sheet = event.result.sheet,
+        sprite = event.result.sprite,
     )
 
     is PipelineEvent.Failed -> copy(status = ProcessingStatus.ERROR)

@@ -22,6 +22,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLocaleList
 import androidx.compose.ui.text.intl.LocaleList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -86,6 +87,9 @@ private const val PHOTO_PREFIX = "photo-"
 
 /** T24: a voice transcript bubble stays this long (shorter than a character line: it only confirms what was heard). */
 private const val VOICE_BUBBLE_MS = 2000L
+
+/** "Done!" with the character's name stays this long before Processing moves on by itself (DESIGN.md "Processing"). */
+private const val DONE_AUTO_ADVANCE_MS = 2000L
 
 /**
  * Minimal navigation shell. :androidApp calls
@@ -164,6 +168,8 @@ fun App(
     var photo by remember { mutableStateOf<ByteArray?>(null) }
     var pipelineRun by remember { mutableStateOf(0) }
     var pendingResult by remember { mutableStateOf<CharacterResult?>(null) }
+    // The run waiting on the child's "Like it?" (ProcessingStatus.REVIEW): completing it answers the pipeline's reviewer.
+    var reviewAnswer by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
     // T13: the surface (kept across Back), the picked bundled card, what the character says, and the first walk.
     var surface by remember { mutableStateOf(Surface.TABLE) }
     var selectedBundled by remember { mutableStateOf<String?>(null) }
@@ -216,7 +222,7 @@ fun App(
         settingsOpen = false
         // Nothing returns to Processing without a new photo, and every way from Capture into AR sets the sprite: the
         // bytes (a 2048 px photo, a sprite of up to 5 MB) are not held for the rest of the session.
-        if (to != Screen.PROCESSING) { photo = null; pendingResult = null }
+        if (to != Screen.PROCESSING) { photo = null; pendingResult = null; processing = processing.copy(sprite = null) }
         addOpen = false
         if (to == Screen.CAPTURE) { cast = emptyList(); castSheets = emptyMap(); activeId = null; command = null; photoSavedId = null }
     }
@@ -293,10 +299,17 @@ fun App(
         }
     }
 
+    /** The child's answer to "Like it?" while the run waits; cleared first, so a double tap answers once. */
+    fun answerReview(yes: Boolean) {
+        val answer = reviewAnswer
+        reviewAnswer = null
+        answer?.complete(yes)
+    }
+
     /** Processing -> Scanning with the character that was just made (sheet + sprite), or the demo one. */
     fun useResult() {
         val r = pendingResult
-        // A gate-passed result is already kept; one below the gate is kept only because the child chose to play it.
+        // A gate-passed or accepted result is already kept; one left below the gate is kept only because the child chose to play it.
         if (r != null) keep(r)
         sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
         val member = ArCharacter(
@@ -586,12 +599,23 @@ fun App(
                                 // event before `processing` changes, so it is in place before the screen shows "Next".
                                 // Leaving the screen cancels the run.
                                 try {
-                                    capture.makeCharacter(bytes) { event ->
+                                    capture.makeCharacter(
+                                        bytes,
+                                        review = { _, _ ->
+                                            val answer = CompletableDeferred<Boolean>()
+                                            reviewAnswer = answer
+                                            try {
+                                                answer.await()
+                                            } finally {
+                                                if (reviewAnswer === answer) reviewAnswer = null // Back or a restart cancelled the wait
+                                            }
+                                        },
+                                    ) { event ->
                                         // After Retry or Back a late event of the cancelled run must not fold into the fresh state or hold the sprite.
                                         if (run != pipelineRun || screen != Screen.PROCESSING) return@makeCharacter
                                         if (event is PipelineEvent.Finished) {
                                             pendingResult = event.result
-                                            if (event.result.gatePassed) keep(event.result)
+                                            if (event.result.gatePassed || event.result.accepted) keep(event.result)
                                         }
                                         processing = processing.reduce(event)
                                     }
@@ -603,13 +627,28 @@ fun App(
                                 }
                             }
                         }
+                        // Above the threshold, or once the child said yes, nobody has to confirm: a moment with the
+                        // named character, then the table. Next skips the wait, and leaving the screen cancels it.
+                        LaunchedEffect(processing.status) {
+                            if (processing.status == ProcessingStatus.DONE) {
+                                delay(DONE_AUTO_ADVANCE_MS)
+                                useResult()
+                            }
+                        }
                         ProcessingScreen(
                             state = processing,
-                            onRetry = { processing = ProcessingState(); pendingResult = null; pipelineRun++ },
-                            onShipAnyway = ::useResult,
+                            onRetry = {
+                                if (processing.status == ProcessingStatus.REVIEW) {
+                                    answerReview(false)
+                                } else {
+                                    processing = ProcessingState(); pendingResult = null; pipelineRun++
+                                }
+                            },
+                            onShipAnyway = {
+                                if (processing.status == ProcessingStatus.REVIEW) answerReview(true) else useResult()
+                            },
                             onContinue = ::useResult,
                             onBack = ::back,
-                            sprite = pendingResult?.sprite,
                             photo = photo,
                         )
                     }

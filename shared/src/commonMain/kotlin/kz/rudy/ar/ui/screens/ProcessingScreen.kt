@@ -64,7 +64,8 @@ enum class PipelineStage(val label: StringId, internal val glyph: Glyph) {
     SHEET(StringId.stage_sheet, Glyph.NAME),
 }
 
-enum class ProcessingStatus { RUNNING, GATE_FAILED, ERROR, DONE }
+/** REVIEW: below the gate with attempts left, the run waits on the child. GATE_FAILED: the same question, after the last attempt. */
+enum class ProcessingStatus { RUNNING, REVIEW, GATE_FAILED, ERROR, DONE }
 
 /** Plain progress snapshot for the Processing screen, folded from core's `PipelineEvent`s by [reduce]. */
 data class ProcessingState(
@@ -78,6 +79,8 @@ data class ProcessingState(
     val attempt: Int = 1,
     val maxAttempts: Int = 3,
     val sheet: CharacterSheet? = null,
+    /** What Muse sent for this attempt, at any score; null until it arrives and while a new attempt paints. */
+    val sprite: ByteArray? = null,
     /** Optional cutout/stylized preview slot drawn by the host. */
     val preview: (@Composable (Modifier) -> Unit)? = null,
 ) {
@@ -99,13 +102,12 @@ fun ProcessingScreen(
     onContinue: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The finished character's sprite PNG (`CharacterResult.sprite`); fills the hero once the run is done. */
-    sprite: ByteArray? = null,
-    /** The photo going through the pipeline: the hero until the sprite is ready. */
+    /** The photo going through the pipeline: the hero until Muse's sprite ([ProcessingState.sprite]) is there. */
     photo: ByteArray? = null,
 ) {
-    val finished = state.status == ProcessingStatus.DONE || state.status == ProcessingStatus.GATE_FAILED
-    val spriteBitmap = rememberSpriteBitmap(if (finished) sprite else null, HERO_MAX_SIDE_PX, HERO_MAX_SIDE_PX)
+    val asking = state.status == ProcessingStatus.REVIEW || state.status == ProcessingStatus.GATE_FAILED
+    val finished = state.status == ProcessingStatus.DONE || asking
+    val spriteBitmap = rememberSpriteBitmap(state.sprite, HERO_MAX_SIDE_PX, HERO_MAX_SIDE_PX)
     val photoBitmap = rememberSpriteBitmap(photo, HERO_MAX_SIDE_PX, HERO_MAX_SIDE_PX)
     Box(modifier.fillMaxSize().background(RudeusColors.Paper)) {
         Column(
@@ -120,7 +122,7 @@ fun ProcessingScreen(
             if (state.status == ProcessingStatus.DONE) {
                 Text(t(StringId.processing_done), style = MaterialTheme.typography.displayLarge, color = RudeusColors.Ink)
             } else {
-                Text(t(StringId.processing_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
+                Text(t(if (asking) StringId.review_title else StringId.processing_title), style = MaterialTheme.typography.titleLarge, color = RudeusColors.Ink)
             }
             Spacer(Modifier.height(RudeusSpacing.md))
             Column(
@@ -145,9 +147,7 @@ fun ProcessingScreen(
                 if (state.status == ProcessingStatus.DONE) {
                     PrimaryButton(t(StringId.next), onClick = onContinue, trailingGlyph = Glyph.RIGHT, modifier = Modifier.fillMaxWidth())
                 } else {
-                    Text(t(StringId.ship_anyway_note), style = MaterialTheme.typography.bodyLarge, color = RudeusColors.InkSoft)
-                    Spacer(Modifier.height(RudeusSpacing.smd))
-                    PrimaryButton(t(StringId.ship_anyway), onClick = onShipAnyway, modifier = Modifier.fillMaxWidth())
+                    PrimaryButton(t(StringId.review_yes), onClick = onShipAnyway, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(RudeusSpacing.sm))
                     GhostButton(t(StringId.retry), onClick = onRetry, glyph = Glyph.RETRY, modifier = Modifier.fillMaxWidth())
                 }
@@ -211,7 +211,8 @@ private fun ResultLines(state: ProcessingState) {
         }
     }
     state.gateScore?.let { score ->
-        val passed = state.status == ProcessingStatus.DONE
+        // The gate's verdict, not the status: a sprite the child took is Done with a score that did not pass.
+        val passed = score >= state.gateThreshold
         Row(
             Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
