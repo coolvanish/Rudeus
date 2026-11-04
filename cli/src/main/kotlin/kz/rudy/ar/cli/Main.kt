@@ -25,6 +25,7 @@ import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.metrics.Verdict
 import kz.rudy.ar.core.pipeline.JvmPipeline
+import kz.rudy.ar.core.pipeline.StyleRefs
 import java.io.File
 import java.time.LocalDate
 import java.util.Base64
@@ -199,8 +200,8 @@ private fun character(flags: Flags): Int {
 
     val refsDir = flags.get("refs")?.let(::File)?.also { if (!it.isDirectory) throw CliError("refs dir not found: $it") }
         ?: File(fixturesDir, "$MUSE_DIR/refs")
-    val styleRefs = styleRefs(refsDir)
-    if (styleRefs.isEmpty()) System.err.println("warning: no style refs in $refsDir; deterministic gate half is off")
+    val styleRefs = StyleRefs(styleRefs(refsDir)) // one for the whole run, as on the phone
+    if (styleRefs.originals.isEmpty()) System.err.println("warning: no style refs in $refsDir; deterministic gate half is off")
 
     // Everything that can refuse runs before the first API call.
     val force = flags.has("force")
