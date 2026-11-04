@@ -80,6 +80,9 @@ private const val TAP_HINT_AFTER_WALK_MS = 5000L
 private const val SCAN_ARC_HOLD = 0.95f
 private const val SCAN_ARC_TICK_MS = 100L
 
+/** T31: the cast id of a fresh pipeline result is this + its ref (ArCharacter.id). */
+private const val PHOTO_PREFIX = "photo-"
+
 /** T24: a voice transcript bubble stays this long (shorter than a character line: it only confirms what was heard). */
 private const val VOICE_BUBBLE_MS = 2000L
 
@@ -193,6 +196,9 @@ fun App(
     var command by remember { mutableStateOf<CharacterCommand?>(null) }
     var commandSerial by remember { mutableStateOf(0) }
     var addOpen by remember { mutableStateOf(false) }
+    // T31 review: the saved card of the photo now being played ("saved-<stamp>"), so the Add sheet does not offer the
+    // same drawing again under its other id while its "photo-<ref>" member is on the table.
+    var photoSavedId by remember { mutableStateOf<String?>(null) }
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -211,7 +217,7 @@ fun App(
         // bytes (a 2048 px photo, a sprite of up to 5 MB) are not held for the rest of the session.
         if (to != Screen.PROCESSING) { photo = null; pendingResult = null }
         addOpen = false
-        if (to == Screen.CAPTURE) { cast = emptyList(); castSheets = emptyMap(); activeId = null; command = null }
+        if (to == Screen.CAPTURE) { cast = emptyList(); castSheets = emptyMap(); activeId = null; command = null; photoSavedId = null }
     }
     /** T31: Play starts with [member] alone (Scanning keeps it). */
     fun startCast(member: ArCharacter, memberSheet: CharacterSheet) {
@@ -238,7 +244,7 @@ fun App(
         val member = CastUi.active(cast, activeId) ?: return
         act(CharacterAction.Emote(e))
         val line = HudSpeech.emoteLine(member.emotes[e], Strings.sheetLines(activeSheet().lines, lang))
-        if (line != null) speech = HudSpeech.say(speech, line, nowMs(), speakerOf(member.id))
+        if (line != null && !HudSpeech.holdsFall(speech)) speech = HudSpeech.say(speech, line, nowMs(), speakerOf(member.id))
     }
     /** T31 Add sheet: [c] joins the table (ignored when full or already on it) and the sheet closes. */
     fun addToCast(c: BundledCharacter) {
@@ -255,6 +261,7 @@ fun App(
         photo = bytes
         pendingResult = null
         selectedBundled = null
+        photoSavedId = null
         processing = ProcessingState()
         pipelineRun++
         go(Screen.PROCESSING)
@@ -278,7 +285,10 @@ fun App(
         scope.launch {
             val card = host.saveCharacter(result)
             if (card == null) { if (keptRun == run) keptRun = -1 }
-            else saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) // the disk evicted the oldest too
+            else {
+                saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) // the disk evicted the oldest too
+                if (keptRun == run) photoSavedId = card.id
+            }
         }
     }
 
@@ -289,7 +299,7 @@ fun App(
         if (r != null) keep(r)
         sheet = r?.sheet ?: processing.sheet ?: DemoData.sheet
         val member = ArCharacter(
-            id = "photo-${r?.ref ?: "demo"}",
+            id = "$PHOTO_PREFIX${r?.ref ?: "demo"}",
             name = sheet.nameIn(lang.code),
             spritePng = r?.sprite,
             ability = sheet.ability,
@@ -394,6 +404,7 @@ fun App(
     }
     val onTracking = rememberUpdatedState<(Boolean) -> Unit> { ok ->
         hud = hud.copy(trackingLost = !ok)
+        if (!ok) addOpen = false // the Paused scrim replaces the sheet; it must not swallow Back or pop back later
         if (screen == Screen.SCANNING) {
             // Tracking lost during a scan cancels it (DESIGN.md "Scanning"); it is not retried automatically.
             if (!ok && scan.status != ScanStatus.PAUSED) scan = scan.copy(status = ScanStatus.PAUSED, progress = 0f)
@@ -402,6 +413,8 @@ fun App(
     }
     // T31: one bubble logic for both callbacks; a v1.0 host's onCharacterEvent is the active member's (the one it draws).
     val onCastEvent = rememberUpdatedState<(String, CharacterEvent) -> Unit> { id, e ->
+        // An id not on the table is ignored; "" is the v1.0 host's onCharacterEvent before any cast exists.
+        if (id.isNotEmpty() && cast.none { it.id == id }) return@rememberUpdatedState
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
         val memberSheet = castSheets[id] ?: activeSheet()
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(memberSheet.lines, lang), lang, speakerOf(id))
@@ -684,7 +697,7 @@ fun App(
                             onAbilityTap = {
                                 val lines = Strings.sheetLines(playSheet.lines, lang)
                                 val line = lines.getOrNull(1) ?: lines.firstOrNull()
-                                if (line != null) speech = HudSpeech.say(speech, line, nowMs(), speakerOf(active?.id))
+                                if (line != null && !HudSpeech.holdsFall(speech)) speech = HudSpeech.say(speech, line, nowMs(), speakerOf(active?.id))
                             },
                             onOpenMetrics = ::openMetrics,
                             onScenario = if (hud.showFootprints) ({ scenarioRequest++ }) else null,
@@ -696,7 +709,10 @@ fun App(
                             onPickActive = { id -> activeId = id },
                             onAddOpen = { addOpen = true },
                             addOpen = addOpen,
-                            addable = CastUi.addable(saved, bundled, cast),
+                            addable = CastUi.addable(
+                                saved, bundled, cast,
+                                alsoOnTable = if (cast.any { it.id.startsWith(PHOTO_PREFIX) }) setOfNotNull(photoSavedId) else emptySet(),
+                            ),
                             onAdd = ::addToCast,
                             onAddDismiss = { addOpen = false },
                             onEmote = ::emote,

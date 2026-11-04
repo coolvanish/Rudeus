@@ -44,8 +44,9 @@ private val ACTIVE_RING = 4.dp
 
 /**
  * T31: who is on the table, top-left on Play. One round 56 dp chip per member with its sprite (the ability glyph when
- * it has none, i.e. the host's built-in sprite); the [activeId] one is ringed in Sun, and under the row its name pill
- * carries the ability ("Мұрат · Секір", tap = [onNameTap], the old ability chip). After the members the `+` chip:
+ * it has none, i.e. the host's built-in sprite); the [activeId] one is ringed in Sun. The line under the members
+ * starts with the `+` chip, then the active one's name pill with the ability ("Мұрат · Секір", tap = [onNameTap], the
+ * old ability chip). The `+` chip:
  * [onAdd] while there is room ([canAdd]); at `Cast.MAX` it is drawn InkMuted and a tap shows "Table full".
  * The ring changes colour with a fade, so reduced motion needs nothing else.
  */
@@ -65,18 +66,21 @@ fun CastChips(
     }
     val active = CastUi.active(cast, activeId)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Members alone on the top line (4 x 56 + 3 x 8 = 248 dp), so the right column keeps its room on a 411 dp phone.
         Row(horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
             cast.forEach { c -> MemberChip(c, isActive = c.id == active?.id, onClick = { onPick(c.id) }) }
-            AddChip(enabled = canAdd, onClick = { if (canAdd) onAdd() else fullAt++ })
         }
-        if (fullAt > 0) {
-            Pill(t(StringId.play_table_full))
-        } else if (active != null) {
-            Chip(
-                text = "${active.name} · ${t(Strings.abilityName(active.ability))}",
-                glyph = active.ability.glyph(),
-                onClick = onNameTap,
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(RudeusSpacing.sm), verticalAlignment = Alignment.CenterVertically) {
+            AddChip(enabled = canAdd, onClick = { if (canAdd) onAdd() else fullAt++ })
+            if (fullAt > 0) {
+                Pill(t(StringId.play_table_full))
+            } else if (active != null) {
+                Chip(
+                    text = "${active.name} · ${t(Strings.abilityName(active.ability))}",
+                    glyph = active.ability.glyph(),
+                    onClick = onNameTap,
+                )
+            }
         }
     }
 }

@@ -50,6 +50,14 @@ class CastUiTest {
     }
 
     @Test
+    fun aPhotoOnTheTableHidesItsOwnSavedCard() {
+        // The photo plays as "photo-<ref>"; the same drawing was kept as "saved-2", so it must not be offered again.
+        val cast = listOf(CastUi.member(card("photo-r1"), Lang.KK))
+        assertEquals(listOf("saved-2", "saved-1", "murat", "koshka"), CastUi.addable(saved, bundled, cast).map { it.id })
+        assertEquals(listOf("saved-1", "murat", "koshka"), CastUi.addable(saved, bundled, cast, alsoOnTable = setOf("saved-2")).map { it.id })
+    }
+
+    @Test
     fun commandSerialRisesPerAction() {
         val actions = listOf(
             "murat" to CharacterAction.Jump,

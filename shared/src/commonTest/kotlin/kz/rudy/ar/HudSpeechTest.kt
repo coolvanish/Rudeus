@@ -149,4 +149,13 @@ class HudSpeechTest {
         assertEquals("Sälem!", HudSpeech.emoteLine(roar, lines.take(2)))
         assertNull(HudSpeech.emoteLine(roar, emptyList()))
     }
+
+    @Test
+    fun anAskedForLineWaitsWhileBackUpIsQueued() {
+        val fell = HudSpeech.State().on(CharacterEvent.FELL, 1_000)
+        assertEquals(false, HudSpeech.holdsFall(fell))
+        val queued = fell.on(CharacterEvent.RESPAWNED, 1_260)
+        assertEquals(true, HudSpeech.holdsFall(queued))
+        assertEquals(false, HudSpeech.holdsFall(HudSpeech.tick(queued, 2_200)))
+    }
 }
