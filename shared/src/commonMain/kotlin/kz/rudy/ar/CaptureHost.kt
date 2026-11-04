@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.pipeline.CharacterResult
@@ -39,6 +40,27 @@ interface CaptureHost {
         review: suspend (attempt: Int, score: Float) -> Boolean,
         onEvent: (PipelineEvent) -> Unit,
     ): CharacterResult
+
+    /** T38: true when [pickPhotos] opens a picker; Capture shows "Add toys" only then (the demo shell has none). */
+    val canPickMany: Boolean get() = false
+
+    /** T38: opens the photo picker for up to [max] photos (>= 2); the batch arrives through [photoBatches]. */
+    fun pickPhotos(max: Int) {}
+
+    /**
+     * T38: photos picked together, each upright JPEG/PNG with the long side <= 2048 px, unreadable ones left out; an
+     * empty list means the child cancelled. Buffered like [photos], so a batch that lands during a restart has a consumer.
+     */
+    val photoBatches: Flow<List<ByteArray>> get() = NoBatches
+
+    /**
+     * T38: one character of a batch: like [makeCharacter] but with nobody in the loop and at most [maxAttempts] stylize
+     * attempts (`CharacterPipeline(maxRetries = maxAttempts - 1)`); a failed gate ships the best sprite with
+     * `gatePassed = false`. Throws like [makeCharacter]. The default answers the reviewer itself: it ships at
+     * [maxAttempts] and retries before, which also marks the result `accepted`; a real host overrides it.
+     */
+    suspend fun importCharacter(photo: ByteArray, maxAttempts: Int, onEvent: (PipelineEvent) -> Unit): CharacterResult =
+        makeCharacter(photo, review = { attempt, _ -> attempt >= maxAttempts }, onEvent = onEvent)
 
     /** Play is on screen with the captured character: the host logs shutter -> Play for the Day 3 gate. */
     fun playEntered()
@@ -83,3 +105,6 @@ interface CaptureHost {
 
 /** The default [CaptureHost.offline] for hosts that do not track the network (and for the demo shell). */
 private val NeverOffline: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
+
+/** The default [CaptureHost.photoBatches]: a host without a multi-picker never delivers one. */
+private val NoBatches: Flow<List<ByteArray>> = emptyFlow()

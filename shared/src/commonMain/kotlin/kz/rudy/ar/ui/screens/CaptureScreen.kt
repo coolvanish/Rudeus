@@ -118,7 +118,8 @@ private val VIEWFINDER by lazy { PathParser().parsePathString("M2 32V12A10 10 0 
  * first view with the shelf's headline peeking below it, and the All / Mine / Ready filter chips pin to the top over the
  * cards. The "Rudeus ⌄" wordmark opens the Settings sheet, where the language switch and Metrics live.
  * [saved] are the characters from the child's photos, [bundled] the ones shipped in the APK.
- * [onPickPhoto] (T03) adds a "from gallery" button under the camera one when the host offers a photo picker.
+ * [onPickPhoto] (T03) adds a "from gallery" button under the camera one when the host offers a photo picker;
+ * [onAddToys] (T38) a third, "Add toys", when it offers a multi-picker: several photos join the shelf without being played.
  */
 @Composable
 fun CaptureScreen(
@@ -131,6 +132,7 @@ fun CaptureScreen(
     saved: List<BundledCharacter> = emptyList(),
     selectedId: String? = null,
     onPickPhoto: (() -> Unit)? = null,
+    onAddToys: (() -> Unit)? = null,
 ) {
     // Inside the insets, so the pinned row never slides under the status bar.
     BoxWithConstraints(modifier.fillMaxSize().background(RudeusColors.Paper).safeDrawingPadding()) {
@@ -141,7 +143,7 @@ fun CaptureScreen(
             selectedId = selectedId,
             onPick = onPickBundled,
             hero = {
-                Hero(offline, onOpenSettings, onTakePhoto, onPickPhoto, Modifier.height(heroHeight))
+                Hero(offline, onOpenSettings, onTakePhoto, onPickPhoto, onAddToys, Modifier.height(heroHeight))
             },
         )
     }
@@ -318,6 +320,7 @@ private fun Hero(
     onOpenSettings: () -> Unit,
     onTakePhoto: () -> Unit,
     onPickPhoto: (() -> Unit)?,
+    onAddToys: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier) {
@@ -349,6 +352,15 @@ private fun Hero(
                     text = t(StringId.capture_pick_gallery),
                     glyph = Glyph.GALLERY,
                     onClick = onPickPhoto,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (onAddToys != null) {
+                // T38: several photos at once, straight to the shelf; the privacy note below covers them too.
+                GhostButton(
+                    text = t(StringId.capture_add_toys),
+                    glyph = Glyph.PLUS,
+                    onClick = onAddToys,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

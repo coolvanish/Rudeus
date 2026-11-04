@@ -156,7 +156,9 @@ story the hero is a drawn star. Drawn over Capture, so nothing waits behind it; 
 Paper. One vertical grid is the whole screen. The first view: top-left wordmark "Rudeus ⌄" (the arrow in Sky) opens the
 Settings sheet. Display title "Drawing or toy", hint "Put the drawing on the table and take a photo". Hero card (Cream,
 radius 28): big example drawing with Paper viewfinder brackets, taking all the height left, **Photo** (Sun, full width,
-camera glyph), ghost **From gallery**, and under them the caption "The photo goes to Meta AI…" (`capture_privacy_note`).
+camera glyph), ghost **From gallery**, ghost **Add toys** (T38, only with a host that offers a multi-picker: several
+photos join the shelf without being played, see Import), and under them the caption "The photo goes to Meta AI…"
+(`capture_privacy_note`).
 The headline "Or pick a ready one" peeks under the hero, so the view reads as "scroll for more". Scrolling brings the
 filter chips All · Mine · Ready, which pin to the top, over the character cards (as many columns as fit at 124 dp). On a
 filter change the cards both shelves share move with a spring, the dropped ones fade and the new ones pop in.
@@ -192,6 +194,21 @@ card: mono number `0.82`, "Style score", "Attempt 2 / 3", Passed (Leaf) or Not p
 - *Done* (above the threshold, or the child said yes): "Done!", large sprite on the hero, name + ability tag, a dot score
   line (Leaf when it passed, Tomato when the child took it below the threshold), one Sun **Next**. Nobody has to confirm:
   it moves on by itself after 2 s, and Next skips the wait.
+
+### Import — `ImportScreen` (T38)
+Paper. Reached from Capture's **Add toys** after the system picker (up to 7 photos; the picker itself stops at 7). Back
+(ghost) top-left while it runs, which cancels what is still running (what was saved stays). Title "Adding toys", hint
+"Up to 7 at once. Hang on". A grid of Cream tiles (124 dp columns, as the shelf): the photo on a Paper well, dimmed until
+Muse's sprite replaces it; under it the stage ("Painting · 2/2" on the second attempt) and an 8 dp Sun bar, then the
+name and the gate's honest verdict: Passed (Leaf tag, check) with the mono score, or Not passed (Tomato tag) with the
+score and a **Keep** chip, off by default (on: "Will stay", check). Three photos paint at once, two attempts each,
+nobody is asked in between. A photo that passed is on the Mine shelf before Done is tapped. The batch bar (the
+Processing bar) sits at the bottom while it runs.
+- *Done* (every photo ended): display "Done!" with "N added" (passed + kept), or "None came out" with "Check the
+  internet and try again" when every photo failed; one Sun **Done** (check glyph) saves the kept ones and returns to
+  Capture, new cards first. Nothing goes to Scanning or Play.
+- *A photo that failed* (network, no key): its tile dims with a Tomato cross and says "Didn't work"; the others carry on.
+  Never a sheet per photo.
 
 ### Scanning — `ScanningScreen`
 AR view fills the screen. Top-centre: segmented **Table | Floor** (selected fills Ink, with a check), visible until the
@@ -338,6 +355,15 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | review_title | Ұнай ма? | Нравится? | Like it? |
 | review_yes | Иә, ойнаймыз | Да, играем | Yes, let's play |
 | processing_done | Дайын! | Готово! | Done! |
+| capture_add_toys | Ойыншық қосу | Добавить игрушки | Add toys |
+| import_title | Ойыншықтар қосылып жатыр | Добавляем игрушки | Adding toys |
+| import_hint | Бірден 7-ге дейін. Сәл күте тұр | До 7 за раз. Подожди немного | Up to 7 at once. Hang on |
+| import_queued | Кезекте | В очереди | Waiting |
+| import_keep | Қалдыру | Оставить | Keep |
+| import_kept | Қалады | Останется | Will stay |
+| import_added | қосылды | добавлено | added |
+| import_none_added | Ешқайсысы шықпады | Ни один не вышел | None came out |
+| import_finish | Болды | Готово | Done |
 | scan_title | Үстелді қара | Посмотри на стол | Look at the table |
 | scan_title_floor | Еденді қара | Посмотри на пол | Look at the floor |
 | scan_hint | Телефонды баяу қозғалт | Медленно води телефоном | Move the phone slowly |

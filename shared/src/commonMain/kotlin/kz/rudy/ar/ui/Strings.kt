@@ -51,6 +51,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     capture_take_photo("Фото", "Фото", "Photo"),
     capture_privacy_note("Фото Meta AI-ға жіберіледі. Адамдарды түсірме", "Фото уходит в Meta AI. Не снимай людей", "The photo goes to Meta AI. No people, please"),
     capture_pick_gallery("Галереядан", "Из галереи", "From gallery"),
+    /** T38: up to 7 photos from the gallery become characters on the shelf, without playing them. */
+    capture_add_toys("Ойыншық қосу", "Добавить игрушки", "Add toys"),
     capture_or_pick("Немесе дайынын таңда", "Или выбери готового", "Or pick a ready one"),
     capture_offline_note("Интернет жоқ — дайын кейіпкерлер", "Нет интернета — готовые герои", "No internet — ready characters"),
     capture_empty("Әзірге жоқ", "Пока пусто", "Nothing yet"),
@@ -75,6 +77,18 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     review_title("Ұнай ма?", "Нравится?", "Like it?"),
     review_yes("Иә, ойнаймыз", "Да, играем", "Yes, let's play"),
     processing_done("Дайын!", "Готово!", "Done!"),
+
+    // T38: the Import screen (several photos at once, nothing is played).
+    import_title("Ойыншықтар қосылып жатыр", "Добавляем игрушки", "Adding toys"),
+    import_hint("Бірден 7-ге дейін. Сәл күте тұр", "До 7 за раз. Подожди немного", "Up to 7 at once. Hang on"),
+    import_queued("Кезекте", "В очереди", "Waiting"),
+    /** Under the tile of a character below the gate: a tap keeps it on the shelf anyway. */
+    import_keep("Қалдыру", "Оставить", "Keep"),
+    import_kept("Қалады", "Останется", "Will stay"),
+    /** "<n> added" at the end; the number goes in front. */
+    import_added("қосылды", "добавлено", "added"),
+    import_none_added("Ешқайсысы шықпады", "Ни один не вышел", "None came out"),
+    import_finish("Болды", "Готово", "Done"),
 
     scan_title("Үстелді қара", "Посмотри на стол", "Look at the table"),
     scan_title_floor("Еденді қара", "Посмотри на пол", "Look at the floor"),

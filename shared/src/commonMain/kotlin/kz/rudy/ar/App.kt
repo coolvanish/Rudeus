@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalLocaleList
 import androidx.compose.ui.text.intl.LocaleList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -41,6 +42,7 @@ import kz.rudy.ar.core.metrics.CharacterMetrics
 import kz.rudy.ar.core.metrics.MetricsLog
 import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.metrics.ScanMetrics
+import kz.rudy.ar.core.pipeline.BatchImport
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
 import kz.rudy.ar.core.voice.VoiceCommand
@@ -55,6 +57,9 @@ import kz.rudy.ar.ui.screens.CaptureScreen
 import kz.rudy.ar.ui.screens.ExportStatus
 import kz.rudy.ar.ui.screens.HudSpeech
 import kz.rudy.ar.ui.screens.HudState
+import kz.rudy.ar.ui.screens.ImportItem
+import kz.rudy.ar.ui.screens.ImportScreen
+import kz.rudy.ar.ui.screens.ImportState
 import kz.rudy.ar.ui.screens.IntroScreen
 import kz.rudy.ar.ui.screens.MetricsScreen
 import kz.rudy.ar.ui.screens.PipelineStage
@@ -73,7 +78,7 @@ import kz.rudy.ar.ui.theme.RudeusMotion
 import kz.rudy.ar.ui.theme.RudeusTheme
 import kotlin.time.TimeSource
 
-enum class Screen { CAPTURE, PROCESSING, SCANNING, PLAY, METRICS }
+enum class Screen { CAPTURE, PROCESSING, IMPORT, SCANNING, PLAY, METRICS }
 
 /** How long the "Tap — it walks" pill stays after the first walk (DESIGN.md "Play"). */
 private const val TAP_HINT_AFTER_WALK_MS = 5000L
@@ -139,6 +144,12 @@ private const val DONE_AUTO_ADVANCE_MS = 2000L
  * `onCharacterEvent` (v1.0: the active member) and `onCastEvent` feed the one bubble, name-first with two or more.
  * The session end keeps only the first member and clears `command`; Capture clears the cast.
  *
+ * Import (T38): Capture's "Add toys" asks the host for up to [BatchImport.MAX_PHOTOS] photos ([CaptureHost.pickPhotos]);
+ * the batch lands through [CaptureHost.photoBatches] on the Import screen, where [BatchImport.run] makes a character of
+ * each with [BatchImport.CONCURRENCY] in flight and [BatchImport.MAX_ATTEMPTS] stylize attempts, nobody asked in between.
+ * A result that passes the gate is saved as it lands; one below it is saved at Done only if its Keep chip is on. Done and
+ * Back both return to Capture (Back cancels what still runs; what was saved stays); nothing goes to Scanning or Play.
+ *
  * Settings (T26): the sheet opens from Capture's wordmark. Reduce motion here ORs with whatever a host provides through
  * [LocalReducedMotion] above `App`; both last for this process only. Sounds reaches the host as `ArSlot.soundsOn`.
  */
@@ -199,6 +210,9 @@ fun App(
     // T26: characters made on this phone (shown ahead of the bundled ones) and the result last sent to disk.
     var saved by remember { mutableStateOf<List<BundledCharacter>>(emptyList()) }
     var keptRun by remember { mutableStateOf(-1) } // the pipelineRun last sent to disk; a number, so it holds no sprite
+    // T38: the batch on the Import screen and the counter that restarts its effect.
+    var importState by remember { mutableStateOf(ImportState()) }
+    var importRun by remember { mutableStateOf(0) }
     // T31: who is on the table (first = the one Play started with; its sprite is what `spritePng` used to hold), each
     // member's sheet for its lines, whose buttons they are, the last command and its serial, and the Add sheet.
     var cast by remember { mutableStateOf<List<ArCharacter>>(emptyList()) }
@@ -227,6 +241,7 @@ fun App(
         // Nothing returns to Processing without a new photo, and every way from Capture into AR sets the sprite: the
         // bytes (a 2048 px photo, a sprite of up to 5 MB) are not held for the rest of the session.
         if (to != Screen.PROCESSING) { photo = null; pendingResult = null; processing = processing.copy(sprite = null) }
+        if (to != Screen.IMPORT) importState = ImportState() // T38: up to seven photos and sprites; dropped with the screen
         addOpen = false
         if (to == Screen.CAPTURE) { cast = emptyList(); castSheets = emptyMap(); activeId = null; command = null; photoSavedId = null }
     }
@@ -280,6 +295,17 @@ fun App(
     LaunchedEffect(capture) {
         capture?.photos?.collect { startPipeline(it) }
     }
+    /** T38: the picked photos become the Import screen's tiles; an empty batch (cancelled picker) changes nothing. */
+    fun startImport(photos: List<ByteArray>) {
+        val taken = BatchImport.take(photos)
+        if (taken.isEmpty()) return
+        importState = ImportState(items = taken.mapIndexed { i, p -> ImportItem(index = i, photo = p) }, running = true)
+        importRun++
+        go(Screen.IMPORT)
+    }
+    LaunchedEffect(capture) {
+        capture?.photoBatches?.collect { startImport(it) }
+    }
     LaunchedEffect(capture) {
         if (capture != null) saved = capture.savedCharacters()
     }
@@ -300,6 +326,20 @@ fun App(
                 saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) // the disk evicted the oldest too
                 if (keptRun == run) photoSavedId = card.id
             }
+        }
+    }
+
+    /**
+     * T38 Done: the ticked below-gate results go to disk (one at a time, in App's scope so leaving the screen does not
+     * lose them) and Capture shows them first; the passed ones are already there.
+     */
+    fun finishImport() {
+        val host = capture
+        val kept = importState.kept.mapNotNull { it.result }
+        go(Screen.CAPTURE)
+        if (host == null || kept.isEmpty()) return
+        scope.launch {
+            for (r in kept) host.saveCharacter(r)?.let { card -> saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) }
         }
     }
 
@@ -343,7 +383,7 @@ fun App(
                 screen = if (lastScreen == Screen.METRICS) Screen.CAPTURE else lastScreen
             }
             Screen.SCANNING -> { scan = ScanState(surface = surface); go(Screen.CAPTURE) }
-            Screen.PROCESSING, Screen.PLAY -> go(Screen.CAPTURE)
+            Screen.PROCESSING, Screen.PLAY, Screen.IMPORT -> go(Screen.CAPTURE)
         }
     }
     fun openMetrics() {
@@ -578,6 +618,7 @@ fun App(
                             if (capture != null) capture.takePhoto() else startPipeline(ByteArray(0))
                         },
                         onPickPhoto = capture?.let { host -> { host.pickPhoto() } },
+                        onAddToys = capture?.takeIf { it.canPickMany }?.let { host -> { host.pickPhotos(BatchImport.MAX_PHOTOS) } },
                         onPickBundled = { c: BundledCharacter ->
                             sheet = c.sheet
                             selectedBundled = c.id
@@ -658,6 +699,67 @@ fun App(
                             onContinue = ::useResult,
                             onBack = ::back,
                             photo = photo,
+                        )
+                    }
+
+                    Screen.IMPORT -> {
+                        // T38: BatchImport.CONCURRENCY pipelines at a time, nobody asked in between. Their events arrive on
+                        // the pipelines' threads; a channel folds them into `importState` on this effect's thread, so three
+                        // photos never race one snapshot. A result above the gate is saved as it lands (Mine has it before
+                        // Done); one below waits for its Keep chip. Leaving the screen cancels every pipeline; a host that
+                        // throws without a Failed event (no key) still fails its tile.
+                        LaunchedEffect(importRun) {
+                            val run = importRun
+                            val host = capture ?: return@LaunchedEffect
+                            val items = importState.items
+                            if (items.isEmpty()) return@LaunchedEffect
+                            val events = Channel<Pair<Int, PipelineEvent>>(Channel.UNLIMITED)
+                            fun update(index: Int, change: (ImportItem) -> ImportItem) {
+                                if (run != importRun) return
+                                importState = importState.copy(items = importState.items.map { if (it.index == index) change(it) else it })
+                            }
+                            val folding = launch {
+                                for ((index, event) in events) {
+                                    update(index) { item ->
+                                        item.copy(
+                                            started = true,
+                                            state = item.state.reduce(event),
+                                            result = (event as? PipelineEvent.Finished)?.result ?: item.result,
+                                        )
+                                    }
+                                }
+                            }
+                            try {
+                                BatchImport.run(items.size) { index ->
+                                    val result = try {
+                                        host.importCharacter(items[index].photo, BatchImport.MAX_ATTEMPTS) { event -> events.trySend(index to event) }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        events.trySend(index to PipelineEvent.Failed(e.message ?: e::class.simpleName.orEmpty()))
+                                        throw e
+                                    }
+                                    if (result.gatePassed) {
+                                        val card = host.saveCharacter(result)
+                                        if (card != null) {
+                                            saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT)
+                                            update(index) { it.copy(savedId = card.id) }
+                                        }
+                                    }
+                                }
+                            } finally {
+                                events.close()
+                            }
+                            folding.join()
+                            if (run == importRun) importState = importState.copy(running = false)
+                        }
+                        ImportScreen(
+                            state = importState,
+                            onToggleKeep = { item ->
+                                importState = importState.copy(items = importState.items.map { if (it.index == item.index) it.copy(keep = !it.keep) else it })
+                            },
+                            onFinish = ::finishImport,
+                            onBack = ::back,
                         )
                     }
 

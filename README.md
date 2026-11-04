@@ -54,6 +54,13 @@ No backend: photos go directly from the phone to the Meta APIs. Spark runs on th
 on the prompts, including the character image. The Capture screen says that the photo goes to Meta AI and asks not to
 photograph people.
 
+### Add toys (batch import)
+Capture's **Add toys** sends up to 7 gallery photos through the same pipeline at once: three in flight, at most two
+stylize attempts each, no "Like it?" question. A character above the style gate joins the Mine shelf as it lands; one
+below it only if its Keep chip is on when Done is tapped. Nothing is played from there. Each photo leaves the phone
+exactly as a single one does. The batch's characters are in the session run file; their stage costs are the table
+estimates (`measured: false`, one metrics log per pipeline), the session's metered totals stay exact.
+
 ### Background scans
 The first scan of a session is always the Scan button. After it, while "Auto scan" is on (the default; a chip in the
 Play HUD under Footprints), the app may scan again by itself when the camera settles in a sector around the table it has

@@ -12,6 +12,7 @@ around the table.
 | T35 auto-scan policy | `AutoScanPolicy` / `ScanSectors` in `:core`: 4 sectors around the anchor (10° hysteresis), camera still 0.5 s (≤ 3 cm, ≤ 0.1 rad), not steeper than 75°, tracking, no scan running, ≥ 8 s since the last scan, ≤ 4 per session, a button scan marks its sector; `scans[].background` + `summary.backgroundScans` in the run file (README figures stay over manual scans). 10 new tests | done |
 | T36 toggle + docs | `ArSlot.autoScan` (default on), HUD chip «Өзі сканерлейді / Авто-скан / Auto scan» under Footprints; CLAUDE.md, build-plan (locked decision amended), README «Background scans» + metrics note, architecture.md | done |
 | T37 AR host | quiet path in `RudeusArView.kt` behind `slot.autoScan`: same grab → SAM → merge → swap as the button, no `onScanned` (no overlay, lines, toast), ref `auto-NN`, `recordScan(background = true)`, `scan_merge` log line; first scan stays on the button | needs your Pixel run |
+| T38 batch import (`claude/multi-character-gallery-import-5182bb`, from main at 507816d) | Capture's third button **Add toys** → system picker (≤ 7) → Import screen: `BatchImport` in `:core` (7 / 3 in flight / 2 attempts, 6 tests), `MetricsLog` lists atomic + `appendCharacter` (1 test), `CaptureHost.pickPhotos` / `photoBatches` / `importCharacter`, `ImportScreen` tiles with Keep chips; `PhotoIntake` multi-picker and `AndroidCaptureHost.importCharacter` (own MetricsLog per batch character, locks on saves and the run file) | needs your Pixel run |
 
 Cost: a scan is 11 SAM prompts ≈ $0.03; four quiet scans ≈ $0.11 per session on top of the button scans.
 
@@ -34,6 +35,25 @@ third thing (bottle, toy) spread over the table on the textured cloth, so that n
 | At most four quiet scans a session; none within 8 s of the last scan; none while the phone is steeper than 75° or moving | UNTESTED (JVM PASS: `AutoScanTest`) | no `auto_scan` lines beyond `fired=4`; none with `scan_too_steep where=camera quiet=true` right after |
 | HUD chip off → no `auto_scan` lines at all; button scans behave as before (`ref=scan-NN`) | UNTESTED | logcat |
 | `scripts/verify.sh` green | PASS | worktree: core 373 / shared 26 / android 2 |
+
+### Add toys (T38)
+| Criterion | Status | Evidence |
+|---|---|---|
+| **Add toys** → pick 3 photos → the Import screen shows 3 tiles, all three painting at once: `photo_batch_ms … photos=3`, three `stage_start=cutout` before any `pipeline_ms`, each ending `pipeline_ms … batch=true ref=0N` | UNTESTED (JVM PASS: `BatchImportTest`) | logcat; `docs/evidence/day10-import-running.png` |
+| A photo that passes shows on the Mine shelf before Done is tapped (`saved_character=` while the others still run); after Done the new cards are first, nothing went to Scanning or Play | UNTESTED | `docs/evidence/day10-import-done.png`, then Capture |
+| A photo below the gate: Tomato tag with its score, Keep chip off; Done without Keep leaves it off the shelf, with Keep it is saved (`saved_character=… passed=false`) | UNTESTED | logcat |
+| At most 2 attempts per photo: no `stage_start=stylize attempt=3` in a batch | UNTESTED (JVM PASS: reducer `maxAttempts = 2`) | logcat |
+| Back during the run: the pipelines stop (no further `stage_start` for those refs), Capture shows what was already saved; the run file holds them as `aborted: true` | UNTESTED | logcat, Metrics → Export |
+| Wi-Fi off → every tile "Didn't work", title "None came out" + "Check the internet", one Done, no crash | UNTESTED | `docs/evidence/day10-import-offline.png` |
+| Metrics screen after a batch: the characters are in the run (`n` counts them); their stage costs are estimates (`measured: false`), by design | UNTESTED | Export JSON |
+| `scripts/verify.sh` green | PASS | worktree: core 380 / shared 26 / android 2 |
+
+Pixel steps for T38 (after the merge steps, or on their own):
+1. Capture → **Add toys** → pick 3 drawings from the gallery (one of them deliberately bad, e.g. a photo of the table). Expect `photo_batch_ms … picked=3 photos=3` and three tiles. Screenshot `day10-import-running.png` while two tiles still paint and one is done.
+2. Wait for Done. Expect the good ones Passed (Leaf), the bad one Not passed (Tomato) with a Keep chip. Tap Keep on it, then **Done**: `saved_character=… passed=false`, Capture shows the three new cards first. Screenshot `day10-import-done.png` before tapping Done.
+3. Repeat with 7 photos: the picker stops at 7; three paint at once, the rest say "Waiting"; the whole batch takes about two or three single runs, not seven.
+4. Start a batch, press Back after the first `stage_start=stylize`: Capture; no new `stage_start` lines for those refs follow.
+5. Wi-Fi off → **Add toys** → 2 photos: both tiles "Didn't work", one **Done**, no crash. Screenshot `day10-import-offline.png`.
 
 Pixel steps, in order (keys on `RudeusGate`):
 1. Pick a bundled card → Scanning → tap → **Scan**: `scan_ms … ref=scan-01`, `scan_merge removed=[] replaced=[] kept=[] carried=[] ref=scan-01`, one `scan_object id=` per object. No `auto_scan` before this.
