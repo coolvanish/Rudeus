@@ -369,7 +369,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             planeRenderer = anchor == null,
             sessionConfiguration = { session, config ->
                 config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
-                config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                // HAND-REVIEW: memory audit 2026-11-03 — nothing in the scene reads light: the sprite, footprints and plane
+                // dots are unlit, the occluders depth-only. DISABLED skips the HDR estimate, its cubemaps and the IBL rebuild
+                // (LightEstimator.kt:421 frees them); the estimator never touches camera exposure, so colours stay the same.
+                config.lightEstimationMode = Config.LightEstimationMode.DISABLED
                 val depthSupported = session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)
                 config.depthMode = if (depthSupported) Config.DepthMode.AUTOMATIC else Config.DepthMode.DISABLED
                 config.focusMode = Config.FocusMode.AUTO
