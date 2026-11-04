@@ -30,10 +30,10 @@ p50 < 40 s, <= $0.05 per character.
 ```
 `summary` is computed by `MetricsLog.summarise()`; never written by hand.
 
-Stage order per character: `cutout`, then per attempt `stylize`, `matte`, `gate` [`rescore`], then `sheet` last (the sheet call runs
-concurrently with the loop, so `totalMs` < the sum of stage `ms`; it is recorded after the loop). `matte` appears only
+Stage order per character: `cutout`, then per attempt `stylize`, `matte`, `gate` [`rescore`], then `sheet`, then `choreo` last (the sheet call runs
+concurrently with the loop, so `totalMs` < the sum of stage `ms`; it is recorded after the loop; `choreo` (T29, the five emote choreographies from Spark) runs right after the sheet in the same coroutine and is recorded only when that coroutine finished, so a character that failed while the sheet was still running has no `choreo` stage). `matte` appears only
 when the pipeline has a sprite matter (the CLI and the app do); its cost is 0 unless it fell back to a SAM pass.
-A sheet stage with `ok: false` means the character shipped the fallback sheet.
+A sheet stage with `ok: false` means the character shipped the fallback sheet; a `choreo` stage with `ok: false` means it shipped the default emotes (`source=default`).
 `rescore` (added 2026-10-28, T11) is the gate's colour-free look (`Prompts.STYLE_SCORE_NO_COLOUR` + outline-only
 deterministic half), run in parallel with `gate` on every attempt since commit 13b3be9 (run 2026-10-28T09-11-21Z ran
 it only after a failed `gate`; earlier runs have no `rescore` at all). Each stage's `ok` is its own look's verdict; the attempt keeps the higher score and passes
