@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.metrics.MetricsRun
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kz.rudy.ar.core.pipeline.PipelineEvent
@@ -72,6 +73,12 @@ interface CaptureHost {
 
     /** T24: push-to-talk on Play (hold the mic, say "jump" / "go"). Null = no mic button (demo shell, tests). */
     val voice: VoiceHost? get() = null
+
+    /** The table/floor choice from the last run, read once when App starts. Null = never chosen. */
+    fun lastSurface(): Surface? = null
+
+    /** The child picked [surface]: the host keeps it for [lastSurface]. */
+    fun rememberSurface(surface: Surface) {}
 }
 
 /** The default [CaptureHost.offline] for hosts that do not track the network (and for the demo shell). */

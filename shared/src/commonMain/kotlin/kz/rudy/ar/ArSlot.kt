@@ -68,7 +68,7 @@ data class ArSlot(
     val debug: Boolean = false,
     /** The Settings sheet's Sounds toggle: the host plays character sounds only while true. Events fire either way. */
     val soundsOn: Boolean = true,
-    /** True once a settled horizontal plane exists and a tap would place the character; false when none does. */
+    /** True once a settled horizontal plane exists and a tap would place the character; false when none does, or while the host already holds an early tap for one. */
     val onSurfaceReady: (Boolean) -> Unit = {},
     /** The session anchor was created by a tap: the character now stands on the surface. */
     val onAnchorPlaced: () -> Unit = {},

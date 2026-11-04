@@ -171,7 +171,7 @@ fun App(
     // The run waiting on the child's "Like it?" (ProcessingStatus.REVIEW): completing it answers the pipeline's reviewer.
     var reviewAnswer by remember { mutableStateOf<CompletableDeferred<Boolean>?>(null) }
     // T13: the surface (kept across Back), the picked bundled card, what the character says, and the first walk.
-    var surface by remember { mutableStateOf(Surface.TABLE) }
+    var surface by remember { mutableStateOf(capture?.lastSurface() ?: Surface.TABLE) } // the host keeps it across restarts
     var selectedBundled by remember { mutableStateOf<String?>(null) }
     var speech by remember { mutableStateOf(HudSpeech.State()) }
     var walkedOnce by remember { mutableStateOf(false) }
@@ -688,7 +688,7 @@ fun App(
                                 scan = scan.copy(status = ScanStatus.IDLE, progress = 0f); go(Screen.PLAY)
                             },
                             onBack = ::back,
-                            onSurfaceChange = { surface = it },
+                            onSurfaceChange = { surface = it; capture?.rememberSurface(it) },
                             speech = speech.text,
                         )
                     }
