@@ -91,6 +91,8 @@ data class HudState(
     val characterSize: Float = CharacterSize.DEFAULT,
     /** T31: the character stands on the table (the anchor exists): the emote row is enabled. */
     val anchored: Boolean = false,
+    /** T36: background scans are on (`ArSlot.autoScan`); the "Auto scan" chip under Footprints shows it. */
+    val autoScan: Boolean = true,
 )
 
 /**
@@ -128,6 +130,7 @@ fun PlayScreen(
     onBigger: () -> Unit,
     onSmaller: () -> Unit,
     onToggleFootprints: () -> Unit,
+    onToggleAutoScan: () -> Unit,
     onAbilityTap: () -> Unit,
     onOpenMetrics: () -> Unit,
     modifier: Modifier = Modifier,
@@ -185,6 +188,12 @@ fun PlayScreen(
                         glyph = Glyph.FOOTPRINTS,
                         isOn = hud.showFootprints,
                         onClick = onToggleFootprints,
+                    )
+                    Chip(
+                        text = t(StringId.auto_scan),
+                        glyph = Glyph.CAMERA,
+                        isOn = hud.autoScan,
+                        onClick = onToggleAutoScan,
                     )
                     if (hud.showFootprints) {
                         SecondaryButton(t(StringId.metrics_title), glyph = Glyph.METRICS, onClick = onOpenMetrics)

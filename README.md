@@ -54,6 +54,15 @@ No backend: photos go directly from the phone to the Meta APIs. Spark runs on th
 on the prompts, including the character image. The Capture screen says that the photo goes to Meta AI and asks not to
 photograph people.
 
+### Background scans
+The first scan of a session is always the Scan button. After it, while "Auto scan" is on (the default; a chip in the
+Play HUD under Footprints), the app may scan again by itself when the camera settles in a sector around the table it has
+not scanned yet. Limits: at most four per session, at least 8 s apart, never from a camera steeper than 75°, never while
+another scan runs, never per frame. A background scan shows no overlay. Each one sends one camera frame to Meta's
+SAM 3.1, exactly like the button. Cost: about $0.03 per scan (11 prompts at $0.0025), about $0.11 for a session's four.
+Turning "Auto scan" off in the HUD means frames leave the phone only when the player presses Scan. The switch is on again
+at each app start.
+
 ## Offline behavior
 The CLI's fixture mode (`character --fixtures docs/api-samples ...`, without `--live`) uses redacted API responses
 and needs no key. The Android app does not switch to fixtures: without a key, generation and scanning fail;
@@ -81,6 +90,9 @@ Generated with `metrics summarise` over the runs listed below (the five empty Oc
 
 Day 2 targets were ≥ 7/10 passing the gate first try, p50 < 40 s and ≤ $0.05 per character. The largest live
 run (15 drawings, 2026-10-28T09-11-21Z) missed the pass-rate and latency targets; the cost target held.
+
+Scans are logged in `scans[]`. `scans[].background = true` marks a quiet background scan (Day 10); any scan figure
+quoted from a run means manual (button) scans only, and `summary.backgroundScans` counts the quiet ones separately.
 
 ## Cast and emotes (v1.1, Nov 4)
 Several characters on one table, and emotes the model choreographs. Up to four characters stand on the table (`+` on

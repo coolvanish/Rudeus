@@ -189,6 +189,8 @@ fun App(
     var settingsOpen by remember { mutableStateOf(false) }
     var reduceMotion by remember { mutableStateOf(false) }
     var soundsOn by remember { mutableStateOf(true) }
+    // T36: the HUD's "Auto scan" switch (background scans). A privacy choice, so it outlives a session; on again at each app start.
+    var autoScan by remember { mutableStateOf(true) }
     val hostReducedMotion = LocalReducedMotion.current
     // T25: Bigger / Smaller. A choice, not a request, so it is kept across Back like the surface.
     var characterSize by remember { mutableStateOf(CharacterSize.DEFAULT) }
@@ -484,7 +486,7 @@ fun App(
     val spritePng = active?.spritePng // legacy mirror: the active member's (null = the host's built-in dino)
     val ability = active?.ability ?: sheet.ability
     val slot = remember(
-        spritePng, surface, debug, soundsOn, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize,
+        spritePng, surface, debug, soundsOn, autoScan, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize,
         cast, active?.id, command,
     ) {
         ArSlot(
@@ -492,6 +494,7 @@ fun App(
             surface = surface,
             debug = debug,
             soundsOn = soundsOn,
+            autoScan = autoScan,
             onSurfaceReady = { onSurfaceReady.value(it) },
             onAnchorPlaced = { onAnchorPlaced.value() },
             onTracking = { onTracking.value(it) },
@@ -727,6 +730,7 @@ fun App(
                                 voice = voicePhase,
                                 speechFromVoice = speech.text != null && speech.serial == voiceSerial,
                                 characterSize = characterSize,
+                                autoScan = autoScan,
                                 // The host-less shell has no AR to place anything: the emote row demos without it.
                                 anchored = scan.anchored || capture == null,
                             ),
@@ -735,6 +739,7 @@ fun App(
                             onBigger = { characterSize = CharacterSize.bigger(characterSize) },
                             onSmaller = { characterSize = CharacterSize.smaller(characterSize) },
                             onToggleFootprints = { hud = hud.copy(showFootprints = !hud.showFootprints) },
+                            onToggleAutoScan = { autoScan = !autoScan },
                             onAbilityTap = {
                                 val lines = Strings.sheetLines(playSheet.lines, lang)
                                 val line = lines.getOrNull(1) ?: lines.firstOrNull()

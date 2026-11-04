@@ -146,6 +146,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     paused_hint("Телефонды үстелге бағытта", "Наведи телефон на стол", "Point the phone at the table"),
     paused_hint_floor("Телефонды еденге бағытта", "Наведи телефон на пол", "Point the phone at the floor"),
     footprints("Іздер", "Следы", "Footprints"),
+    /** T36: the HUD switch for background scans (frames leave the phone only on Scan when off). */
+    auto_scan("Өзі сканерлейді", "Авто-скан", "Auto scan"),
     fell("Ой! Құлап кетті", "Ой! Упал", "Oops! Fell"),
     respawn("Қайта тұрды", "Снова на месте", "Back up"),
     blocked("Кедергі!", "Преграда!", "Blocked!"),

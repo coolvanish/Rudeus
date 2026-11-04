@@ -68,6 +68,14 @@ data class ArSlot(
     val debug: Boolean = false,
     /** The Settings sheet's Sounds toggle: the host plays character sounds only while true. Events fire either way. */
     val soundsOn: Boolean = true,
+    /**
+     * T36: background scans. True (default) lets the host scan on its own ONLY after the first button scan of the session,
+     * when the camera first settles in a sector around the anchor it has not scanned yet (`AutoScanPolicy`: <= 4 per
+     * session, >= 8 s apart, never steeper than 75°, never while another scan runs). A background scan shows no overlay and
+     * never calls [onScanned]; [onLevel] still fires. False = today's behaviour: the button only. The HUD switch is the
+     * player's privacy switch: frames leave the phone only when they press Scan.
+     */
+    val autoScan: Boolean = true,
     /** True once a settled horizontal plane exists and a tap would place the character; false when none does, or while the host already holds an early tap for one. */
     val onSurfaceReady: (Boolean) -> Unit = {},
     /** The session anchor was created by a tap: the character now stands on the surface. */

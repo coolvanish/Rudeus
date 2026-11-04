@@ -22,7 +22,7 @@ Full editable version: Claude Doc "Rudeus AR Game Build Plan". This copy is the 
 - Character = billboard quad (Y-only) with sprite texture.
 - Level in plane coords (u, v) + height h. Footprints via ray–plane using camera pose + intrinsics saved at scan time. No Depth API dependency for geometry.
 - Occlusion: Depth API flag first; occluder boxes (`depthWrite=true, colorWrite=false`) as plan B.
-- Scan = explicit button, 3–5 s "looking around" animation. Never per-frame.
+- Scan = explicit button, 3–5 s "looking around" animation, for the first level; after it the host may run quiet background scans when the camera settles in a new sector (≤ 4 per session, 8 s apart, `ArSlot.autoScan`, HUD switch, on by default). Never per-frame. (changed 2026-11-04, T34–T37)
 
 ## Repo today
 Untouched CMP template: Kotlin 2.4.21, AGP 9.1.1, CMP 1.12.2, compileSdk 37, minSdk 24, package `kz.rudy.ar`, modules `:androidApp` + `:shared`. No git, no AR deps, no Meta client.

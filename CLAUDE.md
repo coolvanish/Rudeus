@@ -15,7 +15,7 @@ The day-by-day plan, gates and cut lines live in `ai/build-plan.md` — read it 
 
 - The AR view is injected into `App()` as a **slot composable** from `:androidApp`. No `expect/actual`, no stub actuals.
 - `:core` works in **plane coordinates** `(u, v, h)` in metres. Only `:androidApp` converts to/from ARCore `Pose`.
-- Scan is an **explicit button** (3–5 s), never per-frame. One anchor per session. `PAUSED` freezes physics, never resets.
+- Scan is an **explicit button** (3–5 s) for the first level; after it the host may run quiet background scans when the camera settles in a new sector (≤ 4 per session, 8 s apart, `ArSlot.autoScan`, HUD switch, on by default). Never per-frame. One anchor per session. `PAUSED` freezes physics, never resets.
 - No backend. Ktor runs on the phone; the key reaches the app via `local.properties` → `BuildConfig.META_API_KEY`.
 
 ## Hand-review zone (agents propose, a human approves)

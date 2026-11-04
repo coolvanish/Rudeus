@@ -51,6 +51,13 @@ toWorld(anchor, (u, v), h)     = anchor.pose ∘ translation(u, h, v)
 5. `Physics.step` routes the character: push-out from obstacles (never over a cliff), step-up onto ≤ 4 cm platforms, fall
    and respawn past the boundary, jump parabola, fly/roll abilities.
 
+**Background scans (T34, T35).** After the first button scan the host may scan again on its own (`ArSlot.autoScan`, HUD
+switch, on by default). `AutoScanPolicy` decides when: at most four per session, at least 8 s apart, never from a camera
+steeper than 75°, never while another scan runs, only when the camera settles in a sector not scanned yet. `TableScan`
+merges each result into the level: objects out of frame or covered by something else are carried over; an empty, visible
+place is forgotten after two scans; a better view replaces a footprint; the object under a standing character never
+changes.
+
 ## Character pipeline (same code on phone and CLI)
 cutout (SAM) → stylize (Muse Image, ≤ 9 refs) → gate (Spark vision score × 0.6 + deterministic palette/outline × 0.4,
 threshold 0.7, ≤ 2 retries) → sheet (Spark: name, personality, ability, 5 lines kk/ru). Every stage is timed and costed

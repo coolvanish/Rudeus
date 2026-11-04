@@ -24,8 +24,8 @@ p50 < 40 s, <= $0.05 per character.
       "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031, "aborted": false
     }
   ],
-  "scans": [ { "objects": 5, "ms": 4800, "withinCm": [1.2, 0.8, 2.1, 1.5, 0.9] } ],
-  "summary": { "n": 10, "gatePassRateFirstTry": 0.8, "p50Ms": 29800, "p90Ms": 41000, "costPerCharacterUsd": 0.034 }
+  "scans": [ { "objects": 5, "ms": 4800, "withinCm": [1.2, 0.8, 2.1, 1.5, 0.9], "background": false } ],
+  "summary": { "n": 10, "gatePassRateFirstTry": 0.8, "p50Ms": 29800, "p90Ms": 41000, "costPerCharacterUsd": 0.034, "backgroundScans": 0 }
 }
 ```
 `summary` is computed by `MetricsLog.summarise()`; never written by hand.
