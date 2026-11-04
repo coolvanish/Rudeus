@@ -233,7 +233,7 @@ class AndroidCaptureHost(
                 cutoutComposer = AndroidImages::cutout,
                 spriteMatter = AndroidImages::matte,
                 imageResizer = AndroidImages::downscale,
-                onEvent = { event -> logEvent(event, t0); onEvent(event) },
+                onEvent = { event -> logEvent(event, t0, ref); onEvent(event) },
                 // HAND-REVIEW: below the threshold the app's run waits on the child's answer instead of retrying by itself
                 // (the CLI passes no reviewer and still retries). No AR or network code changes here; only this pass-through.
                 review = review,
@@ -266,7 +266,7 @@ class AndroidCaptureHost(
                 cutoutComposer = AndroidImages::cutout,
                 spriteMatter = AndroidImages::matte,
                 imageResizer = AndroidImages::downscale,
-                onEvent = { event -> logEvent(event, t0); onEvent(event) },
+                onEvent = { event -> logEvent(event, t0, ref); onEvent(event) },
                 review = null, // nobody in the loop: a failed gate ships the best sprite after the last attempt
             )
             try {
@@ -348,7 +348,7 @@ class AndroidCaptureHost(
         }
         withContext(Dispatchers.IO) {
             try {
-                sink.write("${metrics.runId}.json", json)
+                synchronized(runLock) { sink.write("${metrics.runId}.json", json) } // T38: the same one writer as writeRun
             } catch (e: Exception) {
                 Log.w(TAG, "metrics write failed: ${e.message}")
             }
@@ -411,16 +411,17 @@ class AndroidCaptureHost(
         return file.absolutePath
     }
 
-    private fun logEvent(event: PipelineEvent, t0: Long) {
+    // HAND-REVIEW: T38 review fix — every line ends in `ref=NN`: three batch pipelines interleave their lines in logcat.
+    private fun logEvent(event: PipelineEvent, t0: Long, ref: String) {
         val at = SystemClock.elapsedRealtime() - t0
         when (event) {
-            is PipelineEvent.StageStarted -> Log.i(TAG, "stage_start=${event.stage} attempt=${event.attempt} at_ms=$at")
-            is PipelineEvent.StageFinished -> Log.i(TAG, "stage_end=${event.stage} attempt=${event.attempt} ok=${event.ok} ms=${event.ms} at_ms=$at")
-            is PipelineEvent.GateScored -> Log.i(TAG, "gate_scored attempt=${event.attempt} score=${event.score} passed=${event.passed} at_ms=$at")
+            is PipelineEvent.StageStarted -> Log.i(TAG, "stage_start=${event.stage} attempt=${event.attempt} at_ms=$at ref=$ref")
+            is PipelineEvent.StageFinished -> Log.i(TAG, "stage_end=${event.stage} attempt=${event.attempt} ok=${event.ok} ms=${event.ms} at_ms=$at ref=$ref")
+            is PipelineEvent.GateScored -> Log.i(TAG, "gate_scored attempt=${event.attempt} score=${event.score} passed=${event.passed} at_ms=$at ref=$ref")
             // HAND-REVIEW: evidence key for the preview: Muse's sprite reached the screen, at any score.
-            is PipelineEvent.SpriteReady -> Log.i(TAG, "sprite_ready attempt=${event.attempt} sprite_bytes=${event.sprite.size} at_ms=$at")
+            is PipelineEvent.SpriteReady -> Log.i(TAG, "sprite_ready attempt=${event.attempt} sprite_bytes=${event.sprite.size} at_ms=$at ref=$ref")
             is PipelineEvent.Finished -> Unit // summarised by the caller
-            is PipelineEvent.Failed -> Log.w(TAG, "pipeline_failed at_ms=$at: ${event.message}")
+            is PipelineEvent.Failed -> Log.w(TAG, "pipeline_failed at_ms=$at ref=$ref: ${event.message}")
         }
     }
 }

@@ -26,6 +26,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kz.rudy.ar.core.pipeline.BatchImport
 import java.io.File
@@ -145,8 +147,10 @@ fun rememberPhotoIntake(): PhotoIntake {
         scope.launch {
             val t0 = SystemClock.elapsedRealtime()
             val photos = withContext(Dispatchers.IO) {
+                // T38 review fix: the same bound as the pipelines; seven full-size decodes at once peaked near 300 MB native.
+                val decodes = Semaphore(BatchImport.CONCURRENCY)
                 uris.take(BatchImport.MAX_PHOTOS)
-                    .map { uri -> async { runCatching { AndroidImages.loadPhoto(context.contentResolver, uri) }.getOrNull() } }
+                    .map { uri -> async { decodes.withPermit { runCatching { AndroidImages.loadPhoto(context.contentResolver, uri) }.getOrNull() } } }
                     .awaitAll()
                     .filterNotNull()
             }
