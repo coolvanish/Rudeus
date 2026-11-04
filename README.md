@@ -4,7 +4,7 @@ An Android AR game for kids in Kazakh and Russian. Photograph a child's drawing 
 character. Press **Scan**: the cup on the table becomes an obstacle, the book a platform, the table edge a cliff.
 Then the character walks, jumps and flies around the real objects.
 
-**Demo video:** _link coming with the submission_
+**Demo video:** [link](https://www.youtube.com/watch?v=GSnmrLBtOeE)
 
 > Built for the [Meta Global AI Developer Hackathon](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 > (Oct 26 – Nov 4, 2026). Track: Indie. Theme: Build for Your World.
