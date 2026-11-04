@@ -208,6 +208,9 @@ private class HeldTap(val x: Float, val y: Float, val atMs: Long)
  */
 private const val REAPPEAR_AFTER_TRACKING_MS = 800L
 
+/** Footprints mini-map: how often the host reports every member's physics state (`ArSlot.onCastState`) while debug chrome is on. */
+private const val CAST_STATE_PERIOD_MS = 100L
+
 /**
  * HAND-REVIEW: T03 — the stylize prompt fixes no facing direction, so a generated sprite is assumed to face left like
  * the demo dino; CharacterPoser flips it by walking direction. Check on the Pixel: a sprite drawn facing right walks
@@ -315,6 +318,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     var level by remember { mutableStateOf<Level?>(null) } // written per scan and per boundary-growing tap (overlay), never per frame
     val footprintMaterials = remember(materialLoader) { footprintMaterials(materialLoader) }
     val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
+    val castStateAtMs = remember { longArrayOf(0L) } // last ArSlot.onCastState report (footprints mini-map)
     val settle = remember { PlaneSettle() }
     val slotState = remember { SlotState(slot.surface) }
     if (!slotState.anchored) {
@@ -790,6 +794,12 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         }
                     }
                     val cast = loop.onFrame(now, tracking, { id, e -> currentSlot.onCastEvent(id, e) }, beforeStep = scripted)
+                    // HAND-REVIEW: footprints mini-map — the HUD never saw physics positions, so its dot stood still while the sprite
+                    // walked. Report every member's state about 10x a second while debug chrome is on; a small map, never per frame.
+                    if (currentSlot.debug && now - castStateAtMs[0] >= CAST_STATE_PERIOD_MS) {
+                        castStateAtMs[0] = now
+                        currentSlot.onCastState(cast.members.associate { it.id to it.body.state })
+                    }
                     if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
                     // While not tracking the camera pose is meaningless and the AnchorNode hides its children.
                     if (tracking) {

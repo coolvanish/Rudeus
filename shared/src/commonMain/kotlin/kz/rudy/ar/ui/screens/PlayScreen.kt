@@ -117,6 +117,9 @@ data class HudState(
  * the HUD with [addable] (tap = [onAdd], scrim or drag = [onAddDismiss]); the AR session keeps running under it.
  * [onEmote], when given, adds the emote row above the Scan / Jump row, enabled once [HudState.anchored] and while
  * tracking holds.
+ *
+ * [castStates]: every member's physics state from the host (id -> state); the footprints mini-map draws the active one
+ * as the bright dot and the rest dimmer. Empty before the first placement, so the map shows no dot instead of a stale one.
  */
 @Composable
 fun PlayScreen(
@@ -147,6 +150,7 @@ fun PlayScreen(
     onAdd: (BundledCharacter) -> Unit = {},
     onAddDismiss: () -> Unit = {},
     onEmote: ((Emote) -> Unit)? = null,
+    castStates: Map<String, CharacterState> = emptyMap(),
 ) {
     val paused = hud.trackingLost || character.mode == Mode.PAUSED
     Box(modifier.fillMaxSize()) {
@@ -214,7 +218,9 @@ fun PlayScreen(
             }
             Spacer(Modifier.height(RudeusSpacing.sm))
             if (hud.showFootprints && level != null) {
-                FootprintMiniMap(level, character)
+                // The dots are the host's live physics states (ArSlot.onCastState), the active member first; none before placement.
+                val activeState = castStates[activeId] ?: castStates.values.firstOrNull()
+                FootprintMiniMap(level, activeState, others = castStates.values.filter { it !== activeState })
                 Spacer(Modifier.height(RudeusSpacing.sm))
             }
             // Scan needs the network: the offline note says why a tap may fail, instead of pretending there is no table.

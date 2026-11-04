@@ -3,6 +3,7 @@ package kz.rudy.ar
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSize
+import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.emote.EmoteSet
@@ -134,6 +135,12 @@ data class ArSlot(
     val command: CharacterCommand? = null,
     /** T31: physics transitions per member (id, event). A T32 host calls this and NEVER [onCharacterEvent]. */
     val onCastEvent: (String, CharacterEvent) -> Unit = { _, _ -> },
+    /**
+     * Every member's physics state (id -> state, plane coordinates), reported by the host from its frame loop while
+     * [debug] is on, a few times a second (never per frame): the HUD's FootprintMiniMap moves the dots with it.
+     * Empty when nobody stands on the table yet.
+     */
+    val onCastState: (Map<String, CharacterState>) -> Unit = {},
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other
