@@ -5,7 +5,9 @@ import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.ChoreographyParser
+import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.pipeline.CharacterResult
 
 /*
@@ -15,6 +17,7 @@ import kz.rudy.ar.core.pipeline.CharacterResult
  *   <bundle>/<ref>/sprite.png    the stylized sprite
  *   <bundle>/<ref>/sheet.json    CharacterSheet JSON
  *   <bundle>/<ref>/choreo.json   the five emote choreographies (ChoreographyParser.toJson; absent before T29)
+ *   <bundle>/<ref>/frames/<emote>-<n>.png   the drawn pose frames (T33; listed in the entry's `frames`, absent when none)
  *
  * Paths inside the index are relative to the bundle dir, '/'-separated. Keep this format boring.
  */
@@ -38,6 +41,11 @@ data class BundleEntry(
     val runId: String,
     /** Relative path of the choreographies JSON, e.g. "cat-01/choreo.json"; null in indexes written before T29. */
     val choreo: String? = null,
+    /**
+     * T33: relative paths of the drawn pose frames per emote, in frame-index order, e.g.
+     * `{"HELLO": ["cat-01/frames/hello-1.png", "cat-01/frames/hello-2.png"], "ROAR": [...]}`; null = none drawn.
+     */
+    val frames: Map<Emote, List<String>>? = null,
 )
 
 @Serializable
@@ -61,6 +69,13 @@ object Bundle {
     fun sheetPath(ref: String): String = "$ref/$SHEET"
     fun choreoPath(ref: String): String = "$ref/$CHOREO"
 
+    /** `<ref>/frames/<emote>-<n>.png` ([PoseFrames.fileName]). */
+    fun framePath(ref: String, emote: Emote, index: Int): String = "$ref/$FRAMES/${PoseFrames.fileName(emote, index)}"
+
+    /** [BundleEntry.frames] for [frames]: null when there are none. */
+    fun framePaths(ref: String, frames: PoseFrames): Map<Emote, List<String>>? =
+        frames.byEmote.mapValues { (e, list) -> list.indices.map { framePath(ref, e, it) } }.takeIf { it.isNotEmpty() }
+
     fun entry(result: CharacterResult, provider: String, runId: String): BundleEntry = BundleEntry(
         ref = result.ref,
         name = result.sheet.name,
@@ -73,6 +88,7 @@ object Bundle {
         provider = provider,
         runId = runId,
         choreo = choreoPath(result.ref),
+        frames = framePaths(result.ref, result.frames),
     )
 
     /** Parses an existing index; null text (no index yet) yields an empty one. */
@@ -93,4 +109,5 @@ object Bundle {
     private const val SPRITE = "sprite.png"
     private const val SHEET = "sheet.json"
     private const val CHOREO = "choreo.json"
+    private const val FRAMES = "frames"
 }

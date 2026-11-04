@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseSpec
 import kz.rudy.ar.core.io.joinPath
 import kotlin.time.Instant
 
@@ -27,6 +28,7 @@ fun interface FixtureWriter {
  * | scoreTechnique| the same file's `techniqueScores`, in call order                          |
  * | characterSheet| `spark-sheet/<ref>.fixture.json` `sheet` in the model JSON shape         |
  * | choreograph   | `spark-choreo/<ref>.fixture.json` `text`: the set in the reply shape      |
+ * | drawPose      | `muse-pose/<ref>.<emote>-<n>.png` (raw bytes) + fixture `outputs`, one per frame (T33) |
  *
  * The choreo `text` is [ChoreographyParser.toJson] of the sanitised set (the raw reply never leaves [MetaApi]); it
  * replays to the same choreographies with source `spark`; a set whose five emotes all fell back (source `default`)
@@ -49,6 +51,7 @@ class RecordingModels(
 ) : MetaModels {
     private val segmented = HashSet<String>()
     private val outputs = HashMap<String, MutableList<String>>()
+    private val poseOutputs = HashMap<String, MutableList<String>>()
     private val scores = HashMap<String, MutableList<Float>>()
     private val techniqueScores = HashMap<String, MutableList<Float>>()
     private val firstLatency = HashMap<String, Long>()
@@ -109,6 +112,16 @@ class RecordingModels(
         val text = if (set.source == EmoteSet.SOURCE_SPARK) ChoreographyParser.toJson(set) else "{}"
         write(Jobs.SPARK_CHOREO, ref, latency(Jobs.SPARK_CHOREO, ref, ms)) { it.copy(text = text) }
         return set
+    }
+
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray {
+        val (png, ms) = timed { inner.drawPose(ref, sprite, refs, spec) }
+        val names = poseOutputs.getOrPut(ref) { ArrayList() }
+        val name = "$ref.${spec.name}.png"
+        writer.write(joinPath(Jobs.MUSE_POSE, name), png)
+        if (name !in names) names += name
+        write(Jobs.MUSE_POSE, ref, latency(Jobs.MUSE_POSE, ref, ms)) { it.copy(outputs = names.toList()) }
+        return png
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String =

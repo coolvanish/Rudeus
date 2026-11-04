@@ -25,6 +25,16 @@ object EmotePlayer {
         )
     }
 
+    /**
+     * T33: the drawn frame to show at [tMs]: the [EmoteKey.frame] of the latest key at or before [tMs] (a key holds
+     * its frame until the next key; no blending), null before 0, from durationMs on, before the first key, and when
+     * that key has none. The host resolves it with [PoseFrames.frame] (null -> the base sprite).
+     */
+    fun frameAt(c: Choreography, tMs: Long): Int? {
+        if (tMs < 0 || tMs >= c.durationMs) return null
+        return c.keys.lastOrNull { it.atMs <= tMs }?.frame
+    }
+
     fun finished(c: Choreography, tMs: Long): Boolean = tMs >= c.durationMs
 
     private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t

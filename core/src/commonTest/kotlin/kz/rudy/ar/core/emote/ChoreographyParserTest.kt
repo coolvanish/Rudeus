@@ -91,3 +91,27 @@ class ChoreographyParserTest {
         }
     }
 }
+
+class ChoreographyFrameJsonTest {
+    @Test
+    fun frameRoundTripsAndIsWrittenOnlyWhenSet() {
+        val keyed = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT).withFrames(mapOf(Emote.HELLO to 2))
+        val text = ChoreographyParser.toJson(keyed)
+        assertTrue(text.contains("\"frame\": 0") && text.contains("\"frame\": 1"), text)
+        val back = ChoreographyParser.fromJson(text)
+        assertEquals(keyed, back)
+        assertEquals(keyed[Emote.HELLO].keys.map { it.frame }, back[Emote.HELLO].keys.map { it.frame })
+
+        val plain = ChoreographyParser.toJson(EmoteSet.defaults())
+        assertTrue(!plain.contains("\"frame\""), "no frames, no field: $plain")
+        assertEquals(EmoteSet.defaults(), ChoreographyParser.fromJson(plain))
+    }
+
+    @Test
+    fun frameOutOfRangeOrOddIsIgnored() {
+        val set = ChoreographyParser.parse(
+            """{"hello": {"durationMs": 900, "keys": [{"atMs": 0}, {"atMs": 300, "frame": 1}, {"atMs": 500, "frame": 5}, {"atMs": 700, "frame": "x"}, {"atMs": 900, "frame": 0}]}}""",
+        )
+        assertEquals(listOf(null, 1, null, null, null), set[Emote.HELLO].keys.map { it.frame })
+    }
+}

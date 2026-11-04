@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseSpec
 
 /**
  * Decorates a [MetaModels]: forwards every call unchanged and tracks connectivity from the outcomes.
@@ -51,6 +52,9 @@ class OfflineGuard(private val delegate: MetaModels) : MetaModels {
 
     override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet =
         track { delegate.choreograph(ref, sheet, image) }
+
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray =
+        track { delegate.drawPose(ref, sprite, refs, spec) }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String =
         track { delegate.transcribe(ref, pcm16kMono, lang) }

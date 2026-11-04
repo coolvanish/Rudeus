@@ -1,0 +1,11 @@
+{
+  "job": "muse-pose",
+  "endpoint": "POST /v1/images/edits",
+  "model": "muse-image-1.0",
+  "requestShape": "{model, prompt: Prompts.pose(spec), images:[{image_url:data-url} x (matted sprite <= 1024 px + <=9 refs)], n:1, response_format:b64_json, output_format:png, reasoning_strength:low}",
+  "latencyMs": 12570,
+  "costUsd": 0.01,
+  "probedAt": "2026-11-04T12:16:28Z",
+  "synthetic": false,
+  "notes": "T30 pose spike (cli pose-spike --live, run 2026-11-04T12-16-28Z) on toy_dino: 4/4 frames, Muse latency 11605 / 13664 ms min / max, median 12570, $0.0100 each (measured); every matte by SpriteMatte, no SAM fallback. Verdict GO (the user): same character, outline and colours kept, poses readable. The outputs replay as the T33 `frames` stage for toy_dino (FixtureApi.drawPose picks the output by frame name)."
+}

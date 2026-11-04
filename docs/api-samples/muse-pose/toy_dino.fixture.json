@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "job": "muse-pose",
+  "ref": "toy_dino",
+  "synthetic": false,
+  "note": "recorded by cli pose-spike --live on 2026-11-04 (T30, run 2026-11-04T12-16-28Z); each output is one Muse edit of docs/bundled/toy_dino/sprite.png with Prompts.pose, matted by SpriteMatte, at 1024 px",
+  "outputs": [
+    "toy_dino.hello-1.png",
+    "toy_dino.hello-2.png",
+    "toy_dino.roar-1.png",
+    "toy_dino.roar-2.png"
+  ],
+  "latencyMs": 12570
+}

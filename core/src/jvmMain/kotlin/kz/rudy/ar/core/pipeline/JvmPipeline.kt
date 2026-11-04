@@ -17,6 +17,8 @@ object JvmPipeline {
         matte: Boolean = true,
         downscale: Boolean = true,
         onEvent: ((PipelineEvent) -> Unit)? = null,
+        /** T33: also draw the pose frames (`character --frames`). */
+        poseFrames: Boolean = false,
     ): CharacterPipeline =
         CharacterPipeline(
             models = models,
@@ -27,5 +29,6 @@ object JvmPipeline {
             spriteMatter = if (matte) JvmRaster::matte else null,
             imageResizer = if (downscale) JvmRaster::downscale else null,
             onEvent = onEvent,
+            poseFrames = poseFrames,
         )
 }
