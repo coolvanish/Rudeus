@@ -61,7 +61,9 @@ import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.geometry.PlaneFrame
+import kz.rudy.ar.core.pipeline.AutoScanPolicy
 import kz.rudy.ar.core.pipeline.ScanAngle
+import kz.rudy.ar.core.pipeline.ScanSectors
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
@@ -143,7 +145,8 @@ import kotlin.math.abs
 // (4) Emotes: `loop.emote(id, member.emotes[e])` runs on the simulated clock and is handed to the poser as an EmotePose
 // (CharacterNode.kt); its sound plays through `sounds` when `slot.soundsOn`. Physics never sees an emote.
 // Locked decisions untouched: one anchor per session; PAUSED freezes every member and every emote clock, never resets;
-// scan stays a button; plane coords live in :core, the Pose conversions in PlaneCoords.kt only.
+// the FIRST scan stays a button and quiet scans sit behind `slot.autoScan` (T37, below); plane coords live in :core, the
+// Pose conversions in PlaneCoords.kt only.
 // HAND-REVIEW: T32 review fixes — (a) the grab is tested in SCREEN space: each ground member's feet and head are projected
 // with ARCore `Camera.getViewMatrix` / `getProjectionMatrix` (display-rotation aware; near/far do not touch x, y) into the
 // view's pixels (`viewSize` from onSizeChanged on the ARSceneView's AndroidView, ARSceneView.kt:1512), the quad's width at
@@ -153,6 +156,18 @@ import kotlin.math.abs
 // `SurfaceBoundary.crossesEdge`, log `lead_past_edge`): before a scan `boundary` is null and nothing else clamps. (c) With
 // exactly one member there is no grab and no tap-select, so the v1.0 small steps next to the character still walk it.
 // (d) A new node starts invisible; the poser shows it once it is placed, so it is never drawn unposed at the origin.
+// HAND-REVIEW: T37 — quiet background scans. After the first BUTTON scan built a level (`firstLevelScanned`), while
+// `slot.autoScan`, every anchored frame with no scan pending or running feeds :core's `AutoScanPolicy` (T35: <= 4 per session, one per new sector
+// around the anchor, >= 8 s apart, camera still and not too steep). A sector arms the SAME pending path as the button
+// (`scanQuiet` set beside `scanPending`), so the next frame's grab, the retry on NotYetAvailable, the IO half, the level
+// swap and the boundary fold are shared; the differences are: nothing is owed through `onScanned` (no overlay, no lines, no
+// toast; a button request that joins a quiet scan still gets its answer from `finally`), ref `auto-NN`, and
+// `recordScan(background = true)`. A button scan calls `policy.markScanned` so its sector counts as visited; `placeAnchor`
+// resets the policy. The merge (T34) gets the members' positions (`standing`) so the object under a character never changes.
+// `slot.autoScan = false`: the policy is not fed and a quiet scan still waiting for its frame is dropped (`auto_scan_dropped`);
+// one already running finishes (the switch stops new frames, not the one in flight). A button press that joins a quiet
+// scan is answered and recorded as manual. Still never per-frame: the policy decides, the scan is one grab, and at most
+// four of them a session.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
@@ -287,6 +302,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val projector = remember { ScreenProjector() }
     val loop = remember { GameLoop() }
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
+    val scanQuiet = remember { booleanArrayOf(false) } // T37: the pending scan is a quiet one (no onScanned); cleared with scanPending
+    val policy = remember { AutoScanPolicy() } // T37: fed from the frame callback only; reset with the anchor
+    // HAND-REVIEW: T37 review fix — the "first level on the button" gate: true once a NON-quiet scan swapped a level in (not
+    // at the grab: a failed or too-steep first button scan must not let a quiet scan build the session's first level).
+    val firstLevelScanned = remember { booleanArrayOf(false) }
     val scanBusy = remember { booleanArrayOf(false) } // one scan at a time; a request meanwhile joins it
     val scanOwed = remember { intArrayOf(0) } // requests not yet answered through onScanned
     val scanTries = remember { intArrayOf(0) } // frames the pending request has waited for a camera image
@@ -377,6 +397,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             scanPending[0] = true
             scanTries[0] = 0
         }
+        scanQuiet[0] = false // T37: a button press is never quiet; a quiet scan still pending becomes this button's scan
     }
     /** T32: whose taps and buttons: the slot's active member when it is on the table, else the first. */
     fun activeId(): String? = currentSlot.activeId?.takeIf(loop::has) ?: loop.firstId
@@ -449,18 +470,21 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     /**
      * Main thread, from onSessionUpdated while a request is pending: grab this frame, then build the level on IO and
      * swap it in on return. Returns true when the request stays pending for the next frame (no image yet).
+     * HAND-REVIEW: T37 — [quiet]: a policy-started scan. Nothing was owed for it, so `answerOwed` below answers only the
+     * button requests that joined it (none, usually); the early exits log the same keys with `quiet=true`.
      */
-    fun startScan(frame: Frame, a: Anchor, tracking: Boolean): Boolean {
+    fun startScan(frame: Frame, a: Anchor, tracking: Boolean, quiet: Boolean = scanQuiet[0]): Boolean {
         val host = scanner
         if (host == null || !tracking) {
-            Log.i(GATE_TAG, "scan_skipped tracking=$tracking host=${host != null}")
+            Log.i(GATE_TAG, "scan_skipped tracking=$tracking host=${host != null} quiet=$quiet")
             answerOwed(ScanAnswer.Failed)
             return false
         }
-        // HAND-REVIEW: T25 — checked before the image copy and the SAM bill. Scan stays a button; this only answers it
-        // sooner, and the level in play is untouched.
-        if (ScanAngle.cameraTooSteep(frame.camera.pose.toPose3(), PlaneFrame.fromAnchorPose(a.pose.toPose3()))) {
-            Log.i(GATE_TAG, "scan_too_steep where=camera")
+        // HAND-REVIEW: T25 — checked before the image copy and the SAM bill. The first scan stays a button; this only
+        // answers it sooner, and the level in play is untouched.
+        val planeFrame = PlaneFrame.fromAnchorPose(a.pose.toPose3())
+        if (ScanAngle.cameraTooSteep(frame.camera.pose.toPose3(), planeFrame)) {
+            Log.i(GATE_TAG, "scan_too_steep where=camera quiet=$quiet")
             answerOwed(ScanAnswer.TooSteep)
             return false
         }
@@ -470,18 +494,24 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         val grab = attempt.grab
         if (grab == null) {
             if (attempt.retry && ++scanTries[0] < GRAB_MAX_TRIES) return true
-            Log.i(GATE_TAG, "scan_skipped no_image tries=${scanTries[0]}")
+            Log.i(GATE_TAG, "scan_skipped no_image tries=${scanTries[0]} quiet=$quiet")
             answerOwed(ScanAnswer.Failed)
             return false
         }
         scanBusy[0] = true
-        val ref = "scan-" + (++scanCount[0]).toString().padStart(2, '0')
+        // T37: one counter for both kinds; the prefix tells them apart in logcat and in the run file's refs.
+        val ref = (if (quiet) "auto-" else "scan-") + (++scanCount[0]).toString().padStart(2, '0')
+        // T37: a button scan from here marks its sector visited (and restarts the policy's cooldown); the grab's pose is the
+        // sensor pose, same frame as the policy sees. Main thread, like every other policy call.
+        if (!quiet) policy.markScanned(planeFrame.toPlane(grab.cameraPose.position), SystemClock.elapsedRealtime())
         val previous = loop.level
         val profile = slotState.profile
+        // T37: where the members stand now (plane coords), for the merge: the object under a character never changes.
+        val standingNow = loop.cast.members.map { it.body.state.pos }.ifEmpty { listOf(loop.state.pos) }
         scope.launch {
             var answer: ScanAnswer = ScanAnswer.Failed
             try {
-                val outcome = runTableScan(grab, host, ScanPrompts.of(profile.surface), previous, profile, ref)
+                val outcome = runTableScan(grab, host, ScanPrompts.of(profile.surface), previous, profile, ref, standingNow)
                 // HAND-REVIEW: T25 — the swap never shrinks the boundary or leaves the character outside it, read from
                 // `loop` here (not at grab time) so a tap made during the scan counts. The polygon alone can shift between
                 // scans and drop a character standing still, or loop respawns if it misses the spawn. This only changes
@@ -494,7 +524,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     level = built
                     currentSlot.onLevel(built)
                     answer = ScanAnswer.Found(built.objects.size, outcome.missed)
-                    host.recordScan(built.objects.size, outcome.ms)
+                    // HAND-REVIEW: T37 review fix — a button request that joined this quiet scan makes it a manual one in the
+                    // run file; `scanOwed` is read here on the main thread, before `finally` answers and clears it.
+                    val background = quiet && scanOwed[0] == 0
+                    if (!background) firstLevelScanned[0] = true
+                    host.recordScan(built.objects.size, outcome.ms, background = background)
                 } else if (outcome.tooSteep) {
                     answer = ScanAnswer.TooSteep
                 }
@@ -549,6 +583,8 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         anchorRef[0] = created
         anchorPlane[0] = plane
         anchor = created
+        policy.reset() // T37: a new level frame; no sector is visited yet
+        firstLevelScanned[0] = false // T37 review fix: the first level of this anchor comes from the button again
         slotState.anchored = true // the surface is now locked (sprite, physics, tolerance)
         slotState.tracking = true
         probe.onAnchorPlaced(created)
@@ -701,7 +737,35 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         slotState.tracking = tracking
                         currentSlot.onTracking(tracking)
                     }
-                    if (scanPending[0]) scanPending[0] = startScan(frame, a, tracking)
+                    // HAND-REVIEW: T37 review fix — the switch went off while a quiet scan waited for its frame and nobody asked for
+                    // it: dropped before the grab. A quiet scan already running is not cancelled (the switch stops new frames).
+                    if (scanPending[0] && scanQuiet[0] && !currentSlot.autoScan && scanOwed[0] == 0) {
+                        scanPending[0] = false
+                        scanQuiet[0] = false
+                        Log.i(GATE_TAG, "auto_scan_dropped")
+                    }
+                    if (scanPending[0]) {
+                        scanPending[0] = startScan(frame, a, tracking)
+                        if (!scanPending[0]) scanQuiet[0] = false // T37: the quiet flag lives exactly as long as the pending one
+                    }
+                    // HAND-REVIEW: T37 — the policy is fed only after the first button scan built a level, while the HUD switch is
+                    // on, no scan is pending or running (so `busy = false` is already true) and the policy can still fire (past its
+                    // four scans or four sectors the per-frame pose conversions are skipped). A sector arms the pending path above
+                    // for the NEXT frame, quietly. `policy.onFrame` is pure :core; the ARCore poses are converted here only.
+                    if (currentSlot.autoScan && scanner != null && firstLevelScanned[0] && !scanPending[0] && !scanBusy[0] &&
+                        policy.fired < policy.params.maxScans && policy.visited.size < ScanSectors.COUNT
+                    ) {
+                        val sector = policy.onFrame(
+                            now, frame.camera.pose.toPose3(), PlaneFrame.fromAnchorPose(a.pose.toPose3()), Vec2.ZERO,
+                            tracking = tracking, busy = false,
+                        )
+                        if (sector != null) {
+                            Log.i(GATE_TAG, "auto_scan sector=$sector fired=${policy.fired}")
+                            scanQuiet[0] = true
+                            scanPending[0] = true
+                            scanTries[0] = 0
+                        }
+                    }
                     // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
                     // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
                     syncCast(a, frame) // T32: members added or removed since the last frame

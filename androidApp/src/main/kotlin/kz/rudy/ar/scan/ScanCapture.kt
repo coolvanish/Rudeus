@@ -19,6 +19,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kz.rudy.ar.capture.AndroidImages
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.SurfaceProfile
+import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.geometry.Intrinsics
 import kz.rudy.ar.core.geometry.Pose3
 import kz.rudy.ar.core.geometry.Quat
@@ -149,6 +150,8 @@ private fun logScanReplay(ref: String, grab: ScanGrab, intr: Intrinsics, masks: 
 /**
  * IO. JPEG -> SAM -> level. Never throws: a failure (network, missing key, timeout, degenerate masks) comes back as
  * [ScanOutcome.error] with `level = null`. [previous] keeps ids stable across re-scans (SceneBuilder, <= 5 cm).
+ * HAND-REVIEW: T37 — [standing]: where the characters stand (plane coords, read on the main thread at grab time); :core's
+ * merge (T34) never changes the object under one of them. Empty = today's behaviour.
  */
 internal suspend fun runTableScan(
     grab: ScanGrab,
@@ -157,6 +160,7 @@ internal suspend fun runTableScan(
     previous: Level?,
     profile: SurfaceProfile,
     ref: String,
+    standing: List<Vec2> = emptyList(),
 ): ScanOutcome = withContext(Dispatchers.IO) {
     try {
         val jpeg = toJpeg(grab)
@@ -177,7 +181,7 @@ internal suspend fun runTableScan(
         val input = ScanInput.fromAnchor(grab.anchorPose, grab.cameraPose, intrinsics, masks, grab.planePolygonWorld)
         logScanReplay(ref, grab, intrinsics, masks)
         // HAND-REVIEW: T25 — the decisions (too-steep masks, what is carried over) are :core's TableScan; this only logs them.
-        val scan = TableScan.build(input, result.failedPrompts, previous, profile)
+        val scan = TableScan.build(input, result.failedPrompts, previous, profile, standing)
         if (scan.tooSteep.isNotEmpty()) Log.i(TAG, "scan_too_steep where=object labels=${scan.tooSteep} missed=${scan.missed} ref=$ref")
         if (scan.cutByFrame.isNotEmpty()) Log.i(TAG, "scan_cut_by_frame labels=${scan.cutByFrame} ref=$ref")
         val level = scan.level ?: return@withContext ScanOutcome(null, SystemClock.elapsedRealtime() - grab.startedMs, tooSteep = true)
@@ -189,7 +193,9 @@ internal suspend fun runTableScan(
                 "failed=${result.failedPrompts.size} carried=${carried.size} jpeg=${jpegW}x$jpegH bytes=${jpeg.size} " +
                 "boundary=${input.boundary?.size ?: 0} ref=$ref",
         )
-        if (carried.isNotEmpty()) Log.w(TAG, "scan_carried failed_prompts=${result.failedPrompts} ids=${carried.map { it.id }}")
+        // HAND-REVIEW: T37 — the merge's verdict per previous object (ids), the Pixel evidence for T34's rules.
+        Log.i(TAG, "scan_merge removed=${scan.removed} replaced=${scan.replaced} kept=${scan.kept} carried=${carried.map { it.id }} ref=$ref")
+        if (carried.isNotEmpty()) Log.i(TAG, "scan_carried failed_prompts=${result.failedPrompts} ids=${carried.map { it.id }}")
         for (o in level.objects) {
             val c = o.centroid
             Log.i(TAG, "scan_object id=${o.id} kind=${o.kind} c=(%.3f,%.3f) h=%.3f n=${o.footprint.size}".format(Locale.US, c.u, c.v, o.heightM))

@@ -283,9 +283,11 @@ class AndroidCaptureHost(
      * HAND-REVIEW: review fix — the append and the JSON snapshot run on Main, where `latestRun()` reads the same
      * lists (MetricsLog's non-cost methods are single-threaded); only the file write goes to IO.
      */
-    override suspend fun recordScan(objects: Int, ms: Long) {
+    override suspend fun recordScan(objects: Int, ms: Long, background: Boolean) {
         val json = withContext(Dispatchers.Main.immediate) {
-            metrics.recordScan(objects, ms, withinCm = emptyList())
+            // HAND-REVIEW: T37 — a quiet scan is recorded like a button scan, only flagged; `scans` counts both (a session of
+            // quiet scans alone still has a run to show/export).
+            metrics.recordScan(objects, ms, withinCm = emptyList(), background = background)
             scans++
             metrics.toJson()
         }

@@ -12,8 +12,12 @@ interface TableScanner {
     /** `MetaModels.segment` on the scan JPEG: one mask per prompt, instances per detection (T15). Throws on failure. */
     suspend fun segment(ref: String, jpeg: ByteArray, prompts: List<String>): SegmentResult
 
-    /** A successful scan for the Day 4 gate: `MetricsLog.recordScan(objects, ms, withinCm = [])`, then the run file. */
-    suspend fun recordScan(objects: Int, ms: Long)
+    /**
+     * A successful scan for the Day 4 gate: `MetricsLog.recordScan(objects, ms, withinCm = [])`, then the run file.
+     * HAND-REVIEW: T37 — [background] = a quiet scan the host started itself (AutoScanPolicy), not the button; the run
+     * file marks it so README figures stay over manual scans.
+     */
+    suspend fun recordScan(objects: Int, ms: Long, background: Boolean = false)
 }
 
 /** SAM prompts per surface (ai/build-plan.md Day 4; the floor adds the brief's four). Specific labels first. */
