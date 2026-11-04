@@ -28,6 +28,22 @@ class DomainModelTest {
         assertEquals(ObjectKind.DYNAMIC, Semantics.kindFor("hand", 0.03f))
     }
 
+    /** Day 10 probe (docs/api-samples/sam-table/table3-day10): low flat things and small generic finds are walkable. */
+    @Test
+    fun lowRemotesKnivesAndSmallObjectsArePlatforms() {
+        assertEquals(ObjectKind.PLATFORM, Semantics.kindFor("remote", 0.019f))
+        assertEquals(ObjectKind.OBSTACLE, Semantics.kindFor("remote", 0.08f), "a remote standing up is a wall")
+        assertEquals(ObjectKind.PLATFORM, Semantics.kindFor("small object", 0.005f))
+        assertEquals(ObjectKind.PLATFORM, Semantics.kindFor("Small Object", 0.005f), "compared lower-case")
+        assertEquals(ObjectKind.OBSTACLE, Semantics.kindFor("small object", 0.06f))
+        for (label in listOf("plate", "keyboard", "knife", "item")) assertEquals(ObjectKind.PLATFORM, Semantics.kindFor(label, 0.02f), label)
+        assertTrue(Semantics.isCompact("small object"))
+        assertTrue(Semantics.isCompact("item"))
+        assertFalse(Semantics.liesFlat("small object"), "a guess: compact, not flat")
+        for (label in listOf("knife", "remote", "plate", "keyboard")) assertTrue(Semantics.liesFlat(label), label)
+        assertEquals(ObjectKind.OBSTACLE, Semantics.kindFor("cup", 0.02f), "a cup is never a platform")
+    }
+
     @Test
     fun kindForUsesTheSurfaceProfile() {
         // A 12 cm box (a shoebox) is a platform for the 24 cm floor character, an obstacle for the 6 cm table one.

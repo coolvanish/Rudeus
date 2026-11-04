@@ -107,6 +107,8 @@ class ScanMasksTest {
         // "hand" is named, not generic: it beats an "object" on the same pixels.
         val hand = rect("hand", 2, 2, 8, 8, 0.9f)
         assertEquals(listOf("hand"), ScanMasks.of(SegmentResult(listOf(single(rect("object", 2, 2, 8, 8, 0.99f)), single(hand)))).map { it.label })
-        assertEquals(setOf("object"), ScanMasks.GENERIC_LABELS)
+        assertEquals(setOf("object", "small object", "item"), ScanMasks.GENERIC_LABELS)
+        // "Small Object" (any case) is generic too: it loses to the named cup under it.
+        assertEquals(listOf("cup"), ScanMasks.of(SegmentResult(listOf(single(rect("Small Object", 2, 2, 8, 8, 0.99f)), single(cup)))).map { it.label })
     }
 }

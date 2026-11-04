@@ -133,6 +133,15 @@ class TableScanTest {
         assertEquals(0, r.missed)
     }
 
+    /** Day 10: "small object" is generic too (ScanMasks.GENERIC_LABELS), so a steep one over a known cup keeps the cup. */
+    @Test
+    fun aSteepSmallObjectMaskKeepsTheNamedObjectUnderIt() {
+        val old = obj("cup-1", "cup", cup)
+        val r = build(steepCup.copy(label = "small object"), usableBook, previous = Level(listOf(old)))
+        assertEquals(listOf(old), r.carried)
+        assertEquals(0, r.missed)
+    }
+
     @Test
     fun anObjectTheFrameNowCutsIsKeptAndAHandStays() {
         val atTheEdge = BooleanMask.generate(view.intr.width, view.intr.height) { x, y -> x in 1100..view.intr.width - 1 && y in 340..380 }

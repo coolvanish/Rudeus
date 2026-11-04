@@ -7,6 +7,7 @@ import kz.rudy.ar.core.domain.LevelObject
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.Polygon
+import kz.rudy.ar.core.domain.Semantics
 import kz.rudy.ar.core.domain.Vec2
 import kotlin.math.abs
 import kotlin.test.Test
@@ -137,6 +138,30 @@ class PhysicsTest {
         assertNotNull(end.target)
         assertEquals(end.radiusM, distanceToPolygon(end.pos, cup.footprint), 1e-3f)
         assertTrue(end.pos.u < 0f, "stays on the near side")
+    }
+
+    /**
+     * Day 10: an OBSTACLE blocks at any height, so a 1.9 cm remote was a wall. With "remote" a platform label it is a
+     * PLATFORM the character steps onto and walks across; a 9 cm cup still stops it.
+     */
+    @Test
+    fun aLowRemoteIsSteppedOverButACupStillBlocks() {
+        val remoteH = 0.019f
+        val remote = LevelObject("remote-1", "remote", Semantics.kindFor("remote", remoteH), Polygon.rect(Vec2.ZERO, 0.05f, 0.18f), remoteH)
+        assertEquals(ObjectKind.PLATFORM, remote.kind)
+        assertFalse(Physics.blocks(remote, 0f))
+        val across = stepUntil(Physics.walkTo(body(Vec2(-0.15f, 0f)), Vec2(0.15f, 0f)), Level(listOf(remote)), 2000) { it.state.mode == Mode.IDLE }
+        assertEquals(Vec2(0.15f, 0f), across.last().state.pos, "walked across the remote")
+        assertTrue(across.none { it.blocked })
+        assertTrue(across.any { it.state.h == remoteH }, "stood on it on the way")
+
+        val cupH = 0.09f
+        val cup = LevelObject("cup-1", "cup", Semantics.kindFor("cup", cupH), Polygon.circle(Vec2.ZERO, 0.04f), cupH)
+        assertEquals(ObjectKind.OBSTACLE, cup.kind)
+        val stopped = trace(Physics.walkTo(body(Vec2(-0.15f, 0f)), Vec2(0.15f, 0f)), Level(listOf(cup)), 600).last()
+        assertEquals(Mode.WALKING, stopped.state.mode, "still pressing against the cup")
+        assertTrue(stopped.state.pos.u < 0f, "stays on the near side")
+        assertTrue(stopped.blocked)
     }
 
     @Test
