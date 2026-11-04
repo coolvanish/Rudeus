@@ -38,7 +38,9 @@ import io.github.sceneview.math.Position
 import io.github.sceneview.math.Size
 import io.github.sceneview.node.PlaneNode
 import com.google.ar.core.DepthPoint
+import io.github.sceneview.NULL_ENTITY
 import io.github.sceneview.rememberEngine
+import io.github.sceneview.safeDestroyTransformable
 import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberOnGestureListener
@@ -632,6 +634,12 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             },
             onSessionResumed = { probe.onSessionResumed() },
             onSessionUpdated = { session, frame ->
+                // HAND-REVIEW: Pixel 2026-11-04 — the first sprite froze at the anchor while its physics walked (`sprite_stale=true
+                // cached=266 actual=264`, 1.3 s after node_created). PlaneVisualizer.destroy (PlaneVisualizer.kt:370) leaves its transform
+                // to Filament's lazy GC, which moves the newest component into the freed slot without SceneView's generation bump, so
+                // Node.transformInstance (Node.kt:788) kept writing to the old slot. Destroying nothing bumps the generation (Engine.kt:171),
+                // so every node looks its slot up again on its next write: one JNI lookup per moving node per frame.
+                engine.safeDestroyTransformable(NULL_ENTITY)
                 latestFrame[0] = frame
                 recorder.recordFrame(session) // AtomicReference.set; no-op unless recording
                 probe.onFrame(session)
