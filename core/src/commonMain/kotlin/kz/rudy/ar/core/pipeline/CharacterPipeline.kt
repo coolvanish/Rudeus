@@ -31,6 +31,8 @@ data class CharacterResult(
     val cutoutMask: MaskResult?,
     /** The five emote choreographies ([MetaModels.choreograph]); the defaults when that call failed. */
     val emotes: EmoteSet = EmoteSet.defaults(),
+    /** The gate said no (`gatePassed=false`), but a person looked at this sprite and took it ([CharacterPipeline] `review`). */
+    val accepted: Boolean = false,
 )
 
 /**
@@ -94,6 +96,14 @@ internal class PreparedRefs(val muse: List<ByteArray>, val spark: List<ByteArray
  * `gatePassed=false`. A CancellationException from a look while this coroutine is still active (a timeout surfacing as
  * cancellation) is the same failed look; a real cancellation of the caller propagates.
  *
+ * [review] puts a person in the loop (null = nobody, the CLI: the loop retries by itself). Above the threshold it is
+ * never asked. After a below-threshold attempt with attempts left it gets (attempt, score) while the sprite is on screen
+ * ([PipelineEvent.SpriteReady]): true ships that sprite ([CharacterResult.accepted]; `gatePassed` stays false, the gate's
+ * own verdict), false starts the next attempt. The last attempt ends the loop without asking, and the host offers its
+ * own answer on the finished result. With a reviewer the latest sprite ships, not the best-scoring one: the earlier ones
+ * were turned down. Stage `review` (cost 0, `ok` = the answer) records the wait, which stays out of `totalMs` because a
+ * person is not pipeline time. A cancel during the wait aborts the character as anywhere else.
+ *
  * [onEvent] must not throw: a listener exception is not a model failure and is not swallowed; it fails the character
  * (after the stage it was reporting has been recorded once).
  *
@@ -122,6 +132,7 @@ class CharacterPipeline(
     private val spriteMatter: ((ByteArray) -> ByteArray?)? = null,
     private val imageResizer: ((bytes: ByteArray, maxSide: Int) -> ByteArray)? = null,
     private val onEvent: ((PipelineEvent) -> Unit)? = null,
+    private val review: (suspend (attempt: Int, score: Float) -> Boolean)? = null,
 ) {
     init { require(maxRetries >= 0) }
 
@@ -162,6 +173,7 @@ class CharacterPipeline(
                 var best: ByteArray? = null
                 var bestScore = 0f
                 var passed = false
+                var accepted = false
                 try {
                     while (true) {
                         attempt++
@@ -176,6 +188,7 @@ class CharacterPipeline(
                             break
                         }
                         val sprite = matte(ref, stylized, attempt)
+                        emit(PipelineEvent.SpriteReady(attempt, sprite))
                         // Both looks at once (user decision 2026-10-28): the style rubric and the colour-free one
                         // score the same sprite in parallel; the attempt keeps the higher score.
                         emit(PipelineEvent.StageStarted(STAGE_GATE, attempt))
@@ -203,7 +216,7 @@ class CharacterPipeline(
                         val stylePassed = style != null && gate.passes(style)
                         val techniquePassed = technique != null && gate.passes(technique)
                         passed = stylePassed || techniquePassed
-                        if (best == null || score >= bestScore) {
+                        if (review != null || best == null || score >= bestScore) {
                             best = sprite
                             bestScore = score
                         }
@@ -214,6 +227,10 @@ class CharacterPipeline(
                         record(STAGE_GATE, styleEnd - t0, attempt, stylePassed, styleCost)
                         record(STAGE_RESCORE, techniqueEnd - t0, attempt, techniquePassed, techniqueCost)
                         if (passed || attempt > maxRetries) break
+                        if (askReview(attempt, score)) {
+                            accepted = true
+                            break
+                        }
                     }
                 } catch (e: Throwable) {
                     if (e is CancellationException && !currentCoroutineContext().isActive) {
@@ -253,7 +270,7 @@ class CharacterPipeline(
                 recordChoreo(choreo, choreoMark)
 
                 metrics.endCharacter(gateScore = bestScore, gatePassed = passed, retries = attempt - 1)
-                CharacterResult(ref, checkNotNull(best), sheet.sheet, bestScore, passed, attempt, mask, choreo.emotes)
+                CharacterResult(ref, checkNotNull(best), sheet.sheet, bestScore, passed, attempt, mask, choreo.emotes, accepted)
             }
         } catch (e: Throwable) {
             if (e is CancellationException && !currentCoroutineContext().isActive) {
@@ -280,6 +297,18 @@ class CharacterPipeline(
     private fun record(name: String, ms: Long, attempt: Int, ok: Boolean, cost: StageCost) {
         metrics.stage(name, ms, attempt, ok, cost)
         emit(PipelineEvent.StageFinished(name, attempt, ok, ms))
+    }
+
+    /** Stage `review`: [review]'s answer about the sprite on screen; false (the next attempt) without a reviewer. */
+    private suspend fun askReview(attempt: Int, score: Float): Boolean {
+        val ask = review ?: return false
+        emit(PipelineEvent.StageStarted(STAGE_REVIEW, attempt))
+        val t0 = metrics.now()
+        val accepted = ask(attempt, score)
+        val waited = metrics.now() - t0
+        metrics.excludeFromTotal(waited)
+        record(STAGE_REVIEW, waited, attempt, accepted, StageCost(0.0, measured = false))
+        return accepted
     }
 
     /**
@@ -418,6 +447,9 @@ class CharacterPipeline(
 
         /** The gate's colour-free look, run alongside [STAGE_GATE] on every attempt. */
         const val STAGE_RESCORE = "rescore"
+
+        /** A person's look at a below-threshold sprite; `ms` is the wait, `ok` the answer. */
+        const val STAGE_REVIEW = "review"
         const val STAGE_SHEET = "sheet"
 
         /** The five emote choreographies, asked right after the sheet in its coroutine; recorded right after it. */

@@ -72,8 +72,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     processing_failed_title("Болмады", "Не вышло", "Didn't work"),
     processing_failed_hint("Интернетті тексер де, қайталап көр", "Проверь интернет и попробуй ещё", "Check the internet and try again"),
     processing_pick_ready("Дайынын таңда", "Выбрать готового", "Pick a ready one"),
-    ship_anyway("Бәрібір ойнаймыз", "Всё равно играем", "Play anyway"),
-    ship_anyway_note("Стиль сәл басқаша болуы мүмкін", "Стиль может чуть отличаться", "Style may look a bit different"),
+    review_title("Ұнай ма?", "Нравится?", "Like it?"),
+    review_yes("Иә, ойнаймыз", "Да, играем", "Yes, let's play"),
     processing_done("Дайын!", "Готово!", "Done!"),
 
     scan_title("Үстелді қара", "Посмотри на стол", "Look at the table"),

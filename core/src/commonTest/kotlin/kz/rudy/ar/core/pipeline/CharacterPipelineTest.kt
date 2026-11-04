@@ -636,11 +636,115 @@ class CharacterPipelineTest {
     }
 
     @Test
+    fun reviewYesShipsTheBelowGateSpriteWithoutAnotherAttempt() = runTest {
+        val models = FakeModels(scores = listOf(0.5f))
+        val log = metrics()
+        val asked = ArrayList<Pair<Int, Float>>()
+        val result = CharacterPipeline(models, StyleGate(), log, review = { attempt, score -> asked += attempt to score; true })
+            .run("cat-01", image, refs, "")
+
+        assertEquals(listOf(1 to 0.5f), asked)
+        assertEquals(1, models.stylizeCalls)
+        assertEquals(1, result.attempts)
+        assertTrue(result.accepted)
+        assertFalse(result.gatePassed, "the gate's own verdict stays honest")
+        val c = log.toRun().characters.single()
+        assertFalse(c.gatePassed)
+        assertEquals(0, c.retries)
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "review", "sheet", "choreo"), c.stages.map { it.name })
+        val review = c.stages.single { it.name == "review" }
+        assertTrue(review.ok)
+        assertEquals(0.0, review.costUsd)
+    }
+
+    @Test
+    fun reviewNoGoesToTheNextAttemptAndTheLatestSpriteShips() = runTest {
+        val first = byteArrayOf(1)
+        val second = byteArrayOf(2)
+        val models = FakeModels(scores = listOf(0.6f, 0.4f), sprite = first)
+        val result = CharacterPipeline(
+            models,
+            StyleGate(),
+            metrics(),
+            review = { attempt, _ ->
+                if (attempt == 1) models.sprite = second
+                attempt == 2
+            },
+        ).run("cat-01", image, refs, "")
+
+        assertEquals(2, result.attempts)
+        assertEquals(1, models.stylizeFallbackCalls, "attempt 2 is still the backup prompt")
+        assertTrue(result.accepted)
+        assertContentEquals(second, result.sprite, "what the child said yes to, not the higher score they turned down")
+        assertEquals(0.4f, result.gateScore, 1e-4f)
+    }
+
+    @Test
+    fun reviewIsNotAskedAboveTheThreshold() = runTest {
+        val asked = ArrayList<Int>()
+        val result = CharacterPipeline(FakeModels(scores = listOf(0.5f, 0.8f)), StyleGate(), metrics(), review = { attempt, _ -> asked += attempt; false })
+            .run("cat-01", image, refs, "")
+
+        assertEquals(listOf(1), asked, "only the attempt below the threshold")
+        assertEquals(2, result.attempts)
+        assertTrue(result.gatePassed)
+        assertFalse(result.accepted)
+    }
+
+    @Test
+    fun theLastAttemptEndsTheLoopWithoutAsking() = runTest {
+        val asked = ArrayList<Int>()
+        val result = CharacterPipeline(FakeModels(scores = listOf(0.5f, 0.6f, 0.4f)), StyleGate(), metrics(), review = { attempt, _ -> asked += attempt; false })
+            .run("cat-01", image, refs, "")
+
+        assertEquals(listOf(1, 2), asked)
+        assertEquals(3, result.attempts)
+        assertFalse(result.gatePassed)
+        assertFalse(result.accepted)
+        assertEquals(0.4f, result.gateScore, 1e-4f)
+    }
+
+    @Test
+    fun theWaitForTheReviewerStaysOutOfTotalMs() = runTest {
+        val log = MetricsLog(source = "app", provider = "meta", device = "test", clock = { testScheduler.currentTime })
+        CharacterPipeline(
+            FakeModels(scores = listOf(0.5f), delays = mapOf("stylize" to 20_000L)),
+            StyleGate(),
+            log,
+            review = { _, _ -> delay(60_000L); true },
+        ).run("cat-01", image, refs, "")
+
+        val c = log.toRun().characters.single()
+        assertEquals(60_000L, c.stages.single { it.name == "review" }.ms)
+        assertEquals(20_000L, c.totalMs)
+    }
+
+    @Test
+    fun cancelWhileWaitingOnTheReviewerAbortsTheCharacter() = runTest {
+        val log = MetricsLog(source = "app", provider = "meta", device = "test", clock = { testScheduler.currentTime })
+        val events = ArrayList<PipelineEvent>()
+        val job = launch {
+            CharacterPipeline(FakeModels(scores = listOf(0.5f)), StyleGate(), log, onEvent = { events += it }, review = { _, _ -> awaitCancellation() })
+                .run("cat-01", image, refs, "")
+        }
+        delay(5_000L)
+        assertTrue(job.isActive, "the run waits for the answer")
+        job.cancel()
+        job.join()
+
+        val c = log.toRun().characters.single()
+        assertTrue(c.aborted)
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name }, "an unanswered question is not a stage")
+        assertTrue(events.none { it is PipelineEvent.Failed || it is PipelineEvent.Finished })
+    }
+
+    @Test
     fun eventsFollowStageOrder() = runTest {
         fun label(e: PipelineEvent): String = when (e) {
             is PipelineEvent.StageStarted -> "+${e.stage}${e.attempt}"
             is PipelineEvent.StageFinished -> "-${e.stage}${e.attempt}${if (e.ok) "" else "!"}"
             is PipelineEvent.GateScored -> "score${e.attempt}${if (e.passed) "" else "!"}"
+            is PipelineEvent.SpriteReady -> "sprite${e.attempt}"
             is PipelineEvent.Finished -> "done"
             is PipelineEvent.Failed -> "failed"
         }
@@ -651,7 +755,7 @@ class CharacterPipelineTest {
             .run("cat-01", image, refs, "")
         assertEquals(
             listOf(
-                "+cutout1", "-cutout1", "+sheet1", "+stylize1", "-stylize1", "+matte1", "-matte1",
+                "+cutout1", "-cutout1", "+sheet1", "+stylize1", "-stylize1", "+matte1", "-matte1", "sprite1",
                 "+gate1", "+rescore1", "score1", "-gate1", "-rescore1!", "-sheet1", "+choreo1", "-choreo1", "done",
             ),
             first.map(::label),
@@ -666,11 +770,25 @@ class CharacterPipelineTest {
         assertEquals(
             listOf(
                 "+cutout1", "-cutout1", "+sheet1",
-                "+stylize1", "-stylize1", "+gate1", "+rescore1", "score1!", "-gate1!", "-rescore1!",
-                "+stylize2", "-stylize2", "+gate2", "+rescore2", "score2", "-gate2", "-rescore2!",
+                "+stylize1", "-stylize1", "sprite1", "+gate1", "+rescore1", "score1!", "-gate1!", "-rescore1!",
+                "+stylize2", "-stylize2", "sprite2", "+gate2", "+rescore2", "score2", "-gate2", "-rescore2!",
                 "-sheet1", "+choreo1", "-choreo1", "done",
             ),
             retry.map(::label),
+        )
+
+        // With a reviewer: the question comes after the gate stages of a below-threshold attempt, the answer is its `ok`.
+        val reviewed = ArrayList<PipelineEvent>()
+        CharacterPipeline(FakeModels(scores = listOf(0.5f, 0.6f)), StyleGate(), metrics(), onEvent = { reviewed += it }, review = { attempt, _ -> attempt == 2 })
+            .run("cat-01", image, refs, "")
+        assertEquals(
+            listOf(
+                "+cutout1", "-cutout1", "+sheet1",
+                "+stylize1", "-stylize1", "sprite1", "+gate1", "+rescore1", "score1!", "-gate1!", "-rescore1!", "+review1", "-review1!",
+                "+stylize2", "-stylize2", "sprite2", "+gate2", "+rescore2", "score2!", "-gate2!", "-rescore2!", "+review2", "-review2",
+                "-sheet1", "+choreo1", "-choreo1", "done",
+            ),
+            reviewed.map(::label),
         )
 
         // A failed cutout ends with Failed, after the stage's own failure.

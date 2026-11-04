@@ -11,7 +11,7 @@ of the AR view. Code tokens live in `shared/src/commonMain/kotlin/kz/rudy/ar/ui/
 1. **The camera feed is the canvas.** The AR view (a slot composable from `:androidApp`) fills the screen on
    Scanning and Play. The UI is a thin overlay: paper pills, chips and one button. Nothing opaque covers the middle
    third of the screen where the character lives.
-2. **One primary action per screen.** Capture: *Photo*. Processing: *Next* / *Play anyway* / *Retry*. Scanning: *Scan*.
+2. **One primary action per screen.** Capture: *Photo*. Processing: *Next* / *Yes, let's play* / *Retry*. Scanning: *Scan*.
    Play: *Jump* / *Fly* (ROLL: *Rescan*). Metrics: *Export JSON*. Everything else is secondary, ghost or a chip.
 3. **Heights:** primary 64 dp, secondary and chips 48 dp; every hit area ≥ 56 dp (`hitArea`: a real pointer area, because over the camera the AR view underneath wins any near miss).
    Children tap with the whole fingertip; the phone is often held at arm's length over a table.
@@ -164,7 +164,7 @@ The card draws the character's own sprite PNG (shipped in the APK), else a host 
 the app language (`CharacterSheet.names`, kk/ru/en; Spark writes all three for a new photo). A character saved before
 that has only its Kazakh name, and generic lines in English.
 Without a host the demo pair is shown. Characters made from the child's photos are Mine; All shows them first, newest
-first: one joins when it passes the check, or when the child taps "Play anyway" (below the check, Retry adds nothing).
+first: one joins when it passes the check, or when the child taps "Yes, let's play" (below the check, Retry adds nothing).
 The 30 newest stay on the phone across restarts. An empty Mine says "Nothing yet" and to take a photo.
 - *API offline*: Paper pill with a Leaf dot "No internet — ready characters" above the headline; the bundled shelf is the
   primary path. Photo / From gallery stay enabled: a tap is the retry (the host only goes back online after a call
@@ -179,15 +179,19 @@ scrim or a drag on the sheet closes it.
 
 ### Processing — `ProcessingScreen`
 Paper. Back (ghost) top-left, which also cancels the run. Title "Making your character". Big Cream hero with the
-photo on a Paper well (the finished sprite replaces it). Progress bar + 4-stage stepper
+photo on a Paper well (what Muse sent replaces it as soon as it arrives, at any score; a new attempt brings the photo
+back until its own sprite is there). Progress bar + 4-stage stepper
 (Cutting out · Painting · Checking · Naming). When the gate stage completes the score is shown **honestly** on a Cream
 card: mono number `0.82`, "Style score", "Attempt 2 / 3", Passed (Leaf) or Not passed (Tomato) tag.
-- *Gate failed after retries*: hero with the sprite, name, ability tag, a Tomato dot "Style score 0.61 · Not passed",
-  note "Style may look a bit different", primary **Play anyway**, ghost **Retry**. Never block the child.
+- *Below the threshold*: the run waits on the child. Title "Like it?", hero with the sprite, a Tomato dot
+  "Style score 0.61 · Not passed", primary **Yes, let's play**, ghost **Retry**. Yes ships this sprite; Retry starts the
+  next attempt, up to 3, and the same question follows it. After the third attempt Retry starts over from the photo.
+  Never block the child.
 - *Pipeline error / offline mid-way*: sheet over Scrim "Didn't work" + "Check the internet and try again", primary
   **Retry**, ghost **Pick a ready one** (back to Capture where bundled characters are offered).
-- *Done*: "Done!", large sprite on the hero, name + ability tag, a Leaf dot score line, one Sun **Next** (the child looks
-  at their character first; no auto-advance).
+- *Done* (above the threshold, or the child said yes): "Done!", large sprite on the hero, name + ability tag, a dot score
+  line (Leaf when it passed, Tomato when the child took it below the threshold), one Sun **Next**. Nobody has to confirm:
+  it moves on by itself after 2 s, and Next skips the wait.
 
 ### Scanning — `ScanningScreen`
 AR view fills the screen. Top-centre: segmented **Table | Floor** (selected fills Ink, with a check), visible until the
@@ -331,8 +335,8 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | processing_failed_title | Болмады | Не вышло | Didn't work |
 | processing_failed_hint | Интернетті тексер де, қайталап көр | Проверь интернет и попробуй ещё | Check the internet and try again |
 | processing_pick_ready | Дайынын таңда | Выбрать готового | Pick a ready one |
-| ship_anyway | Бәрібір ойнаймыз | Всё равно играем | Play anyway |
-| ship_anyway_note | Стиль сәл басқаша болуы мүмкін | Стиль может чуть отличаться | Style may look a bit different |
+| review_title | Ұнай ма? | Нравится? | Like it? |
+| review_yes | Иә, ойнаймыз | Да, играем | Yes, let's play |
 | processing_done | Дайын! | Готово! | Done! |
 | scan_title | Үстелді қара | Посмотри на стол | Look at the table |
 | scan_title_floor | Еденді қара | Посмотри на пол | Look at the floor |
