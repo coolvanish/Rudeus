@@ -13,6 +13,7 @@ import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
 import io.github.sceneview.node.PlaneNode
 import io.github.sceneview.texture.ImageTexture
+import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.Vec2
@@ -20,6 +21,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -113,7 +115,22 @@ internal fun spriteFromBytes(
         Log.w(GATE_TAG, "sprite_undecodable bytes=${png.size}: showing the demo sprite")
         return spriteFromAssets(engine, materialLoader, assets, heightM)
     }
-    return spriteFromBitmap(engine, materialLoader, bitmap, heightM, facesRight)
+    return spriteFromBitmap(engine, materialLoader, boundedForTexture(bitmap), heightM, facesRight)
+}
+
+/**
+ * HAND-REVIEW: memory audit 2026-11-03 — a fresh Muse sprite reached Filament at up to 1408x1536 (about 11.5 MB with
+ * mips) while saved and bundled ones are 768 px and look fine on the Pixel. Same bound as SavedCharacters. A filtered
+ * scale, not `inSampleSize`: a sampled PNG decode can skip pixels and roughen the sprite's bold outline. Only the
+ * local full-size decode is recycled; the bitmap handed to Filament is left to the GC, its upload may be asynchronous.
+ */
+private fun boundedForTexture(src: Bitmap): Bitmap {
+    val longSide = maxOf(src.width, src.height)
+    if (longSide <= SavedCharacters.SPRITE_MAX_SIDE) return src
+    val scale = SavedCharacters.SPRITE_MAX_SIDE.toFloat() / longSide
+    val w = maxOf(1, (src.width * scale).roundToInt())
+    val h = maxOf(1, (src.height * scale).roundToInt())
+    return Bitmap.createScaledBitmap(src, w, h, true).also { if (it !== src) src.recycle() }
 }
 
 private fun spriteFromBitmap(

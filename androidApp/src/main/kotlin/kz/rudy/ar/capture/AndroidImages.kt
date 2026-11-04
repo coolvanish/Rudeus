@@ -36,6 +36,9 @@ import kotlin.math.roundToInt
 // bounded: `inSampleSize` may now land up to 25 % under the target instead of up to 2x above it, so a 12 MP Pixel
 // photo (4080 px) decodes at 2040 px (6 MP) instead of in full (50 MB); `decode_px=` is logged per photo. Only
 // `preparePhoto` does that; `downscale` (pipeline) still lands on `maxSide` exactly, as the JVM does.
+// HAND-REVIEW: memory audit 2026-11-03 — every Bitmap here is local and its pixels are copied out (getPixels, compress)
+// before the function returns, so each is recycled as soon as it is copied instead of waiting for the GC: this lowers
+// the pipeline's peak. `!==` guards the calls that may hand back their source. A rare early return still leaves it to the GC.
 
 private const val TAG = "RudeusGate"
 
@@ -55,7 +58,7 @@ object AndroidImages {
     private const val JPEG_QUALITY = 92
 
     /** Decodes PNG/JPEG bytes, upright per EXIF; null when they are not an image. */
-    fun decode(bytes: ByteArray): RasterImage? = decodeBitmap(bytes)?.let(::AndroidRaster)
+    fun decode(bytes: ByteArray): RasterImage? = decodeBitmap(bytes)?.let { AndroidRaster(it).also { _ -> it.recycle() } }
 
     /**
      * Applies [mask] to the photo: pixels outside the mask become transparent white, the result is cropped to the
@@ -66,9 +69,10 @@ object AndroidImages {
         val src = decodeBitmap(imageBytes) ?: return imageBytes
         if (src.width != mask.width || src.height != mask.height) return imageBytes
         val bounds = mask.bounds() ?: return imageBytes
-        val bits = mask.toBooleanArray()
         val pixels = IntArray(bounds.w * bounds.h)
         src.getPixels(pixels, 0, bounds.w, bounds.x, bounds.y, bounds.w, bounds.h)
+        src.recycle()
+        val bits = mask.toBooleanArray()
         for (y in 0 until bounds.h) for (x in 0 until bounds.w) {
             val i = y * bounds.w + x
             val inside = bits[(bounds.y + y) * mask.width + bounds.x + x]
@@ -80,7 +84,9 @@ object AndroidImages {
     /** [SpriteMatte] on a Muse output -> cropped transparent PNG; null when undecodable or degenerate. */
     fun matte(png: ByteArray): ByteArray? {
         val src = decodeBitmap(png) ?: return null
-        val raster = SpriteMatte.matte(AndroidRaster(src)).raster ?: return null
+        val decoded = AndroidRaster(src)
+        src.recycle()
+        val raster = SpriteMatte.matte(decoded).raster ?: return null
         return encodePng(raster.pixels, raster.width, raster.height)
     }
 
@@ -97,13 +103,16 @@ object AndroidImages {
         if (longSide <= maxSide) return if (jpeg && exifOrientation(bytes) != 1) upright(bytes) else bytes
         val src = decodeBitmap(bytes, sampleFor(longSide, maxSide)) ?: return bytes
         val scaled = scaleTo(src, maxSide)
-        return if (jpeg) encodeJpeg(scaled) else encodePng(pixelsOf(scaled), scaled.width, scaled.height)
+        if (scaled !== src) src.recycle()
+        val out = if (jpeg) encodeJpeg(scaled) else encodePng(pixelsOf(scaled), scaled.width, scaled.height)
+        scaled.recycle()
+        return out
     }
 
     /** A JPEG with EXIF orientation 2..8 re-encoded upright (tag dropped); anything else unchanged. */
     fun upright(bytes: ByteArray): ByteArray {
         if (sniffImageMime(bytes) != "image/jpeg" || exifOrientation(bytes) == 1) return bytes
-        return decodeBitmap(bytes)?.let(::encodeJpeg) ?: bytes
+        return decodeBitmap(bytes)?.let { encodeJpeg(it).also { _ -> it.recycle() } } ?: bytes
     }
 
     /** Reads a gallery/camera image behind [uri] and prepares it with [preparePhoto]; null when unreadable. */
@@ -117,7 +126,9 @@ object AndroidImages {
         val b = bounds(raw) ?: return null
         val bitmap = decodeBitmap(raw, sampleFor(max(b.outWidth, b.outHeight), maxSide, PHOTO_SAMPLE_UNDERSHOOT)) ?: return null
         Log.i(TAG, "decode_px=${bitmap.width}x${bitmap.height} photo_px=${b.outWidth}x${b.outHeight} heif=${isHeif(raw)}")
-        return encodeJpeg(scaleTo(bitmap, maxSide))
+        val scaled = scaleTo(bitmap, maxSide)
+        if (scaled !== bitmap) bitmap.recycle()
+        return encodeJpeg(scaled).also { scaled.recycle() }
     }
 
     /** ISO-BMFF `ftyp` box at offset 4: HEIC/HEIF/AVIF (sniffImageMime calls everything non-PNG/WebP "jpeg"). */
@@ -204,7 +215,7 @@ object AndroidImages {
             8 -> m.postRotate(270f) // rotate 90 CCW
             else -> return src
         }
-        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true).also { if (it !== src) src.recycle() }
     }
 
     private fun scaleTo(src: Bitmap, maxSide: Int): Bitmap {
@@ -231,6 +242,7 @@ object AndroidImages {
         }
         val out = ByteArrayOutputStream()
         opaque.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+        if (opaque !== bmp) opaque.recycle()
         return out.toByteArray()
     }
 
@@ -245,6 +257,7 @@ object AndroidImages {
         bmp.setPixels(pixels, 0, w, 0, 0, w, h)
         val out = ByteArrayOutputStream()
         bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        bmp.recycle()
         return out.toByteArray()
     }
 }
