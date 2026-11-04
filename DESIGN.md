@@ -213,13 +213,17 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
 - Top-left: *Cast chips* (T31). One round 56 dp chip per character on the table (up to `Cast.MAX` = 4, in the order
   they joined), Paper fill, 2 dp Ink stroke, the character's sprite inside (its ability glyph when it uses the host's
   built-in sprite). The active one — whose taps, Jump, emotes and voice they are — is ringed 4 dp Sun; a tap on a chip
-  (or a finger landing on the character in AR) makes it active. Under the row its name pill takes the old
-  `AbilityChip`'s place: ability glyph + "Мұрат · Секір", Paper with Ink stroke; tapping it says the ability line. After
-  the members the round `+` chip (plus glyph, accessibility label `play_add`) opens the *Add sheet*; with four on the
-  table it is drawn InkMuted and a tap shows the pill "Table full" (`play_table_full`) for 2 s instead of the name pill.
+  (or a finger landing on the character in AR) makes it active. The members are alone on the top line (at most 248 dp,
+  so the top-right column keeps its room). The line under them starts with the round `+` chip (plus glyph,
+  accessibility label `play_add`), which opens the *Add sheet*, then the active one's name pill in the old
+  `AbilityChip`'s place: ability glyph + "Мұрат · Секір", Paper with Ink stroke; tapping it says the ability line. With
+  four on the table `+` is drawn InkMuted and a tap shows the pill "Table full" (`play_table_full`) for 2 s instead of
+  the name pill.
 - *Add sheet* (T31): the one `BottomSheet`, titled "Who joins?" (`play_add_title`), over Play — the AR session keeps
-  running under it. The Capture cards, saved first then bundled, without those already on the table; a tap adds that
-  character and closes the sheet. Scrim tap, a downward drag or Back closes it.
+  running under it. The Capture cards, saved first then bundled, without those already on the table (a photo being
+  played hides its own saved card too); a tap adds that character and closes the sheet. Scrim tap, a downward drag or
+  Back closes it; tracking lost closes it as well (the Paused scrim takes over).
+- An emote or name-pill line never replaces "Oops! Fell" while "Back up" is queued.
 - Top-right: offline pill (Leaf dot, "Offline") when `offline`; `Footprints` toggle chip (debug; Sky when on).
   Footprints on (debug only): secondary **Metrics** and **Scenario** (`play_scenario`) under it; Scenario replays the
   Day 5 script from where the character stands (`ArSlot.scenarioRequest`). There is no on-screen Back: the system back

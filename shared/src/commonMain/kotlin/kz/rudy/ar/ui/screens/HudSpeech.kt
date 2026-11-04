@@ -93,6 +93,12 @@ object HudSpeech {
         return show(state, line, nowMs, CharacterEvent.RESPAWNED)
     }
 
+    /**
+     * T31 review: "Oops! Fell" is up with "Back up" queued: a line the child asks for (an emote, the name pill) is not
+     * shown, so it cannot drop the queued line (Fell and Back up always win, DESIGN.md "Play").
+     */
+    fun holdsFall(state: State): Boolean = state.event == CharacterEvent.FELL && state.pending != null
+
     /** A bubble the child asked for (the ability chip): shown now, and it holds the gap like any other. */
     fun say(state: State, text: String, nowMs: Long, speaker: String? = null): State = show(state, spoken(text, speaker), nowMs, event = null)
 

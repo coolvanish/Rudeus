@@ -19,9 +19,17 @@ object CastUi {
     /** Room for one more at the table (`Cast.MAX`). */
     fun canAdd(cast: List<ArCharacter>): Boolean = cast.size < Cast.MAX
 
-    /** What the Add sheet lists: [saved] then [bundled], each id once, without those already on the table. */
-    fun addable(saved: List<BundledCharacter>, bundled: List<BundledCharacter>, cast: List<ArCharacter>): List<BundledCharacter> {
-        val onTable = cast.mapTo(HashSet()) { it.id }
+    /**
+     * What the Add sheet lists: [saved] then [bundled], each id once, without those already on the table. [alsoOnTable]
+     * = card ids that are on the table under another id (the saved card of the photo member "photo-<ref>").
+     */
+    fun addable(
+        saved: List<BundledCharacter>,
+        bundled: List<BundledCharacter>,
+        cast: List<ArCharacter>,
+        alsoOnTable: Set<String> = emptySet(),
+    ): List<BundledCharacter> {
+        val onTable = cast.mapTo(HashSet()) { it.id } + alsoOnTable
         return (saved + bundled).distinctBy { it.id }.filter { it.id !in onTable }
     }
 

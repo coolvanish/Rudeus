@@ -80,5 +80,12 @@ Tests not required: Compose screens, HUD layout, the AR host.
   glyph (there is no dino glyph). The host-less shell enables the emote row without an anchor (nothing can anchor
   there). Back closes the Add sheet first. A photo member is `photo-<ref>`; its saved card (`saved-…`) is a different
   id, so it still shows in the Add sheet.
+- review follow-up: a photo member hides its own saved card in the Add sheet (`CastUi.addable(alsoOnTable)`, App
+  remembers the kept card id); `+` moved to the start of the name-pill line (top line <= 248 dp); tracking lost closes
+  the Add sheet; emote / name-pill lines wait while "Back up" is queued (`HudSpeech.holdsFall`); `onCastEvent` ignores
+  ids not on the table ("" stays the v1.0 path); ArSlot KDoc: a member added before the anchor is placed on the
+  anchor's frame. Tests: HudSpeechTest 8, CastUiTest 3.
+- Pixel checks: the bottom stack grew ~94 dp (emote row), so the bubble / mini-map may reach the size buttons; the
+  emote labels may truncate at font scale > 1.0 ("Сау бол", "Крутись"); the chips and `+` before the anchor exists.
 - cut/deferred: none. Still needed: the emulator check from "Done when" (device QA) and the commit (left to a human:
   this agent runs no git).

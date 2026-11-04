@@ -105,7 +105,8 @@ data class ArSlot(
     /**
      * T31: the cast in order (at most `Cast.MAX`); the first is the one Play started with. The legacy single-character
      * fields above ([spritePng], [ability], [jumpRequest], [walkForwardRequest]) mirror the [activeId] member, so a
-     * v1.0 host keeps working; a T32 host reads these and ignores those.
+     * v1.0 host keeps working; a T32 host reads these and ignores those. A member added before the anchor exists is
+     * placed by the host on the frame the anchor appears.
      */
     val characters: List<ArCharacter> = emptyList(),
     /** T31: whose taps and buttons; the first member until a chip or a finger ([onActiveChanged]) picks another. */
