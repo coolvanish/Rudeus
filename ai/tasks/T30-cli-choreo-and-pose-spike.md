@@ -99,7 +99,7 @@ Tests not required: everything.
     fallback), Muse latency 11.6-13.7 s per frame, $0.0100 each, $0.0400 total. Files: toy_dino.hello-1.png,
     toy_dino.hello-2.png, toy_dino.roar-1.png, toy_dino.roar-2.png (0.76-0.99 MB each at 1024 px), contact.png,
     README.md (human answers blank).
-  - pose spike verdict (human): 
+  - pose spike verdict (human): GO — same character, outline and colours kept, poses readable (user, 2026-11-04). Frames into the app = a post-deadline brief.
 
 ## Addendum after T29 (2026-11-04)
 - Also owned: `cli/src/main/kotlin/kz/rudy/ar/cli/Record.kt` (add `Jobs.SPARK_CHOREO` to `RECORDED_JOBS`), `scripts/probe-meta.sh` (a `spark-choreo` job), `docs/api-samples/README.md` (the endpoints table row and the fixture list).
