@@ -1,0 +1,55 @@
+# T30 — cli-choreo-and-pose-spike
+
+status: todo
+created: 2026-11-04
+day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md). Starts after T29 is merged.
+gate: v1.1 gate "bundled characters play Spark-made emotes offline"; the pose-frame spike answers go/no-go for cut line 1
+cut-if-slips: the pose spike first (cut line 1); then the live run (bundled characters ship with `source=default`)
+
+## Goal
+Every bundled character gets its five choreographies from Spark, saved as `choreo.json` in `docs/bundled/<ref>/`
+and mirrored into the app's assets, with the real replies recorded as fixtures. Separately, a CLI spike asks Muse
+Image to draw two pose frames for one character (waving, roaring) so a human can decide whether model-drawn frames
+keep the character's identity. No app code changes.
+
+## Owns (exact paths)
+- cli/src/main/kotlin/kz/rudy/ar/cli/Main.kt (dispatch lines + usage text only), ChoreoCommand.kt (new), PoseSpike.kt (new)
+- docs/api-samples/spark-choreo/** (live fixtures + meta.json; keep T29's sample-01 and request.json.tmpl)
+- docs/api-samples/muse-pose/** (new)
+- docs/bundled/*/choreo.json, docs/bundled/index.json (the `choreo` field only)
+- androidApp/src/main/assets/bundled/*/choreo.json, androidApp/src/main/assets/bundled/index.json (a mirror of docs/bundled; assets are not hand-review files)
+Must NOT touch: `core/`, `shared/`, any `.kt` under androidApp/src/main, Gradle files.
+
+## Contract
+`./gradlew :cli:run --args="choreo --bundle docs/bundled [--ref <ref> | --all] [--live] [--record docs/api-samples] [--budget-usd 0.20]"`
+- For each bundled entry (index.json): sprite + sheet -> `models.choreograph(ref, sheet, sprite fitted to 512 px, as the pipeline does)` -> `<ref>/choreo.json` (`ChoreographyParser.toJson`), and the index entry's `choreo` path set via `BundleIndex.upsert`.
+- Offline (no `--live`): `FixtureApi` replays `docs/api-samples/spark-choreo/<ref>.fixture.json`; a missing fixture is reported per ref and the ref is skipped (exit 0 if at least one succeeded).
+- `--live`: `MetaApi` with `KeySource.read()` (never print the key), `CostMeter`/`MetricsLog` as the `character` command does, `--budget-usd` guard (default 0.20; Spark ≈ $0.003/call), `--record` wraps it in `RecordingModels` so each reply lands as `spark-choreo/<ref>.fixture.json` (+ `meta.json` written once with endpoint, model, median latency, cost, probedAt, synthetic=false).
+- Prints one line per ref: `ref source=spark|default latency_ms= cost_usd= durations=hello:1200,bye:...`. Writes `runs/<ts>.json` through MetricsLog like the other commands (never by hand).
+- After the live run: copy every `docs/bundled/<ref>/choreo.json` and `docs/bundled/index.json` into `androidApp/src/main/assets/bundled/` (same layout; do not touch sprites or sheets there).
+
+`./gradlew :cli:run --args="pose-spike --bundle docs/bundled --ref toy_dino --out docs/api-samples/muse-pose --live [--budget-usd 0.10]"`
+- Loads the sprite and the style refs (`docs/api-samples/muse-stylize/refs`, through `StyleRefs` / the pipeline's prepare path if accessible, else the raw ref PNGs). Four calls to the now-public `MetaApi.stylize(ref, sprite, refs, prompt)`: HELLO ×2 ("the very same character, identical colours, outline and proportions, waving one arm high", "... both arms up, happy"), ROAR ×2 ("... mouth wide open, roaring, leaning forward", "... eyes squeezed, roaring"). Each result -> the pipeline's sprite matte (SAM cutout + alpha, `JvmPipeline` has the matter) -> `<ref>.hello-1.png`, `<ref>.hello-2.png`, `<ref>.roar-1.png`, `<ref>.roar-2.png`.
+- Writes `contact.png`: the original sprite and the four frames side by side at 256 px height (java.awt BufferedImage, as `ImageConvert` does), and `README.md` with per-frame latency and cost, the total, and the three questions a human answers: same character? outline and colours kept? usable as a frame (pose readable at 6 cm)? Leave the answers blank.
+- Budget guard; Muse ≈ $0.01 per image + SAM ≈ $0.0025 per matte.
+
+## Tests required
+None (CLAUDE.md: the CLI parser is not tested). `./gradlew :cli:compileKotlin` and `scripts/verify.sh` must pass.
+Tests not required: everything.
+
+## Steps
+1. Read `Main.kt` (`character`, `scan`, flags, `KeySource`, `Record`), `RecordingModels.kt`, `FixtureApi.kt`, T29's `ChoreographyParser` and `MetaApi.choreograph`, `Bundle.kt`, the `meta-fixtures` skill.
+2. `choreo` offline against `sample-01` first (smoke), then live `--all --record`, then the asset mirror.
+3. `pose-spike` live on `toy_dino` (if its sprite is unsuitable, `drawing_penguini`).
+4. `scripts/verify.sh`.
+
+## Done when
+- `docs/bundled/<ref>/choreo.json` exists for every bundled ref, at least 12 of 15 with `"source": "spark"`; index.json carries `choreo`; the assets mirror matches (`diff -r` on those files).
+- `docs/api-samples/spark-choreo/` holds one redacted fixture per ref + meta.json (pre-commit scan clean).
+- `docs/api-samples/muse-pose/contact.png` and `README.md` exist; the README's numbers are measured.
+- Commits: `cli: choreo command, bundled choreo.json + spark-choreo fixtures (T30)` and `cli: muse pose-frame spike (T30)`.
+
+## Result (filled on acceptance)
+- measured:
+- pose spike verdict (human):
+- cut/deferred:
