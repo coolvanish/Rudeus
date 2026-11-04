@@ -46,3 +46,6 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
 - measured:
 - APIs relied on (file:line):
 - cut/deferred:
+
+## Addendum after T29 (2026-11-04)
+- `MetaModels.choreograph` has a default body returning `EmoteSet.defaults()` (so `DeferredModels` in androidApp kept compiling). T32 MUST add the forwarding override in `DeferredModels` (hand-review zone, one line): `override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet = delegate.choreograph(ref, sheet, image)` — without it a photo character on the phone always ships `source=default` and the gate line `choreo source=spark` can never show. Add the file that holds `DeferredModels` to the owned paths.
