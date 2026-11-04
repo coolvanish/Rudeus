@@ -5,6 +5,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.ChoreographyParser
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.io.FixtureSource
 import kz.rudy.ar.core.io.joinPath
 import kotlin.concurrent.atomics.AtomicReference
@@ -25,6 +27,7 @@ import kotlin.concurrent.atomics.update
  * | spark-score  | `techniqueScores` | [scoreTechnique] calls, in order (last one repeats); absent in
  * |              |           | fixtures recorded before 2026-10-28, which then throw on that call   |
  * | spark-sheet  | `sheet`   | the model's JSON as returned, parsed by [SheetParser]               |
+ * | spark-choreo | `text`    | the model's raw reply content, parsed by [ChoreographyParser]        |
  * | voice        | `text`    | the transcript                                                      |
  *
  * `synthetic: true` marks hand-made samples (not a real API reply). `latencyMs` overrides the folder's
@@ -141,6 +144,12 @@ class FixtureApi(
         val fx = load(Jobs.SPARK_SHEET, ref)
         replay(Jobs.SPARK_SHEET, fx)
         return SheetParser.fromJson(fx.sheet ?: throw MetaError.Parse("${fixturePath(Jobs.SPARK_SHEET, ref)}: no sheet"))
+    }
+
+    override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet {
+        val fx = load(Jobs.SPARK_CHOREO, ref)
+        replay(Jobs.SPARK_CHOREO, fx)
+        return ChoreographyParser.parse(fx.text ?: throw MetaError.Parse("${fixturePath(Jobs.SPARK_CHOREO, ref)}: no text"))
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String {

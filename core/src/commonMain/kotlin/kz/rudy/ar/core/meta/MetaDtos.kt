@@ -4,12 +4,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import kz.rudy.ar.core.domain.CharacterSheet
 import kotlin.io.encoding.Base64
 
 /*
@@ -263,6 +265,24 @@ data class ChatRequest(
                 responseFormat = Prompts.CHARACTER_SHEET_FORMAT,
             )
         }
+
+        /**
+         * The choreography call (docs/api-samples/spark-choreo/request.json.tmpl): one text part
+         * ([Prompts.choreograph]) + one `image_url` part when [image] is given (the pipeline fits it to 512 px like
+         * the sheet's), strict json_schema [Prompts.CHOREOGRAPHY_FORMAT], 4096 tokens, reasoning low.
+         */
+        fun choreograph(model: String, sheet: CharacterSheet, image: ByteArray?): ChatRequest {
+            val parts = ArrayList<ChatContentPart>()
+            parts += ChatContentPart.text(Prompts.choreograph(sheet, withImage = image != null))
+            if (image != null) parts += ChatContentPart.imageDataUrl(sniffImageMime(image), Base64.encode(image))
+            return ChatRequest(
+                model = model,
+                messages = listOf(ChatMessage.parts("user", parts)),
+                maxCompletionTokens = Prompts.CHOREO_MAX_COMPLETION_TOKENS,
+                reasoningEffort = Prompts.CHOREO_REASONING_EFFORT,
+                responseFormat = Prompts.CHOREOGRAPHY_FORMAT,
+            )
+        }
     }
 }
 
@@ -463,6 +483,67 @@ object Prompts {
         """.trimIndent(),
     ).jsonObject
 
+    /**
+     * The choreography prompt: who the character is (names, personality, its five lines by index), the move vocabulary
+     * with the exact field names and the bounds of `emote.ChoreographyRules`, and the reply shape. [withImage] = the
+     * message also carries the character's picture. Identical to docs/api-samples/spark-choreo/request.json.tmpl for
+     * the sample-01 sheet.
+     */
+    fun choreograph(sheet: CharacterSheet, withImage: Boolean = false): String {
+        val name = sheet.names["en"] ?: sheet.names.values.firstOrNull() ?: sheet.name
+        val lines = (sheet.lines["en"] ?: sheet.lines["kk"]).orEmpty().take(5)
+            .mapIndexed { i, l -> "$i: \"$l\"" }.joinToString(", ")
+        val who = buildString {
+            append(if (withImage) "The image shows $name, a character a child drew. " else "$name is a character a child drew. ")
+            if (sheet.personality.isNotBlank()) append("Personality: ${sheet.personality.trim().trimEnd('.')}. ")
+            append("Ability: ${sheet.ability.name.lowercase()}. ")
+            if (lines.isNotEmpty()) append("Its lines, by index: $lines. ")
+        }
+        return who + CHOREO_INSTRUCTIONS
+    }
+
+    private const val CHOREO_INSTRUCTIONS = "In an AR game the character is a flat picture standing on a table, and you move the whole picture. " +
+        "Write five short emotes for it: hello (a greeting), bye (a goodbye, a bow or a wave), dance (bounces to a beat), " +
+        "spin (turns around at least once), roar (puffs up and shakes). Each emote is {\"durationMs\": 300 to 4000, " +
+        "\"keys\": 2 to 16 poses sorted by atMs, the first at atMs 0 and the last at atMs durationMs, \"line\": the index 0 to 4 " +
+        "of the line it says when it starts, \"sound\": one of \"none\",\"hello\",\"roar\",\"dance\"}. A pose is " +
+        "{\"atMs\": ms from the start, \"scaleX\": 0.6 to 1.5 width, \"scaleY\": 0.6 to 1.5 height, \"yawDeg\": turn about " +
+        "the vertical axis in degrees, counted up (360 is one full turn, at most 360 between two poses), \"tiltDeg\": -35 to 35 " +
+        "lean sideways (a wave, a bow), \"hop\": 0 to 0.5 lift in character heights}. The rest pose is scaleX 1, scaleY 1, " +
+        "yawDeg 0, tiltDeg 0, hop 0; the last pose is the rest pose with yawDeg a whole number of turns, so the picture faces " +
+        "the camera again. Between poses the picture moves smoothly. Fit the moves to the personality: a shy character waves " +
+        "small, a wild one roars big. Reply with JSON only: {\"hello\": emote, \"bye\": emote, \"dance\": emote, " +
+        "\"spin\": emote, \"roar\": emote}."
+
+    private fun obj(vararg fields: Pair<String, JsonElement>) = JsonObject(linkedMapOf(*fields))
+    private fun type(t: String) = obj("type" to JsonPrimitive(t))
+    private fun strict(properties: JsonObject) = obj(
+        "type" to JsonPrimitive("object"),
+        "additionalProperties" to JsonPrimitive(false),
+        "properties" to properties,
+        "required" to JsonArray(properties.keys.map { JsonPrimitive(it) }),
+    )
+
+    /** The JSON schema of the choreography reply: five emotes, every object strict, keys as arrays of objects of numbers. */
+    val CHOREOGRAPHY_SCHEMA: JsonObject = run {
+        val key = strict(obj(
+            "atMs" to type("number"), "scaleX" to type("number"), "scaleY" to type("number"),
+            "yawDeg" to type("number"), "tiltDeg" to type("number"), "hop" to type("number"),
+        ))
+        val emote = strict(obj(
+            "durationMs" to type("integer"),
+            "keys" to obj("type" to JsonPrimitive("array"), "items" to key),
+            "line" to type("integer"),
+            "sound" to obj("type" to JsonPrimitive("string"), "enum" to JsonArray(listOf("none", "hello", "roar", "dance").map { JsonPrimitive(it) })),
+        ))
+        strict(obj("hello" to emote, "bye" to emote, "dance" to emote, "spin" to emote, "roar" to emote))
+    }
+
+    val CHOREOGRAPHY_FORMAT = ResponseFormat(
+        type = "json_schema",
+        jsonSchema = JsonSchemaFormat(name = "Choreographies", schema = CHOREOGRAPHY_SCHEMA, strict = true),
+    )
+
     // TODO(probe): the template notes strict:true may reject the nested "lines" object; drop strict if the call is 400.
     val CHARACTER_SHEET_FORMAT = ResponseFormat(
         type = "json_schema",
@@ -476,6 +557,9 @@ object Prompts {
      * (toy-car-02, 9 images), hence 1024. Output tokens are billed as used, so the cap only stops truncation.
      */
     const val SCORE_MAX_COMPLETION_TOKENS = 1024
+    /** Five choreographies of up to 16 keys each are ~1-2k output tokens plus reasoning; unprobed (T30 probes it live). */
+    const val CHOREO_MAX_COMPLETION_TOKENS = 4096
+    const val CHOREO_REASONING_EFFORT = "low"
     const val SHEET_MAX_COMPLETION_TOKENS = 2048
     const val SCORE_REASONING_EFFORT = "low"
     const val SHEET_REASONING_EFFORT = "low"

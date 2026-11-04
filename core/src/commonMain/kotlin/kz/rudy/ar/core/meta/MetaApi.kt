@@ -31,6 +31,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.emote.ChoreographyParser
+import kz.rudy.ar.core.emote.EmoteSet
 import kotlin.io.encoding.Base64
 
 /**
@@ -44,6 +46,8 @@ import kotlin.io.encoding.Base64
  * - scoreStyle / scoreTechnique / characterSheet: `POST /chat/completions` on `muse-spark-1.3-contributor` (the only jobs
  *   Fireworks can serve); scoreTechnique meters under [Jobs.SPARK_SCORE_TECHNIQUE]; the sheet message carries the
  *   character's picture when one is given.
+ * - choreograph: `POST /chat/completions` on the same Spark model, one text part ([Prompts.choreograph]) + the
+ *   picture when given, strict json_schema [Prompts.CHOREOGRAPHY_FORMAT]; metered under [Jobs.SPARK_CHOREO].
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(
@@ -80,7 +84,8 @@ class MetaApi(
     override suspend fun stylizeFallback(ref: String, cutout: ByteArray, refs: List<ByteArray>): ByteArray =
         stylize(ref, cutout, refs, Prompts.STYLIZE_FALLBACK)
 
-    private suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray {
+    /** [stylize] with any [prompt] (the CLI's pose spike asks for other edits of the same sprite). */
+    suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray {
         requireServed(Jobs.MUSE_STYLIZE, "stylize")
         val images = ArrayList<ImageInput>()
         images += ImageInput(dataUrl(sniffImageMime(cutout), Base64.encode(cutout)))
@@ -124,6 +129,13 @@ class MetaApi(
         val resp: ChatResponse = postJson(ref, "characterSheet", config.chatPath, req)
         Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(Jobs.SPARK_SHEET, ref, it) }
         return parseOrThrow { parseSheet(resp.contentText()) }
+    }
+
+    override suspend fun choreograph(ref: String, sheet: CharacterSheet, image: ByteArray?): EmoteSet {
+        val req = ChatRequest.choreograph(config.sparkModel, sheet, image)
+        val resp: ChatResponse = postJson(ref, "choreograph", config.chatPath, req)
+        Pricing.sparkUsd(Usage.of(resp.usage))?.let { meter(Jobs.SPARK_CHOREO, ref, it) }
+        return parseOrThrow { ChoreographyParser.parse(resp.contentText()) }
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String {

@@ -1,5 +1,9 @@
 package kz.rudy.ar.core.pipeline
 
+import kotlinx.coroutines.CancellationException
+import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.Choreographies
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -47,18 +51,18 @@ class CharacterPipelineTest {
         assertNotNull(result.cutoutMask)
         assertEquals(4, result.cutoutMask.area)
         assertEquals(
-            listOf("segment:cat-01", "stylize:cat-01", "characterSheet:cat-01", "scoreStyle:cat-01", "scoreTechnique:cat-01"),
+            listOf("segment:cat-01", "stylize:cat-01", "characterSheet:cat-01", "choreograph:cat-01", "scoreStyle:cat-01", "scoreTechnique:cat-01"),
             models.calls,
             "the sheet starts before the gate; both gate looks run on every attempt",
         )
 
         val run = log.toRun()
         val c = run.characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name })
         assertTrue(c.stages.all { it.ok })
         assertEquals(0, c.retries)
         assertTrue(c.gatePassed)
-        assertEquals(0.038, c.totalCostUsd, 1e-9) // CostTable: 0.005 + 0.01 + 2 * 0.009 (both looks) + 0.005
+        assertEquals(0.041, c.totalCostUsd, 1e-9) // CostTable: 0.005 + 0.01 + 2 * 0.009 (both looks) + 0.005 + 0.003 (choreo)
         assertEquals(1, run.summary.n)
         assertEquals(1f, run.summary.gatePassRateFirstTry)
     }
@@ -84,7 +88,7 @@ class CharacterPipelineTest {
         assertEquals(listOf(1, 2, 3), gates.map { it.attempt })
         assertTrue(gates.none { it.ok })
         assertEquals(3, c.stages.count { it.name == "stylize" })
-        assertEquals("sheet", c.stages.last().name)
+        assertEquals(listOf("sheet", "choreo"), c.stages.takeLast(2).map { it.name })
     }
 
     @Test
@@ -152,7 +156,7 @@ class CharacterPipelineTest {
         assertEquals(2, models.scoredImages.size)
         assertTrue(models.scoredImages.all { it.contentEquals(matted) }, "the gate sees the matted sprite on every attempt")
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "matte", "gate", "rescore", "stylize", "matte", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "matte", "gate", "rescore", "stylize", "matte", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name })
         val mattes = c.stages.filter { it.name == "matte" }
         assertEquals(listOf(1, 2), mattes.map { it.attempt })
         assertTrue(mattes.all { it.ok && it.costUsd == 0.0 }, "deterministic matte is free")
@@ -213,8 +217,8 @@ class CharacterPipelineTest {
 
         assertEquals(2, result.attempts)
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
-        val sheet = c.stages.last()
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name })
+        val sheet = c.stages.single { it.name == "sheet" }
         assertEquals(6_000L, sheet.ms)
         assertTrue(sheet.ok)
         // Sequential would be 1 + 2 * (5 + 2) + 6 = 21 s; with the sheet alongside the loop it is 1 + 14 = 15 s.
@@ -236,15 +240,15 @@ class CharacterPipelineTest {
         assertEquals(SheetParser.FALLBACK_LINES.getValue("kk"), result.sheet.lines.getValue("kk"))
         assertEquals(SheetParser.FALLBACK_LINES.getValue("ru"), result.sheet.lines.getValue("ru"))
         val c = log.toRun().characters.single()
-        assertEquals("sheet", c.stages.last().name)
-        assertFalse(c.stages.last().ok)
-        assertTrue(c.stages.dropLast(1).all { it.ok })
+        assertEquals(listOf("sheet", "choreo"), c.stages.takeLast(2).map { it.name })
+        assertFalse(c.stages.single { it.name == "sheet" }.ok)
+        assertTrue(c.stages.filter { it.name != "sheet" }.all { it.ok }, "the choreography still runs on the fallback sheet")
         assertTrue(c.gatePassed)
         assertEquals(0.85f, c.gateScore, 1e-4f)
         assertEquals(0, c.retries)
         assertEquals("Dos", SheetParser.fallback("01").name)
         assertEquals("Robot", SheetParser.fallback("robot-toy-02").name)
-        assertEquals(0.0, c.stages.last().costUsd, "a failed call that metered nothing is not charged the estimate")
+        assertEquals(0.0, c.stages.single { it.name == "sheet" }.costUsd, "a failed call that metered nothing is not charged the estimate")
     }
 
     @Test
@@ -254,7 +258,7 @@ class CharacterPipelineTest {
         val log = metrics()
         val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "a cat")
         assertEquals(SheetParser.fallback("cat-01"), result.sheet)
-        assertFalse(log.toRun().characters.single().stages.last().ok)
+        assertFalse(log.toRun().characters.single().stages.single { it.name == "sheet" }.ok)
 
         // A real cancellation of the caller still propagates.
         val slow = FakeModels(delays = mapOf("stylize" to 5_000L, "characterSheet" to 5_000L))
@@ -278,15 +282,15 @@ class CharacterPipelineTest {
             CharacterPipeline(done, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "")
         }
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "sheet", "choreo"), c.stages.map { it.name })
         val stylize = c.stages[1]
         assertFalse(stylize.ok)
         assertEquals(0.0, stylize.costUsd, "failed stylize, nothing metered: not charged")
-        val sheet = c.stages.last()
+        val sheet = c.stages.single { it.name == "sheet" }
         assertTrue(sheet.ok)
         assertEquals(1_000L, sheet.ms)
         assertEquals(log.costs.sheetUsd, sheet.costUsd, 1e-9)
-        assertEquals(log.costs.cutoutUsd + log.costs.sheetUsd, c.totalCostUsd, 1e-9)
+        assertEquals(log.costs.cutoutUsd + log.costs.sheetUsd + log.costs.choreoUsd, c.totalCostUsd, 1e-9)
         assertTrue(PipelineEvent.StageFinished("sheet", 1, true, 1_000L) in events)
         assertTrue(events.last() is PipelineEvent.Failed)
 
@@ -300,7 +304,7 @@ class CharacterPipelineTest {
         assertFailsWith<MetaError.Http> {
             CharacterPipeline(running, StyleGate(), log2, onEvent = { events2 += it }).run("cat-01", image, refs, "")
         }
-        val sheet2 = log2.toRun().characters.single().stages.last()
+        val sheet2 = log2.toRun().characters.single().stages.single { it.name == "sheet" }
         assertEquals("sheet", sheet2.name)
         assertFalse(sheet2.ok)
         assertEquals(3_000L, sheet2.ms)
@@ -341,7 +345,7 @@ class CharacterPipelineTest {
         assertTrue(result.gatePassed)
         assertEquals(0.85f, result.gateScore, 1e-4f)
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name })
         val gates = c.stages.filter { it.name == "gate" }
         assertEquals(listOf(false, true), gates.map { it.ok })
         assertEquals(listOf(0.002, 0.002), gates.map { it.costUsd }, "each gate is charged what was metered, never the estimate")
@@ -382,8 +386,8 @@ class CharacterPipelineTest {
         assertEquals(listOf(1, 2, 3), gates.map { it.attempt })
         assertTrue(gates.none { it.ok })
         assertEquals(3, c.stages.count { it.name == "stylize" })
-        assertEquals("sheet", c.stages.last().name)
-        assertTrue(c.stages.last().ok)
+        assertEquals(listOf("sheet", "choreo"), c.stages.takeLast(2).map { it.name })
+        assertTrue(c.stages.single { it.name == "sheet" }.ok)
         assertFalse(c.gatePassed)
         assertEquals(2, c.retries)
 
@@ -490,9 +494,9 @@ class CharacterPipelineTest {
         val run = log.toRun()
         val c = run.characters.single()
         assertTrue(c.aborted)
-        assertEquals(listOf("cutout", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "sheet", "choreo"), c.stages.map { it.name })
         assertTrue(c.stages.all { it.ok })
-        assertEquals(log.costs.cutoutUsd + log.costs.sheetUsd, c.totalCostUsd, 1e-9)
+        assertEquals(log.costs.cutoutUsd + log.costs.sheetUsd + log.costs.choreoUsd, c.totalCostUsd, 1e-9)
         assertEquals(0f, c.gateScore)
         assertFalse(c.gatePassed)
         assertEquals(0, c.retries)
@@ -529,7 +533,7 @@ class CharacterPipelineTest {
         job2.join()
         val c2 = log2.toRun().characters.single()
         assertTrue(c2.aborted)
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet"), c2.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo"), c2.stages.map { it.name })
         assertEquals(1, c2.retries)
     }
 
@@ -549,8 +553,8 @@ class CharacterPipelineTest {
         val c = run.characters.single()
         assertFalse(c.aborted)
         assertFalse(c.gatePassed)
-        assertEquals(listOf("cutout", "stylize", "sheet"), c.stages.map { it.name })
-        assertEquals(listOf(true, false, true), c.stages.map { it.ok }, "the timed-out stylize is a failed stage")
+        assertEquals(listOf("cutout", "stylize", "sheet", "choreo"), c.stages.map { it.name })
+        assertEquals(listOf(true, false, true, true), c.stages.map { it.ok }, "the timed-out stylize is a failed stage")
         assertEquals(1, run.summary.n)
         assertEquals(0f, run.summary.gatePassRateFirstTry)
         assertTrue(events.last() is PipelineEvent.Failed, "${events.last()}")
@@ -648,7 +652,7 @@ class CharacterPipelineTest {
         assertEquals(
             listOf(
                 "+cutout1", "-cutout1", "+sheet1", "+stylize1", "-stylize1", "+matte1", "-matte1",
-                "+gate1", "+rescore1", "score1", "-gate1", "-rescore1!", "-sheet1", "done",
+                "+gate1", "+rescore1", "score1", "-gate1", "-rescore1!", "-sheet1", "+choreo1", "-choreo1", "done",
             ),
             first.map(::label),
         )
@@ -664,7 +668,7 @@ class CharacterPipelineTest {
                 "+cutout1", "-cutout1", "+sheet1",
                 "+stylize1", "-stylize1", "+gate1", "+rescore1", "score1!", "-gate1!", "-rescore1!",
                 "+stylize2", "-stylize2", "+gate2", "+rescore2", "score2", "-gate2", "-rescore2!",
-                "-sheet1", "done",
+                "-sheet1", "+choreo1", "-choreo1", "done",
             ),
             retry.map(::label),
         )
@@ -705,7 +709,7 @@ class CharacterPipelineTest {
         assertEquals(1, models.stylizeCalls)
         assertEquals(1, models.techniqueCalls)
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name })
         assertEquals(listOf(false, true), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.ok })
         assertTrue(c.gatePassed)
         assertEquals(0, c.retries, "counts as a first-try pass")
@@ -733,7 +737,7 @@ class CharacterPipelineTest {
             events.filterIsInstance<PipelineEvent.GateScored>(),
         )
         val c = log.toRun().characters.single()
-        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet"), c.stages.map { it.name })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "stylize", "gate", "rescore", "sheet", "choreo"), c.stages.map { it.name })
         assertEquals(listOf(2_000L, 3_000L, 2_000L, 3_000L), c.stages.filter { it.name == "gate" || it.name == "rescore" }.map { it.ms })
         // Each attempt waits for the slower look (3 s), not the sum (5 s): 2 x (5 + 3) = 16 s.
         assertEquals(16_000L, c.totalMs)
@@ -792,7 +796,7 @@ class CharacterPipelineTest {
         val rescore = c.stages.single { it.name == "rescore" }
         assertFalse(rescore.ok)
         assertEquals(0.0, rescore.costUsd, "a failed rescore that metered nothing is not charged")
-        assertEquals("sheet", c.stages.last().name)
+        assertEquals(listOf("sheet", "choreo"), c.stages.takeLast(2).map { it.name })
     }
 
     @Test
@@ -870,4 +874,68 @@ class CharacterPipelineTest {
         }
         return r
     }
+
+
+    @Test
+    fun pipelineShipsDefaultsWhenChoreographFails() = runTest {
+        for (error in listOf<Throwable>(MetaError.Http(500, "spark down"), MetaError.Network("offline"), CancellationException("timeout"))) {
+            val models = FakeModels(scores = listOf(0.9f), choreoError = error)
+            val log = metrics()
+            val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "")
+
+            assertEquals(EmoteSet.defaults(), result.emotes, "$error")
+            assertTrue(result.gatePassed, "a failed choreography never fails the character")
+            val choreo = log.toRun().characters.single().stages.single { it.name == CharacterPipeline.STAGE_CHOREO }
+            assertFalse(choreo.ok)
+            assertEquals(0.0, choreo.costUsd, "nothing metered, nothing charged")
+        }
+    }
+
+    @Test
+    fun pipelineRecordsTheChoreoStageAfterTheSheet() = runTest {
+        val spark = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT + (Emote.HELLO to Choreographies.HELLO.copy(line = 2)))
+        val sheet = FakeModels.DEFAULT_SHEET.copy(name = "Kitty")
+        val models = FakeModels(scores = listOf(0.9f), sheet = sheet, emotes = spark, delays = mapOf("characterSheet" to 1_000L, "choreograph" to 2_000L, "stylize" to 20_000L))
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        val events = ArrayList<PipelineEvent>()
+        val resized = ArrayList<Int>()
+        val result = CharacterPipeline(
+            models, StyleGate(), log,
+            imageResizer = { b, side -> resized += side; b + side.toByte() },
+            onEvent = { events += it },
+        ).run("cat-01", image, refs, "")
+
+        assertEquals(spark, result.emotes)
+        assertEquals(sheet, models.choreoSheets.single(), "the choreography gets the resolved sheet")
+        assertContentEquals(models.sheetImages.single(), models.choreoImages.single(), "and the sheet's 512 px image")
+        val stages = log.toRun().characters.single().stages
+        assertEquals(listOf("sheet", "choreo"), stages.takeLast(2).map { it.name })
+        val choreo = stages.last()
+        assertEquals(1, choreo.attempt)
+        assertTrue(choreo.ok)
+        assertEquals(2_000L, choreo.ms, "its own duration, after the sheet's")
+        assertEquals(1_000L, stages[stages.lastIndex - 1].ms)
+        assertEquals(log.costs.choreoUsd, choreo.costUsd, 1e-9)
+        val tail = events.dropWhile { !(it is PipelineEvent.StageFinished && it.stage == "sheet") }
+        assertEquals(
+            listOf(PipelineEvent.StageStarted("choreo", 1), PipelineEvent.StageFinished("choreo", 1, true, 2_000L)),
+            tail.drop(1).take(2),
+        )
+        assertTrue(tail.last() is PipelineEvent.Finished)
+
+        // Measured cost wins over the estimate, like every stage.
+        val metered = object : MetaModels by FakeModels(scores = listOf(0.9f)) {
+            override suspend fun choreograph(ref: String, sheet: kz.rudy.ar.core.domain.CharacterSheet, image: ByteArray?): EmoteSet {
+                log2.record(Jobs.SPARK_CHOREO, ref, 0.0021)
+                return EmoteSet.defaults()
+            }
+        }
+        CharacterPipeline(metered, StyleGate(), log2).run("cat-02", image, refs, "")
+        val c2 = log2.toRun().characters.single().stages.last()
+        assertEquals("choreo", c2.name)
+        assertEquals(0.0021, c2.costUsd, 1e-9)
+        assertTrue(c2.measured)
+    }
+
+    private val log2 = MetricsLog(source = "cli", provider = "meta", device = "test", clock = { 0L })
 }

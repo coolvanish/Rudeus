@@ -1,5 +1,8 @@
 package kz.rudy.ar.core.meta
 
+import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.Choreographies
 import kotlinx.coroutines.test.runTest
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.io.MapFixtureSource
@@ -119,5 +122,25 @@ class RecordingModelsTest {
         assertTrue("instances" !in writer.source.readText("$root/sam-cutout/toy-01.fixture.json")!!, "cutout recordings drop the per-detection copies")
         assertEquals(listOf("sam-cutout/cat-01.fixture.json", "sam-cutout/toy-01.fixture.json"), writer.written)
         assertTrue(writer.source.exists("$root/sam-cutout/toy-01.fixture.json"))
+    }
+
+
+    @Test
+    fun recordingModelsWritesTheChoreoFixture() = runTest {
+        val spark = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT + (Emote.SPIN to Choreographies.SPIN.copy(line = 1)))
+        val fake = FakeModels(emotes = spark)
+        val writer = MemoryWriter(root)
+        val rec = RecordingModels(fake, writer, clock())
+
+        assertEquals(spark, rec.choreograph("cat-01", FakeModels.DEFAULT_SHEET, byteArrayOf(7)))
+        assertEquals(listOf("spark-choreo/cat-01.fixture.json"), writer.written)
+
+        val replay = FixtureApi(writer.source, root)
+        val fx = replay.load(Jobs.SPARK_CHOREO, "cat-01")
+        assertFalse(fx.synthetic)
+        assertEquals(250L, fx.latencyMs)
+        assertEquals("recorded by cli character --live on 2026-10-28", fx.note)
+        assertTrue(fx.text!!.contains("\"spin\""), "text holds the reply-shaped JSON")
+        assertEquals(spark, replay.choreograph("cat-01", FakeModels.DEFAULT_SHEET))
     }
 }

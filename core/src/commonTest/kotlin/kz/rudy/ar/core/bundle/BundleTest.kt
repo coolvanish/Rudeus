@@ -1,5 +1,6 @@
 package kz.rudy.ar.core.bundle
 
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.meta.FakeModels
 import kz.rudy.ar.core.pipeline.CharacterResult
@@ -50,5 +51,26 @@ class BundleTest {
             assertEquals(true, text.contains("\"$key\""), "field $key in $text")
         }
         assertEquals(result.sheet, Bundle.decodeSheet(Bundle.encodeSheet(result.sheet)))
+    }
+
+
+    @Test
+    fun bundleEntryCarriesTheChoreoPath() {
+        val result = CharacterResult("cat-01", byteArrayOf(1), FakeModels.DEFAULT_SHEET, 0.8f, true, 1, null)
+        val e = Bundle.entry(result, "meta", "2026-11-04T12-00-00Z")
+        assertEquals("cat-01/choreo.json", e.choreo)
+        assertEquals(Bundle.choreoPath("cat-01"), e.choreo)
+        assertEquals(e, Bundle.decodeIndex(Bundle.encodeIndex(BundleIndex().upsert(e))).characters.single())
+        assertEquals(EmoteSet.defaults(), result.emotes, "CharacterResult defaults its emotes")
+        assertEquals(EmoteSet.defaults(), Bundle.decodeEmotes(Bundle.encodeEmotes(EmoteSet.defaults())))
+    }
+
+    @Test
+    fun anOldIndexWithoutChoreoStillDecodes() {
+        val old = """{"schema":1,"characters":[{"ref":"cat-01","name":"Мысық","ability":"JUMP","gateScore":0.8,"gatePassed":true,
+            "attempts":1,"sprite":"cat-01/sprite.png","sheet":"cat-01/sheet.json","provider":"meta","runId":"2026-10-28T12-00-00Z"}]}"""
+        val entry = Bundle.decodeIndex(old).characters.single()
+        assertEquals("cat-01", entry.ref)
+        assertEquals(null, entry.choreo)
     }
 }

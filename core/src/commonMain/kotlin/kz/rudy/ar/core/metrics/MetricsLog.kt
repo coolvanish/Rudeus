@@ -19,7 +19,7 @@ import kotlin.time.Instant
 
 @Serializable
 data class StageMetrics(
-    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "sheet" (and "table" | "voice" when those jobs are measured). */
+    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "sheet" | "choreo" (and "table" | "voice" when those jobs are measured). */
     val name: String,
     val ms: Long,
     val costUsd: Double,
@@ -88,6 +88,8 @@ data class MetricsRun(
  *    input tokens x $1.25/M = $0.0074, plus ~300 output (reasoning) tokens x $4.25/M = $0.0013 -> ~$0.009;
  *  - sheet: 1 image (~640) + ~200 prompt tokens = ~840 input x $1.25/M = $0.0011, plus ~900 output tokens (reasoning +
  *    the kk/ru JSON) x $4.25/M = $0.0038 -> ~$0.005;
+ *  - choreo: the sheet's order of magnitude (one Spark call, the cutout + a longer prompt, ~1-2k output tokens of
+ *    choreography JSON) -> ~$0.003; unprobed until T30's live run;
  *  - table = 5 SAM requests = $0.0125; voice = a ~5 s clip at $0.18/audio hour = $0.00025 -> $0.0003.
  * Spark figures use the standard-tier rates, an upper bound for the contributor tier (see [Pricing]). A first-try
  * character costs 0.005 + 0.01 + 2 * 0.009 + 0.005 = $0.038 (both gate looks run on every attempt), a two-retry
@@ -99,6 +101,8 @@ data class CostTable(
     val stylizeUsd: Double = 0.010,
     val scoreUsd: Double = 0.009,
     val sheetUsd: Double = 0.005,
+    /** Stage `choreo` ([kz.rudy.ar.core.meta.Jobs.SPARK_CHOREO]); not part of the JSON (the table never is). */
+    val choreoUsd: Double = 0.003,
     val tableUsd: Double = 0.0125,
     val voiceUsd: Double = 0.0003,
 )
