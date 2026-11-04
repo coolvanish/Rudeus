@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate Rudeus's five game sounds (T23). Stdlib only, deterministic: re-running yields byte-identical files.
+"""Generate Rudeus's eight game sounds (T23, emotes in T32). Stdlib only, deterministic: re-running yields byte-identical files.
 
 Usage: python3 scripts/gen-sounds.py androidApp/src/main/assets/sounds
 
-Writes place/jump/land/fall/blocked.wav as 16-bit PCM mono 22050 Hz, each <= 0.5 s, peak -3 dBFS, 5 ms fades.
-The sounds are original (synthesised here) and released CC0.
+Writes place/jump/land/fall/blocked.wav (events) and hello/roar/dance.wav (emotes) as 16-bit PCM mono 22050 Hz,
+each <= 0.5 s, peak -3 dBFS, 5 ms fades. The sounds are original (synthesised here) and released CC0.
 """
 import math
 import os
@@ -100,6 +100,44 @@ def blocked():
     return tone(0.09, 220, 220, lambda p: 0.6 * square(p) + 0.4 * sine(p), lambda t: math.exp(-5.0 * t))
 
 
+def hello():
+    # Two rising chirps (T32 HELLO): 500 -> 900 Hz and 700 -> 1200 Hz, 110 ms each with a 40 ms rest, soft ends.
+    def env(t):
+        return min(1.0, t / 0.1) * min(1.0, (1.0 - t) / 0.15)
+
+    chirp_a = tone(0.11, 500, 900, sine, env, exp_sweep=True)
+    rest = [0.0] * n_samples(0.04)
+    chirp_b = tone(0.11, 700, 1200, sine, env, exp_sweep=True)
+    return chirp_a + rest + chirp_b
+
+
+def roar():
+    # Low noisy growl (T32 ROAR), 450 ms: 70 Hz square with a 140 Hz triangle on top and smoothed noise, 40 ms attack,
+    # gentle decay, a 5 Hz wobble on the pitch so it is not a flat buzz.
+    n = n_samples(0.45)
+    rng = Lcg(97)
+    out = []
+    phase = 0.0
+    smooth = 0.0
+    for i in range(n):
+        t = i / RATE
+        f = 70.0 * (1.0 + 0.06 * math.sin(2 * math.pi * 5 * t))
+        phase += 2 * math.pi * f / RATE
+        smooth += 0.12 * (rng.next() - smooth)  # one-pole lowpass: a rumble, not hiss
+        body = 0.5 * square(phase) + 0.3 * triangle(2 * phase) + 0.6 * smooth
+        env = min(1.0, t / 0.04) * (1.0 - 0.6 * (i / n)) * min(1.0, (n - i) / n_samples(0.08))
+        out.append(body * env)
+    return out
+
+
+def dance():
+    # Three-note jingle (T32 DANCE): C5, E5, G5 (523, 659, 784 Hz), 130 ms each, triangle wave, each note fades out.
+    def env(t):
+        return min(1.0, t / 0.08) * min(1.0, (1.0 - t) / 0.2)
+
+    return sum((tone(0.13, f, f, triangle, env) for f in (523.25, 659.25, 783.99)), [])
+
+
 def finish(samples):
     """Normalise to -3 dBFS and apply 5 ms linear fades in and out."""
     fade = n_samples(FADE_S)
@@ -133,6 +171,9 @@ SOUNDS = {
     "land": land,
     "fall": fall,
     "blocked": blocked,
+    "hello": hello,
+    "roar": roar,
+    "dance": dance,
 }
 
 
