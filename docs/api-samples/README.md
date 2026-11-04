@@ -25,10 +25,12 @@ docs/api-samples/
   muse-stylize/refs/*.png         the style reference images (<= 9) sent to Muse Image edit
   muse-stylize/<ref>.out*.png     stylized outputs, one per attempt
   spark-sheet/<ref>.description.txt  the character description the CLI sends for <ref> (optional)
+  spark-choreo/<ref>.fixture.json    the five emote choreographies for <ref> (`text`); one per bundled character after
+                                     `cli choreo --live --record`; sample-01 is hand-written (synthetic)
 ```
 
 Jobs (= folder names, `Jobs` in MetaModels.kt): `sam-cutout`, `sam-table`, `sam-rig`, `muse-stylize`,
-`spark-score`, `spark-sheet`, `voice`. A `<ref>` is the input's stable name (`sample-01`, later `cat-01`);
+`spark-score`, `spark-sheet`, `spark-choreo`, `voice`. A `<ref>` is the input's stable name (`sample-01`, later `cat-01`);
 the same `<ref>` across folders describes one character.
 
 ## `<ref>.fixture.json` (schema 1)
@@ -55,6 +57,7 @@ Only the field for the job is present:
 | `muse-stylize` | `outputs` | sibling PNG file names, one per stylize attempt; the last one repeats |
 | `spark-score` | `scores` | one gate score per call in order (attempt 1, 2, 3); the last one repeats |
 | `spark-sheet` | `sheet` | the model's JSON exactly as returned; `SheetParser` maps unknown abilities to JUMP and pads to 5 lines |
+| `spark-choreo` | `text` | the choreography reply content (`{hello, bye, dance, spin, roar}`), parsed by `ChoreographyParser`; recordings store `ChoreographyParser.toJson` of the sanitised set |
 | `voice` | `text` | the transcript |
 
 `rle` is COCO-style uncompressed RLE over the row-major pixel grid: alternating OFF/ON run lengths, starting
@@ -124,6 +127,7 @@ header lists its own `# unverified:` lines.
 | `muse-stylize` | `https://api.meta.ai` | `/v1/images/edits` | json (`images[]` of data URLs, <= 10) | `muse-image-1.0` | yes — https://dev.meta.ai/docs/image-generation ; `background` is always `opaque` (alpha not kept) |
 | `spark-score` | `https://api.meta.ai` | `/v1/chat/completions` | json (`image_url` parts, data URLs) | `muse-spark-1.3-contributor` | yes — https://dev.meta.ai/docs/image-understanding |
 | `spark-sheet` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema`) | `muse-spark-1.3-contributor` | yes — https://dev.meta.ai/docs/features/structured-output ; Kazakh quality unverified |
+| `spark-choreo` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema` "Choreographies", strict; text + `image_url` sprite <= 512 px) | `muse-spark-1.3-contributor` | call shape as `spark-sheet`; strict schema acceptance, token budget, latency and cost unverified until T30's live run |
 | `voice` | `https://api.meta.ai` | `/v1/asr/transcribe` | multipart (`request` JSON part + `audio` WAV) | `muse-voice-transcribe-1.0` | yes — https://dev.meta.ai/docs/api-reference/voice/transcribe ; Kazakh is NOT in the 25 supported languages |
 
 What the docs say that the code did not expect:
@@ -160,6 +164,7 @@ export META_BASE_URL=https://api.meta.ai                           # no trailing
 scripts/probe-meta.sh sam-table photos/table-01.jpg                # 6 requests, one per prompt in prompts.json
 scripts/probe-meta.sh muse-stylize docs/api-samples/sam-cutout/cat-01.input.png   # + muse-stylize/refs/*.png
 scripts/probe-meta.sh spark-sheet docs/api-samples/spark-sheet/cat-01.description.txt
+scripts/probe-meta.sh spark-choreo docs/bundled/toy_dino/sprite.png   # -> spark-choreo/toy_dino.response.json (sample-01 sheet text)
 scripts/probe-meta.sh voice clips/jump-kk.wav                      # mono 16-bit PCM WAV, 16 or 24 kHz
 ```
 

@@ -42,7 +42,7 @@ import kotlin.system.exitProcess
  *       stops starting characters once spent + worst case > --budget-usd (default 1.00), exits 1.
  *       --record: live-only; writes replayable fixtures (RecordingModels) + the input photo; refuses to
  *       overwrite synthetic fixtures, and real ones without --force, before the first API call.
- *       --bundle: <dir>/<ref>/sprite.png (<= 768 px) + sheet.json and an upserted <dir>/index.json (BundleIndex).
+ *       --bundle: <dir>/<ref>/sprite.png (<= 768 px) + sheet.json + choreo.json and an upserted <dir>/index.json (BundleIndex).
  *   fixture --job <job> --response <ref.response.json> [--ref <ref>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
  *   fixture --job sam-cutout|sam-table|sam-rig (--response <ref.prompt.response.json> ... | --responses-dir <dir> --ref <ref>)
  *           [--prompts <prompts.json>] [--out <dir>] [--latency-ms <n>] [--synthetic] [--force]
@@ -53,6 +53,12 @@ import kotlin.system.exitProcess
  *        [--camera-height-m 0.5] [--pitch-deg 45] [--hfov-deg 60] [--out runs] [--repeat 1]
  *       the phone's Day 4 scan path (ScanCommand.kt): prints segment_ms, scan_ms, one line per level object and
  *       writes <out>/<runId>.json with scans[]; --record writes sam-table/<ref>.fixture.json + <ref>.input.jpg.
+ *   choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs]
+ *          [--live [--budget-usd 0.20] [--record <fixturesDir> [--force]]]
+ *       bundled sprite + sheet -> Spark choreography -> <bundle>/<ref>/choreo.json + the index entry's `choreo`
+ *       (ChoreoCommand.kt); offline replays spark-choreo/<ref>.fixture.json, a missing one skips the ref.
+ *   pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
+ *       four Muse pose edits of one sprite, matted, + contact.png + README.md for a human verdict (PoseSpike.kt).
  *   metrics summarise <runsDir>
  *   metrics gate <run.json>        Day 2 gate table; exit 0 only on PASS
  */
@@ -65,6 +71,8 @@ fun main(args: Array<String>) {
             "refs" -> refs(args.drop(1))
             "metrics" -> metrics(args.drop(1))
             "scan" -> scan(parseFlags(args.drop(1)))
+            "choreo" -> choreo(parseFlags(args.drop(1)))
+            "pose-spike" -> poseSpike(parseFlags(args.drop(1)))
             "help", "--help", "-h" -> usage()
             else -> usage("unknown command: ${args[0]}")
         }
@@ -93,6 +101,9 @@ internal fun usage(error: String? = null): Int {
           scan --image <jpg> [--prompts a,b,c | --floor] [--live [--provider meta|fireworks] [--budget-usd 0.30]
                [--record <fixturesDir> [--force]] [--ref <name>] | --fixtures <dir> --ref <ref>] [--concurrency 3]
                [--camera-height-m 0.5] [--pitch-deg 45] [--hfov-deg 60] [--out runs] [--repeat 1]
+          choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs]
+                 [--live [--budget-usd 0.20] [--record <fixturesDir> [--force]]]
+          pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
           metrics summarise <runsDir>
           metrics gate <run.json>
         """.trimIndent(),
@@ -259,6 +270,8 @@ private fun character(flags: Flags): Int {
                         File(bundleDir, ref).mkdirs()
                         File(bundleDir, Bundle.spritePath(ref)).writeBytes(JvmRaster.downscale(result.sprite, BUNDLE_SPRITE_MAX_SIDE))
                         File(bundleDir, Bundle.sheetPath(ref)).writeText(Bundle.encodeSheet(result.sheet))
+                        // Bundle.entry sets `choreo`; write the file so that path never dangles.
+                        File(bundleDir, Bundle.choreoPath(ref)).writeText(Bundle.encodeEmotes(result.emotes))
                         val index = checkNotNull(bundleIndex).upsert(Bundle.entry(result, providerName, metrics.runId))
                         File(bundleDir, Bundle.INDEX).writeText(Bundle.encodeIndex(index))
                         bundleIndex = index

@@ -1,6 +1,6 @@
 # T30 — cli-choreo-and-pose-spike
 
-status: todo
+status: doing
 created: 2026-11-04
 day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md). Starts after T29 is merged.
 gate: v1.1 gate "bundled characters play Spark-made emotes offline"; the pose-frame spike answers go/no-go for cut line 1
@@ -53,6 +53,32 @@ Tests not required: everything.
 - measured:
 - pose spike verdict (human):
 - cut/deferred:
+- Phase 1 result (2026-11-04, worktree task/T30-cli-choreo, offline only, no key, no API call): `choreo` (ChoreoCommand.kt)
+  and `pose-spike` (PoseSpike.kt) added and dispatched from Main.kt (+ usage text); `Jobs.SPARK_CHOREO` in
+  `Record.RECORDED_JOBS` (so `character --record` preflight/`--force` also covers `spark-choreo/<ref>.fixture.json`);
+  `scripts/probe-meta.sh` lists the `spark-choreo` job (the template engine already rendered it; a `sprite.<ext>` input
+  is now saved under its folder name, `<ref>.response.json`; key handling untouched); docs/api-samples/README.md has the
+  layout entry, the `text` field row, the endpoints row and a probe example. Offline smoke: docs/bundled copied to
+  build/t30-smoke/bundle, sample-01.fixture.json copied as build/t30-smoke/fixtures/spark-choreo/toy_dino.fixture.json,
+  `choreo --bundle build/t30-smoke/bundle --fixtures build/t30-smoke/fixtures --ref toy_dino --out build/t30-smoke/runs`
+  -> `toy_dino source=spark latency_ms=13 cost_usd=0.0030 durations=hello:1000,bye:1500,dance:2000,spin:900,roar:1200`,
+  exit 0, toy_dino/choreo.json written with `"source": "spark"`, the index entry gained `"choreo": "toy_dino/choreo.json"`,
+  runs/<id>.json holds one `choreo` stage; `--all` replays toy_dino and skips the 15 refs without a fixture (exit 0).
+  docs/bundled untouched. From the T29 review: `character --bundle` now also writes `<ref>/choreo.json`
+  (`Bundle.encodeEmotes(result.emotes)`) so the entry's `choreo` path never dangles (offline smoke on sample-01: choreo.json
+  with source spark, index `choreo` set). Additions to the contract: `--fixtures` (offline root, default docs/api-samples), `--out`
+  (runs dir, default runs), `--force` (replace a real spark-choreo recording); pose-spike `--refs`, `--runs`, and a
+  prompt suffix "Keep the drawing style of the first image. Plain white background, nothing else in the picture." (the
+  matte floods a white background). Re-encoding index.json writes `"choreo": null` on entries not yet choreographed.
+  Phase 2, from the MAIN checkout on day9/cast-emotes after the merge (the key comes from local.properties there):
+  1. `./gradlew :cli:run --args="choreo --bundle docs/bundled --all --live --record docs/api-samples --budget-usd 0.20"`
+     (16 refs x ~$0.003 measured estimate, guard worst case $0.01/ref -> 16 refs fit in $0.20; spends ~$0.05).
+  2. Mirror: `for d in docs/bundled/*/; do r=$(basename "$d"); cp "docs/bundled/$r/choreo.json" "androidApp/src/main/assets/bundled/$r/choreo.json"; done; cp docs/bundled/index.json androidApp/src/main/assets/bundled/index.json`,
+     then check with `for d in docs/bundled/*/; do r=$(basename "$d"); diff "docs/bundled/$r/choreo.json" "androidApp/src/main/assets/bundled/$r/choreo.json"; done; diff docs/bundled/index.json androidApp/src/main/assets/bundled/index.json`.
+  3. `./gradlew :cli:run --args="pose-spike --bundle docs/bundled --ref toy_dino --out docs/api-samples/muse-pose --live --budget-usd 0.10"`
+     (4 x ($0.01 Muse + $0.0025 SAM fallback) = $0.05 worst case; fall back to `--ref drawing_penguini`).
+  4. Optional raw sample: `scripts/probe-meta.sh spark-choreo docs/bundled/toy_dino/sprite.png` (one Spark call, ~$0.003).
+  5. `scripts/verify.sh`, the pre-commit scan, then the two commits named under "Done when".
 
 ## Addendum after T29 (2026-11-04)
 - Also owned: `cli/src/main/kotlin/kz/rudy/ar/cli/Record.kt` (add `Jobs.SPARK_CHOREO` to `RECORDED_JOBS`), `scripts/probe-meta.sh` (a `spark-choreo` job), `docs/api-samples/README.md` (the endpoints table row and the fixture list).

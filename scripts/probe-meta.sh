@@ -4,7 +4,10 @@
 # environment and never prints it. Run it yourself; agents are blocked from touching local.properties.
 #
 #   scripts/probe-meta.sh [--dry-run] <job> <input-file> [extra curl args...]
-#   jobs: sam-cutout | sam-table | sam-rig | muse-stylize | spark-score | spark-sheet | voice
+#   jobs: sam-cutout | sam-table | sam-rig | muse-stylize | spark-score | spark-sheet | spark-choreo | voice
+#   spark-choreo: input = a character image (a bundled docs/bundled/<ref>/sprite.png, ideally <= 512 px as the app
+#               sends it); the text part of spark-choreo/request.json.tmpl is the sample-01 sheet's prompt.
+#               A file named sprite.<ext> is saved under its folder's name: <ref>.response.json.
 #
 #   --dry-run   render the request(s) and print path, content type, byte size and the first 300 chars
 #               (base64 collapsed). Needs neither META_BASE_URL nor the key. Exits 0.
@@ -104,6 +107,8 @@ def collapse(s):
     return re.sub(r"[A-Za-z0-9+/=]{200,}", lambda m: f"<b64 {len(m.group(0))} chars>", s)
 
 name = os.path.splitext(os.path.basename(inp))[0]
+if name == "sprite":  # a bundled <ref>/sprite.png (spark-choreo): name the reply after the character
+    name = os.path.basename(os.path.dirname(os.path.abspath(inp))) or name
 labels = [(f"{name}.{re.sub(r'[^A-Za-z0-9_-]+', '_', p)}", p) for p in prompts] if per_prompt else [(name, prompts[0] if prompts else "")]
 manifest = []
 for i, (label, prompt) in enumerate(labels):
