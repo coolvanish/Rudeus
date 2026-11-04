@@ -117,3 +117,8 @@
    the user on `docs/api-samples/muse-pose/contact.png`; wiring frames into the app is post-deadline work).
 4. **Triggers: the HUD emote row only.** Voice emote words and the long-press wheel are cut from today.
 Status line: `status: in progress` — briefs T28–T32 in `ai/tasks/`.
+5. **Pose frames wired (T33, 2026-11-04, after the spike's GO):** `EmoteKey.frame` points at a model-drawn frame
+   (`PoseFrames`, two HELLO + two ROAR per character), the pipeline draws them as stage `frames` after `choreo`
+   (`poseFrames = true` on the phone, `cli character --frames`), `cli choreo --frames[-only]` draws them for bundled
+   characters, and the host swaps the quad's material on the keyed frame (single quad; the T32 cast is still todo).
+   A character without frames plays the v1.1 choreographies unchanged.
