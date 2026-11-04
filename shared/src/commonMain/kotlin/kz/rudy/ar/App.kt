@@ -23,10 +23,12 @@ import androidx.compose.ui.platform.LocalLocaleList
 import androidx.compose.ui.text.intl.LocaleList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kz.rudy.ar.core.bundle.SavedCharacters
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
@@ -383,7 +385,9 @@ fun App(
                 screen = if (lastScreen == Screen.METRICS) Screen.CAPTURE else lastScreen
             }
             Screen.SCANNING -> { scan = ScanState(surface = surface); go(Screen.CAPTURE) }
-            Screen.PROCESSING, Screen.PLAY, Screen.IMPORT -> go(Screen.CAPTURE)
+            Screen.PROCESSING, Screen.PLAY -> go(Screen.CAPTURE)
+            // T38: while it runs Back cancels; once it ended the gesture is Done, so ticked Keep chips are not thrown away.
+            Screen.IMPORT -> if (importState.running) go(Screen.CAPTURE) else finishImport()
         }
     }
     fun openMetrics() {
@@ -740,10 +744,15 @@ fun App(
                                         throw e
                                     }
                                     if (result.gatePassed) {
-                                        val card = host.saveCharacter(result)
-                                        if (card != null) {
-                                            saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT)
-                                            update(index) { it.copy(savedId = card.id) }
+                                        // Not cancellable: Back mid-save would leave the file on disk and the card off the
+                                        // shelf until the next start ("what was saved stays"). A failed save leaves
+                                        // savedId null, and Done tries it once more (ImportState.kept).
+                                        withContext(NonCancellable) {
+                                            val card = host.saveCharacter(result)
+                                            if (card != null) {
+                                                saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT)
+                                                update(index) { it.copy(savedId = card.id) }
+                                            }
                                         }
                                     }
                                 }

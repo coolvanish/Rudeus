@@ -95,8 +95,9 @@ data class ImportState(val items: List<ImportItem> = emptyList(), val running: B
     /** Cards already on the shelf (passed the gate and saved). */
     val added: Int get() = items.count { it.savedId != null }
 
-    /** Below the gate and ticked: saved when the child taps Done. */
-    val kept: List<ImportItem> get() = items.filter { it.savedId == null && it.keep && it.status == ImportStatus.BELOW_GATE && it.result != null }
+    /** Saved when the child taps Done: below the gate and ticked, or passed but not on disk yet (its save failed once). */
+    val kept: List<ImportItem>
+        get() = items.filter { it.savedId == null && it.result != null && (it.result.gatePassed || (it.keep && it.status == ImportStatus.BELOW_GATE)) }
 
     val fraction: Float get() = if (items.isEmpty()) 0f else items.map { it.fraction }.sum() / items.size
 

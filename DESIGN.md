@@ -206,7 +206,8 @@ nobody is asked in between. A photo that passed is on the Mine shelf before Done
 Processing bar) sits at the bottom while it runs.
 - *Done* (every photo ended): display "Done!" with "N added" (passed + kept), or "None came out" with "Check the
   internet and try again" when every photo failed; one Sun **Done** (check glyph) saves the kept ones and returns to
-  Capture, new cards first. Nothing goes to Scanning or Play.
+  Capture, new cards first; the system back gesture does the same here (nothing ticked is thrown away). Nothing goes to
+  Scanning or Play.
 - *A photo that failed* (network, no key): its tile dims with a Tomato cross and says "Didn't work"; the others carry on.
   Never a sheet per photo.
 

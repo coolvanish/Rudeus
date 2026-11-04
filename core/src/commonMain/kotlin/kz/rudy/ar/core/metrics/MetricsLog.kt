@@ -261,15 +261,12 @@ class MetricsLog(
         scans.update { it + ScanMetrics(objects, ms, withinCm, background) }
     }
 
-    fun toRun(): MetricsRun = MetricsRun(
-        runId = runId,
-        source = source,
-        provider = provider,
-        device = device,
-        characters = characters.load(),
-        scans = scans.load(),
-        summary = summaryOf(characters.load(), scans.load()),
-    )
+    fun toRun(): MetricsRun {
+        // One load each: an append between two loads would give a summary that does not match the list.
+        val cs = characters.load()
+        val ss = scans.load()
+        return MetricsRun(runId = runId, source = source, provider = provider, device = device, characters = cs, scans = ss, summary = summaryOf(cs, ss))
+    }
 
     fun toJson(): String = json.encodeToString(MetricsRun.serializer(), toRun())
 

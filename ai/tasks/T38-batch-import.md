@@ -47,11 +47,17 @@ Tests not required: Compose screens, the picker.
 
 ## Done when
 - `scripts/verify.sh` exit 0
-- Pixel, build with the key: Add toys → 3 photos → three tiles paint at once (`import_start n=3`), each ends with
-  `pipeline_ms … ref=0N`, passed ones show in Mine before Done is tapped (`saved_character=`), `import_done added=`;
-  Wi-Fi off → one "Didn't work" line, no crash, Back returns to Capture.
+- Pixel, build with the key: Add toys → 3 photos → three tiles paint at once (`photo_batch_ms … photos=3`, three
+  `stage_start=cutout … ref=0N` before any `pipeline_ms`), each ends with `pipeline_ms … batch=true ref=0N`, passed ones
+  show in Mine before Done is tapped (`saved_character=`); Wi-Fi off → every tile "Didn't work", one Done, no crash.
 
 ## Result (filled on acceptance)
 - measured: JVM green (core, shared host test), assembleDebug green. Device rows UNTESTED (worktree APK has no key).
-- review: pending
+- review: rudeus-reviewer, no blockers; one major fixed (a passed result's save is `NonCancellable`, so Back mid-save keeps
+  the card on the shelf), minors fixed: a passed result whose save failed is retried at Done (`ImportState.kept`), the
+  system back gesture after the batch ended acts as Done (ticked Keep chips are not dropped), `MetricsLog.toRun` loads
+  each list once, every pipeline log line carries `ref=`, the intake decodes at most 3 photos at once, `recordScan` writes
+  the run file under the same lock. Accepted: the default `importCharacter` answers the reviewer itself (`accepted = true`;
+  unreachable, Android overrides it); a batch that is the session's first character prepares the style refs up to three
+  times (correct, a one-off CPU cost).
 - cut/deferred: deleting a kept character from the shelf (T26 deferred, still); per-batch measured costs.
