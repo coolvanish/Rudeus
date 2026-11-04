@@ -1,6 +1,6 @@
 # T28 — cast-physics
 
-status: todo
+status: review
 created: 2026-11-04
 day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md)
 gate: v1.1 gate "two characters walk to two fingers at once, never through each other, never off the edge"; the v1.0 single-character physics stays byte-identical
@@ -105,5 +105,17 @@ Tests not required: rendering, Compose, the host.
 - Commit on the task branch: `core: cast physics — Cast, CastPhysics.step/separate/spawnNear, CastEvents (T28)`.
 
 ## Result (filled on acceptance)
-- measured:
-- cut/deferred:
+- measured: `CastTest` 13 tests (12 required plus `castRoundTripsThroughJson`), all green. Regression: a one-member cast
+  matches `Physics.step` exactly (`==`) on every one of the 938 frames of `DAY5` (15 s at 16 ms) for each of the 4
+  abilities, and that single-body trace equals `ScenarioRunner.run(...).bodies`. Head-on walkers (r 3 cm each, ±0.10 m
+  apart): first contact at frame 87, then centre distance exactly 0.0600 m on every later frame (error 0 within float),
+  both still WALKING at u = ±0.03. Walkers 1 cm off-centre slide past each other (minimum distance 0.059999995 m) and
+  both arrive. Four walkers converging on one point: worst residual overlap after the single pass is 2.8 µm. Mutation
+  check: letting airborne members take part in separation breaks `aJumpingMemberPassesOverAFriend` at frame 1.
+- decisions: "pairs in id order" means ids sorted lexicographically (so the result does not depend on who joined
+  first); pushes within the pass are sequential (each pair sees the ones before it). At dist == 0 the later id goes +u.
+  `spawnNear` rotates counter-clockwise by 45° steps and normalizes [preferred] (zero length: +u).
+  `Level.nearestInside` falls back to the centroid if the 1 mm nudge does not land inside (only a boundary under ~1 mm
+  across could do that, since the boundary is a convex hull).
+- cut/deferred: none. Separation is one pass, so three or more members jammed together can keep a few-µm overlap for a
+  frame (measured above); acceptable for the gate.
