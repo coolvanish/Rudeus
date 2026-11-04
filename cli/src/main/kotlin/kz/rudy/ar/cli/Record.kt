@@ -4,6 +4,7 @@ import kz.rudy.ar.core.io.JvmRaster
 import kz.rudy.ar.core.meta.Fixture
 import kz.rudy.ar.core.meta.FixtureApi
 import kz.rudy.ar.core.meta.FixtureWriter
+import kz.rudy.ar.core.emote.PoseSpec
 import kz.rudy.ar.core.meta.Jobs
 import java.io.File
 
@@ -16,7 +17,7 @@ internal object Record {
     /** Stylize attempts a character can make (1 + the pipeline's 2 retries); one `<ref>.out-<n>.png` each. */
     const val MAX_ATTEMPTS = 3
 
-    private val RECORDED_JOBS = listOf(Jobs.SAM_CUTOUT, Jobs.MUSE_STYLIZE, Jobs.SPARK_SCORE, Jobs.SPARK_SHEET, Jobs.SPARK_CHOREO)
+    private val RECORDED_JOBS = listOf(Jobs.SAM_CUTOUT, Jobs.MUSE_STYLIZE, Jobs.MUSE_POSE, Jobs.SPARK_SCORE, Jobs.SPARK_SHEET, Jobs.SPARK_CHOREO)
 
     /**
      * Recorded Muse outputs are stored at most this many px on the long side. The originals are 1.4-1.8k px and
@@ -27,7 +28,7 @@ internal object Record {
     fun writer(dir: File): FixtureWriter = FixtureWriter { path, bytes ->
         val f = File(dir, path)
         f.parentFile?.mkdirs()
-        val isOutput = path.startsWith("${Jobs.MUSE_STYLIZE}/") && path.endsWith(".png")
+        val isOutput = (path.startsWith("${Jobs.MUSE_STYLIZE}/") || path.startsWith("${Jobs.MUSE_POSE}/")) && path.endsWith(".png")
         f.writeBytes(if (isOutput) JvmRaster.downscale(bytes, OUTPUT_MAX_SIDE) else bytes)
     }
 
@@ -39,6 +40,7 @@ internal object Record {
     fun clearRef(dir: File, ref: String, input: File) {
         for (job in RECORDED_JOBS) File(dir, "$job/$ref${FixtureApi.SUFFIX}").takeIf { it.isFile }?.delete()
         for (n in 1..MAX_ATTEMPTS) File(dir, "${Jobs.MUSE_STYLIZE}/$ref.out-$n.png").takeIf { it.isFile }?.delete()
+        for (spec in PoseSpec.DRAWN) File(dir, "${Jobs.MUSE_POSE}/$ref.${spec.name}.png").takeIf { it.isFile }?.delete()
         val keep = inputCopy(dir, ref, input).name
         File(dir, Jobs.SAM_CUTOUT).listFiles { f -> f.isFile && f.name.startsWith("$ref.input.") && f.name != keep }?.forEach { it.delete() }
     }
@@ -69,6 +71,7 @@ internal object Record {
                 if (isSynthetic) synthetic += f.path else existing += f.path
             }
             for (n in 1..MAX_ATTEMPTS) File(dir, "${Jobs.MUSE_STYLIZE}/$ref.out-$n.png").takeIf { it.isFile }?.let { existing += it.path }
+            for (spec in PoseSpec.DRAWN) File(dir, "${Jobs.MUSE_POSE}/$ref.${spec.name}.png").takeIf { it.isFile }?.let { existing += it.path }
             val copy = inputCopy(dir, ref, input)
             if (copy.isFile && copy.canonicalFile != input.canonicalFile) existing += copy.path
         }

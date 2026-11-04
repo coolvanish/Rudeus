@@ -8,6 +8,8 @@ import kz.rudy.ar.core.bundle.BundleEntry
 import kz.rudy.ar.core.bundle.BundleIndex
 import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.EmoteSet
+import kz.rudy.ar.core.emote.PoseFrames
+import kz.rudy.ar.core.emote.PoseSpec
 import kz.rudy.ar.core.io.FileFixtureSource
 import kz.rudy.ar.core.io.FileMetricsSink
 import kz.rudy.ar.core.io.JvmRaster
@@ -30,7 +32,7 @@ import java.time.temporal.ChronoUnit
 
 /*
  * choreo --bundle <dir> [--ref <ref> | --all] [--fixtures docs/api-samples] [--live [--budget-usd 0.20]
- *        [--record <fixturesDir> [--force]]] [--out runs]
+ *        [--record <fixturesDir> [--force]]] [--out runs] [--frames | --frames-only] [--refs <dir>]
  *
  * For each selected bundled character (<bundle>/index.json): <ref>/sprite.png + <ref>/sheet.json ->
  * models.choreograph(ref, sheet, sprite fitted to CharacterPipeline.SHEET_IMAGE_MAX_SIDE, the image the pipeline's
@@ -46,6 +48,15 @@ import java.time.temporal.ChronoUnit
  *
  * One stage `choreo` per ref in runs/<runId>.json (no gate ran: gateScore 0, gatePassed false, retries 0).
  * Exit 0 when at least one ref succeeded and none was skipped for the budget.
+ *
+ * --frames (T33): after the choreography, models.drawPose draws PoseSpec.DRAWN (hello-1, hello-2, roar-1, roar-2) from
+ * the sprite (<= 1024 px) with the Muse style refs (--refs, default docs/api-samples/muse-stylize/refs), one call at a
+ * time; each is matted (JvmRaster.matte, no SAM fallback), bounded to PoseFrames.MAX_SIDE and written to
+ * <bundle>/<ref>/frames/<emote>-<n>.png; the index entry's `frames` lists them and choreo.json is re-keyed for them
+ * (EmoteSet.withFrames). Offline replays muse-pose/<ref>.fixture.json (the T30 spike for toy_dino). A ref whose
+ * frames all failed keeps the frames and keys it had; a stage `frames` is recorded either way. --frames-only skips
+ * the Spark call and keys the choreo.json the bundle already has (the defaults without one). Worst case for the
+ * budget guard grows by PoseSpec.DRAWN.size x CostTable.poseUsd ($0.04).
  */
 private const val CHOREO_DEFAULT_FIXTURES = "docs/api-samples"
 private const val CHOREO_DEFAULT_BUDGET_USD = 0.20
@@ -55,6 +66,7 @@ private const val CHOREO_DEFAULT_BUDGET_USD = 0.20
  * tokens (prompt + one <= 512 px image). 16 bundled refs x $0.02 still fit the $0.20 default.
  */
 private const val CHOREO_WORST_CASE_USD = 0.02
+private const val CHOREO_DEFAULT_REFS = "docs/api-samples/muse-stylize/refs"
 
 private val metaJson = Json { prettyPrint = true; encodeDefaults = true }
 
@@ -74,6 +86,15 @@ internal fun choreo(flags: Flags): Int {
     if (!live && !fixturesDir.isDirectory) throw CliError("fixtures dir not found: $fixturesDir")
     val outDir = File(flags.get("out") ?: "runs")
     val force = flags.has("force")
+    val framesOnly = flags.has("frames-only")
+    val drawFrames = framesOnly || flags.has("frames")
+    val styleRefs: List<ByteArray> = if (!drawFrames) emptyList() else {
+        val refsDir = File(flags.get("refs") ?: CHOREO_DEFAULT_REFS)
+        if (!refsDir.isDirectory) throw CliError("refs dir not found: $refsDir")
+        refsDir.listFiles { f -> f.isFile && f.extension.lowercase() in IMAGE_EXTENSIONS }.orEmpty()
+            .sortedBy { it.name }.map { JvmRaster.downscale(it.readBytes(), CharacterPipeline.MUSE_INPUT_MAX_SIDE) }
+            .also { if (it.isEmpty()) System.err.println("warning: no style refs in $refsDir; Muse sees the sprite only") }
+    }
 
     val selected: List<BundleEntry> = when {
         flags.get("ref") != null -> {
@@ -88,7 +109,8 @@ internal fun choreo(flags: Flags): Int {
     selected.forEach { requireSafeRef(it.ref) }
 
     // Everything that can refuse runs before the first API call.
-    if (recordDir != null) preflightChoreo(recordDir, selected.map { it.ref }, force)
+    val recordedJobs = listOfNotNull(Jobs.SPARK_CHOREO.takeUnless { framesOnly }, Jobs.MUSE_POSE.takeIf { drawFrames })
+    if (recordDir != null) preflightChoreo(recordDir, selected.map { it.ref }, force, recordedJobs)
 
     val provider = Provider.META
     val providerName = if (live) provider.metricsName else "fixture"
@@ -102,9 +124,11 @@ internal fun choreo(flags: Flags): Int {
         FixtureApi(FileFixtureSource(File("/")), root = fixturesDir.absolutePath)
     }
 
+    val worstCaseUsd = (if (framesOnly) 0.0 else CHOREO_WORST_CASE_USD) + (if (drawFrames) PoseSpec.DRAWN.size * metrics.costs.poseUsd else 0.0)
     println(
         "run ${metrics.runId}: choreo ${selected.size} ref(s), provider=$providerName, bundle=${bundleDir.path}" +
-            (budgetUsd?.let { ", budget=$${fmtUsd(it)} (worst case $${fmtUsd(CHOREO_WORST_CASE_USD)}/ref)" } ?: "") +
+            (if (drawFrames) ", frames=${PoseSpec.DRAWN.joinToString(",") { it.name }}" + (if (framesOnly) " (frames only)" else "") else "") +
+            (budgetUsd?.let { ", budget=$${fmtUsd(it)} (worst case $${fmtUsd(worstCaseUsd)}/ref)" } ?: "") +
             (recordDir?.let { ", record=${it.path}" } ?: ""),
     )
     var succeeded = 0
@@ -117,7 +141,7 @@ internal fun choreo(flags: Flags): Int {
         runBlocking {
             for (entry in selected) {
                 val ref = entry.ref
-                if (budgetUsd != null && spentChoreoUsd(metrics) + CHOREO_WORST_CASE_USD > budgetUsd) { budgetSkipped += ref; continue }
+                if (budgetUsd != null && spentChoreoUsd(metrics) + worstCaseUsd > budgetUsd) { budgetSkipped += ref; continue }
                 val spriteFile = File(bundleDir, entry.sprite)
                 val sheetFile = File(bundleDir, entry.sheet)
                 if (!spriteFile.isFile || !sheetFile.isFile) {
@@ -130,53 +154,91 @@ internal fun choreo(flags: Flags): Int {
                     println("  $ref: SKIPPED ${sheetFile.path} is not a sheet (${e.message})")
                     continue
                 }
-                if (!live && !File(fixturesDir, "${Jobs.SPARK_CHOREO}/$ref${FixtureApi.SUFFIX}").isFile) {
+                if (!live && !framesOnly && !File(fixturesDir, "${Jobs.SPARK_CHOREO}/$ref${FixtureApi.SUFFIX}").isFile) {
                     skipped += ref
                     println("  $ref: SKIPPED no fixture ${fixturesDir.path}/${Jobs.SPARK_CHOREO}/$ref${FixtureApi.SUFFIX}")
                     continue
                 }
-                val image = JvmRaster.downscale(spriteFile.readBytes(), CharacterPipeline.SHEET_IMAGE_MAX_SIDE)
+                val sprite = spriteFile.readBytes()
+                val choreoFile = File(bundleDir, Bundle.choreoPath(ref))
 
                 metrics.startCharacter(ref)
-                val mark = metrics.costMark(Jobs.SPARK_CHOREO)
-                val t0 = metrics.now()
-                val outcome: Result<EmoteSet> = try {
-                    Result.success(models.choreograph(ref, sheet, image))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Result.failure(e)
+                var set: EmoteSet?
+                var ms = 0L
+                var usd = 0.0
+                if (framesOnly) {
+                    // No Spark call: the frames are keyed into the choreography the bundle already has.
+                    set = choreoFile.takeIf { it.isFile }?.let { Bundle.decodeEmotes(it.readText()) } ?: EmoteSet.defaults()
+                } else {
+                    val image = JvmRaster.downscale(sprite, CharacterPipeline.SHEET_IMAGE_MAX_SIDE)
+                    val mark = metrics.costMark(Jobs.SPARK_CHOREO)
+                    val t0 = metrics.now()
+                    val outcome: Result<EmoteSet> = try {
+                        Result.success(models.choreograph(ref, sheet, image))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                    ms = metrics.now() - t0
+                    val ok = outcome.isSuccess
+                    val cost = metrics.costSince(mark, if (ok) metrics.costs.choreoUsd else 0.0)
+                    usd = cost.usd
+                    metrics.stage(CharacterPipeline.STAGE_CHOREO, ms, 1, ok, cost)
+                    set = outcome.getOrElse { e ->
+                        failed++
+                        val msg = "${e::class.simpleName}: ${e.message}"
+                        // Live only: the pipeline ships defaults for a failed call; never replace an existing file with them.
+                        if (!live || choreoFile.isFile) {
+                            println("  $ref: FAILED $msg (latency_ms=$ms)")
+                            null
+                        } else {
+                            println("  $ref: FAILED $msg -> writing the defaults")
+                            EmoteSet.defaults()
+                        }
+                    }
+                    if (ok) {
+                        succeeded++
+                        recordedMs += ms
+                        recordedUsd += cost.usd
+                    }
                 }
-                val ms = metrics.now() - t0
-                val ok = outcome.isSuccess
-                val cost = metrics.costSince(mark, if (ok) metrics.costs.choreoUsd else 0.0)
-                metrics.stage(CharacterPipeline.STAGE_CHOREO, ms, 1, ok, cost)
+                if (set == null) {
+                    metrics.endCharacter(gateScore = 0f, gatePassed = false, retries = 0)
+                    continue
+                }
+
+                // T33: the drawn frames, then the choreography keyed for the ones that came back.
+                var framePaths = entry.frames
+                var framesNote = ""
+                if (drawFrames) {
+                    val drawn = drawPoseFrames(models, metrics, ref, sprite, styleRefs)
+                    ms += drawn.ms
+                    usd += drawn.usd
+                    drawn.errors.forEach { println("  $ref: frame $it") }
+                    if (drawn.frames.isEmpty) {
+                        if (framesOnly) failed++
+                        framesNote = " frames=none" + (if (framePaths != null) " (kept the old ones)" else "")
+                    } else {
+                        val dir = File(bundleDir, ref).resolve("frames")
+                        dir.deleteRecursively()
+                        dir.mkdirs()
+                        for ((name, bytes) in drawn.frames.files()) File(dir, name).writeBytes(bytes)
+                        framePaths = Bundle.framePaths(ref, drawn.frames)
+                        set = set.withFrames(drawn.frames.counts())
+                        if (framesOnly) succeeded++
+                        framesNote = " frames=" + drawn.frames.counts().entries.joinToString(",") { "${it.key.name.lowercase()}:${it.value}" } +
+                            if (drawn.frames.count < PoseSpec.DRAWN.size) " (partial)" else ""
+                    }
+                }
                 metrics.endCharacter(gateScore = 0f, gatePassed = false, retries = 0)
 
-                val choreoFile = File(bundleDir, Bundle.choreoPath(ref))
-                val set = outcome.getOrElse { e ->
-                    failed++
-                    val msg = "${e::class.simpleName}: ${e.message}"
-                    // Live only: the pipeline ships defaults for a failed call; never replace an existing file with them.
-                    if (!live || choreoFile.isFile) {
-                        println("  $ref: FAILED $msg (latency_ms=$ms)")
-                        null
-                    } else {
-                        println("  $ref: FAILED $msg -> writing the defaults")
-                        EmoteSet.defaults()
-                    }
-                } ?: continue
-                if (ok) {
-                    succeeded++
-                    recordedMs += ms
-                    recordedUsd += cost.usd
-                }
                 choreoFile.parentFile?.mkdirs()
                 choreoFile.writeText(Bundle.encodeEmotes(set))
-                index = index.upsert(entry.copy(choreo = Bundle.choreoPath(ref)))
+                index = index.upsert(entry.copy(choreo = Bundle.choreoPath(ref), frames = framePaths))
                 indexFile.writeText(Bundle.encodeIndex(index))
                 val durations = Emote.entries.joinToString(",") { "${it.name.lowercase()}:${set[it].durationMs}" }
-                println("  $ref source=${set.source} latency_ms=$ms cost_usd=${fmtUsd(cost.usd)} durations=$durations")
+                println("  $ref source=${set.source} latency_ms=$ms cost_usd=${fmtUsd(usd)} durations=$durations$framesNote")
             }
         }
     } finally {
@@ -198,12 +260,47 @@ internal fun choreo(flags: Flags): Int {
 
 private fun spentChoreoUsd(metrics: MetricsLog): Double = metrics.toRun().characters.sumOf { it.totalCostUsd }
 
-/** A synthetic spark-choreo fixture is never overwritten (tests replay it); a real one needs --force. */
-private fun preflightChoreo(dir: File, refs: List<String>, force: Boolean) {
+private class DrawnFrames(val frames: PoseFrames, val ms: Long, val usd: Double, val errors: List<String>)
+
+/**
+ * T33: every PoseSpec.DRAWN frame of [sprite], one call at a time (the CLI has no reason to hurry Muse), matted and
+ * bounded as the pipeline's `frames` stage does, which it also records in [metrics] (ok = all four came back and
+ * matted; cost metered under muse-pose, else poseUsd per frame Muse returned). A call or matte that fails is a
+ * missing frame, listed in [DrawnFrames.errors]; an emote's frames are kept from index 0 while contiguous.
+ */
+private suspend fun drawPoseFrames(models: MetaModels, metrics: MetricsLog, ref: String, sprite: ByteArray, refs: List<ByteArray>): DrawnFrames {
+    val t0 = metrics.now()
+    val mark = metrics.costMark(Jobs.MUSE_POSE)
+    val input = JvmRaster.downscale(sprite, CharacterPipeline.MUSE_INPUT_MAX_SIDE)
+    val byEmote = LinkedHashMap<Emote, MutableList<ByteArray?>>()
+    val errors = ArrayList<String>()
+    var returned = 0
+    for (spec in PoseSpec.DRAWN) {
+        val png: ByteArray? = try {
+            models.drawPose(ref, input, refs, spec).also { returned++ }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            errors += "${spec.name}: ${e::class.simpleName}: ${e.message}"
+            null
+        }
+        val matted = png?.let { JvmRaster.matte(it) }
+        if (png != null && matted == null) errors += "${spec.name}: matte degenerate, frame dropped"
+        byEmote.getOrPut(spec.emote) { ArrayList() } += matted?.let { JvmRaster.downscale(it, PoseFrames.MAX_SIDE) }
+    }
+    val frames = PoseFrames.of(byEmote.mapValues { (_, list) -> list.takeWhile { it != null }.filterNotNull() })
+    val ms = metrics.now() - t0
+    val cost = metrics.costSince(mark, returned * metrics.costs.poseUsd)
+    metrics.stage(CharacterPipeline.STAGE_FRAMES, ms, 1, frames.count == PoseSpec.DRAWN.size, cost)
+    return DrawnFrames(frames, ms, cost.usd, errors)
+}
+
+/** A synthetic spark-choreo or muse-pose fixture is never overwritten (tests replay it); a real one needs --force. */
+private fun preflightChoreo(dir: File, refs: List<String>, force: Boolean, jobs: List<String>) {
     val synthetic = ArrayList<String>()
     val existing = ArrayList<String>()
-    for (ref in refs) {
-        val f = File(dir, "${Jobs.SPARK_CHOREO}/$ref${FixtureApi.SUFFIX}")
+    for (ref in refs) for (job in jobs) {
+        val f = File(dir, "$job/$ref${FixtureApi.SUFFIX}")
         if (!f.isFile) continue
         val isSynthetic = runCatching { FixtureApi.json.decodeFromString(Fixture.serializer(), f.readText()).synthetic }.getOrDefault(false)
         if (isSynthetic) synthetic += f.path else existing += f.path
