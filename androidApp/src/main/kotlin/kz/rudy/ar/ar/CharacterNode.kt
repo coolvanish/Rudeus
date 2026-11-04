@@ -210,7 +210,6 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
         // plane coords; point it at the camera. The emote's yaw (a spin) adds; its tilt is about the quad's own Z.
         val yawRad = atan2(toCam.u, toCam.v)
         val yawDeg = (yawRad * 180.0 / PI).toFloat() + (emotePose?.yawDeg ?: 0f)
-        node.quaternion = hamilton(Quaternion.fromAxisAngle(Y_AXIS, yawDeg), Quaternion.fromAxisAngle(Z_AXIS, emotePose?.tiltDeg ?: 0f))
 
         // Facing flip. The node's +X (the viewer's right) is (cos θ, -sin θ) in plane coords.
         val right = Vec2(cos(yawRad), -sin(yawRad))
@@ -219,6 +218,11 @@ internal class CharacterPoser(private val sprite: CharacterSprite) {
             val wantsRight = along > 0f
             flip = if (wantsRight == sprite.facesRight) 1f else -1f
         }
+        // HAND-REVIEW: T32 review fix — a positive tilt about +Z leans the top to the viewer's LEFT (right-handed, +Z at
+        // the camera). A bow should lean the way the sprite looks: left for an unflipped left-facing sprite (the demo
+        // dino, facesRight = false), so the tilt is signed by the flip and the sprite's drawn facing.
+        val lean = if (sprite.facesRight) -flip else flip
+        node.quaternion = hamilton(Quaternion.fromAxisAngle(Y_AXIS, yawDeg), Quaternion.fromAxisAngle(Z_AXIS, (emotePose?.tiltDeg ?: 0f) * lean))
 
         // Cheap squash-and-stretch bob while walking (Day 3 plan: picked over a sprite sheet).
         // The quad's origin is at the feet (center = height/2), so scaling keeps the feet on the table.

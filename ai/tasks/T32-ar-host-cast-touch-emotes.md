@@ -69,11 +69,32 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
      UP(table) reaches the detector as a clean single tap and walks the newly active member to finger 1 (a ghost tap).
      The detector may be left with a dangling DOWN (its long-press fires into no-op listeners; the next DOWN resets it).
   2. Move throttle: a hit test at most every GRAB_MOVE_MS (60 ms) per bound pointer, and a `walkTo` only when the table
-     point moved ≥ GRAB_MOVE_MIN_M (5 mm) — one hit test per lead, none for a resting finger. No depth-gap sampling per
-     move; the target is `level.nearestInside(uv)`. `confirmSurface` is NOT called on a lead: after `nearestInside` the
-     point is inside the hull, so `SurfaceBoundary.grown` would be a no-op (dead line dropped).
-  3. Tap-select lives in `tableTap` always: a tap within the grab radius of a member makes it active and does not walk.
-     With CAST_TOUCH_ENABLED the grab consumes that tap first, so this is exactly the cut-line-5 behaviour when flipped.
+     point moved ≥ GRAB_MOVE_MIN_M (5 mm) — none for a resting finger; POINTER_UP / UP lead once more from the lifting
+     finger (review fix: a flick no longer stops up to 60 ms short). The target is `level.nearestInside(uv)`.
+     `confirmSurface` is NOT called on a lead: `SurfaceBoundary.grown` squares every standing point by STAND_MARGIN_M
+     (2 cm), so a finger held at the hull's edge would ratchet the hull outward 2 cm per lead, up to 16 times a second.
+     Review fix (b): every lead is edge-checked like a tap (`depthGap` at the target + `depthGapsOnWay` with
+     LEAD_DEPTH_SAMPLES = 2 from the member's feet, `SurfaceBoundary.crossesEdge`); a refused lead logs
+     `lead_past_edge id= u= v= way=` and the member keeps its last target. Before a scan `boundary` is null, so this check
+     is the only thing that keeps a drag on the real table then.
+  2b. Review fix (a): the grab is a SCREEN-space test. Each ground member's feet and head (feet + sprite.heightM * size)
+     are projected with ARCore `Camera.getViewMatrix` / `getProjectionMatrix` (near/far do not touch x, y) into the view's
+     pixels; the quad's width at the feet depth is `P00 * viewW / 2 / depth` px per metre times `sprite.widthM * size`; the
+     rectangle grows by GRAB_MARGIN_DP (16 dp) on every side; nearest centre wins. A finger on the head or body now grabs
+     (before, its table point lay 4-10 cm behind the feet and the active member walked there). Fallback before the view is
+     laid out (`viewSize` = 0): the brief's table-point radius.
+  3. Tap-select lives in `tableTap` always: a tap on a member's quad makes it active and does not walk. With
+     CAST_TOUCH_ENABLED the grab consumes that tap first, so this is exactly the cut-line-5 behaviour when flipped.
+     Review fix (c): with exactly ONE member on the table `grabbable` is always null — no grab, no tap-select — so the v1.0
+     small steps next to the character still walk it and the Day 5 scenario sees the same taps as before.
+  3b. Detector edge case (reviewer): when a stream is consumed after the detector saw its DOWN, Android's GestureDetector
+     keeps that DOWN as `mCurrentDownEvent`; the NEXT tap, if it comes within the double-tap timeout, is classified as a
+     double tap and arrives through `onDoubleTapEvent`, not `onSingleTapUp`. Both listeners call `tableTap` (Pixel
+     2026-11-03 fix), so the tap still walks; the double-tap flag only changes which callback carries it. Pixel check 4.
+  3c. Review fix (d): a member's PlaneNode is created with `isVisible = false`; the poser's first placed frame shows it,
+     so a fresh member is never drawn unposed at the anchor origin for a frame.
+  3d. Review fix (bow): the emote tilt is multiplied by the facing sign (`flip`, and `-flip` for a sprite drawn facing
+     right), so BYE bows forward whichever way the sprite looks.
   4. A slot with an empty `characters` (a v1.0 slot) renders one member `legacy` from `spritePng` / `ability`; App never
      sends that, it only keeps previews and a v1.0 caller alive.
   5. Scan swap: `SurfaceBoundary.afterScan` is folded over every member's state (it only ever grows the hull it is given).
@@ -92,9 +113,14 @@ Device (the user, Pixel 9 Pro XL, the build from the main checkout with the key)
      tap-to-walk, Jump (`jump id=`), Scenario 3x (`scenario_done ms=`) as before; feet on the table, no slide.
   2. `+` chip -> add a second (and third) character: `cast_add id=… n=2 u= v=` with the new one standing to the right of
      the active one, not overlapping; `cast_remove id=` when a chip is removed (if the HUD offers it) and the quad is gone.
-  3. Two fingers: finger A on character 1 -> `grab pointer=0 id=…` and the chip turns active (`active id=`); drag -> it
-     follows (lag <= 60 ms); finger B on character 2 while A is down -> `grab pointer=1 id=…`, both follow at once; they
-     stop touching (separation) and never leave the scanned boundary; lift -> `release pointer= id=`, each finishes its walk.
+  3. Two fingers: finger A on character 1's HEAD (not its feet) -> `grab pointer=0 id=…` and the chip turns active
+     (`active id=`); drag -> it follows (lag <= 60 ms); finger B on character 2 while A is down -> `grab pointer=1 id=…`,
+     both follow at once; they stop touching (separation) and never leave the scanned boundary; lift -> `release
+     pointer= id=`, each finishes its walk at the finger's last point (no 60 ms short stop on a flick). A finger landing
+     next to a character (outside its quad + 16 dp) must NOT grab: no `grab` line, and the active member walks there.
+  3a. Drag a character toward and past the table edge, before any scan and after one: `lead_past_edge id= u= v= way=`
+     appears as the finger crosses the edge and the character stops at its last good target; it never walks into the air.
+     On the table the line must not appear during an ordinary drag (if it does, LEAD_DEPTH_SAMPLES / EDGE_DROP_M need a look).
   4. After a mixed stream (finger A on the TABLE first, finger B grabs, both lift) the next single tap must still walk the
      active member (the detector's dangling DOWN is harmless).
   5. Each of the five emote buttons on the active character: `emote id= emote=HELLO source=default|spark ms=…`; HELLO

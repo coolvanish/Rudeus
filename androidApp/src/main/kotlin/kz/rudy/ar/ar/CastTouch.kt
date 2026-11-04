@@ -17,6 +17,9 @@ import kz.rudy.ar.core.domain.Vec2
 // walk the ACTIVE member) keeps working for a finger that never touched a character. Consuming the whole stream once
 // bound, not only the bound pointers' events, is deliberate: the detector would otherwise see DOWN(table) .. UP(table)
 // around a grab by a second finger and walk the newly active member to the first finger (a ghost tap).
+// HAND-REVIEW: T32 review fix — (1) the grab test is in SCREEN space (`grabbable(x, y)`: a finger on the sprite's head hits
+// the table 4-10 cm behind the feet, so a table-point test missed the body); the table point is only the lead target.
+// (2) POINTER_UP / UP lead once more from the lifting finger's last position, so a flick does not stop up to 60 ms short.
 
 /** The grab radius never goes below this (times the surface scale), so a small character is still easy to catch. */
 internal const val GRAB_MIN_M = 0.03f
@@ -27,23 +30,26 @@ internal const val GRAB_MOVE_MS = 60L
 /** ... and only when the table point under the finger moved at least this far (metres). */
 internal const val GRAB_MOVE_MIN_M = 0.005f
 
+/** The table under a finger: plane coords and, when the Depth API saw something there, its height above the plane. */
+internal class TableHit(val uv: Vec2, val depthGapM: Float?)
+
 /** What the touch bookkeeping needs from the AR host; every call is on the main thread. */
 internal interface CastTable {
-    /** Plane coords under screen pixel (x, y), null when the ray misses the anchor's surface. */
-    fun hitUv(x: Float, y: Float): Vec2?
+    /** The anchor's surface under screen pixel (x, y), null when the ray misses it. */
+    fun hitUv(x: Float, y: Float): TableHit?
 
-    /** The nearest member on the ground within the grab radius of [uv], or null. */
-    fun grabbable(uv: Vec2): String?
+    /** The member whose quad is under screen pixel (x, y) (nearest when several), or null. */
+    fun grabbable(x: Float, y: Float): String?
 
-    /** Lead member [id] toward [uv] (clamped to the level's boundary; the walk is physics'). */
-    fun lead(id: String, uv: Vec2)
+    /** Lead member [id] toward [hit] (clamped to the level's boundary, refused past a depth edge; the walk is physics'). */
+    fun lead(id: String, hit: TableHit)
 
     /** A finger landed on [id]: it is the active member now. */
     fun onGrabbed(id: String)
 }
 
 internal class CastTouch {
-    private class Binding(val id: String, var lastUv: Vec2, var lastLeadMs: Long)
+    private class Binding(val id: String, var lastUv: Vec2?, var lastLeadMs: Long)
 
     private val bindings = HashMap<Int, Binding>() // pointerId -> member
     private var captured = false
@@ -66,11 +72,10 @@ internal class CastTouch {
                     captured = false
                 }
                 val i = event.actionIndex
-                val uv = table.hitUv(event.getX(i), event.getY(i)) ?: return captured
-                val id = table.grabbable(uv) ?: return captured
+                val id = table.grabbable(event.getX(i), event.getY(i)) ?: return captured
                 if (bindings.values.any { it.id == id }) return captured // one finger per member
                 val pointer = event.getPointerId(i)
-                bindings[pointer] = Binding(id, uv, nowMs)
+                bindings[pointer] = Binding(id, lastUv = null, lastLeadMs = nowMs) // the first move always leads
                 captured = true
                 table.onGrabbed(id)
                 Log.i(GATE_TAG, "grab pointer=$pointer id=$id")
@@ -78,14 +83,22 @@ internal class CastTouch {
             MotionEvent.ACTION_MOVE -> for (i in 0 until event.pointerCount) {
                 val b = bindings[event.getPointerId(i)] ?: continue
                 if (nowMs - b.lastLeadMs < GRAB_MOVE_MS) continue
-                val uv = table.hitUv(event.getX(i), event.getY(i)) ?: continue // off the table: the last target stays
                 b.lastLeadMs = nowMs
-                if (uv.distanceTo(b.lastUv) < GRAB_MOVE_MIN_M) continue
-                b.lastUv = uv
-                table.lead(b.id, uv)
+                lead(b, event.getX(i), event.getY(i), table)
             }
-            MotionEvent.ACTION_POINTER_UP -> release(event.getPointerId(event.actionIndex))
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_POINTER_UP -> {
+                val i = event.actionIndex
+                bindings[event.getPointerId(i)]?.let { lead(it, event.getX(i), event.getY(i), table) }
+                release(event.getPointerId(i))
+            }
+            MotionEvent.ACTION_UP -> {
+                bindings[event.getPointerId(0)]?.let { lead(it, event.getX(0), event.getY(0), table) }
+                for (pointer in bindings.keys.toList()) release(pointer)
+                val was = captured
+                captured = false
+                return was
+            }
+            MotionEvent.ACTION_CANCEL -> {
                 for (pointer in bindings.keys.toList()) release(pointer)
                 val was = captured
                 captured = false
@@ -93,6 +106,15 @@ internal class CastTouch {
             }
         }
         return captured
+    }
+
+    /** One hit test; leads when the finger is on the table and its point moved GRAB_MOVE_MIN_M since the last lead. */
+    private fun lead(b: Binding, x: Float, y: Float, table: CastTable) {
+        val hit = table.hitUv(x, y) ?: return // off the table: the last target stays
+        val last = b.lastUv
+        if (last != null && hit.uv.distanceTo(last) < GRAB_MOVE_MIN_M) return
+        b.lastUv = hit.uv
+        table.lead(b.id, hit)
     }
 
     private fun release(pointer: Int) {
