@@ -1,6 +1,6 @@
 # T28 — cast-physics
 
-status: review
+status: done
 created: 2026-11-04
 day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md)
 gate: v1.1 gate "two characters walk to two fingers at once, never through each other, never off the edge"; the v1.0 single-character physics stays byte-identical
@@ -119,3 +119,9 @@ Tests not required: rendering, Compose, the host.
   across could do that, since the boundary is a convex hull).
 - cut/deferred: none. Separation is one pass, so three or more members jammed together can keep a few-µm overlap for a
   frame (measured above); acceptable for the gate.
+- review (rudeus-reviewer, 2026-11-04): no blockers, MERGE. Minor, left as is for Day 9: (1) the cup guard in `isFree` checks the
+  centre only, so a member pressed against a cup by a friend dips ~0.4 mm per frame and Physics pushes it back (a visible
+  jitter at most); (2) a friend can nudge a member off a book: it goes FALLING and the HUD says FELL / LANDED; (3) two
+  walkers exactly head-on with swapped targets press forever as WALKING (1 cm off the line they slide past; real fingers
+  are never collinear); (4) `nearestInside` promises containment only for a convex boundary, which every current source
+  produces. Watch (2) and (3) on the Pixel; fixes are one line each if they show.
