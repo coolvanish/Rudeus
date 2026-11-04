@@ -1,6 +1,6 @@
 # T31 — shared-cast-emote-hud
 
-status: todo
+status: review
 created: 2026-11-04
 day: Day 9 (Nov 4, v1.1 minimal cut; see ai/plan-cast-emotes.md). Starts after T28 and T29 are merged.
 gate: v1.1 gate "characters are added from the grid on Play; the emote row plays on the active character and the bubble names the speaker"
@@ -68,5 +68,17 @@ Tests not required: Compose screens, HUD layout, the AR host.
 - Commit: `shared: cast chips, Add sheet, emote row; ArSlot cast + command contract (T31)`.
 
 ## Result (filled on acceptance)
-- measured:
-- cut/deferred:
+- measured: `scripts/verify.sh` exit 0 (core 305, shared 20 incl. HudSpeechTest 7 / CastUiTest 2, android 2; debug APK built).
+  The v1.0 host compiles unchanged against the additive ArSlot. No new dependency.
+- built: ArSlot `characters` / `activeId` / `onActiveChanged` / `command` / `onCastEvent` + `ArCharacter`,
+  `CharacterAction`, `CharacterCommand`; `BundledCharacter.emotes` (it lives in CaptureScreen.kt, as before). Pure
+  helpers in `ui/components/CastUi.kt` (member, canAdd, addable, add, active, next) and `HudSpeech.speaker` /
+  `spoken` / `emoteLine` (+ optional `speaker` on `next` / `say`). Components `CastChips.kt`, `EmoteRow.kt`,
+  `CharacterCardGrid` (CaptureScreen.kt) for the Add sheet; glyphs HAND, BOW, NOTE, SPIN, ROAR.
+- notes: `ArCharacter` compares by identity (it holds a ByteArray, like ArSlot). `commandSerial` is never lowered,
+  so serials rise across sessions too (`command` itself resets to null). A chip with no sprite shows its ability
+  glyph (there is no dino glyph). The host-less shell enables the emote row without an anchor (nothing can anchor
+  there). Back closes the Add sheet first. A photo member is `photo-<ref>`; its saved card (`saved-…`) is a different
+  id, so it still shows in the Add sheet.
+- cut/deferred: none. Still needed: the emulator check from "Done when" (device QA) and the commit (left to a human:
+  this agent runs no git).

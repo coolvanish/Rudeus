@@ -1,6 +1,8 @@
 package kz.rudy.ar
 
 import kz.rudy.ar.core.domain.CharacterEvent
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.screens.HudSpeech
@@ -114,5 +116,37 @@ class HudSpeechTest {
         val counted = busy.on(CharacterEvent.ARRIVED, 100)
         assertEquals(3, counted.arrivals)
         assertEquals("Jump!", counted.text)
+    }
+
+    @Test
+    fun castLineIsPrefixedWithTheNameOnlyWhenTwoOrMore() {
+        assertNull(HudSpeech.speaker("Мұрат", 1))
+        assertEquals("Мұрат", HudSpeech.speaker("Мұрат", 2))
+        assertEquals("Sälem!", HudSpeech.spoken("Sälem!", HudSpeech.speaker("Мұрат", 1)))
+        assertEquals("Мұрат: Sälem!", HudSpeech.spoken("Sälem!", HudSpeech.speaker("Мұрат", 2)))
+
+        // Events and asked-for lines alike, the copy lines too (who fell).
+        val solo = HudSpeech.next(HudSpeech.State(), CharacterEvent.PLACED, 1_000, lines, lang, HudSpeech.speaker("Мұрат", 1))
+        assertEquals("Sälem!", solo.text)
+        val two = HudSpeech.next(HudSpeech.State(), CharacterEvent.PLACED, 1_000, lines, lang, HudSpeech.speaker("Мұрат", 2))
+        assertEquals("Мұрат: Sälem!", two.text)
+        val fell = HudSpeech.next(two, CharacterEvent.FELL, 1_100, lines, lang, "Мысық")
+        assertEquals("Мысық: ${StringId.fell.kk}", fell.text)
+        assertEquals("Мұрат: Hi", HudSpeech.say(HudSpeech.State(), "Hi", 0, "Мұрат").text)
+        assertEquals("Hi", HudSpeech.say(HudSpeech.State(), "Hi", 0).text)
+    }
+
+    @Test
+    fun emoteLineComesFromTheChoreographyIndex() {
+        val set = EmoteSet.defaults()
+        for (e in Emote.entries) {
+            val c = set[e]
+            assertEquals(lines[c.line], HudSpeech.emoteLine(c, lines), "$e says sheet line ${c.line}")
+        }
+        val roar = set[Emote.ROAR].copy(line = 3)
+        assertEquals("Kitapqa!", HudSpeech.emoteLine(roar, lines))
+        // A sheet shorter than the index says its first line; one without lines says nothing.
+        assertEquals("Sälem!", HudSpeech.emoteLine(roar, lines.take(2)))
+        assertNull(HudSpeech.emoteLine(roar, emptyList()))
     }
 }

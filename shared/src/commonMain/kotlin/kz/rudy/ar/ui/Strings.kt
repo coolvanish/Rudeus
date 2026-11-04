@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.ObjectKind
+import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.meta.SheetParser
 
 /** The languages the app speaks. Which one it opens in comes from the phone, see [preferred]. */
@@ -112,6 +113,18 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     play_smaller("Кішірейт", "Уменьши", "Smaller"),
     /** T20 debug (footprints on): replays the Day 5 scenario script. */
     play_scenario("Сценарий", "Сценарий", "Scenario"),
+    /** T31: the cast's `+` chip (accessibility label; it shows only a plus glyph). */
+    play_add("Қос", "Добавить", "Add"),
+    /** T31: the Add sheet's title. */
+    play_add_title("Кімді қосамыз?", "Кого добавить?", "Who joins?"),
+    /** T31: the pill when `+` is tapped with `Cast.MAX` characters on the table. */
+    play_table_full("Үстел толы", "Стол полон", "Table full"),
+    /** T31: the emote row's labels, in `Emote` order. */
+    emote_hello("Сәлем", "Привет", "Hi"),
+    emote_bye("Сау бол", "Пока", "Bye"),
+    emote_dance("Биле", "Танцуй", "Dance"),
+    emote_spin("Айнал", "Крутись", "Spin"),
+    emote_roar("Ақыр", "Рычи", "Roar"),
     /** T24: the pill beside the mic while it is held (recording). */
     voice_listening("Тыңдап тұрмын…", "Слушаю…", "Listening…"),
     /** T24: the pill after release, while the phrase is transcribed. */
@@ -199,6 +212,14 @@ object Strings {
         Ability.FLY -> StringId.ability_fly
         Ability.ROLL -> StringId.ability_roll
         Ability.HIDE -> StringId.ability_hide
+    }
+
+    fun emoteName(emote: Emote): StringId = when (emote) {
+        Emote.HELLO -> StringId.emote_hello
+        Emote.BYE -> StringId.emote_bye
+        Emote.DANCE -> StringId.emote_dance
+        Emote.SPIN -> StringId.emote_spin
+        Emote.ROAR -> StringId.emote_roar
     }
 
     fun kindName(kind: ObjectKind): StringId = when (kind) {

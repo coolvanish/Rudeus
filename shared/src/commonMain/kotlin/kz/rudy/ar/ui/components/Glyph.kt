@@ -58,6 +58,25 @@ enum class Glyph(internal val svg: String) {
     CLOSE("M6 6l12 12M18 6L6 18"),
     PLUS("M12 5v14M5 12h14"),
     MINUS("M5 12h14"),
+    /** T31 emotes: an open palm (Hi). */
+    HAND("M8 12.5V6a1.5 1.5 0 0 1 3 0v5 M11 11V4.5a1.5 1.5 0 0 1 3 0V11 M14 11V5.5a1.5 1.5 0 0 1 3 0V12 M17 12V8.5a1.5 1.5 0 0 1 3 0V14c0 4-2.8 6.5-6.5 6.5-2.6 0-4.2-1.2-5.6-3.2L4.5 13.6a1.5 1.5 0 0 1 2.4-1.8L8 13.2"),
+    /** A figure bent in a bow (Bye). */
+    BOW(circle(6.5f, 8.5f, 2f) + "M9.3 10.2l6.7 2.3 M16 12.5V20 M12 11.2l-.6 5.3 M16 20h2.5"),
+    /** A music note (Dance). */
+    NOTE(ellipse(9f, 17.5f, 3f, 2.3f) + "M12 17.5V4 M12 4c2.2 1.4 5 2.6 5 6.2"),
+    /** A round arrow, one turn (Spin). */
+    SPIN("M12 4.5a7.5 7.5 0 1 0 7.5 7.5 M17 14l2.5-2.5L22 14"),
+    /** An open mouth with teeth and sound waves (Roar). */
+    ROAR(ellipse(8f, 12f, 4.5f, 5f) + "M4.6 9.5l1.2 1.5 1.2-1.5 1.2 1.5 1.2-1.5 1.2 1.5 1.1-1.5 M15.5 9a4 4 0 0 1 0 6 M18.5 6.5a8 8 0 0 1 0 11"),
+}
+
+/** T31: the emote row's glyph for [emote]. */
+fun kz.rudy.ar.core.emote.Emote.glyph(): Glyph = when (this) {
+    kz.rudy.ar.core.emote.Emote.HELLO -> Glyph.HAND
+    kz.rudy.ar.core.emote.Emote.BYE -> Glyph.BOW
+    kz.rudy.ar.core.emote.Emote.DANCE -> Glyph.NOTE
+    kz.rudy.ar.core.emote.Emote.SPIN -> Glyph.SPIN
+    kz.rudy.ar.core.emote.Emote.ROAR -> Glyph.ROAR
 }
 
 fun Ability.glyph(): Glyph = when (this) {
