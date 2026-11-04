@@ -2,6 +2,7 @@ package kz.rudy.ar.ar
 
 import android.os.SystemClock
 import android.util.Log
+import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -447,9 +448,12 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 }
             },
             onTrackingFailureChanged = { reason -> Log.i(GATE_TAG, "tracking_failure=$reason") },
-            onGestureListener = rememberOnGestureListener(
-                onSingleTapConfirmed = { event, _ ->
-                    val frame = latestFrame[0] ?: return@rememberOnGestureListener
+            onGestureListener = run {
+                // HAND-REVIEW: Pixel 2026-11-03 — onSingleTapConfirmed waited about 0.25 s to rule out a double tap and ignored
+                // double taps: of 31 fast taps on the table only 9 walked (the bee looked stuck). Every tap counts on finger-up now.
+                // The detector gives the 1st, 3rd.. tap of a burst to onSingleTapUp and the 2nd only to onDoubleTapEvent, never both.
+                fun tableTap(event: MotionEvent) {
+                    val frame = latestFrame[0] ?: return
                     val a = anchorRef[0]
                     // Walk taps only count on the anchor's own surface (within the profile's tolerance): a tap past the
                     // table edge hits the floor plane and the character would walk off into the air.
@@ -467,7 +471,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         if (hit == null || plane == null || !settle.isSettled(plane, now)) {
                             Log.i(GATE_TAG, "anchor_rejected plane_age_ms=$age need_ms=$ANCHOR_PLANE_SETTLE_MS")
                             hintTaps++
-                            return@rememberOnGestureListener
+                            return
                         }
                         val created = hit.createAnchor()
                         anchorRef[0] = created
@@ -502,7 +506,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         }
                     }
                 }
-            ),
+                rememberOnGestureListener(
+                    onSingleTapUp = { event, _ -> tableTap(event) },
+                    onDoubleTapEvent = { event, _ -> if (event.actionMasked == MotionEvent.ACTION_UP) tableTap(event) },
+                )
+            },
         ) {
             anchor?.let { a ->
                 // HAND-REVIEW: SceneView's AnchorNode defaults to isPositionEditable = true; a drag would detach and
