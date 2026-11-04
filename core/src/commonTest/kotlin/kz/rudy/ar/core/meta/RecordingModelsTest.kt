@@ -143,4 +143,16 @@ class RecordingModelsTest {
         assertTrue(fx.text!!.contains("\"spin\""), "text holds the reply-shaped JSON")
         assertEquals(spark, replay.choreograph("cat-01", FakeModels.DEFAULT_SHEET))
     }
+
+
+    @Test
+    fun aDefaultSourceChoreographyReplaysAsDefault() = runTest {
+        val writer = MemoryWriter(root)
+        val rec = RecordingModels(FakeModels(emotes = EmoteSet.defaults()), writer, clock())
+        assertEquals(EmoteSet.defaults(), rec.choreograph("cat-01", FakeModels.DEFAULT_SHEET))
+
+        val replay = FixtureApi(writer.source, root)
+        assertEquals("{}", replay.load(Jobs.SPARK_CHOREO, "cat-01").text)
+        assertEquals(EmoteSet.defaults(), replay.choreograph("cat-01", FakeModels.DEFAULT_SHEET), "every emote fell back: still source=default")
+    }
 }

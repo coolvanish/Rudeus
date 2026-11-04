@@ -878,8 +878,9 @@ class CharacterPipelineTest {
 
     @Test
     fun pipelineShipsDefaultsWhenChoreographFails() = runTest {
+        val spark = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT + (Emote.BYE to Choreographies.BYE.copy(line = 3)))
         for (error in listOf<Throwable>(MetaError.Http(500, "spark down"), MetaError.Network("offline"), CancellationException("timeout"))) {
-            val models = FakeModels(scores = listOf(0.9f), choreoError = error)
+            val models = FakeModels(scores = listOf(0.9f), emotes = spark, choreoError = error)
             val log = metrics()
             val result = CharacterPipeline(models, StyleGate(), log).run("cat-01", image, refs, "")
 
@@ -938,4 +939,54 @@ class CharacterPipelineTest {
     }
 
     private val log2 = MetricsLog(source = "cli", provider = "meta", device = "test", clock = { 0L })
+
+
+    /** Review fix: a MetaModels without the override (the app's DeferredModels today) must not pass for a Spark reply. */
+    @Test
+    fun aModelWithoutChoreographShipsDefaultsAsAFailedStage() = runTest {
+        val inner = FakeModels(scores = listOf(0.9f), emotes = EmoteSet(EmoteSet.SOURCE_SPARK, Choreographies.DEFAULT))
+        val notForwarded = object : MetaModels {
+            override suspend fun segment(ref: String, image: ByteArray, prompts: List<String>) = inner.segment(ref, image, prompts)
+            override suspend fun stylize(ref: String, cutout: ByteArray, refs: List<ByteArray>) = inner.stylize(ref, cutout, refs)
+            override suspend fun scoreStyle(ref: String, image: ByteArray, refs: List<ByteArray>) = inner.scoreStyle(ref, image, refs)
+            override suspend fun scoreTechnique(ref: String, image: ByteArray, refs: List<ByteArray>) = inner.scoreTechnique(ref, image, refs)
+            override suspend fun characterSheet(ref: String, description: String, image: ByteArray?) = inner.characterSheet(ref, description, image)
+            override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String) = inner.transcribe(ref, pcm16kMono, lang)
+        }
+        assertFailsWith<MetaError.Provider> { notForwarded.choreograph("cat-01", FakeModels.DEFAULT_SHEET) }
+        val log = metrics()
+        val result = CharacterPipeline(notForwarded, StyleGate(), log).run("cat-01", image, refs, "")
+
+        assertEquals(EmoteSet.defaults(), result.emotes)
+        val choreo = log.toRun().characters.single().stages.last()
+        assertEquals("choreo", choreo.name)
+        assertFalse(choreo.ok)
+        assertEquals(0.0, choreo.costUsd)
+        assertFalse(choreo.measured)
+    }
+
+    /**
+     * Review fix: the sheet and the choreography have their own Deferreds. A stylize failure at 3 s keeps the sheet that
+     * came back at 1 s (ok, its own 1 s, its estimate) and cancels the choreography still in flight: no choreo stage.
+     */
+    @Test
+    fun aFailingCharacterKeepsAFinishedSheetAndDropsTheChoreographyInFlight() = runTest {
+        val models = FakeModels(
+            stylizeError = MetaError.Http(500, "muse down"),
+            delays = mapOf("characterSheet" to 1_000L, "choreograph" to 10_000L, "stylize" to 3_000L),
+        )
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        val events = ArrayList<PipelineEvent>()
+        assertFailsWith<MetaError.Http> {
+            CharacterPipeline(models, StyleGate(), log, onEvent = { events += it }).run("cat-01", image, refs, "")
+        }
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "sheet"), c.stages.map { it.name })
+        val sheet = c.stages.last()
+        assertTrue(sheet.ok)
+        assertEquals(1_000L, sheet.ms)
+        assertEquals(log.costs.sheetUsd, sheet.costUsd, 1e-9)
+        assertTrue(events.none { it is PipelineEvent.StageStarted && it.stage == "choreo" })
+        assertEquals(3_000L, testScheduler.currentTime, "the choreography was cancelled, not waited for")
+    }
 }

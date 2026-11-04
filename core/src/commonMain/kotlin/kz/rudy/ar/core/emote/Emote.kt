@@ -2,6 +2,8 @@ package kz.rudy.ar.core.emote
 
 import kotlinx.serialization.Serializable
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.round
 
 /** The Play HUD's five buttons, in this order. */
@@ -77,8 +79,8 @@ object ChoreographyRules {
      * atMs clamped to 0..durationMs, every field clamped to its range (a non-finite value becomes the rest value),
      * yaw steps clamped to MAX_YAW_STEP_DEG (the first key's from 0), a REST key inserted at 0 when no key is at 0,
      * and the LAST key forced to durationMs with pose REST except yaw, which is rounded to the nearest multiple of 360
-     * (the quad faces the camera again); a lone key at 0 gets that final key appended instead. line clamped to
-     * 0..MAX_LINE. sanitize(sanitize(x)) == sanitize(x).
+     * within MAX_YAW_STEP_DEG of the key before it (the quad faces the camera again); a lone key at 0 gets that final
+     * key appended instead. line clamped to 0..MAX_LINE. sanitize(sanitize(x)) == sanitize(x).
      */
     fun sanitize(c: Choreography): Choreography? {
         if (c.keys.isEmpty() || c.durationMs !in DURATION_MS) return null
@@ -98,12 +100,12 @@ object ChoreographyRules {
         val out = ArrayList<EmoteKey>(keys.size)
         for ((i, k) in keys.withIndex()) {
             val yaw = clampStep(prevYaw, k.pose.yawDeg)
-            prevYaw = yaw
             out += if (i == keys.lastIndex) {
-                EmoteKey(d, EmotePose.REST.copy(yawDeg = round(yaw / 360f) * 360f + 0f))
+                EmoteKey(d, EmotePose.REST.copy(yawDeg = wholeTurns(prevYaw, yaw)))
             } else {
                 EmoteKey(k.atMs, clampPose(k.pose, yaw))
             }
+            prevYaw = yaw
         }
         return Choreography(c.emote, d, out, c.line.coerceIn(0, MAX_LINE), c.sound)
     }
@@ -121,6 +123,16 @@ object ChoreographyRules {
         if (!yaw.isFinite()) return prev
         if (abs(yaw - prev) <= MAX_YAW_STEP_DEG) return yaw
         return if (yaw > prev) prev + MAX_YAW_STEP_DEG else prev - MAX_YAW_STEP_DEG
+    }
+
+    /**
+     * The multiple of 360 nearest [yaw] among those within [MAX_YAW_STEP_DEG] of [prev] (the 720-degree window always
+     * holds at least two), so the turn back to the camera is never a bigger step than any other.
+     */
+    private fun wholeTurns(prev: Float, yaw: Float): Float {
+        val lo = ceil((prev - MAX_YAW_STEP_DEG) / 360f)
+        val hi = floor((prev + MAX_YAW_STEP_DEG) / 360f)
+        return round(yaw / 360f).coerceIn(lo, hi) * 360f + 0f // + 0f: never -0
     }
 
     private fun Float.orIfNotFinite(v: Float) = if (isFinite()) this else v

@@ -1,5 +1,7 @@
 package kz.rudy.ar.core.meta
 
+import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.emote.EmoteSet
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kz.rudy.ar.core.domain.Ability
@@ -197,5 +199,23 @@ class FixtureConverterTest {
         assertTrue(e.message!!.startsWith("spark-score:"), e.message)
         assertFailsWith<MetaError.Parse> { convert(Jobs.VOICE, "not json") }
         assertFailsWith<IllegalArgumentException> { convert("sam-everything", "{}") }
+    }
+
+
+    @Test
+    fun sparkChoreoReplyKeepsTheRawContent() = runTest {
+        val content = "```json\n{\"spin\": {\"durationMs\": 800, \"keys\": [{\"atMs\": 0}, {\"atMs\": 800, \"yawDeg\": 360}], \"line\": 4, \"sound\": \"none\"}}\n```"
+        val raw = """{"choices":[{"message":{"role":"assistant","content":${JsonPrimitive(content)}}}]}"""
+        val fx = convert(Jobs.SPARK_CHOREO, raw, ref = "sample-01")
+        assertEquals(content, fx.text, "stored as returned")
+
+        val source = MapFixtureSource()
+        source.putText("root/spark-choreo/sample-01.fixture.json", FixtureApi.json.encodeToString(Fixture.serializer(), fx))
+        val set = FixtureApi(source, "root").choreograph("sample-01", FakeModels.DEFAULT_SHEET)
+        assertEquals(EmoteSet.SOURCE_SPARK, set.source)
+        assertEquals(800L, set[Emote.SPIN].durationMs)
+
+        val noJson = """{"choices":[{"message":{"role":"assistant","content":"I cannot dance"}}]}"""
+        assertFailsWith<MetaError.Parse> { convert(Jobs.SPARK_CHOREO, noJson) }
     }
 }

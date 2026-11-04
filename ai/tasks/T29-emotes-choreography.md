@@ -148,3 +148,13 @@ Tests not required: Compose, AR, the CLI.
   at that file); the metrics skill's stage list should gain `choreo`. A failed character whose sheet coroutine is still
   in the choreography call records `sheet` ok=false and no `choreo` stage.
 - cut/deferred: nothing cut.
+- Review fixes (FIX FIRST review of 42f1aa6): (1) the `MetaModels.choreograph` default body now throws
+  `MetaError.Provider("choreograph not forwarded by …")`, so a model without the override (the app's DeferredModels
+  until T32) ships the defaults as `choreo ok=false, $0`, not as a fake Spark reply; (2) `FixtureConverter` converts
+  spark-choreo replies (raw content kept in `text`, validated by `ChoreographyParser.parse`); (3) the sheet and the
+  choreography have their own Deferreds: a failing character records a sheet that came back with its own outcome/ms/cost,
+  and a choreography still in flight is cancelled and NOT recorded (one that came back is recorded after the sheet);
+  (4) RecordingModels writes `text = "{}"` for a default-source set, so it replays as `source=default`; (5) the final
+  yaw is the multiple of 360 nearest the clamped yaw within MAX_YAW_STEP_DEG of the previous key (0/300/610 -> 360, not
+  720); (6) `fromJson` falls back to `source=default` when "source" is missing or unknown; (7) the choreograph-failure
+  test scripts a Spark set. verify.sh: core 297, shared 16, android 2, 0 failed.
