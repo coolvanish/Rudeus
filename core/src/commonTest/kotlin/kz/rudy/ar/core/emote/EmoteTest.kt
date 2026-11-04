@@ -49,7 +49,9 @@ class EmoteTest {
         val last = c.keys.last()
         assertEquals(1000L, last.atMs)
         assertTrue(last.pose.yawDeg % 360f == 0f)
-        assertEquals(720f, last.pose.yawDeg)
+        // 610 is nearest 720, but 720 is 420 degrees past the key at 300: the nearest whole turn within one step is 360.
+        assertEquals(360f, last.pose.yawDeg)
+        assertTrue(c.keys.zipWithNext().all { (a, b) -> kotlin.math.abs(b.pose.yawDeg - a.pose.yawDeg) <= ChoreographyRules.MAX_YAW_STEP_DEG })
         assertEquals(EmotePose.REST, last.pose.copy(yawDeg = 0f))
         assertEquals(EmotePose.REST, EmotePlayer.sample(c, c.durationMs))
         // Yaw blends linearly in degrees: halfway through 0 -> 300 is 150, the long way round never shortcut.
@@ -114,6 +116,10 @@ class EmoteTest {
             assertEquals(once, ChoreographyRules.sanitize(once), "${raw.emote}")
             assertTrue(once.keys.last().pose.yawDeg % 360f == 0f)
             assertTrue(once.keys.all { it.pose.scaleX in ChoreographyRules.SCALE && it.pose.tiltDeg.isFinite() })
+            assertTrue(
+                once.keys.zipWithNext().all { (a, b) -> kotlin.math.abs(b.pose.yawDeg - a.pose.yawDeg) <= ChoreographyRules.MAX_YAW_STEP_DEG },
+                "${raw.emote}: no step over one turn, the last one included",
+            )
         }
     }
 }

@@ -41,14 +41,14 @@ object ChoreographyParser {
 
     /**
      * Reads choreo.json, re-sanitising every choreography. The stored "source" is kept when at least one emote was
-     * read (SOURCE_DEFAULT otherwise); unreadable text -> [EmoteSet.defaults] (never throws).
+     * read; a missing or unknown "source", or nothing read, is SOURCE_DEFAULT; unreadable text -> [EmoteSet.defaults] (never throws).
      */
     fun fromJson(text: String): EmoteSet = try {
         val obj = json.parseToJsonElement(text) as? JsonObject
         if (obj == null) EmoteSet.defaults() else {
             val (set, read) = fromObject(obj)
             val stored = (obj["source"] as? JsonPrimitive)?.contentOrNull?.takeIf { it == EmoteSet.SOURCE_SPARK || it == EmoteSet.SOURCE_DEFAULT }
-            set.copy(source = if (read > 0) stored ?: EmoteSet.SOURCE_SPARK else EmoteSet.SOURCE_DEFAULT)
+            set.copy(source = stored?.takeIf { read > 0 } ?: EmoteSet.SOURCE_DEFAULT)
         }
     } catch (e: Exception) {
         EmoteSet.defaults()

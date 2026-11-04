@@ -3,6 +3,7 @@ package kz.rudy.ar.core.meta
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kz.rudy.ar.core.emote.ChoreographyParser
 
 /**
  * Turns a raw, redacted API reply saved by `scripts/probe-meta.sh` (`<job>/<ref>.response.json`) into the
@@ -57,6 +58,11 @@ object FixtureConverter {
                     val text = decode(ChatResponse.serializer(), rawJson).contentText()
                     parseSheet(text) // same validation MetaApi applies; the fixture keeps the raw object
                     base.copy(sheet = SheetParser.extractObject(text))
+                }
+                Jobs.SPARK_CHOREO -> {
+                    val text = decode(ChatResponse.serializer(), rawJson).contentText()
+                    ChoreographyParser.parse(text) // same validation MetaApi applies; the fixture keeps the raw content
+                    base.copy(text = text)
                 }
                 Jobs.VOICE -> base.copy(text = parseTranscript(decode(TranscribeResponse.serializer(), rawJson)))
                 else -> error("unreachable: $job")

@@ -55,12 +55,13 @@ internal class PreparedRefs(val muse: List<ByteArray>, val spark: List<ByteArray
  * as their `CostMeter` (`MetaApi(config, client, costMeter = metrics)`), else the `metrics.costs` estimate. The sheet
  * stage is recorded after the loop, so the stage order in the JSON is deterministic.
  *
- * Right after the sheet resolves (its fallback included), the same background coroutine asks [MetaModels.choreograph]
+ * Right after the sheet resolves (its fallback included), a second background coroutine asks [MetaModels.choreograph]
  * for the five emotes with that sheet and the sheet's image; any failure (or a CancellationException while the caller
  * is still active) ships [EmoteSet.defaults]. Stage `choreo` (attempt 1) is recorded right after `sheet`, with its own
  * ms and cost (measured since a [Jobs.SPARK_CHOREO] mark, else `costs.choreoUsd` when ok); since the call runs in the
- * sheet coroutine, its StageStarted and StageFinished are both reported then, back to back, after Finished(sheet).
- * When the character fails before the sheet coroutine is done, no `choreo` stage is recorded.
+ * background, its StageStarted and StageFinished are both reported then, back to back, after Finished(sheet). When the
+ * character fails, a sheet that came back is recorded with its own outcome and ms, and a choreography still in flight
+ * is cancelled and not recorded (one that came back is recorded after the sheet).
  *
  * [rasterDecoder] (e.g. `JvmRaster::decode`) enables the deterministic gate half; without it the model
  * score alone decides. [cutoutComposer] turns (photo, mask) into the transparent PNG Muse receives; without
@@ -147,6 +148,8 @@ class CharacterPipeline(
                 emit(PipelineEvent.StageStarted(STAGE_SHEET, 1))
                 val sheetStart = metrics.now()
                 val sheetCall = async { sheet(ref, description, sheetImage) }
+                // Its own Deferred, so a failing character can keep a sheet that came back and drop only this call.
+                val choreoCall = async { choreo(ref, sheetCall.await().sheet, sheetImage) }
 
                 // 2-3. stylize + matte + gate, with retries. Inputs are downscaled once here, not per attempt.
                 val museCutout = fit(cutout, MUSE_INPUT_MAX_SIDE)
@@ -219,27 +222,38 @@ class CharacterPipeline(
                         if (sheetCall.isCompleted && !sheetCall.isCancelled) {
                             val sheet = sheetCall.await()
                             metrics.stage(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
-                            metrics.stage(STAGE_CHOREO, sheet.choreo.ms, 1, sheet.choreo.ok, choreoCost(choreoMark, sheet.choreo.ok))
+                        }
+                        if (choreoCall.isCompleted && !choreoCall.isCancelled) {
+                            val choreo = choreoCall.await()
+                            metrics.stage(STAGE_CHOREO, choreo.ms, 1, choreo.ok, choreoCost(choreoMark, choreo.ok))
                         }
                         throw e
                     }
                     // The character fails (a stray CancellationException, i.e. a timeout surfacing as one, included),
                     // but the sheet was (or is being) paid for: record it before giving up.
                     // Finished -> its outcome; still running -> cancel it, charge what was metered (usually 0).
+                    // The choreography: finished -> recorded after the sheet; still running -> cancelled, not recorded
+                    // (an in-flight call has metered nothing yet, as for any stage in flight at a cancel).
                     if (sheetCall.isCompleted) {
-                        recordSheet(sheetCall.await(), sheetMark, choreoMark)
+                        val sheet = sheetCall.await()
+                        record(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
                     } else {
+                        choreoCall.cancel()
                         sheetCall.cancel()
                         record(STAGE_SHEET, metrics.now() - sheetStart, 1, false, sheetCost(sheetMark, false))
                     }
+                    if (choreoCall.isCompleted && !choreoCall.isCancelled) recordChoreo(choreoCall.await(), choreoMark)
+                    else choreoCall.cancel()
                     throw e
                 }
 
                 val sheet = sheetCall.await()
-                recordSheet(sheet, sheetMark, choreoMark)
+                record(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
+                val choreo = choreoCall.await()
+                recordChoreo(choreo, choreoMark)
 
                 metrics.endCharacter(gateScore = bestScore, gatePassed = passed, retries = attempt - 1)
-                CharacterResult(ref, checkNotNull(best), sheet.sheet, bestScore, passed, attempt, mask, sheet.choreo.emotes)
+                CharacterResult(ref, checkNotNull(best), sheet.sheet, bestScore, passed, attempt, mask, choreo.emotes)
             }
         } catch (e: Throwable) {
             if (e is CancellationException && !currentCoroutineContext().isActive) {
@@ -305,22 +319,20 @@ class CharacterPipeline(
     private fun choreoCost(mark: CostMark, ok: Boolean): StageCost =
         metrics.costSince(mark, if (ok) metrics.costs.choreoUsd else 0.0)
 
-    /** Records stage `sheet`, then stage `choreo` (its StageStarted reported here, see the class doc). */
-    private fun recordSheet(outcome: SheetOutcome, sheetMark: CostMark, choreoMark: CostMark) {
-        record(STAGE_SHEET, outcome.ms, 1, outcome.ok, sheetCost(sheetMark, outcome.ok))
+    /** Records stage `choreo` (its StageStarted is reported here too, see the class doc). */
+    private fun recordChoreo(outcome: ChoreoOutcome, mark: CostMark) {
         emit(PipelineEvent.StageStarted(STAGE_CHOREO, 1))
-        record(STAGE_CHOREO, outcome.choreo.ms, 1, outcome.choreo.ok, choreoCost(choreoMark, outcome.choreo.ok))
+        record(STAGE_CHOREO, outcome.ms, 1, outcome.ok, choreoCost(mark, outcome.ok))
     }
 
     private class ChoreoOutcome(val emotes: EmoteSet, val ms: Long, val ok: Boolean)
 
-    private class SheetOutcome(val sheet: CharacterSheet, val ms: Long, val ok: Boolean, val choreo: ChoreoOutcome)
+    private class SheetOutcome(val sheet: CharacterSheet, val ms: Long, val ok: Boolean)
 
     /**
-     * The sheet call, then the choreography call, in their own coroutine. Never throws except on a real cancellation
-     * of the caller: a failed sheet yields the fallback sheet and a failed choreography the default emotes, and so does
-     * a CancellationException while this coroutine is still active (a timeout surfacing as cancellation, as in
-     * `segmentEach`).
+     * The sheet call, in its own coroutine. Never throws except on a real cancellation of the caller: a failure yields
+     * the fallback sheet, and so does a CancellationException while this coroutine is still active (a timeout surfacing
+     * as cancellation, as in `segmentEach`). [choreo] follows the same rule with the default emotes.
      */
     private suspend fun sheet(ref: String, description: String, image: ByteArray): SheetOutcome {
         val t0 = metrics.now()
@@ -332,8 +344,7 @@ class CharacterPipeline(
         } catch (e: Throwable) {
             SheetParser.fallback(ref) to false
         }
-        val ms = metrics.now() - t0
-        return SheetOutcome(sheet, ms, ok, choreo(ref, sheet, image))
+        return SheetOutcome(sheet, metrics.now() - t0, ok)
     }
 
     private suspend fun choreo(ref: String, sheet: CharacterSheet, image: ByteArray): ChoreoOutcome {

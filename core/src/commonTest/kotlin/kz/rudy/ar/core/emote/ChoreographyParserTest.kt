@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class ChoreographyParserTest {
     private fun c(duration: Long, keys: String, line: Int = 0, sound: String = "none") =
@@ -70,6 +71,17 @@ class ChoreographyParserTest {
             assertEquals(set, ChoreographyParser.fromJson(text))
             assertEquals(set.copy(source = EmoteSet.SOURCE_SPARK), ChoreographyParser.parse(text), "choreo.json is also a valid reply")
         }
+    }
+
+    @Test
+    fun fromJsonWithoutAKnownSourceIsDefault() {
+        val spark = ChoreographyParser.parse(full)
+        val text = ChoreographyParser.toJson(spark)
+        val noSource = text.replace("\"source\": \"spark\",", "")
+        assertTrue("\"source\"" !in noSource)
+        assertEquals(spark.copy(source = EmoteSet.SOURCE_DEFAULT), ChoreographyParser.fromJson(noSource))
+        assertEquals(EmoteSet.SOURCE_DEFAULT, ChoreographyParser.fromJson(text.replace("\"spark\"", "\"magic\"")).source)
+        assertEquals(EmoteSet.SOURCE_SPARK, ChoreographyParser.fromJson(text).source)
     }
 
     @Test
