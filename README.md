@@ -59,7 +59,7 @@ The first scan of a session is always the Scan button. After it, while "Auto sca
 Play HUD under Footprints), the app may scan again by itself when the camera settles in a sector around the table it has
 not scanned yet. Limits: at most four per session, at least 8 s apart, never from a camera steeper than 75°, never while
 another scan runs, never per frame. A background scan shows no overlay. Each one sends one camera frame to Meta's
-SAM 3.1, exactly like the button. Cost: about $0.03 per scan (11 prompts at $0.0025), about $0.11 for a session's four.
+SAM 3.1, exactly like the button. Cost: about $0.03 per scan (12 prompts at $0.0025), about $0.12 for a session's four.
 Turning "Auto scan" off in the HUD means frames leave the phone only when the player presses Scan. The switch is on again
 at each app start.
 
