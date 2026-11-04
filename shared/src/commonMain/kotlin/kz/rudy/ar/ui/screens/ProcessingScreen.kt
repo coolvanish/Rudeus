@@ -88,6 +88,9 @@ data class ProcessingState(
         }
 }
 
+/** Long side the hero's image is kept at: enough for a phone-wide well, and a 2048x1365 photo costs 4.4 MB here instead of 11 MB. */
+private const val HERO_MAX_SIDE_PX = 1280
+
 @Composable
 fun ProcessingScreen(
     state: ProcessingState,
@@ -102,8 +105,8 @@ fun ProcessingScreen(
     photo: ByteArray? = null,
 ) {
     val finished = state.status == ProcessingStatus.DONE || state.status == ProcessingStatus.GATE_FAILED
-    val spriteBitmap = rememberSpriteBitmap(if (finished) sprite else null)
-    val photoBitmap = rememberSpriteBitmap(photo)
+    val spriteBitmap = rememberSpriteBitmap(if (finished) sprite else null, HERO_MAX_SIDE_PX, HERO_MAX_SIDE_PX)
+    val photoBitmap = rememberSpriteBitmap(photo, HERO_MAX_SIDE_PX, HERO_MAX_SIDE_PX)
     Box(modifier.fillMaxSize().background(RudeusColors.Paper)) {
         Column(
             Modifier

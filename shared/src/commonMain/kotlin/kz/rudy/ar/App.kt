@@ -175,7 +175,7 @@ fun App(
     var characterSize by remember { mutableStateOf(CharacterSize.DEFAULT) }
     // T26: characters made on this phone (shown ahead of the bundled ones) and the result last sent to disk.
     var saved by remember { mutableStateOf<List<BundledCharacter>>(emptyList()) }
-    var keptResult by remember { mutableStateOf<CharacterResult?>(null) }
+    var keptRun by remember { mutableStateOf(-1) } // the pipelineRun last sent to disk; a number, so it holds no sprite
 
     val scope = rememberCoroutineScope()
     val clock = remember { TimeSource.Monotonic.markNow() }
@@ -186,7 +186,15 @@ fun App(
     val voice = remember(capture) { capture?.voice }
 
     // Leaving Capture closes the sheet: a photo can arrive from the camera or picker while it is open.
-    fun go(to: Screen) { lastScreen = screen; screen = to; settingsOpen = false }
+    fun go(to: Screen) {
+        lastScreen = screen
+        screen = to
+        settingsOpen = false
+        // Nothing returns to Processing without a new photo, and every way from Capture into AR sets the sprite: the
+        // bytes (a 2048 px photo, a sprite of up to 5 MB) are not held for the rest of the session.
+        if (to != Screen.PROCESSING) { photo = null; pendingResult = null }
+        if (to == Screen.CAPTURE) spritePng = null
+    }
     fun startPipeline(bytes: ByteArray?) {
         if (bytes == null) return
         photo = bytes
@@ -209,11 +217,12 @@ fun App(
      */
     fun keep(result: CharacterResult) {
         val host = capture ?: return
-        if (keptResult === result) return
-        keptResult = result
+        val run = pipelineRun
+        if (keptRun == run) return
+        keptRun = run
         scope.launch {
             val card = host.saveCharacter(result)
-            if (card == null) keptResult = null
+            if (card == null) { if (keptRun == run) keptRun = -1 }
             else saved = (listOf(card) + saved).take(SavedCharacters.MAX_KEPT) // the disk evicted the oldest too
         }
     }
@@ -478,8 +487,8 @@ fun App(
                                 // Leaving the screen cancels the run.
                                 try {
                                     capture.makeCharacter(bytes) { event ->
-                                        // After Retry a late event of the cancelled run must not fold into the fresh state.
-                                        if (run != pipelineRun) return@makeCharacter
+                                        // After Retry or Back a late event of the cancelled run must not fold into the fresh state or hold the sprite.
+                                        if (run != pipelineRun || screen != Screen.PROCESSING) return@makeCharacter
                                         if (event is PipelineEvent.Finished) {
                                             pendingResult = event.result
                                             if (event.result.gatePassed) keep(event.result)

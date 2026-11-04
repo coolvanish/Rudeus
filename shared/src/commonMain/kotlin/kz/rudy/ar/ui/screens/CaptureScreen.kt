@@ -157,6 +157,10 @@ private val HERO_MIN_HEIGHT = 560.dp
 private val CARD_MIN_WIDTH = 124.dp
 private val CARD_GAP = 10.dp
 
+/** The box a card's sprite is kept at: the art is 92 dp tall (plus the picked card's breath) and never wider than this. A full 768 px sprite is about 2.4 MB. */
+private val CARD_ART_MAX_WIDTH = 190.dp
+private val CARD_ART_MAX_HEIGHT = 96.dp
+
 private const val ENTRANCE_STAGGER_MS = 40L
 private const val ENTRANCE_MAX_STAGGER = 8
 
@@ -428,7 +432,12 @@ private fun BundledCard(
         },
         interactionSource = interaction,
     ) {
-        val sprite = rememberSpriteBitmap(c.spritePng)
+        val density = LocalDensity.current
+        val sprite = rememberSpriteBitmap(
+            c.spritePng,
+            maxWidthPx = with(density) { CARD_ART_MAX_WIDTH.roundToPx() },
+            maxHeightPx = with(density) { CARD_ART_MAX_HEIGHT.roundToPx() },
+        )
         val thumb = c.thumbnail
         val art = Modifier.fillMaxSize().graphicsLayer {
             val scale = breath?.value ?: 1f
