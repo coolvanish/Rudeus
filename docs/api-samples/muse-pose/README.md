@@ -18,9 +18,9 @@ Total: 50409 ms, $0.0400 (measured from the replies where reported, else the Cos
 
 | frame | same character? | outline and colours kept? | usable as a frame (pose readable at 6 cm)? |
 |---|---|---|---|
-| hello-1 |  |  |  |
-| hello-2 |  |  |  |
-| roar-1 |  |  |  |
-| roar-2 |  |  |  |
+| hello-1 | yes | yes | yes |
+| hello-2 | yes | yes | yes |
+| roar-1 | yes | yes | yes |
+| roar-2 | yes | yes | yes |
 
-Verdict (go / no-go for model-drawn pose frames): 
+Verdict (go / no-go for model-drawn pose frames): GO (the user, 2026-11-04 17:25 Almaty, from contact.png: the same character, outline and colours kept, poses readable). Wiring frames into the emote choreographies is post-deadline work; the app stays on the squash-stretch choreographies for v1.1.
