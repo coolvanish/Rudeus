@@ -1,0 +1,470 @@
+package kz.rudy.ar.core.duel
+
+import kotlinx.serialization.json.Json
+import kz.rudy.ar.core.domain.Ability
+import kz.rudy.ar.core.domain.FighterStats
+import kz.rudy.ar.core.domain.Level
+import kz.rudy.ar.core.domain.LevelObject
+import kz.rudy.ar.core.domain.Mode
+import kz.rudy.ar.core.domain.ObjectKind
+import kz.rudy.ar.core.domain.Polygon
+import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.duel.DuelEvent.DashStarted
+import kz.rudy.ar.core.duel.DuelEvent.Hit
+import kz.rudy.ar.core.duel.DuelEvent.RingOut
+import kz.rudy.ar.core.duel.DuelEvent.SpecialStarted
+import kz.rudy.ar.core.duel.DuelEvent.WallSlam
+import kz.rudy.ar.core.duel.DuelInput.Dash
+import kz.rudy.ar.core.duel.DuelInput.Jump
+import kz.rudy.ar.core.duel.DuelInput.MoveTo
+import kz.rudy.ar.core.duel.DuelInput.Special
+import kz.rudy.ar.core.duel.MatchEvent.Fight
+import kz.rudy.ar.core.duel.MatchEvent.MatchOver
+import kz.rudy.ar.core.duel.MatchEvent.Point
+import kz.rudy.ar.core.duel.MatchEvent.RoundStarted
+import kotlin.random.Random
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+
+/** 28 x 40 cm table, edges at u = +-0.14: a POWER 10 dash knocks a GUARD 1 fighter off it from its mark. */
+private val NARROW = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.28f, 0.4f))
+
+/** 40 x 40 cm table, edges at +-0.2. */
+private val SQUARE = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.4f, 0.4f))
+
+private val LEFT = Vec2(-0.06f, 0f)
+private val RIGHT = Vec2(0.06f, 0f)
+private val MARKS = LEFT to RIGHT
+
+private val RED = Contestant("red", FighterStats(power = 10, speed = 4, guard = 3, agility = 3), Ability.JUMP)
+private val BLUE = Contestant("blue", FighterStats(power = 4, speed = 6, guard = 1, agility = 9), Ability.HIDE)
+
+private val RULES = DuelRules()
+
+/** A rule length as the match runs it: whole 8 ms sub-steps. */
+private fun aligned(ms: Long) = (ms + 7L) / 8L * 8L
+
+private fun m(p: Vec2) = Vec2(-p.u, p.v)
+
+/** Match states after every step (index 0 = the start) and each step's events (index i produced states[i]). */
+private class MatchTrace(val states: List<DuelMatchState>, val events: List<List<MatchEvent>>) {
+    val all: List<MatchEvent> get() = events.flatten()
+    val last: DuelMatchState get() = states.last()
+    val points: List<Point> get() = all.filterIsInstance<Point>()
+    fun fight(): List<DuelEvent> = all.filterIsInstance<Fight>().map { it.event }
+}
+
+/**
+ * Plays [start] until RESULT or [maxMs] of match time. Frames come from [frame], cut so that every FIGHT start and every
+ * instant of [script] (by round: ms since its FIGHT began -> inputs) is a frame boundary: any frame source gives every
+ * input at the same simulated time, which is what "any split of the same time" means.
+ */
+private fun play(
+    start: DuelMatchState,
+    arena: Level,
+    rules: DuelRules = RULES,
+    maxMs: Long = 400_000L,
+    script: (round: Int) -> Map<Long, Map<String, DuelInput>> = { emptyMap() },
+    frame: () -> Long = { 16L },
+): MatchTrace {
+    val states = arrayListOf(start)
+    val events = arrayListOf<List<MatchEvent>>(emptyList())
+    val roundLen = aligned(rules.roundMs)
+    var s = start
+    while (s.phase != MatchPhase.RESULT && s.duel.timeMs < maxMs) {
+        var dt = frame()
+        var inputs: Map<String, DuelInput> = emptyMap()
+        if (s.phase == MatchPhase.FIGHT) {
+            val since = roundLen - s.phaseLeftMs
+            val plan = script(s.round)
+            inputs = plan[since] ?: emptyMap()
+            plan.keys.filter { it > since }.minOrNull()?.let { dt = minOf(dt, it - since) }
+        } else {
+            dt = minOf(dt, s.phaseLeftMs)
+        }
+        dt = minOf(dt, maxMs - s.duel.timeMs)
+        val out = DuelMatch.step(s, arena, dt, inputs, rules = rules)
+        assertEquals(s.duel.timeMs + dt, out.state.duel.timeMs, "the clock runs by exactly dt")
+        s = out.state
+        states += s
+        events += out.events
+    }
+    return MatchTrace(states, events)
+}
+
+/** Round script: red dashes at blue the moment the fight starts. */
+private val redDashes: (Int) -> Map<Long, Map<String, DuelInput>> = { mapOf(0L to inputs("red" to Dash())) }
+
+class DuelMatchTest {
+
+    @Test
+    fun countdownIgnoresInputThenTheRoundStarts() {
+        val start = DuelMatch.start(RED, BLUE, NARROW, MARKS)
+        assertEquals(MatchPhase.COUNTDOWN, start.phase)
+        assertEquals(3000L, start.phaseLeftMs)
+        assertEquals(1, start.round)
+        assertEquals(0L, start.duel.timeMs)
+        // On the marks, facing each other, standing, with their abilities.
+        assertEquals(LEFT, start.duel.a.pos)
+        assertEquals(RIGHT, start.duel.b.pos)
+        assertEquals(Vec2(1f, 0f), start.duel.a.body.state.facing)
+        assertEquals(Vec2(-1f, 0f), start.duel.b.body.state.facing)
+        assertEquals(Ability.JUMP to Ability.HIDE, start.duel.a.ability to start.duel.b.ability)
+        assertEquals(Ability.HIDE, start.duel.b.body.state.ability)
+
+        val noise = listOf(MoveTo(Vec2(0.1f, 0.1f)), Dash(), Jump, Special)
+        var s = start
+        var i = 0
+        while (s.phase == MatchPhase.COUNTDOWN) {
+            val t = s.duel.timeMs
+            val out = DuelMatch.step(s, NARROW, 16L, inputs("red" to noise[i % 4], "blue" to noise[(i + 1) % 4]))
+            i++
+            if (out.state.phase == MatchPhase.COUNTDOWN) {
+                assertTrue(out.events.isEmpty(), "at $t ms: ${out.events}")
+                assertEquals(start.duel.a, out.state.duel.a, "red moved in the countdown at $t ms")
+                assertEquals(start.duel.b, out.state.duel.b)
+                assertEquals(3000L - out.state.duel.timeMs, out.state.phaseLeftMs)
+            } else {
+                // The frame 2992..3008 crosses the start: 8 ms of fight; its Dash was given in the countdown, so ignored.
+                assertEquals(2992L, t)
+                assertEquals(listOf<MatchEvent>(RoundStarted(1, 3000L)), out.events)
+                assertEquals(MatchPhase.FIGHT, out.state.phase)
+                assertEquals(60_000L - 8L, out.state.phaseLeftMs)
+                assertEquals(0L, out.state.duel.a.dashMs)
+            }
+            s = out.state
+        }
+        // In the fight inputs work.
+        val moved = DuelMatch.step(s, NARROW, 16L, inputs("red" to MoveTo(Vec2(-0.03f, 0.05f)), "blue" to Dash()))
+        assertEquals(Vec2(-0.03f, 0.05f), moved.state.duel.a.body.state.target)
+        assertEquals(listOf<MatchEvent>(Fight(DashStarted("blue", 3008L))), moved.events)
+    }
+
+    @Test
+    fun ringOutScoresOnceAndBothReturnToTheirMarks() {
+        val start = DuelMatch.start(RED, BLUE, NARROW, MARKS)
+        // Round 1 only (red dashes blue off), then idle until the next countdown is under way.
+        val t = play(start, NARROW, maxMs = 7_000L, script = { r -> if (r == 1) redDashes(r) else emptyMap() })
+        assertEquals(listOf(Point("red", PointReason.RING_OUT, t.points.single().atMs)), t.points, "${t.all}")
+        val at = t.points.single().atMs
+        val ring = t.fight().filterIsInstance<RingOut>().first()
+        assertEquals("blue", ring.id)
+        assertEquals(ring.atMs, at, "the point is the ring-out's sub-step")
+        val k = t.events.indexOfFirst { e -> e.any { it is Point } }
+        val pointState = t.states[k]
+        assertEquals(MatchPhase.POINT, pointState.phase)
+        assertEquals(1 to 0, pointState.scoreA to pointState.scoreB)
+        assertEquals(1, pointState.scoreOf("red"))
+        assertEquals(PointResult(1, "red", PointReason.RING_OUT), pointState.lastPoint)
+        assertEquals(aligned(RULES.pointPauseMs) - (pointState.duel.timeMs - at), pointState.phaseLeftMs)
+        // During POINT the fall plays out (blue goes down past the edge), red stays put, and nothing else scores.
+        val pause = t.states.filter { it.phase == MatchPhase.POINT }
+        assertTrue(pause.any { it.duel.b.body.state.mode == Mode.FALLING && it.duel.b.body.state.h < 0f }, "the fall is shown")
+        assertTrue(pause.all { it.duel.a.dashMs == 0L && it.duel.a.body.state.target == null })
+        // After the pause: round 2's countdown, both rebuilt on their marks exactly as at the start.
+        val next = t.states.first { it.round == 2 }
+        assertEquals(MatchPhase.COUNTDOWN, next.phase)
+        assertEquals(at + aligned(RULES.pointPauseMs), next.duel.timeMs - (aligned(RULES.countdownMs) - next.phaseLeftMs))
+        assertEquals(start.duel.a, next.duel.a)
+        assertEquals(start.duel.b, next.duel.b)
+        assertEquals(1 to 0, next.scoreA to next.scoreB)
+        assertEquals(1, t.points.size)
+        assertEquals(listOf(RoundStarted(1, 3000L)), t.all.filterIsInstance<RoundStarted>())
+    }
+
+    @Test
+    fun bothOutInTheSameSubStepReplaysTheRound() {
+        // T42's mirrored POWER 10 clash on a 20 cm table: both fly off in the same sub-step.
+        val tiny = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
+        val st = FighterStats(10, 1, 1, 8)
+        val start = DuelMatch.start(Contestant("a", st, Ability.JUMP), Contestant("b", st, Ability.JUMP), tiny, Vec2(-0.04f, 0f) to Vec2(0.04f, 0f))
+        val t = play(start, tiny, maxMs = 9_000L, script = { r -> if (r == 1) mapOf(0L to inputs("a" to Dash(), "b" to Dash())) else emptyMap() })
+        val rings = t.fight().filterIsInstance<RingOut>()
+        assertEquals(listOf("a", "b"), rings.map { it.id })
+        assertEquals(rings[0].atMs, rings[1].atMs)
+        assertEquals(listOf(Point(null, PointReason.RING_OUT, rings[0].atMs)), t.points)
+        val next = t.states.first { it.round == 2 }
+        assertEquals(0 to 0, next.scoreA to next.scoreB)
+        assertEquals(PointResult(1, null, PointReason.RING_OUT), next.lastPoint)
+        assertEquals(start.duel.a, next.duel.a)
+        assertEquals(start.duel.b, next.duel.b)
+    }
+
+    @Test
+    fun theEarlierRingOutLosesAtAnyFrameRateAndInEitherSlot() {
+        // A clash on the 20 cm table: y, a little weaker and 2 mm closer to its edge, leaves the table two sub-steps
+        // before x does, so in a 33 ms frame both ring-outs arrive in the same DuelPhysics call. The earlier one loses,
+        // whatever the frames or the slots.
+        val tiny = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
+        val x = Contestant("x", FighterStats(10, 1, 1, 8), Ability.JUMP)
+        val y = Contestant("y", FighterStats(8, 1, 2, 9), Ability.JUMP)
+        val marks = Vec2(-0.04f, 0f) to Vec2(0.042f, 0f)
+
+        // The physics alone (no match): both fly off, y first, 16 ms apart, in one 33 ms call.
+        val raw = DuelMatch.start(x, y, tiny, marks).duel
+        val free = runDuel(raw, tiny, 1500L, dtMs = 33L, script = atStart("x" to Dash(), "y" to Dash()))
+        val rings = free.all.filterIsInstance<RingOut>()
+        assertEquals(listOf("y", "x"), rings.map { it.id }, "both ring out: ${free.all}")
+        val (first, second) = rings
+        assertEquals(16L, second.atMs - first.atMs, "$rings")
+        assertTrue(free.events.any { e -> e.filterIsInstance<RingOut>().size == 2 }, "one 33 ms call carries both: ${free.events.filter { it.isNotEmpty() }}")
+        val loser = "y"
+        val winner = "x"
+
+        val script = { r: Int -> if (r == 1) mapOf(0L to inputs("x" to Dash(), "y" to Dash())) else emptyMap() }
+        val rnd = Random(11)
+        val frames = listOf<() -> Long>({ 16L }, { 33L }, { 50L }, { 5L + rnd.nextLong(46L) })
+        val results = frames.flatMap { frame ->
+            listOf(
+                play(DuelMatch.start(x, y, tiny, marks), tiny, maxMs = 5_000L, script = script, frame = frame),
+                play(DuelMatch.start(y, x, tiny, marks.second to marks.first), tiny, maxMs = 5_000L, script = script, frame = frame),
+            )
+        }
+        for (t in results) {
+            assertEquals(Point(winner, PointReason.RING_OUT, first.atMs + 3000L), t.points.first(), "${t.points}")
+            // The winner still flies off, in POINT, on the very sub-step it did without the match: shown, not scored.
+            val falls = t.fight().filterIsInstance<RingOut>().take(2).map { it.id to it.atMs }
+            assertEquals(listOf(loser to first.atMs + 3000L, winner to second.atMs + 3000L), falls)
+            val afterRound = t.states.first { it.round == 2 }
+            assertEquals(1 to 0, afterRound.scoreOf(winner) to afterRound.scoreOf(loser))
+            assertEquals(1, t.points.count { it.atMs < afterRound.duel.timeMs })
+        }
+        // Same events everywhere (the slot swap only changes which side scoreA counts).
+        for (t in results.drop(1)) assertEquals(results[0].all, t.all)
+    }
+
+    @Test
+    fun timeoutGoesToTheFighterFartherInsideAndATieReplays() {
+        val rules = DuelRules(roundMs = 2000L)
+        fun round(redTo: Vec2?): MatchTrace {
+            val start = DuelMatch.start(RED, BLUE, SQUARE, MARKS)
+            return play(start, SQUARE, rules = rules, maxMs = 3000L + 2000L + 8L, script = { r ->
+                if (r == 1 && redTo != null) mapOf(0L to inputs("red" to MoveTo(redTo))) else emptyMap()
+            })
+        }
+        // Red walks 4 cm toward the middle: 18 cm inside against blue's 14 cm.
+        val won = round(Vec2(-0.02f, 0f))
+        assertEquals(listOf(Point("red", PointReason.TIMEOUT, 5000L)), won.points)
+        assertEquals(PointResult(1, "red", PointReason.TIMEOUT), won.last.lastPoint)
+        // Nobody moves: the marks are equally far inside, a replay.
+        assertEquals(listOf(Point(null, PointReason.TIMEOUT, 5000L)), round(null).points)
+        // Half a millimetre is still a tie; two millimetres is not.
+        assertEquals(listOf(Point(null, PointReason.TIMEOUT, 5000L)), round(Vec2(-0.0595f, 0f)).points)
+        assertEquals(listOf(Point("red", PointReason.TIMEOUT, 5000L)), round(Vec2(-0.058f, 0f)).points)
+        // Blue walking toward its own edge loses it.
+        val start = DuelMatch.start(RED, BLUE, SQUARE, MARKS)
+        val lost = play(start, SQUARE, rules = rules, maxMs = 5008L, script = { mapOf(0L to inputs("blue" to MoveTo(Vec2(0.12f, 0f)))) })
+        assertEquals(listOf(Point("red", PointReason.TIMEOUT, 5000L)), lost.points)
+    }
+
+    @Test
+    fun firstToTwoWinsAndResultIsTerminal() {
+        val start = DuelMatch.start(RED, BLUE, NARROW, MARKS)
+        val t = play(start, NARROW, script = redDashes)
+        val end = t.last
+        assertEquals(MatchPhase.RESULT, end.phase)
+        assertEquals("red", end.winner)
+        assertEquals(2 to 0, end.scoreA to end.scoreB)
+        assertEquals(2, end.round)
+        assertEquals(0L, end.phaseLeftMs)
+        assertEquals(listOf("red", "red"), t.points.map { it.winner })
+        assertEquals(listOf(RoundStarted(1, 3000L), RoundStarted(2, t.all.filterIsInstance<RoundStarted>()[1].atMs)), t.all.filterIsInstance<RoundStarted>())
+        val over = t.all.filterIsInstance<MatchOver>().single()
+        assertEquals(MatchOver("red", t.points.last().atMs + aligned(RULES.pointPauseMs)), over)
+        assertEquals(over, t.all.last(), "MatchOver is the last event")
+        assertEquals(end.duel.timeMs, over.atMs)
+        // On the marks for the result screen.
+        assertEquals(LEFT, end.duel.a.pos)
+        assertEquals(RIGHT, end.duel.b.pos)
+        // Terminal: any step returns the very same state and nothing else.
+        for (tracking in listOf(true, false)) {
+            for (dt in listOf(16L, 250L, 5000L, 0L, -3L)) {
+                val out = DuelMatch.step(end, NARROW, dt, inputs("red" to Dash(), "blue" to Special), tracking = tracking)
+                assertSame(end, out.state)
+                assertTrue(out.events.isEmpty())
+            }
+        }
+        // And the whole thing round-trips through JSON (T49's HUD and T55's logs read it).
+        val step = MatchStep(end, t.all.take(6) + over)
+        assertEquals(step, Json.decodeFromString(MatchStep.serializer(), Json.encodeToString(MatchStep.serializer(), step)))
+    }
+
+    @Test
+    fun aMatchWithoutAWinnerAfterMaxRoundsIsADraw() {
+        // Nobody moves: five tied timeouts (replays count as rounds), then a draw.
+        val rules = DuelRules(roundMs = 1000L)
+        val t = play(DuelMatch.start(RED, BLUE, SQUARE, MARKS), SQUARE, rules = rules)
+        assertEquals(MatchPhase.RESULT, t.last.phase)
+        assertNull(t.last.winner)
+        assertEquals(5, t.last.round)
+        assertEquals(List(5) { null }, t.points.map { it.winner })
+        assertEquals(listOf(MatchOver(null, 5L * (3000L + 1000L + 1504L))), t.all.filterIsInstance<MatchOver>())
+
+        // A point each, then a replay, with three rounds at most: a 1-1 draw.
+        val three = DuelRules(roundMs = 1000L, maxRounds = 3)
+        val script = { r: Int ->
+            when (r) {
+                1 -> mapOf(0L to inputs("red" to MoveTo(Vec2(-0.03f, 0f))))
+                2 -> mapOf(0L to inputs("blue" to MoveTo(Vec2(0.03f, 0f))))
+                else -> emptyMap()
+            }
+        }
+        val even = play(DuelMatch.start(RED, BLUE, SQUARE, MARKS), SQUARE, rules = three, script = script)
+        assertEquals(listOf("red", "blue", null), even.points.map { it.winner })
+        assertEquals(MatchPhase.RESULT, even.last.phase)
+        assertNull(even.last.winner)
+        assertEquals(1 to 1, even.last.scoreA to even.last.scoreB)
+    }
+
+    @Test
+    fun trackingLossFreezesEveryClockAndNothingIsLost() {
+        val start = DuelMatch.start(RED, BLUE, NARROW, MARKS)
+        val reference = play(start, NARROW, script = redDashes)
+        // The same match with 10 s of tracking loss (frames of 33 ms, inputs pressed all the while) in the countdown,
+        // mid-fight while blue is flying back from red's hit, and in the point pause while blue falls.
+        val hitAt = reference.all.filterIsInstance<Fight>().map { it.event }.filterIsInstance<Hit>().first().atMs
+        val pointAt = reference.points.first().atMs
+        val gaps = mutableSetOf<MatchPhase>()
+        var s = start
+        val events = ArrayList<MatchEvent>()
+        val roundLen = aligned(RULES.roundMs)
+        val wanted = ArrayDeque(listOf(1504L, hitAt + 40L, pointAt + 100L))
+        while (s.phase != MatchPhase.RESULT) {
+            if (wanted.isNotEmpty() && s.duel.timeMs == wanted.first()) {
+                wanted.removeFirst()
+                val before = s
+                repeat(303) {
+                    val out = DuelMatch.step(s, NARROW, 33L, inputs("red" to Dash(), "blue" to Special), tracking = false)
+                    assertTrue(out.events.isEmpty())
+                    s = out.state
+                    assertEquals(before.phase, s.phase)
+                    assertEquals(before.phaseLeftMs, s.phaseLeftMs)
+                    assertEquals(before.duel.timeMs, s.duel.timeMs, "no clock runs")
+                    for ((f, g) in listOf(before.duel.a to s.duel.a, before.duel.b to s.duel.b)) {
+                        assertEquals(f.pos, g.pos)
+                        assertEquals(f.body.state.h, g.body.state.h)
+                        assertEquals(Mode.PAUSED, g.body.state.mode, "both paused")
+                        assertEquals(f.copy(body = g.body), g, "every timer frozen")
+                    }
+                }
+                gaps += s.phase
+            }
+            val since = roundLen - s.phaseLeftMs
+            val input = if (s.phase == MatchPhase.FIGHT) redDashes(s.round)[since] ?: emptyMap() else emptyMap()
+            var dt = 16L
+            if (s.phase != MatchPhase.FIGHT) dt = minOf(dt, s.phaseLeftMs)
+            wanted.firstOrNull()?.let { if (it > s.duel.timeMs) dt = minOf(dt, it - s.duel.timeMs) }
+            val out = DuelMatch.step(s, NARROW, dt, input)
+            events += out.events
+            s = out.state
+        }
+        assertEquals(setOf(MatchPhase.COUNTDOWN, MatchPhase.FIGHT, MatchPhase.POINT), gaps, "a gap in every phase")
+        assertEquals(reference.last, s, "the same match, as if the gaps never happened")
+        assertEquals(reference.all, events)
+    }
+
+    @Test
+    fun anySplitOfTheSameTimeGivesTheSameMatch() {
+        // A scripted match with every verb: red (JUMP) dashes, stomps, walks; blue (HIDE) dodges and counters, walks,
+        // jumps. A cup on the table for wall slams.
+        val arena = NARROW.copy(objects = listOf(LevelObject("cup-1", "cup", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0f, 0.12f), 0.05f, 0.05f), 0.09f)))
+        val script = { r: Int ->
+            when (r % 3) {
+                1 -> mapOf(0L to inputs("red" to Dash()))
+                2 -> mapOf(
+                    0L to inputs("red" to Dash(), "blue" to Special),
+                    600L to inputs("blue" to Dash()),
+                    1200L to inputs("red" to Special, "blue" to MoveTo(Vec2(0.05f, 0.05f))),
+                    2504L to inputs("blue" to Jump, "red" to MoveTo(Vec2(0f, 0.06f))),
+                    4000L to inputs("red" to Dash(Vec2(0.3f, 1f)), "blue" to MoveTo(Vec2(0.1f, -0.1f))),
+                    6000L to inputs("blue" to Dash(Vec2(-1f, 0f)), "red" to Special),
+                )
+                else -> mapOf(
+                    0L to inputs("blue" to Dash(), "red" to Jump),
+                    1000L to inputs("red" to Special),
+                    1800L to inputs("red" to Dash(Vec2(1f, 0f)), "blue" to Special),
+                    2500L to inputs("blue" to Dash(Vec2(-1f, 0.2f))),
+                )
+            }
+        }
+        val rules = DuelRules(roundMs = 10_000L, pointsToWin = 3, maxRounds = 6)
+        fun run(frame: () -> Long) = play(DuelMatch.start(RED, BLUE, arena, MARKS), arena, rules = rules, script = script, frame = frame)
+        val sixteen = run { 16L }
+        val kinds = sixteen.all.map { if (it is Fight) it.event::class.simpleName else it::class.simpleName }.toSet()
+        assertTrue(kinds.containsAll(listOf("RoundStarted", "Point", "MatchOver", "DashStarted", "SpecialStarted", "Hit", "RingOut")), "$kinds")
+        assertEquals(MatchPhase.RESULT, sixteen.last.phase)
+        println("anySplit: ${sixteen.points}, ${sixteen.last.duel.timeMs} ms, ${sixteen.all.size} events")
+
+        val rnd = Random(5)
+        for ((name, frame) in listOf<Pair<String, () -> Long>>(
+            "33 ms" to { 33L },
+            "random 5..50 ms" to { 5L + rnd.nextLong(46L) },
+            "random 1..250 ms" to { 1L + rnd.nextLong(250L) },
+        )) {
+            val other = run(frame)
+            assertEquals(sixteen.last, other.last, name)
+            assertEquals(sixteen.all, other.all, name)
+            // Every state both runs share a time with is the same state.
+            val byTime = other.states.associateBy { it.duel.timeMs to it.phase }
+            for (s in sixteen.states) byTime[s.duel.timeMs to s.phase]?.let { assertEquals(s, it, "$name at ${s.duel.timeMs} ms") }
+        }
+    }
+
+    @Test
+    fun mirroredMatchesGetMirroredResults() {
+        // Mirror the whole match across the v axis and swap the slots: red now starts on the right, in slot b, every
+        // input mirrored. Same winner, same events (WallSlam objects mirrored), every position mirrored.
+        val arena = Level(
+            listOf(
+                LevelObject("cup-l", "cup", ObjectKind.OBSTACLE, Polygon.rect(Vec2(-0.08f, 0.12f), 0.05f, 0.05f), 0.09f),
+                LevelObject("cup-r", "cup", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.08f, 0.12f), 0.05f, 0.05f), 0.09f),
+            ),
+            boundary = Polygon.rect(Vec2.ZERO, 0.28f, 0.4f),
+        )
+        val red = RED.copy(ability = Ability.ROLL)
+        val blue = BLUE.copy(ability = Ability.FLY)
+        val script = { r: Int ->
+            when (r) {
+                1 -> mapOf(0L to inputs("blue" to Special), 400L to inputs("red" to Special), 1600L to inputs("blue" to MoveTo(Vec2(0.02f, 0.06f))))
+                2 -> mapOf(0L to inputs("red" to Dash(Vec2(1f, 0.5f)), "blue" to MoveTo(Vec2(0.09f, -0.1f))), 2000L to inputs("red" to MoveTo(Vec2(0.05f, -0.05f))), 3000L to inputs("red" to Special))
+                else -> mapOf(0L to inputs("red" to Special))
+            }
+        }
+        fun mirrored(i: Map<String, DuelInput>) = i.mapValues { (_, v) ->
+            when (v) {
+                is MoveTo -> MoveTo(m(v.target))
+                is Dash -> Dash(v.dir?.let(::m))
+                else -> v
+            }
+        }
+        val rules = DuelRules(roundMs = 6000L)
+        val x = play(DuelMatch.start(red, blue, arena, MARKS), arena, rules = rules, script = script)
+        val y = play(DuelMatch.start(blue, red, arena, m(RIGHT) to m(LEFT)), arena, rules = rules, script = { r -> script(r).mapValues { mirrored(it.value) } })
+        assertEquals(MatchPhase.RESULT, x.last.phase)
+        assertTrue(x.fight().any { it is SpecialStarted } && x.points.isNotEmpty(), "${x.all}")
+        println("mirrored: ${x.points} winner ${x.last.winner}")
+        assertEquals(x.last.winner, y.last.winner)
+        assertEquals(x.last.scoreOf("red"), y.last.scoreOf("red"))
+        assertEquals(x.last.scoreOf("blue"), y.last.scoreOf("blue"))
+        val mirrorEvents = x.all.map { e ->
+            if (e is Fight && e.event is WallSlam) Fight((e.event as WallSlam).let { it.copy(objectId = if (it.objectId == "cup-l") "cup-r" else "cup-l") }) else e
+        }
+        assertEquals(mirrorEvents, y.all)
+        assertEquals(x.states.size, y.states.size)
+        for ((i, s) in x.states.withIndex()) {
+            val r = y.states[i]
+            assertEquals(s.duel.timeMs, r.duel.timeMs)
+            assertEquals(s.phase to s.phaseLeftMs, r.phase to r.phaseLeftMs)
+            for (id in listOf("red", "blue")) {
+                val f = s.duel[id]!!
+                val g = r.duel[id]!!
+                assertTrue(m(f.pos).distanceTo(g.pos) < 1e-5f, "$id at ${s.duel.timeMs} ms: ${f.pos} vs mirrored ${g.pos}")
+                assertEquals(f.body.state.mode, g.body.state.mode, "$id mode at ${s.duel.timeMs} ms")
+                assertEquals(listOf(f.stunMs, f.dashMs, f.specialMs, f.specialCooldownMs), listOf(g.stunMs, g.dashMs, g.specialMs, g.specialCooldownMs))
+            }
+        }
+    }
+}
