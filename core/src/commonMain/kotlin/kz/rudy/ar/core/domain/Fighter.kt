@@ -21,7 +21,8 @@ enum class Stat {
 /**
  * A character's duel stats. A well-formed value has every stat in [MIN]..[MAX] and [total] == [BUDGET]: every fighter
  * gets the same budget, so a drawing trades one stat for another and none is simply weaker. The class does not
- * enforce it (a hand-edited saved sheet must still load); [isBalanced] says whether a value keeps the rule.
+ * enforce it (a hand-edited saved sheet must still load); [isBalanced] says whether a value keeps the rule, and
+ * [CharacterSheet.fighter] rebalances a value that does not ([StatBudget.normalise]) before the duel reads it.
  */
 @Serializable
 data class FighterStats(
@@ -67,9 +68,18 @@ fun FighterStats.Companion.defaultFor(ability: Ability): FighterStats = when (ab
     Ability.HIDE -> FighterStats(4, 5, 4, 7)
 }
 
-/** What the duel reads: [CharacterSheet.stats] when present and balanced, else the archetype of its ability. */
+/**
+ * What the duel reads, one rule however the sheet was loaded (model reply, `Bundle.json`, `SheetParser` on a saved
+ * sheet): [CharacterSheet.stats] when balanced; else those stats taken as raw scores and rebalanced
+ * ([StatBudget.normalise]: a hand-edited 10/10/10/10 fights as 5/5/5/5); else (no stats, or no usable score in them)
+ * the archetype of the ability.
+ */
 val CharacterSheet.fighter: FighterStats
-    get() = stats?.takeIf { it.isBalanced } ?: FighterStats.defaultFor(ability)
+    get() {
+        val s = stats ?: return FighterStats.defaultFor(ability)
+        if (s.isBalanced) return s
+        return StatBudget.normalise(Stat.entries.associateWith { s[it].toFloat() }) ?: FighterStats.defaultFor(ability)
+    }
 
 /**
  * Turns the model's raw stat scores into a [FighterStats] that keeps the budget rule. The model is asked for 1..10

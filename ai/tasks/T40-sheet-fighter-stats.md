@@ -96,15 +96,24 @@ Tests not required: live calls, prompt wording, Compose.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: `:core:jvmTest` 401 tests, 0 failures (baseline 388; +7 `FighterStatsTest`, +5 `SheetStatsTest`, +1
-  `RequestShapeTest.sheetSchemaListsEveryRequiredKey`). `:core:compileKotlinIosSimulatorArm64` green.
+- measured: `:core:jvmTest` 403 tests, 0 failures (baseline 388; +7 `FighterStatsTest`, +7 `SheetStatsTest`, +1
+  `RequestShapeTest.sheetSchemaListsEveryRequiredKey`; review fixes included). `:core:compileKotlinIosSimulatorArm64` green.
   `cli character --fixtures docs/api-samples --out build/t40-runs --all`: 20/20 fixture characters shipped.
   G2: every bundled sheet (`androidApp/src/main/assets/bundled`, `docs/bundled`) fights with a balanced 20 (the archetype
   of its ability: none has stats yet), read through `SheetParser.parse` and `Bundle.decodeSheet`; their JSON is
   byte-identical to the pre-T40 shape (pinned against a mirror of the old class).
 - normaliser: `clamp(k * raw, MIN, MAX)` with one scale `k` found by geometric bisection (raws 1e-30..3e38 converge),
-  floors + largest remainder (ties: larger raw, then Stat ordinal). One positive score alone: it gets MAX, the other
-  three split 10 (4/3/3). A balanced input comes back unchanged.
+  floors + largest remainder. Tie-break as implemented is stricter than the contract's wording: equal fractions go to
+  the larger raw score first, then to the lower Stat ordinal (so a strictly larger raw never gets fewer points, even
+  when float rounding makes two shares equal). One positive score alone: it gets MAX, the other three split 10
+  (4/3/3). A balanced input comes back unchanged.
+- review fixes: a score too large for a Float (`1e39`, `"1e39"`, `1e400`) is clamped to `Float.MAX_VALUE` in
+  `SheetParser.parseStats`, so it is the top score (10/4/3/3), not a missing one. `CharacterSheet.fighter` is the one
+  rule on every load path: balanced `stats`; else those stats rebalanced as raw scores (a hand-edited 10/10/10/10 fights
+  as 5/5/5/5 through `Bundle.decodeSheet` and `SheetParser.parse` alike); else the archetype. The legacy test pins the
+  exact count (18 recorded fixtures); a re-record with stats must update it.
+- `facesRight` is meaningful only when `baseView == SIDE`; the parser keeps whatever the model said for front/back
+  views (the strict schema makes it answer), and consumers must ignore it there.
 - token cap: reply ~250-300 -> ~450-500 visible tokens (new fields ~380 chars, Cyrillic-heavy); with the extra judging
   in reasoning, `SHEET_MAX_COMPLETION_TOKENS` 2048 -> 3072 (billed as used). Unprobed.
 - also: `SheetParser` reads the saved `sheet.json` keys (`statReasons`, `baseView`, `facesRight`) too, because the

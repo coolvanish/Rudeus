@@ -190,7 +190,7 @@ data class CharacterSheet(
     // byte-identical to what it was, even through `Bundle.json` (encodeDefaults = true).
     /**
      * Duel stats read from the picture and normalised to [FighterStats.BUDGET] ([StatBudget]); null on sheets written
-     * before T40. The duel reads [fighter], which falls back to the archetype of [ability].
+     * before T40. The duel reads [fighter], which rebalances off-budget stats and falls back to the archetype of [ability].
      */
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val stats: FighterStats? = null,

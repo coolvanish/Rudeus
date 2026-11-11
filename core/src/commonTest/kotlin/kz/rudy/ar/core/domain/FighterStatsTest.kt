@@ -153,11 +153,13 @@ class FighterStatsTest {
     }
 
     @Test
-    fun theDuelReadsBalancedStatsElseTheArchetype() {
+    fun theDuelReadsBalancedStatsElseRebalancedElseTheArchetype() {
         val sheet = CharacterSheet("Dos", "", Ability.FLY, emptyMap())
         assertEquals(FighterStats(3, 7, 3, 7), sheet.fighter, "no stats")
         assertEquals(FighterStats(7, 3, 8, 2), sheet.copy(stats = FighterStats(7, 3, 8, 2)).fighter)
-        assertEquals(FighterStats(3, 7, 3, 7), sheet.copy(stats = FighterStats(10, 10, 10, 10)).fighter, "a hand-edited sheet over budget")
-        assertEquals(FighterStats(3, 7, 3, 7), sheet.copy(stats = FighterStats(0, 10, 5, 5)).fighter, "a stat out of range")
+        assertEquals(FighterStats.BALANCED, sheet.copy(stats = FighterStats(10, 10, 10, 10)).fighter, "a hand-edited sheet over budget")
+        assertEquals(FighterStats(1, 9, 5, 5), sheet.copy(stats = FighterStats(0, 10, 5, 5)).fighter, "a stat out of range")
+        assertEquals(FighterStats(3, 7, 3, 7), sheet.copy(stats = FighterStats(0, 0, 0, 0)).fighter, "nothing usable")
+        assertEquals(FighterStats(3, 7, 3, 7), sheet.copy(stats = FighterStats(-1, -2, -3, -4)).fighter, "nothing usable")
     }
 }

@@ -91,6 +91,34 @@ class SheetStatsTest {
     }
 
     @Test
+    fun aScoreTooLargeForAFloatIsTheTopScore() {
+        for (power in listOf("1e39", "\"1e39\"", "1e400", "\"1e400\"")) {
+            val sheet = SheetParser.parse(
+                """{"name": "Х", "personality": "", "ability": "jump", "lines": {}, "stats": {"power": $power, "speed": 3, "guard": 3, "agility": 3}}""",
+            )
+            assertEquals(FighterStats(10, 4, 3, 3), sheet.stats, "power $power")
+        }
+    }
+
+    @Test
+    fun offBudgetStoredStatsFightTheSameOnEveryLoadPath() {
+        val cases = mapOf(
+            """{"power": 10, "speed": 10, "guard": 10, "agility": 10}""" to FighterStats.BALANCED,
+            """{"power": 0, "speed": 10, "guard": 5, "agility": 5}""" to FighterStats(1, 9, 5, 5),
+            """{"power": 0, "speed": 0, "guard": 0, "agility": 0}""" to FighterStats.defaultFor(Ability.FLY),
+        )
+        for ((stats, expected) in cases) {
+            val text = """{"name": "Х", "personality": "", "ability": "FLY", "lines": {"kk": ["Сәлем!"]}, "stats": $stats}"""
+            val viaJson = Bundle.json.decodeFromString(CharacterSheet.serializer(), text).fighter
+            val viaBundle = Bundle.decodeSheet(text).fighter
+            val viaParser = SheetParser.parse(text).fighter
+            assertEquals(expected, viaJson, "Bundle.json $stats")
+            assertEquals(expected, viaBundle, "Bundle.decodeSheet $stats")
+            assertEquals(expected, viaParser, "SheetParser.parse $stats")
+        }
+    }
+
+    @Test
     fun legacySheetHasNoStatsAndFightsWithItsArchetype() = runTest {
         var legacy = 0
         for (ref in sheetRefs()) {
@@ -105,7 +133,9 @@ class SheetStatsTest {
             assertNull(sheet.facesRight, ref)
             assertEquals(FighterStats.defaultFor(sheet.ability), sheet.fighter, ref)
         }
-        assertTrue(legacy >= 1, "the fixtures recorded before T40 are the back-compat proof")
+        // The 18 recorded before T40 (20 fixtures minus the synthetic sample-01/02). A live re-record with stats lowers
+        // this on purpose: update the number in the same change.
+        assertEquals(18, legacy, "the fixtures recorded before T40 are the back-compat proof")
 
         // G2 (ai/build-plan-v2.md): every bundled character fights with a balanced 20, read either way the app reads it.
         val bundled = bundledSheets()

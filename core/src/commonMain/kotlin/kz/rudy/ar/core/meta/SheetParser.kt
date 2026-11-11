@@ -88,14 +88,17 @@ object SheetParser {
     /**
      * `{"power": 7, "speed": "3", ...}` -> the balanced stats; keys are matched case-insensitively, values may be
      * numbers or numeric strings, anything else counts as missing. Null when there is no object or no usable score.
+     * A score too large for a Float (`1e39`, even `1e400`) is the top score, not a missing one: it is clamped to
+     * [Float.MAX_VALUE], so the stat the model rated highest still gets the largest share.
      */
     fun parseStats(element: JsonElement?): FighterStats? {
         val obj = element as? JsonObject ?: return null
         val raw = LinkedHashMap<Stat, Float>()
         for ((key, value) in obj) {
             val stat = statOf(key) ?: continue
-            val number = (value as? JsonPrimitive)?.contentOrNull?.trim()?.toFloatOrNull() ?: continue
-            raw[stat] = number
+            val number = (value as? JsonPrimitive)?.contentOrNull?.trim()?.toDoubleOrNull() ?: continue
+            if (number.isNaN()) continue
+            raw[stat] = number.coerceIn(-Float.MAX_VALUE.toDouble(), Float.MAX_VALUE.toDouble()).toFloat()
         }
         return StatBudget.normalise(raw)
     }

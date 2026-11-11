@@ -243,7 +243,7 @@ data class ChatRequest(
 ) {
     companion object {
         /**
-         * The character-sheet call (docs/api-samples/spark-sheet/request.json.tmpl): json_schema output, 2048 tokens,
+         * The character-sheet call (docs/api-samples/spark-sheet/request.json.tmpl): json_schema output, 3072 tokens,
          * reasoning low. With an [image]: one text part + one `image_url` part (like the score call), so Spark vision
          * writes the sheet looking at the character; without: the plain-string message.
          */
