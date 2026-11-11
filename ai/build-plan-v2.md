@@ -63,7 +63,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 1 | T39 ios-core-services (common file services on kotlinx-io) — **done** | core, Gradle (hand-review) | opus-high | — |
 | 1 | T40 sheet-fighter-stats — **done** | core/meta, core/domain | opus-high | contracts |
 | 1 | T41 sprite-views — **done** (G3, the live Muse spike, is the user's) | core/emote, core/meta, core/pipeline, cli | opus-high | contracts |
-| 1 | T42 duel-physics | core/duel | opus-extra | contracts |
+| 1 | T42 duel-physics — **done** | core/duel | opus-extra | contracts |
 | 1 | T43 thin-host-map (design, no code) — **done** | reads androidApp | fable-high | — |
 | 2 | T44 fighter-card-ui — **done** | shared | sonnet-high | T40 |
 | 2 | T45 duel-match-specials (rounds, points, marks, one special per ability) | core/duel | opus-extra | T42 |

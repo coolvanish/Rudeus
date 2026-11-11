@@ -1,6 +1,6 @@
 # T42 — duel-physics
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md)
 gate: G4 — matches end, 30 Hz and 60 Hz agree, no archetype dominates (the last one is measured in T48)
