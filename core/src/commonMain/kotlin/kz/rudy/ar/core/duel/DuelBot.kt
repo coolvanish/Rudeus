@@ -289,7 +289,7 @@ private class Brain(
                 if (nearEdge || (skill.sidesteps && ability == Ability.HIDE)) return DuelInput.Special
             }
             // Away from the edge a hit costs a few centimetres and leaves the attacker on cooldown: take it.
-            if (skill.sidesteps && nearEdge) evade(dir, stomp, canDash)?.let { return it }
+            if (skill.sidesteps && board.inside(me) <= skill.sidestepEdgeRadii * r) evade(dir, stomp, canDash)?.let { return it }
         }
 
         // 2. A counter while the window is open.

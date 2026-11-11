@@ -82,14 +82,22 @@ class DuelBotTest {
 
     /**
      * [strong] against [weak] on [arena], equal stats and ability on both sides: [perAbility] matches with each ability
-     * (its archetype stats), marks swapped every other match. Returns the share [strong] won, and prints the line.
+     * (its archetype stats), marks swapped every other match. Returns the share [strong] won, and prints the line;
+     * [byAbility] gets each ability's share.
      */
-    private fun share(strong: BotLevel, weak: BotLevel, arena: Level, name: String, perAbility: Int): Float {
+    private fun share(
+        strong: BotLevel,
+        weak: BotLevel,
+        arena: Level,
+        name: String,
+        perAbility: Int,
+        byAbility: MutableMap<Ability, Float> = HashMap(),
+    ): Float {
         var wins = 0
         var losses = 0
         var clock = 0
         var ended = 0
-        val byAbility = ArrayList<String>()
+        val lines = ArrayList<String>()
         for (ab in Ability.entries) {
             val st = FighterStats.defaultFor(ab)
             val s = DuelSim.series(Contestant("s", st, ab), Contestant("w", st, ab), arena, strong, weak, perAbility, 31_000L + ab.ordinal * 1_000L)
@@ -98,10 +106,11 @@ class DuelBotTest {
             losses += s.winsB
             clock += s.timeouts
             ended += s.ringOuts + s.timeouts
-            byAbility += "$ab ${s.winsA}/${s.matches}"
+            lines += "$ab ${s.winsA}/${s.matches}"
+            byAbility[ab] = s.shareA
         }
         val n = perAbility * Ability.entries.size
-        println("strength $name $strong v $weak: ${wins * 100f / n} % won, ${losses * 100f / n} % lost, clock ${clock * 100 / maxOf(1, ended)} % ($byAbility)")
+        println("strength $name $strong v $weak: ${wins * 100f / n} % won, ${losses * 100f / n} % lost, clock ${clock * 100 / maxOf(1, ended)} % ($lines)")
         return wins.toFloat() / n
     }
 
@@ -119,8 +128,12 @@ class DuelBotTest {
             val arena = DuelArenas.ALL.getValue(name)
             val overEasy = share(BotLevel.NORMAL, BotLevel.EASY, arena, name, 50)
             assertTrue(overEasy >= 0.60f, "$name: NORMAL won $overEasy against EASY")
-            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 50)
+            val perAbility = HashMap<Ability, Float>()
+            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 50, perAbility)
             assertTrue(hardOver >= 0.55f, "$name: HARD won $hardOver against NORMAL")
+            // And with every ability on its own (T48 review: a HARD JUMP losing to a NORMAL one hid in the aggregate).
+            // Measured 66..90 % per ability on these seeds; the floor keeps a 5-point margin under the lowest.
+            for ((ab, s) in perAbility) assertTrue(s >= 0.60f, "$name: HARD $ab won only $s against NORMAL $ab ($perAbility)")
         }
     }
 

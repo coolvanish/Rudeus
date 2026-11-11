@@ -117,7 +117,10 @@ data class BotTuning(
  *   those directions win on its score alone made HARD lose to NORMAL (it walked along its own edge, or round the cup).
  * @property usesSpecial uses its special in its obvious situation: stomp with the opponent in reach, ram when aligned
  *   with the opponent near an edge, lift-off or dodge when a dash or a stomp is coming at it near an edge.
- * @property nearEdgeRadii "near an edge" for the lift-off, the dodge and the sidestep: at most this far inside.
+ * @property nearEdgeRadii "near an edge" for the lift-off and the dodge: at most this far inside.
+ * @property sidestepEdgeRadii "near an edge" for a [sidesteps] bot's sidestep: at most this far inside (T48 review: a
+ *   number of its own, so a HARD FLY can lift off wherever a NORMAL one does while a HARD JUMP keeps fighting in
+ *   mid-table; the same as [nearEdgeRadii] unless given).
  * @property sidesteps gets out of the way of a dash coming at it near an edge (a dash across it, else a step aside;
  *   in mid-table a hit costs a few centimetres and leaves the attacker on cooldown, so it takes it), and dodges (HIDE)
  *   wherever it stands, for the counter.
@@ -143,6 +146,7 @@ data class BotSkill(
     val sidesteps: Boolean,
     val counters: Boolean,
     val safeRamsOnly: Boolean,
+    val sidestepEdgeRadii: Float = nearEdgeRadii,
 ) {
     init {
         require(thinkMs >= 0L) { "thinkMs must be >= 0, got $thinkMs" }
@@ -154,6 +158,7 @@ data class BotSkill(
         require(wrongWayChance in 0f..1f) { "wrongWayChance must be in 0..1, got $wrongWayChance" }
         require(wanderChance in 0f..1f) { "wanderChance must be in 0..1, got $wanderChance" }
         require(nearEdgeRadii >= 0f && nearEdgeRadii.isFinite()) { "nearEdgeRadii must be >= 0, got $nearEdgeRadii" }
+        require(sidestepEdgeRadii >= 0f && sidestepEdgeRadii.isFinite()) { "sidestepEdgeRadii must be >= 0, got $sidestepEdgeRadii" }
     }
 
     companion object {
@@ -180,12 +185,15 @@ data class BotSkill(
          * edge, countering. The jitter matters: two HARD bots deciding on the same ticks mirror each other on a symmetric
          * arena (with one tick: every round a tied timeout, every match a draw). T48: `thinkJitterTicks` 3 (was 1): with
          * one, two HARD bots of one ability still dashed together and clashed in mid-table (JUMP v JUMP on the 120 cm
-         * table: 52 % of the rounds to the clock, 34 hits per ring-out); `nearEdgeRadii` 8 (was 4).
+         * table: 52 % of the rounds to the clock, 34 hits per ring-out); `nearEdgeRadii` 8 (was 4) for the lift-off and
+         * the dodge, `sidestepEdgeRadii` 4 (as before T48) for the sidestep: with 8 for both, a HARD JUMP sidestepped so
+         * often that it lost to a NORMAL one (34 % on the empty table; 78 % with the sidestep at 4).
          */
         val HARD = BotSkill(
             thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
             usesSpecial = true, nearEdgeRadii = 8f, sidesteps = true, counters = true, safeRamsOnly = true,
+            sidestepEdgeRadii = 4f,
         )
     }
 }
