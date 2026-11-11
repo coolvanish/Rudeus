@@ -65,14 +65,15 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 1 | T42 duel-physics | core/duel | opus-extra | contracts |
 | 1 | T43 thin-host-map (design, no code) — **done** | reads androidApp | fable-high | — |
 | 2 | T44 fighter-card-ui — **done** | shared | sonnet-high | T40 |
-| 2 | T45 duel-rules-bot (match, specials, bot, headless sim) | core/duel | opus-extra | T42 |
+| 2 | T45 duel-match-specials (rounds, points, marks, one special per ability) | core/duel | opus-extra | T42 |
+| 3 | T55 duel-bot-sim (seeded bot, three levels; headless match simulator) | core/duel | opus-extra | T45 |
 | 0 | `:shared` iOS klib targets (done in wave 0: 2 lines of common code + `Platform.ios.kt`) | shared, Gradle (hand-review) | orchestrator | — |
 | 4 | T46 ios-entry (`MainViewController`, the `UIKitView` bridge for the AR slot) — moved next to T51: it cannot be run without the Mac | shared/iosMain | opus-high | T43 |
 | 2 | T47 thin-host S1: `GameLoop` to `core.session`, verbatim, pinned by tests — **merged, `review` until the Pixel check** ("hand over the lens") | core + androidApp (hand-review) | opus-high | T43 |
 | 3 | T52 thin-host S2: billboard maths to `BillboardPoser` -> `NodePose` | core + androidApp (hand-review) | opus-extra | T47 |
 | 3 | T53 thin-host S3: `TableEngine` (commands, scenario start, cast sync, surface lock, then the frame step) | core + shared + androidApp (hand-review) | fable-high draft | T52 |
 | 3 | T54 thin-host S4: taps and finger grab behind `ArPort` | core + androidApp (hand-review) | fable-high draft | T53 |
-| 3 | T48 cli-duel-sim-balance | cli, core tuning | opus-extra | T45 |
+| 3 | T48 cli-duel-sim-balance | cli, core tuning | opus-extra | T55 |
 | 3 | T49 duel-ui (picker, VS, HUD, result) | shared | sonnet-high | T44, T45 |
 | 4 | T50 ar-host-views-duel (also builds the per-frame picture swap: T33 pose frames never reached the screen) | androidApp (hand-review) | fable-high draft | T41, T45, T49, T52–T54 |
 | 4 | T51 ios-app-shell (Xcode, Swift RealityKit host) | iosApp | on the Mac | T46; a real AR host also needs S5 (scan) and S6 (capture) of the map |
