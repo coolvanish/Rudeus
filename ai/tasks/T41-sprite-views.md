@@ -1,6 +1,6 @@
 # T41 — sprite-views
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md)
 gate: G3 — live spike on >= 5 bundled characters, a human judges the contact sheets
@@ -117,5 +117,23 @@ Tests not required: the CLI argument parser, contact-sheet pixels, live calls.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: G3 (the live spike and the human verdict) is the user's, on the Mac
+- measured (cloud session 2026-11-11, no key, no device): `:core:jvmTest` 413 green (388 + 25 new: SpriteViewsTest 4,
+  ViewPickerTest 8, ViewFixtureTest 5, SpriteViewsStageTest 5, BundleViewsTest 2, SavedViewsTest 1);
+  `scripts/verify.sh` OK (includes `:core:compileKotlinIosSimulatorArm64` + its test klib, `:cli:compileKotlin`,
+  `:androidApp:assembleDebug`; shared 26, android 2). `cli views --ref sample-01 --fixtures docs/api-samples --out
+  build/t41-views`: 2/2 views (back, front) matted, contact.png + README.md, exit 0. `cli character --all` (fixtures):
+  sprites byte-identical and every stage / cost identical to the same run at 1b52cbb (only timings differ).
+- ViewPicker as built: θ = atan2(f·R̂, f·F̂); |θ| <= 45° BACK, >= 135° FRONT, else SIDE; the previous (shown) view's
+  sector widened by 10°, inclusive (BACK to 55°, FRONT to 125°, SIDE 35°..145°). Missing view -> SIDE -> base. Real
+  FRONT/BACK never mirrored; SIDE and a standing-in base mirrored when (f·R̂ > 0) != drawn direction (drawn SIDE = right,
+  base = baseFacesRight); |f̂·R̂| <= 0.15 (`MIRROR_DEADBAND`, the host's `FLIP_DEADBAND`) keeps the previous flag of the
+  same picture, else unmirrored. Degenerate input -> previous, else base unmirrored. `noneMatchesTheHostFlipRule` pins
+  the NONE case against CharacterNode's rule over 400 steps. No allocation per call (six shared `ViewChoice`s).
+- Choices the brief left open: bundle view files are `<ref>/views/back.png` (view name, not `view-back.png`); the CLI also
+  writes `<out>/<ref>/README.md` (the human-answer table, like PoseSpike) and keeps an unmattable view as
+  `view-<view>.raw.png` so the human can still judge Muse; `--record` takes an optional dir (default `--fixtures`) and
+  rewrites `muse-view/meta.json` from the measured calls; the CLI draws one view at a time, the pipeline two at a time
+  sharing the frames' permits. `CostTable.viewUsd = 0.010`.
+- cut/deferred: G3 (the live spike and the human verdict) is the user's, on the Mac:
+  `./gradlew :cli:run --args="views --live --ref <ref> --record --out build/views"` for >= 5 bundled refs (~$0.02 each,
+  `--budget-usd` default 0.05), then fill each `build/views/<ref>/README.md`. No host change (T50).
