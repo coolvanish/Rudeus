@@ -1,6 +1,6 @@
 # T40 — sheet-fighter-stats
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md)
 gate: G2 — every bundled sheet yields stats with sum 20; legacy sheets parse unchanged
@@ -96,5 +96,22 @@ Tests not required: live calls, prompt wording, Compose.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: real `spark-sheet` fixtures with stats need a live re-record on the Mac (human)
+- measured: `:core:jvmTest` 401 tests, 0 failures (baseline 388; +7 `FighterStatsTest`, +5 `SheetStatsTest`, +1
+  `RequestShapeTest.sheetSchemaListsEveryRequiredKey`). `:core:compileKotlinIosSimulatorArm64` green.
+  `cli character --fixtures docs/api-samples --out build/t40-runs --all`: 20/20 fixture characters shipped.
+  G2: every bundled sheet (`androidApp/src/main/assets/bundled`, `docs/bundled`) fights with a balanced 20 (the archetype
+  of its ability: none has stats yet), read through `SheetParser.parse` and `Bundle.decodeSheet`; their JSON is
+  byte-identical to the pre-T40 shape (pinned against a mirror of the old class).
+- normaliser: `clamp(k * raw, MIN, MAX)` with one scale `k` found by geometric bisection (raws 1e-30..3e38 converge),
+  floors + largest remainder (ties: larger raw, then Stat ordinal). One positive score alone: it gets MAX, the other
+  three split 10 (4/3/3). A balanced input comes back unchanged.
+- token cap: reply ~250-300 -> ~450-500 visible tokens (new fields ~380 chars, Cyrillic-heavy); with the extra judging
+  in reasoning, `SHEET_MAX_COMPLETION_TOKENS` 2048 -> 3072 (billed as used). Unprobed.
+- also: `SheetParser` reads the saved `sheet.json` keys (`statReasons`, `baseView`, `facesRight`) too, because the
+  Android host loads bundled sheets through `SheetParser.parse` (AndroidCaptureHost); otherwise a regenerated bundle
+  would lose reasons and view on the phone.
+- outside "Owns": `core/src/commonTest/.../meta/RequestShapeTest.kt` (the brief allows extending it; its pins on the
+  required list and the 2048 cap had to change).
+- cut/deferred: real `spark-sheet` fixtures with stats need a live re-record on the Mac (human). Whether Spark's strict
+  mode accepts the nested `why` object is unverified (same caveat as `lines`). `RecordingModels.sheetJson` (T41 owns it)
+  does not write stats/why/view/faces yet, so `--record` would drop them from a re-recorded fixture until it does.

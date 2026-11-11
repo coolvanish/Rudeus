@@ -5,10 +5,15 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.FighterStats
+import kz.rudy.ar.core.domain.SpriteView
+import kz.rudy.ar.core.domain.Stat
+import kz.rudy.ar.core.domain.StatBudget
 
 /**
  * Turns the Spark character-sheet reply into a [CharacterSheet] and enforces the contract from
@@ -18,9 +23,19 @@ import kz.rudy.ar.core.domain.CharacterSheet
  * Expected model JSON (fences and surrounding prose are tolerated):
  * `{"names": {"kk": "...", "ru": "...", "en": "..."}, "personality": "...", "ability": "jump|fly|roll|hide", "lines": {"kk": [...], "ru": [...], "en": [...]}}`
  * Replies recorded before `names` carry one `"name"` instead; it is kept as the Kazakh name.
+ *
+ * Since T40 the reply also carries the duel stats (all optional here, required in the strict schema):
+ * `"stats": {"power": 7, "speed": 3, "guard": 8, "agility": 2}` (numbers or numeric strings, any range: they go
+ * through [StatBudget.normalise]), `"why": {"kk": {"power": "...", ...}, "ru": {...}, "en": {...}}` (a few words per
+ * stat), `"view": "front|side|back"`, `"faces": "left|right"`. A reply without them (every sheet recorded before
+ * T40) gets `stats == null`, no reasons, no view: the duel then uses the archetype of its ability. A saved `sheet.json`
+ * (Bundle.json shape: `statReasons`, `baseView`, `facesRight`) reads the same way.
  */
 object SheetParser {
     const val LINES_PER_LANGUAGE = 5
+
+    /** A stat reason longer than this is cut (the fighter card has room for a few words). */
+    const val REASON_MAX_CHARS = 40
     val LANGUAGES = listOf("kk", "ru", "en")
 
     val FALLBACK_LINES: Map<String, List<String>> = mapOf(
@@ -57,12 +72,86 @@ object SheetParser {
                 if (arr is JsonArray) lines[lang.lowercase()] = arr.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             }
         }
-        return normalise(CharacterSheet(name, personality, ability, lines, names))
+        return normalise(
+            CharacterSheet(
+                name, personality, ability, lines, names,
+                stats = parseStats(obj["stats"]),
+                // The second key of each pair is the saved `sheet.json` shape (Bundle.json), which the Android host
+                // also reads through this parser for the bundled characters.
+                statReasons = parseReasons(obj["why"] ?: obj["statReasons"]),
+                baseView = parseView(obj.string("view") ?: obj.string("baseView")),
+                facesRight = parseFaces(obj.string("faces")) ?: (obj["facesRight"] as? JsonPrimitive)?.booleanOrNull,
+            ),
+        )
+    }
+
+    /**
+     * `{"power": 7, "speed": "3", ...}` -> the balanced stats; keys are matched case-insensitively, values may be
+     * numbers or numeric strings, anything else counts as missing. Null when there is no object or no usable score.
+     */
+    fun parseStats(element: JsonElement?): FighterStats? {
+        val obj = element as? JsonObject ?: return null
+        val raw = LinkedHashMap<Stat, Float>()
+        for ((key, value) in obj) {
+            val stat = statOf(key) ?: continue
+            val number = (value as? JsonPrimitive)?.contentOrNull?.trim()?.toFloatOrNull() ?: continue
+            raw[stat] = number
+        }
+        return StatBudget.normalise(raw)
+    }
+
+    /**
+     * `{"kk": {"power": "big claws", ...}, ...}` -> language -> stat -> reason, for [LANGUAGES] only. Each reason is
+     * trimmed and cut at [REASON_MAX_CHARS]; blank ones, unknown stats and languages left with none are dropped.
+     */
+    fun parseReasons(element: JsonElement?): Map<String, Map<Stat, String>> {
+        val obj = element as? JsonObject ?: return emptyMap()
+        val out = LinkedHashMap<String, Map<Stat, String>>()
+        for ((lang, perStat) in obj) {
+            val code = lang.trim().lowercase()
+            if (code !in LANGUAGES || code in out || perStat !is JsonObject) continue
+            val reasons = LinkedHashMap<Stat, String>()
+            for ((key, value) in perStat) {
+                val stat = statOf(key) ?: continue
+                val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(::cutReason) ?: continue
+                if (text.isNotEmpty() && stat !in reasons) reasons[stat] = text
+            }
+            if (reasons.isNotEmpty()) out[code] = reasons
+        }
+        return out
+    }
+
+    /** "front" / "Side" / " BACK " -> the view; anything else (or nothing) -> null. */
+    fun parseView(raw: String?): SpriteView? {
+        val key = raw?.trim()?.uppercase() ?: return null
+        return SpriteView.entries.firstOrNull { it.name == key }
+    }
+
+    /** "right" -> true, "left" -> false, anything else (or nothing) -> null. */
+    fun parseFaces(raw: String?): Boolean? = when (raw?.trim()?.lowercase()) {
+        "right" -> true
+        "left" -> false
+        else -> null
+    }
+
+    private fun statOf(key: String): Stat? {
+        val k = key.trim().uppercase()
+        return Stat.entries.firstOrNull { it.name == k }
+    }
+
+    /** Trimmed, at most [REASON_MAX_CHARS] characters, never ending in half a surrogate pair. */
+    private fun cutReason(raw: String): String {
+        val t = raw.trim()
+        if (t.length <= REASON_MAX_CHARS) return t
+        var cut = t.take(REASON_MAX_CHARS)
+        if (cut.last().isHighSurrogate()) cut = cut.dropLast(1)
+        return cut.trimEnd()
     }
 
     /**
      * The sheet a character ships with when the sheet call fails: a name derived from [ref] (its first word with
      * letters, capitalised: "cat-01" -> "Cat"; "Dos" when there is none), ability JUMP, the [FALLBACK_LINES].
+     * No stats: the duel uses the JUMP archetype.
      */
     fun fallback(ref: String): CharacterSheet {
         val word = ref.split('-', '_', ' ', '.').map { w -> w.filter { it.isLetter() } }.firstOrNull { it.isNotEmpty() }

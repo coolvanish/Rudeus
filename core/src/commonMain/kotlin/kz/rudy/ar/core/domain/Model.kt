@@ -188,7 +188,10 @@ data class CharacterSheet(
     val names: Map<String, String> = emptyMap(),
     // The four fields below are written to JSON only when set, so a sheet without them (every v1.0 sheet.json) is
     // byte-identical to what it was, even through `Bundle.json` (encodeDefaults = true).
-    /** Duel stats read from the picture and normalised to [FighterStats.BUDGET]; null on sheets written before T40. */
+    /**
+     * Duel stats read from the picture and normalised to [FighterStats.BUDGET] ([StatBudget]); null on sheets written
+     * before T40. The duel reads [fighter], which falls back to the archetype of [ability].
+     */
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val stats: FighterStats? = null,
     /** Language code -> stat -> why the picture earned it, a few words for a child ("big wings"). Empty before T40. */
