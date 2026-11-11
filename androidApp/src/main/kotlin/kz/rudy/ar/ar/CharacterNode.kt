@@ -18,6 +18,7 @@ import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.emote.EmotePose
 import kz.rudy.ar.core.geometry.Quat
+import kz.rudy.ar.core.session.BillboardPoser
 import kotlin.math.roundToInt
 
 // HAND-REVIEW: T02 — the character is ONE Y-only billboard quad: SceneView `PlaneNode` (geometry, not the ARCore
@@ -128,7 +129,8 @@ private fun spriteFromBitmap(
     )
 }
 
-// HAND-REVIEW: T52 — the maths is in BillboardPoser (it returns a NodePose); these three writes are the whole host side.
+// HAND-REVIEW: T52 — the maths is in BillboardPoser (now `core.session.BillboardPoser`, pinned by JVM tests): it returns
+// a NodePose, and these three writes are the whole host side.
 // The squash / stretch numbers and FLIP_DEADBAND went with it; FEET_DEPTH_BIAS stays here (a Pixel number, passed in).
 /**
  * Writes a [CharacterState] into the billboard node every frame. Keeps only the flip sign between frames.
