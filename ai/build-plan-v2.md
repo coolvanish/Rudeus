@@ -59,12 +59,12 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | Wave | Brief | Module | Tier | Depends on |
 |---|---|---|---|---|
 | 0 | contracts commit: `FighterStats`, `Stat`, `SpriteView`, sheet fields | core | orchestrator | — |
-| 1 | T39 ios-core-services (common file services on kotlinx-io) | core, Gradle (hand-review) | opus-high | — |
+| 1 | T39 ios-core-services (common file services on kotlinx-io) — **done** | core, Gradle (hand-review) | opus-high | — |
 | 1 | T40 sheet-fighter-stats — **done** | core/meta, core/domain | opus-high | contracts |
 | 1 | T41 sprite-views | core/emote, core/meta, core/pipeline, cli | opus-high | contracts |
 | 1 | T42 duel-physics | core/duel | opus-extra | contracts |
 | 1 | T43 thin-host-map (design, no code) — **done** | reads androidApp | fable-high | — |
-| 2 | T44 fighter-card-ui | shared | sonnet-high | T40 |
+| 2 | T44 fighter-card-ui — **done** | shared | sonnet-high | T40 |
 | 2 | T45 duel-rules-bot (match, specials, bot, headless sim) | core/duel | opus-extra | T42 |
 | 0 | `:shared` iOS klib targets (done in wave 0: 2 lines of common code + `Platform.ios.kt`) | shared, Gradle (hand-review) | orchestrator | — |
 | 4 | T46 ios-entry (`MainViewController`, the `UIKitView` bridge for the AR slot) — moved next to T51: it cannot be run without the Mac | shared/iosMain | opus-high | T43 |

@@ -1,6 +1,6 @@
 # T39 — ios-core-services
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md, "iOS readiness")
 gate: G1 — `:core` compiles for iOS and its file services exist there
