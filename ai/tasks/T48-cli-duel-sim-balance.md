@@ -1,6 +1,6 @@
 # T48 — cli-duel-sim-balance
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "The game": "tune with `cli duel`, not by feel")
 gate: G4 — no archetype wins more than 65 % against the field at equal budget; every match ends; 30 and 60 Hz agree

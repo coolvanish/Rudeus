@@ -1,7 +1,7 @@
 # v2 waves 1–3 — what only a human can do (2026-11-11)
 
 `claude/practical-dijkstra-2uveq7` (from `main` at 4f58c28): the first three waves of `ai/build-plan-v2.md`. Verify in
-the cloud container at be06cd8: core 650, shared 40, androidApp 3 tests, 0 failed; APK 63 MB; `:core` and `:shared`
+the cloud container after T48: core 687, shared 41, androidApp 3 tests, 0 failed; APK 63 MB; `:core` and `:shared`
 compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has no Pixel, no API key and no Mac.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 4f58c28..HEAD`)
@@ -18,6 +18,7 @@ compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has
 | T47 thin-host S1 | `GameLoop` moved verbatim to `core.session`, 22 tests; host diff 7 lines | needs your Pixel run |
 | T49 duel-ui | pure `duelHud` model, HUD, opponent picker, VS card, result; not wired into the app | done; look UNTESTED until T50 |
 | T52 thin-host S2 | billboard maths moved to `core.session.BillboardPoser` -> `NodePose`, 25 tests; `CharacterNode.kt` 252 -> 162 lines | needs your Pixel run |
+| T48 cli-duel-sim-balance | `cli duel match / series / matrix`, a 120 x 60 cm arena, tuned defaults, **wobble** (each hit taken in a round makes the next knockback larger; cleared every round; `wobblePerHit = 0` is the old physics), swept knockback (no tunnelling at any speed) | done; five acceptance rows still FAIL, see §3 G4 and §4 |
 | T53 thin-host S3a | brief only | waits for the two Pixel runs above |
 | T55 duel-bot-sim | seeded bot (EASY / NORMAL / HARD), `DuelRunner` (bots decide on a tick grid: identical matches at any frame length), `DuelSim`, three tuning arenas. Measured: plain dashes almost never ring anyone out (FLY / HIDE mirrors end 92–99 % of rounds by the clock): the numbers are not a game yet, T48 tunes them | done |
 
@@ -53,9 +54,15 @@ If T47 fails: `git revert 6102cbc`. If T52 fails: `git revert 8c97f42`; if still
 Repeat for at least five bundled refs, open each `build/views/<ref>/contact.png`, fill the table in its `README.md`.
 Verdict: at least 4 of 5 usable BACK and FRONT; else cut FRONT, then cut views (plan, "Risks and cuts" 1).
 
-### G4 duel core — partly PASS
-Matches always end, any frame split gives the same match, slots are fair (JVM tests in `core/duel`). The balance half
-(no archetype above 65 %) waits for T55 and T48.
+### G4 duel core — partly PASS (`docs/duel-balance.md`; reproduce: `./gradlew :cli:run --args="duel matrix --n 200 --out build/duel" -q`, about 80 s)
+| Criterion | Status | Evidence |
+|---|---|---|
+| Every match ends; any frame split gives the same match; sides are fair | PASS | `core/duel` tests; 57 600 of 57 600 matches identical at 16 and 33 ms |
+| Rounds are decided on the table: share ended by the clock | PASS: 0–1.9 % (was up to 97.8 %) | A3 |
+| Hits per ring-out 2..8 per pair | FAIL: 2.5–9.4, seven pairs above 8 (six on the 120 cm table, all with FLY) | A4 |
+| No ability above 65 % of the field | FAIL: ROLL 67–88 % on three arenas, FLY 7–26 % | A1 |
+| Every specialist viable (one stat at 8) | FAIL: 6–86 %, 45 cells out; SPEED barely matters | A6 |
+| Match length 30..120 s per pair | FAIL: 15–62 s; the 30 x 30 cm table plays in about 24 s | A5 |
 
 ### G5 duel on the Pixel, G6 iOS — not started
 G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
@@ -65,8 +72,17 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 2. **Copy.** `stats_title` «Кейіпкердің күші / Сила героя» repeats the stat «Күш / Сила»; `stats_from_drawing`; the duel
    strings the implementer was least sure of in Kazakh: `special_stomp` «Дүрс ет», `special_ram` «Зымыра», `duel_dash`
    «Ұмтыл», `duel_go` «Кеттік», `duel_title` «Сайыс». All in `shared/.../ui/Strings.kt` and the DESIGN.md copy table.
-3. **Hits ignore height** (T42): a jump never dodges a dash, a fighter on a book can be pushed from the table. Keep,
-   or make height matter (a physics change, before T48 tunes anything).
+3. **Duel rules** (each is a decision about the game, measured in `docs/duel-balance.md`; T57 implements what you pick):
+   a. **Wobble stays?** It is on. Without it a ring-out on a 120 cm table took 12–34 hits; with it 3.5–6.7.
+      Off switch: `wobblePerHit = 0f` in `DuelParams`.
+   b. **Stomp and ram spend the dash cooldown?** Today they do not, so they had to be weakened (0.85x, 1.1x) and
+      ROLL still dominates. Recommended: yes.
+   c. **SPEED does more than walking?** Today it only sets walk speed and barely matters to a fight, which is why
+      FLY (3/7/3/7) is the weakest. Recommended: SPEED also lengthens the dash. Or change FLY's archetype.
+   d. **A HIDE counter can be a one-hit ring-out on a 30 cm table** (2.0x slides about 9 cm, the mark is 7 cm from
+      the edge). Lower `counterKnockScale` (HIDE gets weaker) or accept it as the reward for a read.
+   e. **Hits ignore height** (T42): a jump never dodges a dash, a fighter on a book can be pushed from the table.
+   f. **The 30 x 30 cm table plays in about 24 s.** Accept, or lengthen by rule (marks farther from the edge).
 4. **Hooks.** `.claude/settings.json` is not in the repo checkout the cloud gets: copy `docs/claude-settings.json` to
    `.claude/settings.json` if you want the guards active there. `session-start.sh` still counts days to Nov 4.
 5. **CI.** The `ios-core` job (macOS, `:core:iosSimulatorArm64Test`) is manual: run it once from the Actions tab to see
@@ -86,6 +102,7 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 - An action issued on the first frame back from a tracking loss loses its event (no jump sound); v1.0 behaviour, pinned.
 - Android still saves characters through `FileCharacterFolder`, which cannot rewrite an existing id (latent: ids only grow).
 - `IoCharacterFolder` is not safe against power loss (no fsync), like `File*`.
+- A fighter that comes down into a gap narrower than its own 6 cm between two blocking objects stays overlapping one of them (found in T48; T42 physics; real scans can produce such gaps).
 - No key ships in a store build: a public release needs a key proxy (plan, "Not now").
 
 ## 7. Device results
