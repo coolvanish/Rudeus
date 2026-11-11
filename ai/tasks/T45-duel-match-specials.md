@@ -1,6 +1,6 @@
 # T45 — duel-match-specials
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md, "The game")
 gate: G4 — every match ends, 30 Hz and 60 Hz agree on the winner
