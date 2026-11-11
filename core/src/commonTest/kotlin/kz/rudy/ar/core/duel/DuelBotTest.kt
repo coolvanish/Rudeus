@@ -76,6 +76,50 @@ class DuelBotTest {
         assertTrue(kinds.keys.containsAll(listOf("MoveTo", "Dash", "Special")), "$kinds")
     }
 
+    /**
+     * [strong] against [weak] on [arena], equal stats and ability on both sides: [perAbility] matches with each ability
+     * (its archetype stats), marks swapped every other match. Returns the share [strong] won, and prints the line.
+     */
+    private fun share(strong: BotLevel, weak: BotLevel, arena: Level, name: String, perAbility: Int): Float {
+        var wins = 0
+        var losses = 0
+        var clock = 0
+        var ended = 0
+        val byAbility = ArrayList<String>()
+        for (ab in Ability.entries) {
+            val st = FighterStats.defaultFor(ab)
+            val s = DuelSim.series(Contestant("s", st, ab), Contestant("w", st, ab), arena, strong, weak, perAbility, 31_000L + ab.ordinal * 1_000L)
+            assertEquals(0, s.unfinished)
+            wins += s.winsA
+            losses += s.winsB
+            clock += s.timeouts
+            ended += s.ringOuts + s.timeouts
+            byAbility += "$ab ${s.winsA}/${s.matches}"
+        }
+        val n = perAbility * Ability.entries.size
+        println("strength $name $strong v $weak: ${wins * 100f / n} % won, ${losses * 100f / n} % lost, clock ${clock * 100 / maxOf(1, ended)} % ($byAbility)")
+        return wins.toFloat() / n
+    }
+
+    @Test
+    fun hardBeatsEasy() {
+        for (name in listOf("empty", "cup-and-book")) {
+            val won = share(BotLevel.HARD, BotLevel.EASY, DuelArenas.ALL.getValue(name), name, 50)
+            assertTrue(won >= 0.70f, "$name: HARD won $won of 200 against EASY")
+        }
+    }
+
+    @Test
+    fun normalIsBetweenEasyAndHard() {
+        for (name in listOf("empty", "cup-and-book")) {
+            val arena = DuelArenas.ALL.getValue(name)
+            val overEasy = share(BotLevel.NORMAL, BotLevel.EASY, arena, name, 50)
+            assertTrue(overEasy >= 0.60f, "$name: NORMAL won $overEasy against EASY")
+            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 50)
+            assertTrue(hardOver >= 0.55f, "$name: HARD won $hardOver against NORMAL")
+        }
+    }
+
     @Test
     fun sidesAreFair() {
         // NORMAL vs NORMAL, identical contestants (only their seeds differ), 400 matches swapping marks every other one.

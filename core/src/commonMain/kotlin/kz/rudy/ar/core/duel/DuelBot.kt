@@ -383,8 +383,9 @@ private class Brain(
 
     /**
      * The direction to push the opponent: toward its nearest edge; a bot that weighs ([BotSkill.weighsPush]) picks the
-     * best of that direction, the ones [TURNS] off it and the one it settled on before (a wider choice makes a bot
-     * that decides every tick dither round the opponent, and lose).
+     * best of that direction, the ones [TURN_COS] lists off it and the one it settled on before, among those whose
+     * spot keeps the bot at least as far inside as the opponent (so the opponent stays between it and the edge). A wider
+     * choice made a bot that decides every tick dither round the opponent, or walk along its own edge, and lose.
      */
     private fun choosePush(): Vec2 {
         val edge = board.nearest(them)
@@ -393,24 +394,31 @@ private class Brain(
         val standoff = contact + t.standoffGapRadii * r
         val ring = contact + t.clearanceRadii * r
         val bearing = if (dist > Vec2.EPS) (me - them) / dist else Vec2.ZERO
+        val foeDepth = board.inside(them)
         var best = nearest
         var bestCost = Float.MAX_VALUE
-        for (k in -1 until TURN_COS.size) {
-            val d = if (k < 0) {
-                lastPush?.takeIf { it.dot(nearest) >= TURN_COS.last() } ?: continue
-            } else {
+        // The nearest-edge push stands (as NORMAL's does, its spot clamped on the way); only a spot with the high ground,
+        // as deep inside as the opponent, may replace it.
+        for (k in 0 until TURN_COS.size + 1) {
+            val d = if (k < TURN_COS.size) {
                 Vec2(nearest.u * TURN_COS[k] - nearest.v * TURN_SIN[k], nearest.u * TURN_SIN[k] + nearest.v * TURN_COS[k])
+            } else {
+                lastPush?.takeIf { it.dot(nearest) >= TURN_COS.last() } ?: continue
             }
             val spot = them - d * standoff
-            if (board.inside(spot) < margin || keeps.any { k -> spot.distanceTo(k.c) < k.r }) continue
+            val depth = board.inside(spot)
+            if (k != 0 && (depth < margin || depth < foeDepth || keeps.any { k -> spot.distanceTo(k.c) < k.r })) continue
             var exit = board.exit(them, d)
             // Something in the way stops the push before the edge (a wall slam, not a ring-out).
             val end = them + d * exit
-            if (keeps.any { k -> !k.hole && near(them, end, k.c, k.bare + contact * 0.5f) }) exit += BLOCKED_PUSH_RADII * r
+            val blocked = keeps.any { k -> !k.hole && near(them, end, k.c, k.bare + contact * 0.5f) }
+            if (blocked) exit += BLOCKED_PUSH_RADII * r
+            val ground = Physics.groundHeight(arena, spot, self.body.state.h, physics)
+            val high = ground != null && ground - foe.body.state.h > params.fromAboveMinM
+            if (k != 0 && !high) continue
             val walk = spot.distanceTo(me) + (1f - bearing.dot(-d)) * ring
             var cost = exit + t.walkCost * walk
-            val ground = Physics.groundHeight(arena, spot, self.body.state.h, physics)
-            if (ground != null && ground - foe.body.state.h > params.fromAboveMinM) cost -= t.highGroundBonusRadii * r
+            if (high) cost -= t.highGroundBonusRadii * r
             val settled = lastPush
             if (settled != null && d.dot(settled) < SAME_DIRECTION_COS) cost += t.switchCostRadii * r
             if (cost < bestCost) {
@@ -429,7 +437,10 @@ private class Brain(
         if (facing == Vec2.ZERO || dist < Vec2.EPS) return false
         val ahead = toFoe / dist
         if (facing.dot(ahead) < skill.alignCos || facing.dot(push) < skill.alignCos) return false
-        if (board.inside(them) > t.ramNearEdgeRadii * r || board.inside(me) < t.ramRoomRadii * r) return false
+        // A bot that only rams when a miss would still end on the table rams wherever that holds; the others wait for the
+        // opponent near an edge (where a ram that misses carries them off, unless the opponent is in its path).
+        if (!skill.safeRamsOnly && board.inside(them) > t.ramNearEdgeRadii * r) return false
+        if (board.inside(me) < t.ramRoomRadii * r) return false
         if (gap > ramReach * skill.dashRangeShare || abs(toFoe.dot(facing.perp())) > t.inPathLateralRadii * r) return false
         if (!clearLine(me, them)) return false
         val end = me + facing * ramReach
