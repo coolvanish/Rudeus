@@ -381,7 +381,11 @@ private class Brain(
 
     // -- where to push -------------------------------------------------------------------------------------------
 
-    /** The direction to push the opponent: toward its nearest edge, or (HARD) the best of every direction. */
+    /**
+     * The direction to push the opponent: toward its nearest edge; a bot that weighs ([BotSkill.weighsPush]) picks the
+     * best of that direction, the ones [TURNS] off it and the one it settled on before (a wider choice makes a bot
+     * that decides every tick dither round the opponent, and lose).
+     */
     private fun choosePush(): Vec2 {
         val edge = board.nearest(them)
         val nearest = if (edge < 0) Vec2(1f, 0f) else board.outward(edge)
@@ -391,11 +395,11 @@ private class Brain(
         val bearing = if (dist > Vec2.EPS) (me - them) / dist else Vec2.ZERO
         var best = nearest
         var bestCost = Float.MAX_VALUE
-        for (k in -2 until DIRS) {
-            val d = when (k) {
-                -2 -> nearest
-                -1 -> lastPush ?: continue
-                else -> Vec2(DIR_U[k], DIR_V[k])
+        for (k in -1 until TURN_COS.size) {
+            val d = if (k < 0) {
+                lastPush?.takeIf { it.dot(nearest) >= TURN_COS.last() } ?: continue
+            } else {
+                Vec2(nearest.u * TURN_COS[k] - nearest.v * TURN_SIN[k], nearest.u * TURN_SIN[k] + nearest.v * TURN_COS[k])
             }
             val spot = them - d * standoff
             if (board.inside(spot) < margin || keeps.any { k -> spot.distanceTo(k.c) < k.r }) continue
@@ -589,10 +593,9 @@ private class Brain(
     }
 
     private companion object {
-        /** Directions a HARD bot weighs: every 22.5°. */
-        const val DIRS = 16
-        val DIR_U = floatArrayOf(1f, C22, C45, S22, 0f, -S22, -C45, -C22, -1f, -C22, -C45, -S22, 0f, S22, C45, C22)
-        val DIR_V = floatArrayOf(0f, S22, C45, C22, 1f, C22, C45, S22, 0f, -S22, -C45, -C22, -1f, -C22, -C45, -S22)
+        /** The turns off the nearest-edge push a weighing bot considers: 0, +-22.5°, +-45°. */
+        val TURN_COS = floatArrayOf(1f, C22, C22, C45, C45)
+        val TURN_SIN = floatArrayOf(0f, S22, -S22, C45, -C45)
 
         /** Two push directions closer than this (cosine, about 11°) are the same one. */
         const val SAME_DIRECTION_COS = 0.98f

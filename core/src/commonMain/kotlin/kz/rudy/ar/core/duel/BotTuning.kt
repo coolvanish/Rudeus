@@ -48,7 +48,7 @@ data class BotTuning(
     val ramNearEdgeRadii: Float = 5f,
     val ramRoomRadii: Float = 3f,
     val walkCost: Float = 0.5f,
-    val switchCostRadii: Float = 0.5f,
+    val switchCostRadii: Float = 1f,
     val highGroundBonusRadii: Float = 3f,
     val leadShare: Float = 1f,
     val easy: BotSkill = BotSkill.EASY,
