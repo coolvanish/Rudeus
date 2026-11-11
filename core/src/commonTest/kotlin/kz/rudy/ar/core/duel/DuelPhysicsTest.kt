@@ -65,7 +65,8 @@ class DuelPhysicsTest {
         }
         for ((p, r) in byPower.withIndex()) {
             assertEquals(P.knockSpeedMpsFor(stats(power = p + 1), FighterStats.BALANCED), r.second.speedMps, "power ${p + 1}")
-            assertEquals(Hit("a", "b", r.second.speedMps, fromAbove = false), r.second)
+            // 1 mm apart: the first 8 ms sub-step (2.4 mm of dash) already overlaps.
+            assertEquals(Hit("a", "b", r.second.speedMps, fromAbove = false, atMs = 8L), r.second)
         }
         // 5 vs 5: 0.25 m/s decaying with tau 180 ms slides about 0.25 * 0.18 = 4.5 cm.
         val balanced = byPower[4].first
@@ -81,7 +82,8 @@ class DuelPhysicsTest {
         val t = runDuel(start, OPEN, 3000L) { s ->
             if (s.timeMs == 0L || s.timeMs == again) inputs("a" to Dash()) else emptyMap()
         }
-        assertEquals(listOf(DashStarted("a"), DashStarted("a")), t.all.filterIsInstance<DashStarted>())
+        // DashStarted is stamped with the grid time its input was applied at.
+        assertEquals(listOf(DashStarted("a", 0L), DashStarted("a", again)), t.all.filterIsInstance<DashStarted>())
         val hits = t.all.filterIsInstance<Hit>()
         assertEquals(2, hits.size, "one hit per dash: ${t.all}")
         assertTrue(hits.all { it.attacker == "a" && it.victim == "b" && !it.fromAbove })
@@ -113,7 +115,7 @@ class DuelPhysicsTest {
             fighter("b", Vec2(0.04f, 0f), weak, facing = Vec2(-1f, 0f)),
         )
         val t = runDuel(start, OPEN, 2500L, script = atStart("a" to Dash(), "b" to Dash()))
-        assertEquals(listOf<DuelEvent>(Clash("a", "b")), t.all.filter { it is Clash || it is Hit }, "a clash, no hits")
+        assertEquals(listOf<DuelEvent>(clash("a", "b")), t.all.filter { it is Clash || it is Hit }.untimed(), "a clash, no hits")
         val k = t.indexOf { it is Clash }
         val at = t.states[k]
         assertEquals(0L, at.a.dashMs)
@@ -134,7 +136,7 @@ class DuelPhysicsTest {
         val cooldown = P.cooldownMsFor(FighterStats.BALANCED)
         assertEquals(1500L, cooldown)
         val t = runDuel(start, OPEN, 2000L) { s -> if (s.timeMs == 0L || s.timeMs >= 400L) inputs("a" to Dash()) else emptyMap() }
-        val starts = t.events.withIndex().filter { (_, ev) -> DashStarted("a") in ev }.map { t.states[it.index - 1].timeMs }
+        val starts = t.events.withIndex().filter { (_, ev) -> ev.of<DashStarted>("a").isNotEmpty() }.map { t.states[it.index - 1].timeMs }
         assertEquals(2, starts.size, "the first dash and the first one after the cooldown: $starts")
         assertEquals(0L, starts[0])
         assertTrue(starts[1] in cooldown..cooldown + 16L, "second dash at ${starts[1]} ms, cooldown $cooldown")
@@ -150,7 +152,7 @@ class DuelPhysicsTest {
             val t = runDuel(DuelState(fighter("a", Vec2.ZERO, st), fighter("b", Vec2(0f, 0.5f))), OPEN, 2500L, dtMs = 8L) {
                 inputs("a" to Dash())
             }
-            val times = t.events.withIndex().filter { (_, ev) -> DashStarted("a") in ev }.map { t.states[it.index - 1].timeMs }
+            val times = t.all.of<DashStarted>("a").map { it.atMs }
             assertTrue(times.size >= 2, "agility $agility re-dashed: $times")
             val wait = times[1] - times[0]
             assertTrue(abs(wait - P.cooldownMsFor(st)) <= P.subStepMs, "agility $agility waited $wait, cooldown ${P.cooldownMsFor(st)}")
@@ -192,7 +194,7 @@ class DuelPhysicsTest {
         val cup = cup("cup-1", Vec2(0.14f, 0f))
         val level = Level(listOf(cup))
         val t = runDuel(hitSetup(), level, 2500L, script = atStart("a" to Dash()))
-        assertEquals(listOf<DuelEvent>(Hit("a", "b", 0.25f, false), WallSlam("b", "cup-1")), t.all.filter { it is Hit || it is WallSlam })
+        assertEquals(listOf<DuelEvent>(Hit("a", "b", 0.25f, false, 0L), wallSlam("b", "cup-1")), t.all.filter { it is Hit || it is WallSlam }.untimed())
         val slam = t.indexOf { it is WallSlam }
         val slammed = t.states[slam].b
         assertEquals(Vec2.ZERO, slammed.knock, "the slam zeroes the knockback")
@@ -236,7 +238,7 @@ class DuelPhysicsTest {
         assertTrue(glance.states.all { !wall.footprint.contains(it.b.pos) && distanceToPolygon(it.b.pos, wall.footprint) >= R - 1e-3f })
 
         val (steep, _) = knockAlongWall(30.0)
-        assertEquals(listOf<DuelEvent>(WallSlam("b", "wall-1")), steep.all.filterIsInstance<WallSlam>(), "30 degrees slams")
+        assertEquals(listOf<DuelEvent>(wallSlam("b", "wall-1")), steep.all.filterIsInstance<WallSlam>().untimed(), "30 degrees slams")
     }
 
     @Test
@@ -249,9 +251,11 @@ class DuelPhysicsTest {
             fighter("b", Vec2(0.04f + NEAR, 0f), FighterStats(5, 5, 1, 9)),
         )
         val t = runDuel(start, level, 4000L, script = atStart("a" to Dash()))
-        assertEquals(listOf<DuelEvent>(RingOut("b")), t.all.filterIsInstance<RingOut>(), "one ring-out, for b only")
+        assertEquals(listOf<DuelEvent>(ringOut("b")), t.all.filterIsInstance<RingOut>().untimed(), "one ring-out, for b only")
         val k = t.indexOf { it is RingOut }
         assertTrue(t.indexOf { it is Hit } in 1 until k)
+        val at = t.all.filterIsInstance<RingOut>().single().atMs
+        assertTrue(at > t.states[k - 1].timeMs && at <= t.states[k].timeMs && at % P.subStepMs == 0L, "ring-out at $at ms")
         val out = t.states[k].b
         assertEquals(Mode.FALLING, out.body.state.mode, "the ring-out step is the step the fall starts")
         assertTrue(Physics.isOverCliff(level, out.pos))
@@ -273,14 +277,14 @@ class DuelPhysicsTest {
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.3f), spawn = Vec2(-0.1f, 0f))
         val start = DuelState(fighter("a", Vec2(0.1f, 0f)), fighter("b", Vec2(-0.1f, 0.1f)))
         val t = runDuel(start, level, 4000L, script = atStart("a" to MoveTo(Vec2(0.3f, 0f))))
-        assertEquals(listOf<DuelEvent>(RingOut("a")), t.all.filterIsInstance<RingOut>())
+        assertEquals(listOf<DuelEvent>(ringOut("a")), t.all.filterIsInstance<RingOut>().untimed())
         val k = t.indexOf { it is RingOut }
         assertEquals(Mode.FALLING, t.states[k].a.body.state.mode)
         assertEquals(Mode.WALKING, t.states[k - 1].a.body.state.mode)
         assertEquals(level.spawn, t.last.a.pos, "respawned by Physics")
 
-        // FLY floats over the edge (Physics never sets it FALLING there): its ring-out is the step its feet sink below
-        // the table plane out there, still exactly one, and from then on it cannot steer back.
+        // FLY floats over the edge (Physics never sets it FALLING there), but crossing the edge is the ring-out for
+        // everyone: once, on the step its centre leaves the table, high in the air, and from then on it cannot steer back.
         val flyer = start.copy(a = fighter("a", Vec2(0.1f, 0f), ability = Ability.FLY))
         val back = MoveTo(Vec2(0.1f, 0f))
         var ringOutSeen = false
@@ -292,16 +296,17 @@ class DuelPhysicsTest {
                 else -> emptyMap()
             }
         }
-        assertEquals(listOf<DuelEvent>(RingOut("a")), flight.all.filterIsInstance<RingOut>())
+        assertEquals(listOf<DuelEvent>(ringOut("a")), flight.all.filterIsInstance<RingOut>().untimed())
         val f = flight.indexOf { it is RingOut }
-        assertTrue(flight.states.subList(1, f).any { it.a.body.state.mode == Mode.JUMPING && Physics.isOverCliff(level, it.a.pos) }, "flew over the edge")
+        assertTrue(flight.states.subList(0, f).all { level.boundary!!.contains(it.a.pos) }, "on the table until the ring-out step")
         assertTrue(flight.states.none { it.a.body.state.mode == Mode.FALLING })
-        val sinking = flight.states[f].a
-        assertEquals(Mode.JUMPING, sinking.body.state.mode)
-        assertTrue(sinking.body.state.h < 0f && Physics.isOverCliff(level, sinking.pos))
-        assertNull(sinking.body.state.target, "out: the walk target is gone")
+        val leaving = flight.states[f].a
+        assertEquals(Mode.JUMPING, leaving.body.state.mode)
+        assertTrue(leaving.body.state.h > 0.05f && !level.boundary!!.contains(leaving.pos), "out while high in the air: ${leaving.body.state}")
+        assertNull(leaving.body.state.target, "out: the walk target is gone")
         val untilRespawn = flight.states.drop(f).takeWhile { it.a.body.state.mode != Mode.IDLE }
-        assertTrue(untilRespawn.all { it.a.pos == sinking.pos && it.a.body.state.target == null }, "the MoveTo back was ignored")
+        assertTrue(untilRespawn.size > 10)
+        assertTrue(untilRespawn.all { it.a.pos == leaving.pos && it.a.body.state.target == null }, "the MoveTo back was ignored")
         val respawned = flight.states[f + untilRespawn.size].a
         assertEquals(level.spawn, respawned.pos, "respawned by Physics")
         assertTrue(DuelPhysics.acceptsInput(respawned, level), "back in the game after the respawn")
@@ -310,6 +315,87 @@ class DuelPhysicsTest {
         val endless = runDuel(start, OPEN, 4000L, script = atStart("a" to MoveTo(Vec2(0.3f, 0f))))
         assertTrue(endless.all.none { it is RingOut })
         assertEquals(Vec2(0.3f, 0f), endless.last.a.pos)
+    }
+
+    @Test
+    fun flyKnockedPastTheEdgeIsOutEvenWhileAirborne() {
+        // The review's case: edge at u = 0.15; FLY b jumps at t = 0, a's POWER 10 dash (t = 96) hits it in the air at
+        // 0.566 m/s, b floats past the edge and later tries to MoveTo back onto the table.
+        val spawn = Vec2(-0.1f, 0f)
+        val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.3f), spawn = spawn)
+        fun play(ability: Ability): Trace {
+            val start = DuelState(
+                fighter("a", Vec2(0.1f - NEAR - 0.01f, 0f), FighterStats(10, 1, 1, 8)),
+                fighter("b", Vec2(0.1f, 0f), FighterStats(8, 1, 1, 10), ability = ability),
+            )
+            return runDuel(start, level, 4000L) { s ->
+                when {
+                    s.timeMs == 0L -> inputs("b" to Jump)
+                    s.timeMs == 96L -> inputs("a" to Dash())
+                    s.timeMs >= 600L -> inputs("b" to MoveTo(Vec2(0.1f, 0f)))
+                    else -> emptyMap()
+                }
+            }
+        }
+        val fly = play(Ability.FLY)
+        val hit = fly.all.filterIsInstance<Hit>().single()
+        assertEquals(0.566f, hit.speedMps, 1e-3f)
+        val rings = fly.all.filterIsInstance<RingOut>()
+        assertEquals(listOf("b"), rings.map { it.id }, "${fly.all}")
+        val k = fly.indexOf { it is RingOut }
+        val boundary = level.boundary!!
+        assertTrue(boundary.contains(fly.states[k - 1].b.pos) && !boundary.contains(fly.states[k].b.pos), "rung out on the step it crossed")
+        assertEquals(Mode.JUMPING, fly.states[k].b.body.state.mode, "still in the air")
+        assertTrue(fly.states[k].b.body.state.h > 0f)
+        val away = fly.states.drop(k).takeWhile { it.b.body.state.mode != Mode.IDLE }
+        assertTrue(away.all { !boundary.contains(it.b.pos) }, "never back over the table before the respawn")
+        assertEquals(spawn, fly.states[k + away.size].b.pos, "respawned by Physics, not walked back")
+        // A plain jumper in the same script rings out on the very same sub-step: the ability does not matter.
+        val jump = play(Ability.JUMP)
+        assertEquals(rings, jump.all.filterIsInstance<RingOut>())
+    }
+
+    @Test
+    fun aFlyGlidingOverAHoleIsNotOut() {
+        // A CLIFF hole inside the table, u in [-0.04, 0.04]: a FLY jump glides across it above the table plane.
+        val hole = LevelObject("hole-1", "hole", ObjectKind.CLIFF, Polygon.rect(Vec2.ZERO, 0.08f, 0.1f), 0f)
+        val level = Level(listOf(hole), boundary = Polygon.rect(Vec2.ZERO, 0.6f, 0.4f), spawn = Vec2(-0.2f, 0.1f))
+        fun cross(ability: Ability) = runDuel(
+            DuelState(fighter("a", Vec2(-0.06f, 0f), ability = ability), fighter("b", Vec2(0.2f, 0.15f))), level, 4000L,
+        ) { s ->
+            when (s.timeMs) {
+                0L -> inputs("a" to MoveTo(Vec2(0.17f, 0f)))
+                16L -> inputs("a" to Jump)
+                else -> emptyMap()
+            }
+        }
+        val glide = cross(Ability.FLY)
+        assertTrue(glide.states.any { Physics.isOverCliff(level, it.a.pos) && it.a.body.state.mode == Mode.JUMPING }, "over the hole")
+        assertTrue(glide.all.none { it is RingOut }, "${glide.all}")
+        assertEquals(Vec2(0.17f, 0f), glide.last.a.pos)
+        assertEquals(Mode.IDLE, glide.last.a.body.state.mode)
+        // A plain jump does fall into it: one ring-out, then Physics respawns it.
+        val drop = cross(Ability.JUMP)
+        assertEquals(listOf<DuelEvent>(ringOut("a")), drop.all.filterIsInstance<RingOut>().untimed())
+        assertEquals(level.spawn, drop.last.a.pos)
+    }
+
+    @Test
+    fun nonFiniteInputIsIgnored() {
+        val start = hitSetup()
+        val none = DuelPhysics.step(start, OPEN, 16L)
+        val bad = listOf(
+            Dash(Vec2(Float.NaN, 0f)), Dash(Vec2(0f, Float.POSITIVE_INFINITY)),
+            MoveTo(Vec2(Float.NaN, 0f)), MoveTo(Vec2(Float.NEGATIVE_INFINITY, 0.1f)),
+        )
+        for (input in bad) {
+            assertEquals(none, DuelPhysics.step(start, OPEN, 16L, inputs("a" to input, "b" to input)), "$input")
+        }
+        val t = runDuel(start, OPEN, 500L) { inputs("a" to Dash(Vec2(Float.NaN, 0f)), "b" to MoveTo(Vec2(0f, Float.NaN))) }
+        assertTrue(t.all.isEmpty(), "${t.all}")
+        assertTrue(t.states.all { it.a.pos == start.a.pos && it.b.pos == start.b.pos })
+        // A zero direction is still "along facing", not an error.
+        assertEquals(listOf<DuelEvent>(dashStarted("a")), DuelPhysics.step(start, OPEN, 16L, inputs("a" to Dash(Vec2.ZERO))).events.filterIsInstance<DashStarted>().untimed())
     }
 
     @Test
@@ -333,13 +419,13 @@ class DuelPhysicsTest {
             assertTrue(s.b.body.state.mode != Mode.JUMPING, "jumped while stunned")
             assertEquals(0L, s.b.dashMs)
         }
-        assertTrue(t.all.none { it == DashStarted("b") })
+        assertTrue(t.all.of<DashStarted>("b").isEmpty())
         // Once the stun is over the same inputs work.
         val after = t.states[free]
         assertFalse(DuelPhysics.isStunned(after.b))
         val moved = DuelPhysics.step(after, OPEN, 16L, inputs("b" to MoveTo(Vec2(0.3f, 0f))))
         assertEquals(Vec2(0.3f, 0f), moved.state.b.body.state.target)
-        assertEquals(listOf<DuelEvent>(DashStarted("b")), DuelPhysics.step(after, OPEN, 16L, inputs("b" to Dash())).events)
+        assertEquals(listOf<DuelEvent>(dashStarted("b")), DuelPhysics.step(after, OPEN, 16L, inputs("b" to Dash())).events.untimed())
 
         // A dashing fighter ignores input too.
         val dashing = DuelPhysics.step(DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(0f, 0.5f))), OPEN, 16L, inputs("a" to Dash())).state

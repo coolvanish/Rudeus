@@ -9,6 +9,7 @@ import kz.rudy.ar.core.duel.DuelInput.Dash
 import kz.rudy.ar.core.physics.PhysicsParams
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class DuelParamsTest {
@@ -72,14 +73,40 @@ class DuelParamsTest {
     }
 
     @Test
+    fun badParamsAreRejectedByName() {
+        // Each of these would divide by zero, reverse a push, stun forever or turn positions into NaN.
+        val bad: List<Pair<String, () -> DuelParams>> = listOf(
+            "guardBase" to { DuelParams(guardBase = -0.09f) }, // GUARD 1: zero divisor, infinite knockback
+            "powerPerPoint" to { DuelParams(powerPerPoint = -0.2f) }, // POWER 10 pushes backwards
+            "speedBase" to { DuelParams(speedBase = -1f) },
+            "cooldownPerAgility" to { DuelParams(cooldownPerAgility = 0.2f) }, // AGILITY 10: negative cooldown
+            "stunBase" to { DuelParams(stunBase = Float.NaN) },
+            "knockStunMps" to { DuelParams(knockStunMps = -0.01f) }, // the stun timer would never run
+            "knockStopMps" to { DuelParams(knockStopMps = 0f) },
+            "duelSpeedScale" to { DuelParams(duelSpeedScale = 0f) },
+            "fromAboveScale" to { DuelParams(fromAboveScale = -1.25f) },
+            "dashSpeedMps" to { DuelParams(dashSpeedMps = -0.3f) },
+            "knockTauMs" to { DuelParams(knockTauMs = 0L) },
+            "subStepMs" to { DuelParams(subStepMs = 16L) },
+        )
+        for ((name, make) in bad) {
+            val e = assertFailsWith<IllegalArgumentException>(name) { make() }
+            assertTrue(name in (e.message ?: ""), "the message names $name: ${e.message}")
+        }
+        // The defaults, the floor set and a size-3 set are all valid.
+        DuelParams.forSurface(Surface.FLOOR, 3f)
+        DuelParams(knockStunMps = 0f)
+    }
+
+    @Test
     fun duelStateRoundTripsThroughJson() {
         val start = DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(NEAR, 0f), FighterStats(3, 7, 6, 4)))
         val mid = DuelPhysics.step(start, OPEN, 33L, inputs("a" to Dash(Vec2(1f, 0f)), "b" to DuelInput.Jump))
         val step = DuelStep(
             mid.state,
             listOf(
-                DuelEvent.DashStarted("a"), DuelEvent.Hit("a", "b", 0.25f, true), DuelEvent.Clash("a", "b"),
-                DuelEvent.WallSlam("b", "cup-1"), DuelEvent.RingOut("b"),
+                DuelEvent.DashStarted("a", 0L), DuelEvent.Hit("a", "b", 0.25f, true, 8L), DuelEvent.Clash("a", "b", 16L),
+                DuelEvent.WallSlam("b", "cup-1", 24L), DuelEvent.RingOut("b", 32L),
             ),
         )
         val text = Json.encodeToString(DuelStep.serializer(), step)

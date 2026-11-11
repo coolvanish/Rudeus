@@ -31,17 +31,17 @@ private fun m(p: Vec2) = Vec2(-p.u, p.v)
 private fun swapIds(e: DuelEvent, x: String = "a", y: String = "b"): DuelEvent {
     fun s(id: String) = if (id == x) y else if (id == y) x else id
     return when (e) {
-        is DashStarted -> DashStarted(s(e.id))
+        is DashStarted -> e.copy(id = s(e.id))
         is Hit -> e.copy(attacker = s(e.attacker), victim = s(e.victim))
-        is Clash -> Clash(s(e.a), s(e.b))
+        is Clash -> e.copy(a = s(e.a), b = s(e.b))
         is WallSlam -> e.copy(id = s(e.id))
-        is RingOut -> RingOut(s(e.id))
+        is RingOut -> e.copy(id = s(e.id))
     }
 }
 
 /** Order-free form of one step's events (a clash names both fighters either way round). */
 private fun bag(events: List<DuelEvent>): List<String> =
-    events.map { if (it is Clash) Clash(minOf(it.a, it.b), maxOf(it.a, it.b)) else it }.map { it.toString() }.sorted()
+    events.map { if (it is Clash) it.copy(a = minOf(it.a, it.b), b = maxOf(it.a, it.b)) else it }.map { it.toString() }.sorted()
 
 /** A level symmetric under [m]: rect footprints are exactly mirrored in floating point. */
 private val mirrorLevel = Level(
@@ -199,14 +199,42 @@ class DuelScenarioTest {
             assertEquals(mirroredEvents, y.events[i], "step $i")
         }
 
-        // The slot a fighter sits in does not matter either: swap a and b in the state, same per-fighter result.
+        // The slot a fighter sits in does not matter either: swap a and b in the state, same per-fighter result and the
+        // very same (canonically ordered) event list.
         val swapped = runDuel(DuelState(lop.b, lop.a), mirrorLevel, 6000L) { s -> lopScript[s.timeMs] ?: emptyMap() }
         for ((i, s) in x.states.withIndex()) {
             val r = swapped.states[i]
             assertEquals(s.a, r.b, "a at ${s.timeMs} ms")
             assertEquals(s.b, r.a, "b at ${s.timeMs} ms")
-            assertEquals(bag(x.events[i]), bag(swapped.events[i]), "events of step $i")
+            assertEquals(x.events[i], swapped.events[i], "events of step $i")
         }
+    }
+
+    @Test
+    fun mirroredPowerTenClashRingsBothOutAtOnce() {
+        // A 20 cm table (edges at u = +-0.1): two POWER 10 / GUARD 1 fighters dash into each other and both fly off.
+        val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
+        val st = FighterStats(10, 1, 1, 8)
+        val left = fighter("a", Vec2(-0.04f, 0f), st, facing = Vec2(1f, 0f))
+        val right = fighter("b", Vec2(0.04f, 0f), st, facing = Vec2(-1f, 0f))
+        fun play(state: DuelState, dt: Long) = runDuel(state, level, 1500L, dtMs = dt, script = atStart("a" to Dash(), "b" to Dash())).all
+        val events = play(DuelState(left, right), 16L)
+        assertEquals(1, events.count { it is Clash }, "$events")
+        val rings = events.filterIsInstance<RingOut>()
+        assertEquals(listOf("a", "b"), rings.map { it.id })
+        assertEquals(rings[0].atMs, rings[1].atMs, "both left the table in the same sub-step")
+        // Slots swapped: the very same list.
+        assertEquals(events, play(DuelState(right, left), 16L))
+        // The fighters swapped (a now on the right), names swapped back: the same list again.
+        val mirrored = DuelState(
+            fighter("a", Vec2(0.04f, 0f), st, facing = Vec2(-1f, 0f)),
+            fighter("b", Vec2(-0.04f, 0f), st, facing = Vec2(1f, 0f)),
+        )
+        val renamed = play(mirrored, 16L).map { swapIds(it) }
+        assertEquals(bag(events), bag(renamed))
+        assertEquals(events.map { it.atMs }, renamed.map { it.atMs })
+        // 16 ms or 33 ms frames: the same events at the same simulated times.
+        assertEquals(events, play(DuelState(left, right), 33L))
     }
 
     @Test
@@ -234,18 +262,28 @@ class DuelScenarioTest {
                 assertTrue(all.all { it.isFinite() }, "non-finite fighter ${f.id} at ${s.timeMs} ms: $f")
                 assertTrue(f.stunMs >= 0 && f.dashMs >= 0 && f.dashCooldownMs >= 0, "negative timer: $f")
                 val grounded = st.mode == Mode.IDLE || st.mode == Mode.WALKING
-                // Grounded: exactly outside every footprint that blocks at its feet. Airborne: Physics resolves against
-                // the feet height before the vertical move, so allow one sub-step of vertical travel.
-                val feet = if (grounded) st.h else st.h + 0.01f
-                val inside = level.objects.firstOrNull { Physics.blocks(it, feet) && it.footprint.contains(st.pos) }
-                assertEquals(null, inside?.id, "${f.id} inside ${inside?.id} at ${s.timeMs} ms: $st")
+                // The whole circle (1 mm tolerance) is clear of every footprint that blocks at the feet height, grounded
+                // or airborne.
+                val inside = level.objects.firstOrNull {
+                    Physics.blocks(it, st.h) && (it.footprint.contains(st.pos) || distanceToPolygon(st.pos, it.footprint) < st.radiusM - 0.001f)
+                }
+                assertEquals(null, inside?.id, "${f.id} overlaps ${inside?.id} at ${s.timeMs} ms: $st")
                 if (grounded) assertTrue(!Physics.isOverCliff(level, st.pos), "${f.id} stands past the edge at ${s.timeMs} ms: $st")
                 if (st.mode == Mode.PAUSED) assertEquals(before, f, "a paused fighter is frozen")
-                // Every fall over the edge has exactly one RingOut, on the step it starts.
-                val wasOut = isOut(before, level)
-                val nowOut = isOut(f, level)
-                val rang = out.events.count { it == RingOut(f.id) }
-                assertEquals(if (!wasOut && nowOut) 1 else 0, rang, "${f.id} ring-out at ${s.timeMs} ms: $before -> $f")
+                // The edge, judged here by plain polygon containment: a centre that leaves the table rings out on that
+                // very step, and an excursion only ends with the respawn at the spawn point.
+                val boundary = level.boundary!!
+                val wasOn = boundary.contains(before.pos)
+                val isOn = boundary.contains(st.pos)
+                val rang = out.events.of<RingOut>(f.id)
+                if (wasOn && !isOn) assertEquals(1, rang.size, "${f.id} left the table at ${s.timeMs} ms without a RingOut: $before -> $f")
+                if (!wasOn && isOn) {
+                    // Only Physics' respawn brings it back (separation may have nudged it off the spawn point since).
+                    assertTrue(grounded && st.pos.distanceTo(level.spawn) <= 4 * R, "${f.id} came back onto the table without a respawn at ${s.timeMs} ms: $before -> $f")
+                }
+                // And no RingOut without leaving: every RingOut is a centre that just left the table (no holes here).
+                if (rang.isNotEmpty()) assertTrue(wasOn && !isOn && rang.size == 1, "${f.id} RingOut without leaving at ${s.timeMs} ms: $before -> $f")
+                for (r in rang) assertTrue(r.atMs > prev.timeMs - DuelParams.DEFAULT.subStepMs && r.atMs <= s.timeMs, "RingOut time ${r.atMs}")
             }
             val (a, b) = s.a.body.state to s.b.body.state
             val ground = setOf(Mode.IDLE, Mode.WALKING)
@@ -271,19 +309,12 @@ class DuelScenarioTest {
         println("fuzz: ${(steps / best).toLong()} steps/s (${first.timeMs} ms of duel in ${best}s)")
     }
 
-    /** Committed to a fall off the table (written out here, not taken from DuelPhysics.isOut). */
-    private fun isOut(f: DuelFighter, level: Level): Boolean {
-        val st = f.body.state
-        val over = Physics.isOverCliff(level, st.pos)
-        return st.mode == Mode.RESPAWNING || (st.mode == Mode.FALLING && over) || (st.mode == Mode.JUMPING && st.h < 0f && over)
-    }
-
     /** Random play from a fixed seed: frames of 16..50 ms, seeking and random inputs, host pauses. Returns the end state. */
     private fun fuzz(
         level: Level,
         seed: Int,
         steps: Int,
-        check: (prev: Map<String, DuelFighter>, out: DuelStep, inputs: Map<String, DuelInput>) -> Unit,
+        check: (prev: DuelState, out: DuelStep, inputs: Map<String, DuelInput>) -> Unit,
     ): DuelState {
         val rnd = Random(seed)
         fun randomStats(): FighterStats {
@@ -335,7 +366,7 @@ class DuelScenarioTest {
                 }
                 if (input != null) inputs[me.id] = input
             }
-            val prev = mapOf(state.a.id to state.a, state.b.id to state.b)
+            val prev = state
             val dt = rnd.nextLong(16L, 51L)
             val out = DuelPhysics.step(state, level, dt, inputs)
             // Simulated time only: the clock moves by exactly the dt it is given (T45's match clock runs on it).

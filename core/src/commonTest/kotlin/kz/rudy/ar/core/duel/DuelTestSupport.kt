@@ -79,6 +79,35 @@ internal fun runDuel(
     return Trace(states, events)
 }
 
+/** [this] with [DuelEvent.atMs] set to [at] (0 = "any time": compare the content of events only). */
+internal fun DuelEvent.at(at: Long = 0L): DuelEvent = when (this) {
+    is DuelEvent.DashStarted -> copy(atMs = at)
+    is DuelEvent.Hit -> copy(atMs = at)
+    is DuelEvent.Clash -> copy(atMs = at)
+    is DuelEvent.WallSlam -> copy(atMs = at)
+    is DuelEvent.RingOut -> copy(atMs = at)
+}
+
+/** The events without their times. */
+internal fun List<DuelEvent>.untimed(): List<DuelEvent> = map { it.at(0L) }
+
+internal fun dashStarted(id: String) = DuelEvent.DashStarted(id, 0L)
+internal fun ringOut(id: String) = DuelEvent.RingOut(id, 0L)
+internal fun wallSlam(id: String, objectId: String) = DuelEvent.WallSlam(id, objectId, 0L)
+internal fun clash(a: String, b: String) = DuelEvent.Clash(a, b, 0L)
+
+/** Fighter [id]'s events of kind [T]. */
+internal inline fun <reified T : DuelEvent> List<DuelEvent>.of(id: String): List<T> = filterIsInstance<T>().filter {
+    when (it) {
+        is DuelEvent.DashStarted -> it.id == id
+        is DuelEvent.WallSlam -> it.id == id
+        is DuelEvent.RingOut -> it.id == id
+        is DuelEvent.Hit -> it.attacker == id
+        is DuelEvent.Clash -> it.a == id || it.b == id
+        else -> false
+    }
+}
+
 /** Inputs for one step: `"a" to Dash()` etc. */
 internal fun inputs(vararg pairs: Pair<String, DuelInput>): Map<String, DuelInput> = mapOf(*pairs)
 

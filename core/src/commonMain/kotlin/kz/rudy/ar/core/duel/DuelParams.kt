@@ -75,9 +75,27 @@ data class DuelParams(
     val subStepMs: Long = 8,
 ) {
     init {
+        // T48 searches these numbers: refuse any set that could divide by zero, reverse a push or stun forever.
         require(subStepMs in 1L..8L) { "subStepMs must be 1..8 ms, got $subStepMs" }
         require(knockTauMs > 0L) { "knockTauMs must be > 0, got $knockTauMs" }
-        require(dashMs >= 0L && dashCooldownMs >= 0L && hitStunMs >= 0L && wallSlamStunMs >= 0L) { "durations must be >= 0" }
+        require(dashMs >= 0L) { "dashMs must be >= 0, got $dashMs" }
+        require(dashCooldownMs >= 0L) { "dashCooldownMs must be >= 0, got $dashCooldownMs" }
+        require(hitStunMs >= 0L) { "hitStunMs must be >= 0, got $hitStunMs" }
+        require(wallSlamStunMs >= 0L) { "wallSlamStunMs must be >= 0, got $wallSlamStunMs" }
+        positive("duelSpeedScale", duelSpeedScale)
+        positive("rollSpeedScale", rollSpeedScale)
+        positive("fromAboveScale", fromAboveScale)
+        positive("knockStopMps", knockStopMps)
+        nonNegative("dashSpeedMps", dashSpeedMps)
+        nonNegative("knockSpeedMps", knockSpeedMps)
+        nonNegative("knockStunMps", knockStunMps)
+        nonNegative("wallSlamMinMps", wallSlamMinMps)
+        nonNegative("fromAboveMinM", fromAboveMinM)
+        statFactor("speedBase + speedPerPoint * SPEED", speedBase, speedPerPoint)
+        statFactor("powerBase + powerPerPoint * POWER", powerBase, powerPerPoint)
+        statFactor("guardBase + guardPerPoint * GUARD", guardBase, guardPerPoint)
+        statFactor("cooldownBase - cooldownPerAgility * AGILITY", cooldownBase, -cooldownPerAgility)
+        statFactor("stunBase - stunPerAgility * AGILITY", stunBase, -stunPerAgility)
     }
 
     /** Walk speed of a fighter with [stats]: `physics.walkSpeedMps * duelSpeedScale * (speedBase + speedPerPoint * SPEED)`. */
@@ -131,5 +149,19 @@ data class DuelParams(
             forProfile(SurfaceProfile.of(surface), size)
 
         private fun clampStat(v: Int): Float = v.coerceIn(FighterStats.MIN, FighterStats.MAX).toFloat()
+    }
+}
+
+// Validation helpers for DuelParams.init (top level, so DEFAULT's construction never depends on the companion).
+// NaN fails every check (comparisons with NaN are false).
+private fun positive(name: String, v: Float) = require(v > 0f) { "$name must be > 0, got $v" }
+
+private fun nonNegative(name: String, v: Float) = require(v >= 0f) { "$name must be >= 0, got $v" }
+
+/** `base + perPoint * stat` is linear in the stat: > 0 at both ends means > 0 for every stat. */
+private fun statFactor(name: String, base: Float, perPoint: Float) {
+    for (s in intArrayOf(FighterStats.MIN, FighterStats.MAX)) {
+        val f = base + perPoint * s
+        require(f > 0f) { "$name must be > 0 for every stat, got $f at $s" }
     }
 }

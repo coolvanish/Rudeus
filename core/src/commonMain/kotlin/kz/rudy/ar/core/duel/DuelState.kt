@@ -67,27 +67,36 @@ sealed interface DuelInput {
     data object Special : DuelInput
 }
 
-/** Something that happened during a [DuelPhysics.step], in the order it happened. */
+/**
+ * Something that happened during a [DuelPhysics.step]. A step's list is in canonical order, the same whichever fighter
+ * sits in slot `a`: by [atMs], then by kind (DashStarted, WallSlam, Hit, Clash, RingOut), then by fighter id.
+ */
 @Serializable
 sealed interface DuelEvent {
+    /**
+     * Simulated time it happened at, on the `DuelState.timeMs` sub-step grid: the end of its sub-step; for [DashStarted]
+     * the grid time its input was applied at. Two events in one sub-step have the same value at any frame rate.
+     */
+    val atMs: Long
+
     @Serializable
-    data class DashStarted(val id: String) : DuelEvent
+    data class DashStarted(val id: String, override val atMs: Long) : DuelEvent
 
     /** [attacker]'s dash hit [victim], giving it [speedMps] of knockback; [fromAbove]: the attacker had the high ground. */
     @Serializable
-    data class Hit(val attacker: String, val victim: String, val speedMps: Float, val fromAbove: Boolean) : DuelEvent
+    data class Hit(val attacker: String, val victim: String, val speedMps: Float, val fromAbove: Boolean, override val atMs: Long) : DuelEvent
 
-    /** Both dashing when they met: each took the other's knockback. [a] and [b] are `DuelState.a.id` and `DuelState.b.id`. */
+    /** Both dashing when they met: each took the other's knockback. `a < b` (the two ids in sorted order). */
     @Serializable
-    data class Clash(val a: String, val b: String) : DuelEvent
+    data class Clash(val a: String, val b: String, override val atMs: Long) : DuelEvent
 
     /** Fighter [id]'s knockback was stopped by the blocking object [objectId]. */
     @Serializable
-    data class WallSlam(val id: String, val objectId: String) : DuelEvent
+    data class WallSlam(val id: String, val objectId: String, override val atMs: Long) : DuelEvent
 
-    /** Fighter [id] started falling over a cliff (past the boundary): once per fall. */
+    /** Fighter [id] left the level ([DuelPhysics.isOut]): once per excursion, on the sub-step it happened. */
     @Serializable
-    data class RingOut(val id: String) : DuelEvent
+    data class RingOut(val id: String, override val atMs: Long) : DuelEvent
 }
 
 /** The result of one [DuelPhysics.step]. */
