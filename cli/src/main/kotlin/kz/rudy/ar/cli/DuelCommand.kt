@@ -364,7 +364,7 @@ private fun matrixMarkdown(
     appendLine("`$command`")
     appendLine()
     appendLine(
-        "Numbers: ${s.sources}. $n matches per cell (seeds $seed..${seed + n - 1}, marks swapped on odd seeds), both sides " +
+        "Numbers: ${s.sources}. $n matches per cell (seeds $seed..${seed + n - 1}, marks swapped every other match from the first, as duel series does), both sides " +
             "bots of the same level, $stepMs ms frames; A8 replays $checkN per cell at $checkStepMs ms. Clock = share of the " +
             "rounds ended by the round clock; hits = Hit + Clash events per ring-out (all rounds' hits); s = mean match length.",
     )
