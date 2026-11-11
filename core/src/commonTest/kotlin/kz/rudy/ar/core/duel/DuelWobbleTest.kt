@@ -69,7 +69,7 @@ class DuelWobbleTest {
         // A random fight on the fuzz table, every ability pair: the same states and events whatever the other wobble
         // numbers are, every Hit exactly the stat formula (x the ram / counter / stomp / high-ground factor).
         for ((i, abilities) in Ability.entries.flatMap { x -> Ability.entries.map { y -> x to y } }.withIndex()) {
-            val runs = listOf(off, off.copy(wobbleKnockScale = 5f, wobbleMax = 9f), off.copy(wobbleKnockScale = 0f, wobbleMax = 0f, wobbleDecayPerS = 3f))
+            val runs = listOf(off, off.copy(wobbleKnockScale = 1f, wobbleMax = 9f), off.copy(wobbleKnockScale = 0f, wobbleMax = 0f, wobbleDecayPerS = 3f))
                 .map { params -> fuzz(seed = 300 + i, steps = 800, abilities = abilities, params = params) }
             assertEquals(runs[0], runs[1], "$abilities")
             assertEquals(runs[0], runs[2], "$abilities")
@@ -148,16 +148,59 @@ class DuelWobbleTest {
         assertEquals(0f, faded.b.wobble)
         val paused = standing.copy(a = standing.a.copy(body = Physics.pause(standing.a.body)), b = standing.b.copy(body = Physics.pause(standing.b.body)))
         assertEquals(2f, runDuel(paused, OPEN, 2000L, params = fade).last.a.wobble)
-        // And the numbers are checked by name.
+        // And the numbers are checked by name, the largest factor too (a sanity bound on a --params file).
         for ((name, make) in listOf<Pair<String, () -> DuelParams>>(
             "wobblePerHit" to { P.copy(wobblePerHit = -1f) },
             "wobbleKnockScale" to { P.copy(wobbleKnockScale = Float.NaN) },
             "wobbleMax" to { P.copy(wobbleMax = -0.5f) },
             "wobbleDecayPerS" to { P.copy(wobbleDecayPerS = Float.POSITIVE_INFINITY) },
+            "1 + wobbleKnockScale * wobbleMax" to { P.copy(wobbleKnockScale = 3f, wobbleMax = 4f) },
+            "1 + wobbleKnockScale * wobbleMax" to { P.copy(wobbleKnockScale = 1f, wobbleMax = 9.5f) },
         )) {
             val e = assertFailsWith<IllegalArgumentException>(name) { make() }
             assertTrue(name in (e.message ?: ""), "${e.message}")
         }
+        assertEquals(DuelParams.MAX_WOBBLE_FACTOR, 1f + P.copy(wobbleKnockScale = 1f, wobbleMax = 9f).let { it.wobbleKnockScale * it.wobbleMax })
+    }
+
+    @Test
+    fun aWobblyHitNeverGoesThroughAThinWall() {
+        // The review's case, the hardest hits the defaults can give: a 10/1/1/8 attacker on a 3 cm book hits an 8/1/1/10
+        // victim at the wobble cap (from above, x 1.25, x 3.8) standing on the table against a 10 cm wall. A HIDE counter
+        // (x 2.0) is 4.89 m/s, 3.8 cm in the first sub-step, more than a radius; before the sweep the victim came out
+        // on the far side of a wall 0.5, 1.0 or 1.5 cm thick. Now, for a plain dash, a ram and a counter and every
+        // thickness: the victim stays on its side, slammed into the wall.
+        val victimAt = Vec2(-0.03f + NEAR, 0f)
+        val face = victimAt.u + R // the wall's near face: the victim's circle touches it
+        val book = book("book", Vec2(-0.06f, 0f), 0.1f, 0.1f, 0.03f)
+        val strong = FighterStats(10, 1, 1, 8)
+        val weak = FighterStats(8, 1, 1, 10)
+        val kinds = listOf(Triple("dash", Ability.JUMP, 1f), Triple("ram", Ability.ROLL, P.ramKnockScale), Triple("counter", Ability.HIDE, P.counterKnockScale))
+        val ends = ArrayList<String>()
+        for (thickness in listOf(0.005f, 0.01f, 0.015f, 0.02f)) {
+            val wall = LevelObject("wall", "wall", ObjectKind.OBSTACLE, Polygon.rect(Vec2(face + thickness / 2f, 0f), thickness, 0.3f), 0.1f)
+            val level = Level(listOf(book, wall))
+            for ((kind, ability, scale) in kinds) {
+                val attacker = fighter("a", Vec2(-0.03f, 0f), strong, h = 0.03f, ability = ability)
+                    .copy(ability = ability, counterMs = if (ability == Ability.HIDE) 800L else 0L)
+                val victim = fighter("b", victimAt, weak).copy(wobble = P.wobbleMax)
+                val input = if (ability == Ability.ROLL) Special else Dash()
+                val t = runDuel(DuelState(attacker, victim), level, 1500L, script = atStart("a" to input))
+                val what = "$kind into a ${thickness * 1000} mm wall"
+                val hit = t.all.filterIsInstance<Hit>().single()
+                assertTrue(hit.fromAbove, what)
+                assertEquals(P.knockSpeedMpsFor(strong, weak, fromAbove = true) * scale * P.wobbleFactor(P.wobbleMax), hit.speedMps, 1e-5f, what)
+                assertEquals(listOf("wall"), t.all.filterIsInstance<DuelEvent.WallSlam>().filter { it.id == "b" }.map { it.objectId }, "$what: ${t.all}")
+                for (s in t.states) {
+                    assertTrue(s.b.pos.u + R <= face + 1e-3f, "$what: the victim got into or past the wall at ${s.timeMs} ms: ${s.b.pos}")
+                }
+                ends += "$what ends at u = ${t.last.b.pos.u}"
+            }
+        }
+        // The counter's first sub-step is three pieces of at most half a radius.
+        assertEquals(3, DuelPhysics.sweepPieces(4.89f * 0.0078247f, R))
+        assertEquals(1, DuelPhysics.sweepPieces(DuelPhysics.SWEEP_PIECE_RADII * R, R))
+        println("aWobblyHitNeverGoesThroughAThinWall: ${ends.joinToString("; ")}")
     }
 
     @Test
@@ -186,28 +229,90 @@ class DuelWobbleTest {
     }
 
     @Test
+    fun hardHitsAtAFenceNeverCrossIt() {
+        // 400 seeded hits into a fence 5 mm thick: the victim on a random side of it, up to 1 cm off touching, the
+        // attacker behind it at a random angle up to 60° off square, a random kind (dash, ram, counter), random stats,
+        // a random wobble, from the table or from a 3 cm book, with the largest wobble factor DuelParams allows (10 x).
+        // The victim's circle never gets into the fence, it never ends up on the other side, and a hit pressing into it
+        // fast enough is a WallSlam.
+        val params = P.copy(wobbleKnockScale = 1f, wobbleMax = 9f)
+        val rnd = Random(48)
+        var slams = 0
+        var fastest = 0f
+        repeat(400) { trial ->
+            val side = if (rnd.nextBoolean()) 1f else -1f
+            val fence = LevelObject("fence", "fence", ObjectKind.OBSTACLE, Polygon.rect(Vec2.ZERO, 0.005f, 0.4f), 0.1f)
+            val victimAt = Vec2(side * (0.0025f + R + rnd.nextFloat() * 0.01f), (rnd.nextFloat() - 0.5f) * 0.1f)
+            val angle = (rnd.nextFloat() * 2f - 1f) * (kotlin.math.PI.toFloat() / 3f)
+            val toFence = Vec2(-side * kotlin.math.cos(angle), kotlin.math.sin(angle))
+            val attackerAt = victimAt - toFence * NEAR
+            val onBook = rnd.nextBoolean()
+            val book = book("book", attackerAt - toFence * 0.02f, 0.06f, 0.06f, 0.03f)
+            val level = Level(if (onBook) listOf(fence, book) else listOf(fence))
+            val kind = rnd.nextInt(3)
+            val ability = listOf(Ability.JUMP, Ability.ROLL, Ability.HIDE)[kind]
+            val stats = FighterStats(10 - rnd.nextInt(3), 1, 1 + rnd.nextInt(2), 8)
+            val attacker = fighter("a", attackerAt, stats, facing = toFence, h = if (onBook) 0.03f else 0f, ability = ability)
+                .copy(ability = ability, counterMs = if (ability == Ability.HIDE) 800L else 0L)
+            val victim = fighter("b", victimAt, FighterStats(8, 1, 1, 10)).copy(wobble = rnd.nextFloat() * params.wobbleMax)
+            val input = if (ability == Ability.ROLL) Special else Dash(toFence)
+            val t = runDuel(DuelState(attacker, victim), level, 400L, params = params, script = atStart("a" to input))
+            t.all.filterIsInstance<Hit>().forEach { fastest = maxOf(fastest, it.speedMps) }
+            slams += t.all.count { it is DuelEvent.WallSlam && it.id == "b" }
+            for (s in t.states) {
+                val u = s.b.pos.u
+                assertTrue(u * side > 0f && kotlin.math.abs(u) >= 0.0025f + R - 1e-3f, "trial $trial: the victim crossed or entered the fence at ${s.timeMs} ms: ${s.b.pos} (started ${victimAt})")
+            }
+        }
+        println("hardHitsAtAFenceNeverCrossIt: 400 hits, fastest ${fastest} m/s (${fastest * 0.0078247f * 100f} cm in a sub-step), $slams wall slams")
+        assertTrue(fastest * 0.0078247f > 2f * R, "the storm reached more than two radii a sub-step: $fastest")
+        assertTrue(slams > 200, "$slams")
+    }
+
+    @Test
     fun fuzzWithWobbleKeepsTheInvariants() {
-        // T42's fuzz table and checks with a far stronger wobble than the defaults (+1.5 a hit, x (1 + w), up to 7 x the
-        // knockback, fading 0.25 per s): every ability pair, random play. Wobble stays within 0..max, nobody ends a step
-        // inside what blocks it or overlapping the other on the ground, and every exit from the table is a ring-out.
-        val strong = P.copy(wobblePerHit = 1.5f, wobbleKnockScale = 1f, wobbleMax = 6f, wobbleDecayPerS = 0.25f)
+        // T42's fuzz table plus a fence 5 mm thick and 10 cm tall, and the strongest wobble DuelParams allows (+3 a hit,
+        // x (1 + w), up to 10 x the knockback, fading 0.25 per s): every ability pair, random play. Wobble stays within
+        // 0..max, nobody ends a step inside what blocks it or overlapping the other on the ground, nobody's path over a
+        // step crosses what blocks it, and every exit from the table is a ring-out. (Random play seldom lands the
+        // hardest hit square on the fence: this passes without the sweep too. The tunnelling itself is pinned by
+        // aWobblyHitNeverGoesThroughAThinWall and hardHitsAtAFenceNeverCrossIt.)
+        val strong = P.copy(wobblePerHit = 3f, wobbleKnockScale = 1f, wobbleMax = 9f, wobbleDecayPerS = 0.25f)
+        // (At least a fighter's diameter from every other blocking object: a gap narrower than that, at u = 0.06 next
+        // to the cup, has no free spot at all, and a FLY gliding down into it from the box stayed inside the cup.)
+        val fence = LevelObject("fence", "fence", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0f, 0.17f), 0.005f, 0.16f), 0.1f)
+        val level = TABLE.copy(objects = TABLE.objects + fence)
         val counts = HashMap<String, Int>()
         var top = 0f
+        var checked = 0
         for ((i, abilities) in Ability.entries.flatMap { x -> Ability.entries.map { y -> x to y } }.withIndex()) {
-            fuzz(seed = 700 + i, steps = 1500, abilities = abilities, params = strong) { prev, out ->
+            fuzz(seed = 700 + i, steps = 1500, abilities = abilities, params = strong, level = level) { prev, out ->
                 val s = out.state
-                for (e in out.events) counts[e::class.simpleName!!] = (counts[e::class.simpleName!!] ?: 0) + 1
+                for (e in out.events) {
+                    counts[e::class.simpleName!!] = (counts[e::class.simpleName!!] ?: 0) + 1
+                    if (e is DuelEvent.WallSlam) counts["WallSlam ${e.objectId}"] = (counts["WallSlam ${e.objectId}"] ?: 0) + 1
+                }
                 for (f in listOf(s.a, s.b)) {
                     val st = f.body.state
                     val before = prev[f.id]!!
                     top = maxOf(top, f.wobble)
                     assertTrue(f.wobble in 0f..strong.wobbleMax, "wobble ${f.wobble} at ${s.timeMs} ms")
                     assertTrue(listOf(st.pos.u, st.pos.v, st.h, f.knock.u, f.knock.v, f.wobble).all { it.isFinite() }, "non-finite $f")
-                    val inside = TABLE.objects.firstOrNull {
+                    val inside = level.objects.firstOrNull {
                         Physics.blocks(it, st.h) && (it.footprint.contains(st.pos) || distanceToPolygon(st.pos, it.footprint) < st.radiusM - 0.001f)
                     }
                     assertEquals(null, inside?.id, "${f.id} overlaps ${inside?.id} at ${s.timeMs} ms: $f")
-                    val boundary = TABLE.boundary!!
+                    // The straight path over the step crosses nothing that blocks at both its ends' feet heights (a
+                    // fighter out of the level, falling or respawning, is skipped: Physics moves it, not the duel).
+                    val b0 = before.body.state
+                    if (!DuelPhysics.isOut(before, level) && !DuelPhysics.isOut(f, level) && st.mode != Mode.PAUSED) {
+                        checked++
+                        val crossed = level.objects.firstOrNull {
+                            it.kind != ObjectKind.CLIFF && Physics.blocks(it, b0.h) && Physics.blocks(it, st.h) && crosses(b0.pos, st.pos, it.footprint)
+                        }
+                        assertEquals(null, crossed?.id, "${f.id} went through ${crossed?.id} at ${s.timeMs} ms: ${b0.pos} -> ${st.pos}")
+                    }
+                    val boundary = level.boundary!!
                     val rang = out.events.of<RingOut>(f.id)
                     if (boundary.contains(before.pos) && !boundary.contains(st.pos)) assertEquals(1, rang.size, "${f.id} left without a RingOut at ${s.timeMs} ms")
                     if (st.mode == Mode.PAUSED) assertEquals(before, f, "a paused fighter is frozen")
@@ -217,14 +322,28 @@ class DuelWobbleTest {
                 if (a.mode in ground && b.mode in ground) assertTrue(a.pos.distanceTo(b.pos) >= a.radiusM + b.radiusM - 1e-4f, "overlap at ${s.timeMs} ms")
             }
         }
-        println("fuzzWithWobbleKeepsTheInvariants: highest wobble $top, events $counts")
+        println("fuzzWithWobbleKeepsTheInvariants: highest wobble $top, $checked paths checked, events $counts")
         // (Sampled after a step, so a sub-step's fade, 0.002, may already be off the cap.)
         assertTrue(top >= strong.wobbleMax - 0.01f, "the fuzz reached the cap: $top")
-        for (kind in listOf("Hit", "Clash", "WallSlam", "RingOut")) assertTrue((counts[kind] ?: 0) > 0, "never a $kind: $counts")
+        for (kind in listOf("Hit", "Clash", "WallSlam", "RingOut", "WallSlam fence")) assertTrue((counts[kind] ?: 0) > 0, "never a $kind: $counts")
+    }
+
+    /** The segment [p]-[q] enters [poly]: an end inside it, or an edge crossed or touched. */
+    private fun crosses(p: Vec2, q: Vec2, poly: Polygon): Boolean {
+        if (poly.contains(p) || poly.contains(q)) return true
+        fun orient(a: Vec2, b: Vec2, c: Vec2) = (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u)
+        for ((a, b) in poly.edges()) {
+            val d1 = orient(a, b, p)
+            val d2 = orient(a, b, q)
+            val d3 = orient(p, q, a)
+            val d4 = orient(p, q, b)
+            if (((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f)) && ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f))) return true
+        }
+        return false
     }
 
     /**
-     * T45's random play on [TABLE] (frames of 16..50 ms, plans, host pauses, specials) with [params]. Returns the end
+     * T45's random play on [level] ([TABLE] by default) (frames of 16..50 ms, plans, host pauses, specials) with [params]. Returns the end
      * state and every event; [check] sees each step.
      */
     private fun fuzz(
@@ -232,6 +351,7 @@ class DuelWobbleTest {
         steps: Int,
         abilities: Pair<Ability, Ability>,
         params: DuelParams,
+        level: Level = TABLE,
         check: (prev: DuelState, out: DuelStep) -> Unit = { _, _ -> },
     ): Pair<DuelState, List<DuelEvent>> {
         val rnd = Random(seed)
@@ -274,8 +394,8 @@ class DuelWobbleTest {
                     roll < 3 -> Jump
                     roll < 6 -> Special
                     roll < 7 -> Dash(if (rnd.nextBoolean()) null else Vec2(rnd.nextFloat() - 0.5f, rnd.nextFloat() - 0.5f))
-                    plan[k] == 0 && toOther.length < 0.1f && roll < 25 && DuelPhysics.canSpecial(me, TABLE, params) -> Special
-                    plan[k] == 0 && toOther.length < 0.12f && DuelPhysics.canDash(me, TABLE, params) -> Dash(toOther)
+                    plan[k] == 0 && toOther.length < 0.1f && roll < 25 && DuelPhysics.canSpecial(me, level, params) -> Special
+                    plan[k] == 0 && toOther.length < 0.12f && DuelPhysics.canDash(me, level, params) -> Dash(toOther)
                     plan[k] == 0 && roll < 40 -> MoveTo(other.pos)
                     plan[k] == 1 && roll < 15 -> MoveTo(wander[k])
                     else -> null
@@ -283,7 +403,7 @@ class DuelWobbleTest {
                 if (input != null) inputs[me.id] = input
             }
             val prev = state
-            val out = DuelPhysics.step(state, TABLE, rnd.nextLong(16L, 51L), inputs, params)
+            val out = DuelPhysics.step(state, level, rnd.nextLong(16L, 51L), inputs, params)
             check(prev, out)
             events += out.events
             state = out.state

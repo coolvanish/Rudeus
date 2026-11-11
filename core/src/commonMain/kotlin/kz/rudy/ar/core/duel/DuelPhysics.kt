@@ -12,6 +12,7 @@ import kz.rudy.ar.core.physics.Physics
 import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.physics.PhysicsParams
 import kz.rudy.ar.core.physics.circlePolygonPushOut
+import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
@@ -35,7 +36,9 @@ import kotlin.math.min
  *    fighter is frozen whole (timers, knockback, body) and takes no part in anything below.
  * 2. Duel motion: the dash (`dashSpeedMps` along `dashDir`, a ram too) and the knockback (exact exponential decay over
  *    the sub-step) move the body through the obstacle rules walking uses: push-out from every object that
- *    [Physics.blocks] at the feet height, and an obstacle never pushes anyone over a cliff. A knockback pressed into a
+ *    [Physics.blocks] at the feet height, and an obstacle never pushes anyone over a cliff. The move is swept, in pieces
+ *    of at most half a radius each resolved so ([sweepPieces]): no speed carries a fighter through a thin object (a
+ *    move up to half a radius, every move before wobble, is one piece). A knockback pressed into a
  *    blocking object at `>= wallSlamMinMps` (its component into the surface) is a wall slam: knockback zeroed,
  *    `wallSlamStunMs` added, [DuelEvent.WallSlam]; slower contact slides (the into-surface part of the knockback is
  *    dropped). A fighter that is out ([isOut]) gets no duel motion; its knockback, dash, lift-off, dodge and stomp are
@@ -443,31 +446,63 @@ object DuelPhysics {
         if (disp == Vec2.ZERO) return dashActiveMs > 0L
 
         val s = w.body.state
-        val start = s.pos + disp
+        val origin = s.pos
         // A lifted FLY is moved at its base, like everything else it does (see liftStep).
         val feetH = if (w.lifted) s.h - liftHeight(s, p) else s.h
-        val moved = moveThrough(c.level, c.physics, s.pos, start, feetH, s.radiusM)
-        w.moveTo(moved.pos)
-        val obstacle = moved.obstacle
-        if (knock0 != Vec2.ZERO && obstacle != null) {
-            // What the obstacle took back, as a direction into its surface.
-            val back = start - moved.pos
-            val len = back.length
-            if (len > Vec2.EPS) {
-                val into = back / len
-                val speedInto = knock0.dot(into)
-                if (speedInto >= p.wallSlamMinMps) {
-                    w.knock = Vec2.ZERO
-                    w.stunMs += p.wallSlamStunMs
-                    events += DuelEvent.WallSlam(w.id, obstacle.id, atMs)
-                } else if (speedInto > 0f && w.knock != Vec2.ZERO) {
-                    w.knock -= into * w.knock.dot(into)
-                    if (w.knock.length < p.knockStopMps) w.knock = Vec2.ZERO
+        // Swept (T48 review): the move runs in pieces no longer than SWEEP_PIECE_RADII radii, each resolved against what
+        // blocks, so no speed can carry a circle through a thin object between two checks: a centre that stood at least
+        // a radius from a face moves at most half a radius before the next push-out, which still sends it back. A move
+        // up to that length is one piece: the single resolution as before, exactly. While nothing has pushed, every
+        // piece aims at its exact share of the move, so an unobstructed move of any length ends where it always did.
+        val pieces = sweepPieces(disp.length, s.radiusM)
+        var pos = origin
+        var clean = true
+        for (k in 1..pieces) {
+            val target = when {
+                k == pieces && clean -> origin + disp
+                clean -> origin + disp * (k.toFloat() / pieces)
+                else -> pos + (disp * (k.toFloat() / pieces) - disp * ((k - 1).toFloat() / pieces))
+            }
+            val moved = moveThrough(c.level, c.physics, pos, target, feetH, s.radiusM)
+            pos = moved.pos
+            if (pos != target) clean = false
+            val obstacle = moved.obstacle
+            if (knock0 != Vec2.ZERO && obstacle != null) {
+                // What the obstacle took back, as a direction into its surface.
+                val back = target - moved.pos
+                val len = back.length
+                if (len > Vec2.EPS) {
+                    val into = back / len
+                    val speedInto = knock0.dot(into)
+                    if (speedInto >= p.wallSlamMinMps) {
+                        // The first block stops the knockback here, as the single move did: the rest of it is spent.
+                        w.knock = Vec2.ZERO
+                        w.stunMs += p.wallSlamStunMs
+                        events += DuelEvent.WallSlam(w.id, obstacle.id, atMs)
+                        break
+                    } else if (speedInto > 0f && w.knock != Vec2.ZERO) {
+                        w.knock -= into * w.knock.dot(into)
+                        if (w.knock.length < p.knockStopMps) w.knock = Vec2.ZERO
+                    }
                 }
             }
         }
+        w.moveTo(pos)
         return dashActiveMs > 0L
     }
+
+    /**
+     * How many pieces a move of [length] runs in for a fighter of [radius]: 1 up to [SWEEP_PIECE_RADII] radii, else
+     * enough for none to be longer.
+     */
+    internal fun sweepPieces(length: Float, radius: Float): Int {
+        val most = SWEEP_PIECE_RADII * radius
+        if (!(most > 0f) || !(length > most)) return 1
+        return ceil(length / most).toInt().coerceAtLeast(1)
+    }
+
+    /** The longest piece of a swept move, in fighter radii (1.5 cm for a table fighter). */
+    internal const val SWEEP_PIECE_RADII = 0.5f
 
     /** Step 3. Returns true when [w]'s stomp landed in it. */
     private fun physicsStep(w: Work, wasOut: Boolean, c: Consts): Boolean {

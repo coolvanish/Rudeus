@@ -166,6 +166,8 @@ data class DuelParams(
         for ((name, v) in listOf(
             "wobblePerHit" to wobblePerHit, "wobbleKnockScale" to wobbleKnockScale, "wobbleMax" to wobbleMax, "wobbleDecayPerS" to wobbleDecayPerS,
         )) require(v >= 0f && v.isFinite()) { "$name must be >= 0 and finite, got $v" }
+        val most = 1f + wobbleKnockScale * wobbleMax
+        require(most <= MAX_WOBBLE_FACTOR) { "1 + wobbleKnockScale * wobbleMax must be <= $MAX_WOBBLE_FACTOR, got $most" }
     }
 
     /** The knockback factor of a hit on a fighter with [wobble]: `1 + wobbleKnockScale * wobble` (wobble clamped to 0..[wobbleMax]). */
@@ -220,6 +222,12 @@ data class DuelParams(
     }
 
     companion object {
+        /**
+         * The most wobble may multiply a knockback by, `1 + wobbleKnockScale * wobbleMax` (3.8 by default): a sanity bound
+         * on a `--params` file. The physics is swept, so even this cannot carry a fighter through a thin object.
+         */
+        const val MAX_WOBBLE_FACTOR = 10f
+
         val DEFAULT = DuelParams()
 
         /** [DEFAULT] scaled for [profile] and [size]; `forProfile(SurfaceProfile.TABLE) == DEFAULT`. */
