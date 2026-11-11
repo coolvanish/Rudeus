@@ -22,14 +22,21 @@ import kotlinx.serialization.Serializable
  *   centre (a stomp: when the bot is within the stomp's reach plus this).
  * @property sidestepRadii a sidestep on foot goes this far across the incoming dash.
  * @property stompReachShare a stomp is tried with the opponent within this share of the stomp's reach.
- * @property ramNearEdgeRadii a ram is tried with the opponent at most this far inside the boundary ("near an edge")...
+ * @property ramNearEdgeRadii a ram is tried with the opponent at most this far inside the boundary ("near an edge"; a
+ *   [BotSkill.safeRamsOnly] bot rams wherever a miss still ends on the table)...
  * @property ramRoomRadii ... and the roller itself at least this far inside ("room behind itself").
- * @property walkCost a bot that weighs push directions ([BotSkill.weighsPush]) adds this x the walk to the spot (and
- *   round the opponent) to the distance the opponent would have to be pushed.
- * @property switchCostRadii ... plus this for a direction other than the one it settled on (no dithering).
+ * @property walkCost a bot that weighs push directions ([BotSkill.weighsPush]) scores each as the distance the opponent
+ *   would have to be pushed plus this x the walk to the spot (and round the opponent)...
+ * @property switchCostRadii ... plus this for a direction other than the one it settled on (no dithering)...
  * @property highGroundBonusRadii ... minus this for a spot on a PLATFORM above the opponent's feet (a stronger hit).
+ *   Only such a spot can replace the push toward the opponent's nearest edge.
  * @property leadShare a bot that leads its aim ([BotSkill.leadsAim]) aims this share of the way to where a walking
- *   opponent will be when the dash meets it.
+ *   opponent will be when the dash meets it...
+ * @property knockLeadShare ... counting this share of the opponent's knockback velocity as motion too.
+ * @property lineOfSightRadii a dash needs a clear line: nothing that blocks within this many radii of it.
+ * @property sameDirectionCos two push directions closer than this (cosine, about 11°) are the one it settled on.
+ * @property blockedPushRadii a push that something stops before the edge (a wall slam, not a ring-out) scores this many
+ *   radii longer.
  */
 @Serializable
 data class BotTuning(
@@ -51,6 +58,10 @@ data class BotTuning(
     val switchCostRadii: Float = 1f,
     val highGroundBonusRadii: Float = 3f,
     val leadShare: Float = 1f,
+    val knockLeadShare: Float = 0.5f,
+    val lineOfSightRadii: Float = 0.8f,
+    val sameDirectionCos: Float = 0.98f,
+    val blockedPushRadii: Float = 10f,
     val easy: BotSkill = BotSkill.EASY,
     val normal: BotSkill = BotSkill.NORMAL,
     val hard: BotSkill = BotSkill.HARD,
@@ -63,8 +74,10 @@ data class BotTuning(
             "standoffGapRadii" to standoffGapRadii, "clearanceRadii" to clearanceRadii, "threatSlackRadii" to threatSlackRadii,
             "sidestepRadii" to sidestepRadii, "stompReachShare" to stompReachShare, "ramNearEdgeRadii" to ramNearEdgeRadii,
             "ramRoomRadii" to ramRoomRadii, "walkCost" to walkCost, "switchCostRadii" to switchCostRadii,
-            "highGroundBonusRadii" to highGroundBonusRadii, "leadShare" to leadShare,
+            "highGroundBonusRadii" to highGroundBonusRadii, "leadShare" to leadShare, "knockLeadShare" to knockLeadShare,
+            "lineOfSightRadii" to lineOfSightRadii, "blockedPushRadii" to blockedPushRadii,
         )) require(v >= 0f && v.isFinite()) { "$name must be >= 0 and finite, got $v" }
+        require(sameDirectionCos >= -1f && sameDirectionCos <= 1f) { "sameDirectionCos must be in -1..1, got $sameDirectionCos" }
         val turn = detourStepCos * detourStepCos + detourStepSin * detourStepSin
         require(detourStepSin > 0f && turn > 0.999f && turn < 1.001f) { "detourStepCos / detourStepSin must be a unit turn, got $detourStepCos, $detourStepSin" }
     }
@@ -95,15 +108,20 @@ data class BotTuning(
  * @property wrongWayChance chance that a dash goes in a random direction instead (still never off the table).
  * @property wanderChance chance, at each decision, to start wandering to a random spot for [wanderMs].
  * @property leadsAim aims where a walking opponent will be ([BotTuning.leadShare]), not where it is.
- * @property weighsPush weighs every push direction (how far the opponent is from the edge that way, the walk there, the
- *   high ground) instead of always pushing toward the opponent's nearest edge.
+ * @property weighsPush prefers the high ground: pushes the opponent from a spot on a PLATFORM above it, up to 45° off
+ *   the push toward the opponent's nearest edge, when that spot is as deep inside as the opponent and scores better
+ *   ([BotTuning.walkCost], [BotTuning.switchCostRadii], [BotTuning.highGroundBonusRadii]). Measured: letting any of
+ *   those directions win on its score alone made HARD lose to NORMAL (it walked along its own edge, or round the cup).
  * @property usesSpecial uses its special in its obvious situation: stomp with the opponent in reach, ram when aligned
  *   with the opponent near an edge, lift-off or dodge when a dash or a stomp is coming at it near an edge.
- * @property nearEdgeRadii "near an edge" for the lift-off and the dodge: at most this far inside the boundary.
- * @property sidesteps gets out of the way of a dash coming at it (a dash across it, else a step aside), and dodges
- *   (HIDE) wherever it stands.
- * @property counters dashes at the opponent while its counter window is open (HIDE, after a dodge let a hit through).
- * @property safeRamsOnly never rams unless the ram would end on the table even if it missed.
+ * @property nearEdgeRadii "near an edge" for the lift-off, the dodge and the sidestep: at most this far inside.
+ * @property sidesteps gets out of the way of a dash coming at it near an edge (a dash across it, else a step aside;
+ *   in mid-table a hit costs a few centimetres and leaves the attacker on cooldown, so it takes it), and dodges (HIDE)
+ *   wherever it stands, for the counter.
+ * @property counters dashes at the opponent while its counter window is open (HIDE, after a dodge let a hit through),
+ *   whatever the alignment.
+ * @property safeRamsOnly rams only when the ram would end on the table even if it missed, and then wherever the
+ *   opponent stands (not only near an edge).
  */
 @Serializable
 data class BotSkill(

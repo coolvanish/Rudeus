@@ -6,6 +6,8 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.domain.defaultFor
+import kz.rudy.ar.core.physics.Physics
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -147,6 +149,93 @@ class DuelBotTest {
         val mind = start.botA!!
         assertEquals(mind to DuelInput.None, DuelBot.decide(mind, "a", countdown, arena))
         assertEquals(mind to DuelInput.None, DuelBot.decide(mind, "nobody", countdown, arena))
+    }
+
+    // -- the levels' traits, one decision each ---------------------------------------------------------------------
+
+    /** A FIGHT 10 s into a match on [arena]: [me] (slot a) at [pa], the opponent at [pb], both standing; [edit] tunes them. */
+    private fun fight(
+        arena: Level,
+        me: Ability,
+        pa: Vec2,
+        pb: Vec2,
+        foe: Ability = Ability.JUMP,
+        edit: (a: DuelFighter, b: DuelFighter) -> Pair<DuelFighter, DuelFighter> = { a, b -> a to b },
+    ): DuelMatchState {
+        val s = DuelMatch.start(Contestant("me", FighterStats.BALANCED, me), Contestant("foe", FighterStats.BALANCED, foe), arena, DuelArenas.marks(arena))
+        fun place(f: DuelFighter, p: Vec2) = f.copy(body = f.body.copy(state = f.body.state.copy(pos = p, h = Physics.groundHeight(arena, p, 0f) ?: 0f)))
+        val (a, b) = edit(place(s.duel.a, pa), place(s.duel.b, pb))
+        return s.copy(phase = MatchPhase.FIGHT, phaseLeftMs = 50_000L, duel = s.duel.copy(a = a, b = b, timeMs = 10_000L))
+    }
+
+    private fun answer(level: BotLevel, state: DuelMatchState, arena: Level): DuelInput =
+        DuelBot.decide(DuelBot.mind(level, 1L), "me", state, arena).second
+
+    private fun DuelFighter.cooling() = copy(dashCooldownMs = 1_000L)
+
+    @Test
+    fun hardPrefersTheHighGround() {
+        // The opponent stands 6 cm from the bottom edge, below and right of the book. NORMAL walks straight above it (to
+        // push it down); HARD takes the spot on the book that pushes it to the corner, from 3 cm up (x1.25).
+        val arena = DuelArenas.CUP_AND_BOOK
+        val state = fight(arena, Ability.HIDE, Vec2(0.03f, -0.05f), Vec2(0.1f, -0.14f)) { a, b -> a.cooling() to b }
+        fun ground(i: DuelInput) = Physics.groundHeight(arena, (i as DuelInput.MoveTo).target, 0f)
+        assertEquals(0.03f, ground(answer(BotLevel.HARD, state, arena)), "HARD: ${answer(BotLevel.HARD, state, arena)}")
+        assertEquals(0f, ground(answer(BotLevel.NORMAL, state, arena)), "NORMAL: ${answer(BotLevel.NORMAL, state, arena)}")
+    }
+
+    @Test
+    fun aDashComingAtItNearAnEdge() {
+        // 4 cm from the bottom edge, the opponent dashing straight down at it from 9 cm.
+        val arena = DuelArenas.EMPTY
+        fun coming(me: Ability, at: Vec2 = Vec2(0f, -0.16f)) = fight(arena, me, at, at + Vec2(0f, 0.09f)) { a, b ->
+            a to b.copy(dashMs = 200L, dashDir = Vec2(0f, -1f), dashCooldownMs = 1_000L)
+        }
+        // HARD gets out of the way: a dash across the incoming one that ends on the table.
+        val side = answer(BotLevel.HARD, coming(Ability.JUMP), arena)
+        assertTrue(side is DuelInput.Dash && abs(side.dir!!.v) < 0.5f, "$side")
+        assertTrue(DuelArena.insideDistance(arena.boundary!!, Vec2(0f, -0.16f) + side.dir!! * 0.075f) > 0.02f)
+        // NORMAL (no special that helps) takes it; with a FLY or a HIDE it lifts off or dodges; EASY does nothing about it.
+        assertTrue(answer(BotLevel.NORMAL, coming(Ability.JUMP), arena) !is DuelInput.Dash)
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.FLY), arena))
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.HIDE), arena))
+        assertTrue(answer(BotLevel.EASY, coming(Ability.HIDE), arena) != DuelInput.Special)
+        // In the middle of the table NORMAL keeps its dodge; HARD dodges anyway (a HIDE dodges for the counter).
+        val middle = coming(Ability.HIDE, at = Vec2(0f, 0.05f))
+        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, arena))
+    }
+
+    @Test
+    fun hardCountersAfterADodge() {
+        // The dodge let a hit through: the counter window is open. The opponent is beside it, not toward an edge: only
+        // HARD dashes (a counter hits x1.5), NORMAL waits for an aligned dash.
+        val arena = DuelArenas.EMPTY
+        val state = fight(arena, Ability.HIDE, Vec2(0f, 0.05f), Vec2(0.1f, 0.05f)) { a, b -> a.copy(counterMs = 1_000L) to b }
+        assertEquals(DuelInput.Dash(Vec2(1f, 0f)), answer(BotLevel.HARD, state, arena))
+        assertTrue(answer(BotLevel.NORMAL, state, arena) !is DuelInput.Dash)
+    }
+
+    @Test
+    fun theRamAndTheStomp() {
+        val arena = DuelArenas.EMPTY
+        // A ROLL facing the opponent, which stands 5 cm from the bottom edge right in front of it: NORMAL rams (the
+        // opponent is in the path first); HARD does not, since a miss would roll it off the table.
+        val nearEdge = fight(arena, Ability.ROLL, Vec2(0f, -0.08f), Vec2(0f, -0.15f)) { a, b ->
+            a.cooling().copy(body = a.body.copy(state = a.body.state.copy(facing = Vec2(0f, -1f)))) to b
+        }
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, nearEdge, arena))
+        assertTrue(answer(BotLevel.HARD, nearEdge, arena) != DuelInput.Special)
+        // In the middle, where a miss ends on the table, HARD rams; NORMAL waits for the edge.
+        val middle = fight(arena, Ability.ROLL, Vec2(0f, 0.05f), Vec2(0f, -0.02f)) { a, b ->
+            a.cooling().copy(body = a.body.copy(state = a.body.state.copy(facing = Vec2(0f, -1f)))) to b
+        }
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, arena))
+        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
+        // A JUMP with the opponent within the stomp's reach, on the side of its edge: NORMAL stomps, EASY never does.
+        val stomp = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f)) { a, b -> a.cooling() to b }
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, stomp, arena))
+        assertTrue(answer(BotLevel.EASY, stomp, arena) != DuelInput.Special)
     }
 
     private fun assertSafe(d: BotDecision, arena: Level, margin: Float, what: String) {

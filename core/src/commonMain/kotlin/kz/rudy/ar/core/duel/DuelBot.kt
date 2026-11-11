@@ -58,10 +58,11 @@ data class BotMind(
  * **Levels** ([BotSkill]): EASY is slow to react, wanders, dashes when close whatever the alignment, sometimes the wrong
  * way, never uses the special. NORMAL plays the plan and uses its special in the obvious situation: stomp with the
  * opponent in reach, ram when aligned with the opponent near an edge and room behind itself, lift-off or dodge when a
- * dash or a stomp is coming at it near an edge. HARD is NORMAL deciding at every tick, leading its aim, weighing every
- * push direction (how far the opponent is from the edge that way, the walk there, and the high ground of a PLATFORM),
- * getting out of the way of an incoming dash, countering after a dodge, and never ramming toward an edge it would roll
- * off.
+ * dash or a stomp is coming at it near an edge. HARD is NORMAL deciding every tick or two, leading its aim, preferring
+ * the high ground of a PLATFORM, getting out of the way of a dash coming at it near an edge, dodging (HIDE) anywhere
+ * and countering after it, and ramming only where a miss still ends on the table (never toward an edge it would roll
+ * off). Measured on the tuning arenas with equal stats and ability ([DuelSim]): HARD beats EASY and NORMAL, NORMAL
+ * beats EASY, in every ability (`DuelBotTest`).
  */
 object DuelBot {
 
@@ -361,7 +362,7 @@ private class Brain(
         if (skill.leadsAim && foe.dashMs == 0L) {
             val s = foe.body.state
             val target = s.target
-            var v = foe.knock * 0.5f
+            var v = foe.knock * t.knockLeadShare
             if (target != null) {
                 val d = target - s.pos
                 val len = d.length
@@ -412,7 +413,7 @@ private class Brain(
             // Something in the way stops the push before the edge (a wall slam, not a ring-out).
             val end = them + d * exit
             val blocked = keeps.any { k -> !k.hole && near(them, end, k.c, k.bare + contact * 0.5f) }
-            if (blocked) exit += BLOCKED_PUSH_RADII * r
+            if (blocked) exit += t.blockedPushRadii * r
             val ground = Physics.groundHeight(arena, spot, self.body.state.h, physics)
             val high = ground != null && ground - foe.body.state.h > params.fromAboveMinM
             if (k != 0 && !high) continue
@@ -420,7 +421,7 @@ private class Brain(
             var cost = exit + t.walkCost * walk
             if (high) cost -= t.highGroundBonusRadii * r
             val settled = lastPush
-            if (settled != null && d.dot(settled) < SAME_DIRECTION_COS) cost += t.switchCostRadii * r
+            if (settled != null && d.dot(settled) < t.sameDirectionCos) cost += t.switchCostRadii * r
             if (cost < bestCost) {
                 bestCost = cost
                 best = d
@@ -497,7 +498,7 @@ private class Brain(
     }
 
     /** Nothing that blocks (at the bot's feet) stands between [from] and [to]. */
-    private fun clearLine(from: Vec2, to: Vec2): Boolean = keeps.none { !it.hole && near(from, to, it.c, it.bare + r * 0.8f) }
+    private fun clearLine(from: Vec2, to: Vec2): Boolean = keeps.none { !it.hole && near(from, to, it.c, it.bare + r * t.lineOfSightRadii) }
 
     // -- walking --------------------------------------------------------------------------------------------------
 
@@ -607,12 +608,6 @@ private class Brain(
         /** The turns off the nearest-edge push a weighing bot considers: 0, +-22.5°, +-45°. */
         val TURN_COS = floatArrayOf(1f, C22, C22, C45, C45)
         val TURN_SIN = floatArrayOf(0f, S22, -S22, C45, -C45)
-
-        /** Two push directions closer than this (cosine, about 11°) are the same one. */
-        const val SAME_DIRECTION_COS = 0.98f
-
-        /** A push that something stops before the edge counts as this many radii longer. */
-        const val BLOCKED_PUSH_RADII = 10f
     }
 }
 
