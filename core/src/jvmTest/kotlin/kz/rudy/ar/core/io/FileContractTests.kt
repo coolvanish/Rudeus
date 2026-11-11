@@ -14,6 +14,9 @@ class FileCharacterFolderContractTest : OnDiskCharacterFolderContract() {
      */
     override val replacesAnExistingId: Boolean get() = false
 
+    /** FINDING (T39, F2): see [checksNamesFirst] in the contract; the File copy validates late or not at all. */
+    override val checksNamesFirst: Boolean get() = false
+
     /**
      * `FileCharacterFolder` takes no file system to break, so its temp step fails for real: a frame whose name is too
      * long for the file system (ENAMETOOLONG) is written after the sprite and the sheet, before the rename.

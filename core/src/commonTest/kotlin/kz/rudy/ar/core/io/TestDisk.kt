@@ -23,6 +23,22 @@ internal object TestDisk {
 
     fun exists(p: Path): Boolean = SystemFileSystem.exists(p)
 
+    /** Names directly inside [dir], sorted; empty when it is missing. */
+    fun names(dir: Path): List<String> =
+        if (SystemFileSystem.metadataOrNull(dir)?.isDirectory == true) SystemFileSystem.list(dir).map { it.name }.sorted() else emptyList()
+
+    /** Copies the tree at [from] (if any) to [to], replacing what was there. */
+    fun copyTree(from: Path, to: Path) {
+        deleteTree(to)
+        val meta = SystemFileSystem.metadataOrNull(from) ?: return
+        if (meta.isDirectory) {
+            SystemFileSystem.createDirectories(to)
+            SystemFileSystem.list(from).forEach { copyTree(it, Path(to, it.name)) }
+        } else {
+            writeFile(to, readFile(from) ?: ByteArray(0))
+        }
+    }
+
     fun deleteTree(p: Path) {
         val meta = SystemFileSystem.metadataOrNull(p) ?: return
         if (meta.isDirectory) SystemFileSystem.list(p).forEach { deleteTree(it) }
