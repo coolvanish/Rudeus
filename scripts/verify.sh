@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Definition of done. Exit 0 == every gate below passed.
-#   scripts/verify.sh            full: core/shared/Android unit tests, core iOS klib compile, cli compile, Android debug build
+#   scripts/verify.sh            full: core/shared/Android unit tests, core + shared iOS klib compile, cli compile, Android debug build
 #   scripts/verify.sh --quick    core tests only (does not clear the dirty stamp)
 #   scripts/verify.sh --mark     clear the dirty stamp after a quick run you trust (core-only change)
 set -euo pipefail
@@ -16,9 +16,9 @@ case "${1:-}" in
 esac
 
 start=$(date +%s)
-# v2: the iOS klibs of :core must keep compiling (ai/build-plan-v2.md, G1). Klib compilation works on Linux and macOS;
-# nothing is linked or run for iOS here.
-./gradlew :core:jvmTest :core:compileKotlinIosSimulatorArm64 :core:compileTestKotlinIosSimulatorArm64 :shared:testAndroidHostTest :androidApp:testDebugUnitTest :cli:compileKotlin :androidApp:assembleDebug --console=plain -q
+# v2: the iOS klibs of :core and :shared must keep compiling (ai/build-plan-v2.md, G1). Klib compilation works on
+# Linux and macOS; nothing is linked or run for iOS here.
+./gradlew :core:jvmTest :core:compileKotlinIosSimulatorArm64 :core:compileTestKotlinIosSimulatorArm64 :shared:compileKotlinIosSimulatorArm64 :shared:compileTestKotlinIosSimulatorArm64 :shared:testAndroidHostTest :androidApp:testDebugUnitTest :cli:compileKotlin :androidApp:assembleDebug --console=plain -q
 end=$(date +%s)
 
 summ() { grep -ho 'tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' "$1"/*.xml 2>/dev/null | \

@@ -37,9 +37,10 @@ data class ArCharacter(
     val emotes: EmoteSet,
     val frames: PoseFrames = PoseFrames.EMPTY,
 ) {
-    // ByteArray is compared by identity; like the slot, a plain carrier.
+    // ByteArray is compared by identity; like the slot, a plain carrier. `super.hashCode()` is Any's identity hash on
+    // every target (what System.identityHashCode gave on the JVM), so this compiles for iOS too.
     override fun equals(other: Any?): Boolean = this === other
-    override fun hashCode(): Int = System.identityHashCode(this)
+    override fun hashCode(): Int = super.hashCode()
 }
 
 /** T31: what one [CharacterCommand] asks of one character. */
@@ -144,5 +145,5 @@ data class ArSlot(
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other
-    override fun hashCode(): Int = System.identityHashCode(this)
+    override fun hashCode(): Int = super.hashCode()
 }

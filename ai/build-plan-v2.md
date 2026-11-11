@@ -66,7 +66,8 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 1 | T43 thin-host-map (design, no code) | reads androidApp | fable-high | — |
 | 2 | T44 fighter-card-ui | shared | sonnet-high | T40 |
 | 2 | T45 duel-rules-bot (match, specials, bot, headless sim) | core/duel | opus-extra | T42 |
-| 2 | T46 ios-targets-shared | shared, Gradle (hand-review) | opus-high | T39 |
+| 0 | `:shared` iOS klib targets (done in wave 0: 2 lines of common code + `Platform.ios.kt`) | shared, Gradle (hand-review) | orchestrator | — |
+| 2 | T46 ios-entry (`MainViewController`, the `UIKitView` bridge for the AR slot) | shared/iosMain | opus-high | T43 |
 | 2 | T47 thin-host-step-1 (per T43's map) | core + androidApp (hand-review) | fable-high draft | T43 |
 | 3 | T48 cli-duel-sim-balance | cli, core tuning | opus-extra | T45 |
 | 3 | T49 duel-ui (picker, VS, HUD, result) | shared | sonnet-high | T44, T45 |
@@ -76,7 +77,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 After every implementing brief: `rudeus-reviewer` on the diff, fixes in the same worktree, merge, status commit.
 
 ## Gates (measurable)
-- **G1 foundation**: `:core:compileKotlinIosSimulatorArm64` green (Linux or the Mac); `scripts/verify.sh` green.
+- **G1 foundation**: `:core` and `:shared` compile for `iosSimulatorArm64` + `iosArm64` (klibs; Linux or the Mac), gated by `scripts/verify.sh`. **Reached 2026-11-11** for the code that exists; every later brief must keep it.
 - **G2 stats**: 100 % of `docs/bundled` sheets yield stats with sum 20; legacy sheets parse unchanged.
 - **G3 views**: live spike on ≥ 5 bundled characters, human verdict ≥ 4/5 usable BACK and FRONT; else cut to SIDE + BACK only, else cut views.
 - **G4 duel core**: `cli duel --all`: no archetype wins > 65 % against the field at equal budget; every match ends

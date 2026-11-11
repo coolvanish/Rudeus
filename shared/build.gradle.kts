@@ -8,7 +8,10 @@ plugins {
 }
 
 kotlin {
-    // Android only by decision (see ai/build-plan.md). The multiplatform split lives in :core (android + jvm).
+    // HAND-REVIEW: v2 iOS readiness (ai/build-plan-v2.md) — the Compose UI also compiles for iOS (klibs only; the
+    // Xcode-facing framework comes with the iOS app shell, T51). Android stays the only target that is built and run.
+    iosArm64()
+    iosSimulatorArm64()
     android {
        namespace = "kz.rudy.ar.shared"
        compileSdk = libs.versions.android.compileSdk.get().toInt()
