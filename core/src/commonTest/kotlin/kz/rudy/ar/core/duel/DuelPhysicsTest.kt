@@ -77,7 +77,8 @@ class DuelPhysicsTest {
     @Test
     fun dashHitsOncePerDash() {
         val start = DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(0.07f, 0f)))
-        val again = P.cooldownMsFor(FighterStats.BALANCED) + 100L // a 16 ms frame boundary after the cooldown
+        // A 16 ms frame boundary at least 100 ms after the cooldown (rounded up since T48 made the cooldown 2500 ms).
+        val again = (P.cooldownMsFor(FighterStats.BALANCED) + 100L + 15L) / 16L * 16L
         assertEquals(0L, again % 16L)
         val t = runDuel(start, OPEN, 3000L) { s ->
             if (s.timeMs == 0L || s.timeMs == again) inputs("a" to Dash()) else emptyMap()
@@ -134,8 +135,8 @@ class DuelPhysicsTest {
     fun dashOnCooldownIsIgnored() {
         val start = DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(0f, 0.5f)))
         val cooldown = P.cooldownMsFor(FighterStats.BALANCED)
-        assertEquals(1500L, cooldown)
-        val t = runDuel(start, OPEN, 2000L) { s -> if (s.timeMs == 0L || s.timeMs >= 400L) inputs("a" to Dash()) else emptyMap() }
+        assertEquals(2500L, cooldown) // T48 (1500 before)
+        val t = runDuel(start, OPEN, cooldown + 500L) { s -> if (s.timeMs == 0L || s.timeMs >= 400L) inputs("a" to Dash()) else emptyMap() }
         val starts = t.events.withIndex().filter { (_, ev) -> ev.of<DashStarted>("a").isNotEmpty() }.map { t.states[it.index - 1].timeMs }
         assertEquals(2, starts.size, "the first dash and the first one after the cooldown: $starts")
         assertEquals(0L, starts[0])
@@ -149,7 +150,7 @@ class DuelPhysicsTest {
     fun cooldownShortensWithAgility() {
         val waits = (1..10).map { agility ->
             val st = stats(agility = agility)
-            val t = runDuel(DuelState(fighter("a", Vec2.ZERO, st), fighter("b", Vec2(0f, 0.5f))), OPEN, 2500L, dtMs = 8L) {
+            val t = runDuel(DuelState(fighter("a", Vec2.ZERO, st), fighter("b", Vec2(0f, 0.5f))), OPEN, P.cooldownMsFor(stats(agility = 1)) + 500L, dtMs = 8L) {
                 inputs("a" to Dash())
             }
             val times = t.all.of<DashStarted>("a").map { it.atMs }
@@ -159,8 +160,9 @@ class DuelPhysicsTest {
             wait
         }
         for (i in 1 until waits.size) assertTrue(waits[i] < waits[i - 1], "agility ${i + 1}: $waits")
-        assertEquals(1860L, P.cooldownMsFor(stats(agility = 1)))
-        assertEquals(1050L, P.cooldownMsFor(stats(agility = 10)))
+        // T48: 2500 * (1.15 - 0.03 AGILITY) (1500 * (1.30 - 0.06 AGILITY) = 1860 .. 1050 before).
+        assertEquals(2800L, P.cooldownMsFor(stats(agility = 1)))
+        assertEquals(2125L, P.cooldownMsFor(stats(agility = 10)))
     }
 
     @Test
@@ -320,7 +322,7 @@ class DuelPhysicsTest {
     @Test
     fun flyKnockedPastTheEdgeIsOutEvenWhileAirborne() {
         // The review's case: edge at u = 0.15; FLY b jumps at t = 0, a's POWER 10 dash (t = 96) hits it in the air at
-        // 0.566 m/s, b floats past the edge and later tries to MoveTo back onto the table.
+        // 0.51 m/s (0.566 before T48's stat factors), b floats past the edge and later tries to MoveTo back onto the table.
         val spawn = Vec2(-0.1f, 0f)
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.3f), spawn = spawn)
         fun play(ability: Ability): Trace {
@@ -339,7 +341,7 @@ class DuelPhysicsTest {
         }
         val fly = play(Ability.FLY)
         val hit = fly.all.filterIsInstance<Hit>().single()
-        assertEquals(0.566f, hit.speedMps, 1e-3f)
+        assertEquals(P.knockSpeedMpsFor(FighterStats(10, 1, 1, 8), FighterStats(8, 1, 1, 10)), hit.speedMps, 1e-6f)
         val rings = fly.all.filterIsInstance<RingOut>()
         assertEquals(listOf("b"), rings.map { it.id }, "${fly.all}")
         val k = fly.indexOf { it is RingOut }

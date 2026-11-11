@@ -14,8 +14,12 @@ import kz.rudy.ar.ui.StringId
 /** The UI's own difficulty (T55's bot levels are mapped to it in T50). */
 enum class DuelDifficulty { EASY, NORMAL, HARD }
 
-/** One fighter as the HUD draws it: [immune] = lifted or dodging (cannot be pushed), [out] = over the edge right now. */
-data class SideModel(val id: String, val name: String, val score: Int, val immune: Boolean, val out: Boolean)
+/**
+ * One fighter as the HUD draws it: [immune] = lifted or dodging (cannot be pushed), [out] = over the edge right now,
+ * [wobble] = how unsteady the hits taken this round have made it, 0 (steady, every round starts so) .. 1 (the most
+ * wobble there is, [DuelParams.wobbleMax]): the next hit pushes it that much farther (T48).
+ */
+data class SideModel(val id: String, val name: String, val score: Int, val immune: Boolean, val out: Boolean, val wobble: Float = 0f)
 
 /** The one large message in the middle of the HUD; null = none. */
 sealed interface DuelBanner {
@@ -89,6 +93,7 @@ fun duelHud(
         score = state.scoreOf(f.id),
         immune = DuelPhysics.isImmune(f),
         out = DuelPhysics.isOut(f, arena),
+        wobble = if (params.wobbleMax > 0f) (f.wobble / params.wobbleMax).coerceIn(0f, 1f) else 0f,
     )
 
     val fight = state.phase == MatchPhase.FIGHT

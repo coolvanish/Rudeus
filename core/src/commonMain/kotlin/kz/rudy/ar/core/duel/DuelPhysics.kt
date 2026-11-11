@@ -12,6 +12,7 @@ import kz.rudy.ar.core.physics.Physics
 import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.physics.PhysicsParams
 import kz.rudy.ar.core.physics.circlePolygonPushOut
+import kotlin.math.ceil
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
@@ -35,7 +36,9 @@ import kotlin.math.min
  *    fighter is frozen whole (timers, knockback, body) and takes no part in anything below.
  * 2. Duel motion: the dash (`dashSpeedMps` along `dashDir`, a ram too) and the knockback (exact exponential decay over
  *    the sub-step) move the body through the obstacle rules walking uses: push-out from every object that
- *    [Physics.blocks] at the feet height, and an obstacle never pushes anyone over a cliff. A knockback pressed into a
+ *    [Physics.blocks] at the feet height, and an obstacle never pushes anyone over a cliff. The move is swept, in pieces
+ *    of at most half a radius each resolved so ([sweepPieces]): no speed carries a fighter through a thin object (a
+ *    move up to half a radius, every move before wobble, is one piece). A knockback pressed into a
  *    blocking object at `>= wallSlamMinMps` (its component into the surface) is a wall slam: knockback zeroed,
  *    `wallSlamStunMs` added, [DuelEvent.WallSlam]; slower contact slides (the into-surface part of the knockback is
  *    dropped). A fighter that is out ([isOut]) gets no duel motion; its knockback, dash, lift-off, dodge and stomp are
@@ -335,6 +338,9 @@ object DuelPhysics {
 
         /** Integral of exp(-t / tau) over one sub-step, in seconds: displacement = knock * gain. */
         val gainS: Float = (params.knockTauMs / 1000.0 * (1.0 - exp(-sub.toDouble() / params.knockTauMs.toDouble()))).toFloat()
+
+        /** Wobble lost in one sub-step. */
+        val wobbleDecay: Float = params.wobbleDecayPerS * sub / 1000f
     }
 
     /** One fighter during a call: local, mutable scratch (never visible outside [step]) that becomes a [DuelFighter]. */
@@ -353,6 +359,7 @@ object DuelPhysics {
         var stomping = original.stomping
         var counterMs = original.counterMs
         var dashKind = original.dashKind
+        var wobble = original.wobble
 
         /** This sub-step only (set by [advance]): hovering on a FLY lift-off. */
         var lifted = false
@@ -380,7 +387,7 @@ object DuelPhysics {
         fun done(): DuelFighter = original.copy(
             body = body, knock = knock, stunMs = stunMs, dashMs = dashMs, dashCooldownMs = dashCooldownMs,
             specialMs = specialMs, specialCooldownMs = specialCooldownMs, stomping = stomping, counterMs = counterMs,
-            dashKind = dashKind,
+            dashKind = dashKind, wobble = wobble,
         )
     }
 
@@ -410,6 +417,7 @@ object DuelPhysics {
         w.dashCooldownMs = (w.dashCooldownMs - c.sub).coerceAtLeast(0L)
         if (w.specialCooldownMs > 0L) w.specialCooldownMs = (w.specialCooldownMs - c.sub).coerceAtLeast(0L)
         if (w.counterMs > 0L) w.counterMs = (w.counterMs - c.sub).coerceAtLeast(0L)
+        if (w.wobble > 0f && p.wobbleDecayPerS > 0f) w.wobble = (w.wobble - c.wobbleDecay).coerceAtLeast(0f)
         if (w.specialMs > 0L) {
             w.lifted = w.ability == Ability.FLY
             w.dodging = w.ability == Ability.HIDE
@@ -438,31 +446,63 @@ object DuelPhysics {
         if (disp == Vec2.ZERO) return dashActiveMs > 0L
 
         val s = w.body.state
-        val start = s.pos + disp
+        val origin = s.pos
         // A lifted FLY is moved at its base, like everything else it does (see liftStep).
         val feetH = if (w.lifted) s.h - liftHeight(s, p) else s.h
-        val moved = moveThrough(c.level, c.physics, s.pos, start, feetH, s.radiusM)
-        w.moveTo(moved.pos)
-        val obstacle = moved.obstacle
-        if (knock0 != Vec2.ZERO && obstacle != null) {
-            // What the obstacle took back, as a direction into its surface.
-            val back = start - moved.pos
-            val len = back.length
-            if (len > Vec2.EPS) {
-                val into = back / len
-                val speedInto = knock0.dot(into)
-                if (speedInto >= p.wallSlamMinMps) {
-                    w.knock = Vec2.ZERO
-                    w.stunMs += p.wallSlamStunMs
-                    events += DuelEvent.WallSlam(w.id, obstacle.id, atMs)
-                } else if (speedInto > 0f && w.knock != Vec2.ZERO) {
-                    w.knock -= into * w.knock.dot(into)
-                    if (w.knock.length < p.knockStopMps) w.knock = Vec2.ZERO
+        // Swept (T48 review): the move runs in pieces no longer than SWEEP_PIECE_RADII radii, each resolved against what
+        // blocks, so no speed can carry a circle through a thin object between two checks: a centre that stood at least
+        // a radius from a face moves at most half a radius before the next push-out, which still sends it back. A move
+        // up to that length is one piece: the single resolution as before, exactly. While nothing has pushed, every
+        // piece aims at its exact share of the move, so an unobstructed move of any length ends where it always did.
+        val pieces = sweepPieces(disp.length, s.radiusM)
+        var pos = origin
+        var clean = true
+        for (k in 1..pieces) {
+            val target = when {
+                k == pieces && clean -> origin + disp
+                clean -> origin + disp * (k.toFloat() / pieces)
+                else -> pos + (disp * (k.toFloat() / pieces) - disp * ((k - 1).toFloat() / pieces))
+            }
+            val moved = moveThrough(c.level, c.physics, pos, target, feetH, s.radiusM)
+            pos = moved.pos
+            if (pos != target) clean = false
+            val obstacle = moved.obstacle
+            if (knock0 != Vec2.ZERO && obstacle != null) {
+                // What the obstacle took back, as a direction into its surface.
+                val back = target - moved.pos
+                val len = back.length
+                if (len > Vec2.EPS) {
+                    val into = back / len
+                    val speedInto = knock0.dot(into)
+                    if (speedInto >= p.wallSlamMinMps) {
+                        // The first block stops the knockback here, as the single move did: the rest of it is spent.
+                        w.knock = Vec2.ZERO
+                        w.stunMs += p.wallSlamStunMs
+                        events += DuelEvent.WallSlam(w.id, obstacle.id, atMs)
+                        break
+                    } else if (speedInto > 0f && w.knock != Vec2.ZERO) {
+                        w.knock -= into * w.knock.dot(into)
+                        if (w.knock.length < p.knockStopMps) w.knock = Vec2.ZERO
+                    }
                 }
             }
         }
+        w.moveTo(pos)
         return dashActiveMs > 0L
     }
+
+    /**
+     * How many pieces a move of [length] runs in for a fighter of [radius]: 1 up to [SWEEP_PIECE_RADII] radii, else
+     * enough for none to be longer.
+     */
+    internal fun sweepPieces(length: Float, radius: Float): Int {
+        val most = SWEEP_PIECE_RADII * radius
+        if (!(most > 0f) || !(length > most)) return 1
+        return ceil(length / most).toInt().coerceAtLeast(1)
+    }
+
+    /** The longest piece of a swept move, in fighter radii (1.5 cm for a table fighter). */
+    internal const val SWEEP_PIECE_RADII = 0.5f
 
     /** Step 3. Returns true when [w]'s stomp landed in it. */
     private fun physicsStep(w: Work, wasOut: Boolean, c: Consts): Boolean {
@@ -600,8 +640,8 @@ object DuelPhysics {
             val toB = p.knockSpeedMpsFor(a.stats, b.stats, fromAbove(sa.h, sb.h, p)) * knockScale(a, p)
             val dirA = a.dashDir
             val dirB = b.dashDir
-            knockBack(a, dirB * toA, p)
-            knockBack(b, dirA * toB, p)
+            knockBack(a, dirB, toA, p)
+            knockBack(b, dirA, toB, p)
             a.dashMs = 0L
             b.dashMs = 0L
             events += if (a.id < b.id) DuelEvent.Clash(a.id, b.id, atMs) else DuelEvent.Clash(b.id, a.id, atMs)
@@ -619,9 +659,9 @@ object DuelPhysics {
     private fun hit(attacker: Work, victim: Work, p: DuelParams, atMs: Long, events: MutableList<DuelEvent>) {
         val above = fromAbove(attacker.body.state.h, victim.body.state.h, p)
         val speed = p.knockSpeedMpsFor(attacker.stats, victim.stats, above) * knockScale(attacker, p)
-        knockBack(victim, attacker.dashDir * speed, p)
+        val given = knockBack(victim, attacker.dashDir, speed, p)
         attacker.dashMs = 0L
-        events += DuelEvent.Hit(attacker.id, victim.id, speed, above, atMs)
+        events += DuelEvent.Hit(attacker.id, victim.id, given, above, atMs)
     }
 
     /** The JUMP stomp's landing: [victim] knocked straight away from where [stomper] stands now. */
@@ -631,8 +671,8 @@ object DuelPhysics {
             ?: s.facing.normalized().takeIf { it != Vec2.ZERO }
             ?: Vec2(1f, 0f)
         val speed = p.knockSpeedMpsFor(stomper.stats, victim.stats) * p.stompScale
-        knockBack(victim, away * speed, p)
-        events += DuelEvent.Hit(stomper.id, victim.id, speed, fromAbove = true, atMs = atMs)
+        val given = knockBack(victim, away, speed, p)
+        events += DuelEvent.Hit(stomper.id, victim.id, given, fromAbove = true, atMs = atMs)
     }
 
     private fun knockScale(attacker: Work, p: DuelParams): Float = when (attacker.dashKind) {
@@ -641,12 +681,19 @@ object DuelPhysics {
         DashKind.COUNTER -> p.counterKnockScale
     }
 
-    /** A hit: the knockback, a stun, no walk target, and the victim's own dash (if any) ends. */
-    private fun knockBack(victim: Work, knock: Vec2, p: DuelParams) {
-        victim.knock = knock
+    /**
+     * A hit along unit [dir] at [speed] (m/s, before wobble): the knockback, x [DuelParams.wobbleFactor] of the victim's
+     * wobble, which then grows by [DuelParams.wobblePerHit] (capped); a stun, no walk target, and the victim's own dash
+     * (if any) ends. Returns the speed given. With no wobble (0, and none per hit) it is the plain knockback, bit for bit.
+     */
+    private fun knockBack(victim: Work, dir: Vec2, speed: Float, p: DuelParams): Float {
+        val given = speed * p.wobbleFactor(victim.wobble)
+        victim.knock = dir * given
+        victim.wobble = minOf(victim.wobble + p.wobblePerHit, p.wobbleMax)
         victim.stunMs = maxOf(victim.stunMs, p.hitStunMsFor(victim.stats))
         victim.body = stopWalking(victim.body)
         victim.dashMs = 0L
+        return given
     }
 
     private fun fromAbove(attackerH: Float, victimH: Float, p: DuelParams) = attackerH - victimH > p.fromAboveMinM

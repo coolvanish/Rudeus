@@ -55,7 +55,7 @@ class DuelSpecialsTest {
         val hit = side.all.filterIsInstance<Hit>().single()
         val stompSpeed = P.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED) * P.stompScale
         assertEquals(Hit("a", "b", stompSpeed, fromAbove = true, atMs = hit.atMs), hit)
-        assertEquals(0.3f, hit.speedMps, 1e-6f)
+        assertEquals(0.2125f, hit.speedMps, 1e-6f) // T48: 0.25 x 0.85 (0.3 = 0.25 x 1.2 before)
         val k = side.indexOf { it is Hit }
         assertEquals(Mode.JUMPING, side.states[k - 1].a.body.state.mode, "still in the air the step before")
         assertTrue(grounded(side.states[k].a), "the hit is the landing")
@@ -65,7 +65,7 @@ class DuelSpecialsTest {
         val pushed = side.states[k].b
         assertTrue(pushed.knock.normalized().distanceTo(Vec2(1f, 0f)) < 1e-5f, "straight away: ${pushed.knock}")
         assertTrue(DuelPhysics.isStunned(pushed))
-        assertTrue(side.last.b.pos.u - 2 * R > 0.04f, "slid ${side.last.b.pos.u - 2 * R} m (0.3 m/s x 0.18 s)")
+        assertTrue(side.last.b.pos.u - 2 * R > 0.03f, "slid ${side.last.b.pos.u - 2 * R} m (0.21 m/s x 0.18 s)")
 
         // Any side: on a diagonal 7.1 cm away, along the diagonal; behind it, backwards. The stomp has no facing.
         val diagonal = stomp(fighter("b", Vec2(0.05f, 0.05f)))
@@ -95,10 +95,12 @@ class DuelSpecialsTest {
     @Test
     fun liftedFighterCannotBeHitAndTheDashCarriesOn() {
         val start = DuelState(fighter("a", Vec2.ZERO), gifted("b", Vec2(NEAR, 0f), Ability.FLY, facing = Vec2(-1f, 0f)))
-        val script = mapOf(0L to inputs("a" to Dash(), "b" to Special), 2000L to inputs("a" to Dash(Vec2(-1f, 0f))))
-        val t = runDuel(start, OPEN, 3000L) { s -> script[s.timeMs] ?: emptyMap() }
+        // a's second dash: on the first 16 ms frame after its cooldown (2000 ms before T48 made the cooldown 2500).
+        val again = (P.cooldownMsFor(FighterStats.BALANCED) + 15L) / 16L * 16L
+        val script = mapOf(0L to inputs("a" to Dash(), "b" to Special), again to inputs("a" to Dash(Vec2(-1f, 0f))))
+        val t = runDuel(start, OPEN, again + 1000L) { s -> script[s.timeMs] ?: emptyMap() }
         assertEquals(SpecialStarted("b", Ability.FLY, 0L), t.all.filterIsInstance<SpecialStarted>().single())
-        assertTrue(t.all.filter { it.atMs < 2000L }.none { it is Hit || it is Clash }, "a dash passes under: ${t.all}")
+        assertTrue(t.all.filter { it.atMs < again }.none { it is Hit || it is Clash }, "a dash passes under: ${t.all}")
 
         // Lifted 1.2 s: hovering 1.5 cm up (JUMPING, no vertical speed), in place, unknocked; on its last sub-step it is
         // back on the table.
@@ -123,7 +125,7 @@ class DuelSpecialsTest {
         // Once down it can be hit again.
         val second = t.all.filterIsInstance<Hit>().single()
         assertEquals("a" to "b", second.attacker to second.victim)
-        assertTrue(second.atMs > 2000L)
+        assertTrue(second.atMs > again)
 
         // Lifted it walks at 1.5x, cannot dash, and can still walk off the edge (u = 0.15).
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.4f), spawn = Vec2(-0.1f, 0f))
@@ -157,39 +159,42 @@ class DuelSpecialsTest {
         val plainHit = plain.all.filterIsInstance<Hit>().single()
         val ramHit = ram.all.filterIsInstance<Hit>().single()
         assertEquals(plainHit.speedMps * P.ramKnockScale, ramHit.speedMps, 1e-6f)
-        assertEquals(0.375f, ramHit.speedMps, 1e-6f)
-        assertTrue(ramSlide > 1.4f * plainSlide, "ram slide $ramSlide vs dash $plainSlide")
+        assertEquals(0.275f, ramHit.speedMps, 1e-6f) // T48: 0.25 x 1.1 (x 1.5 = 0.375 before)
+        assertTrue(ramSlide > 1.05f * plainSlide, "ram slide $ramSlide vs dash $plainSlide")
         assertEquals(listOf<DuelEvent>(SpecialStarted("a", Ability.ROLL, 0L)), ram.all.filter { it is SpecialStarted || it is DashStarted })
         assertTrue(DuelPhysics.isStunned(ram.states[ram.indexOf { it is Hit }].b))
         assertEquals(0L, ram.states[ram.indexOf { it is Hit }].a.dashMs, "the hit ends the ram")
 
-        // A ram that meets nobody: 550 ms, 16.5 cm, and nothing steers it; the dash cooldown is untouched.
-        assertEquals(550L, P.ramDashMs)
+        // A ram that meets nobody: 325 ms, 9.75 cm (T48; 550 ms, 16.5 cm before), and nothing steers it; the dash
+        // cooldown is untouched. `end` is the first 16 ms frame after it.
+        assertEquals(325L, P.ramDashMs)
+        val end = (P.ramDashMs + 15L) / 16L * 16L
         val alone = DuelState(gifted("a", Vec2.ZERO, Ability.ROLL), fighter("b", Vec2(0f, 0.5f)))
         val miss = runDuel(alone, OPEN, 1000L) { s ->
             when {
                 s.timeMs == 0L -> inputs("a" to Special)
-                s.timeMs < 560L -> inputs("a" to MoveTo(Vec2(-0.3f, 0.3f)))
-                s.timeMs == 560L -> inputs("a" to Dash())
+                s.timeMs < end -> inputs("a" to MoveTo(Vec2(-0.3f, 0.3f)))
+                s.timeMs == end -> inputs("a" to Dash())
                 else -> emptyMap()
             }
         }
-        assertEquals(P.dashSpeedMps * P.ramDashMs / 1000f, miss.at(560L).a.pos.u, 1e-4f)
-        assertEquals(0f, miss.at(560L).a.pos.v, 1e-6f)
-        assertTrue(miss.states.filter { it.timeMs in 16L..544L }.all { DuelPhysics.isRamming(it.a) })
-        assertEquals(DashKind.PLAIN, miss.at(560L).a.dashKind)
+        assertEquals(P.dashSpeedMps * P.ramDashMs / 1000f, miss.at(end).a.pos.u, 1e-4f)
+        assertEquals(0f, miss.at(end).a.pos.v, 1e-6f)
+        assertTrue(miss.states.filter { it.timeMs in 16L..(end - 16L) }.all { DuelPhysics.isRamming(it.a) })
+        assertEquals(DashKind.PLAIN, miss.at(end).a.dashKind)
         assertEquals(listOf<DuelEvent>(dashStarted("a")), miss.all.filterIsInstance<DashStarted>().untimed(), "a dash right after the ram")
 
-        // 12 cm from the edge: a dash stops on the table, a ram carries the roller off it.
+        // 9 cm from the edge (12 cm before T48 shortened the ram): a dash (7.5 cm) stops on the table, a ram (9.75 cm)
+        // carries the roller off it.
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.3f), spawn = Vec2(-0.1f, 0f))
-        val nearEdge = DuelState(gifted("a", Vec2(0.03f, 0f), Ability.ROLL), fighter("b", Vec2(-0.1f, 0.1f)))
+        val nearEdge = DuelState(gifted("a", Vec2(0.06f, 0f), Ability.ROLL), fighter("b", Vec2(-0.1f, 0.1f)))
         val rolled = runDuel(nearEdge, level, 2500L, script = atStart("a" to Special))
         val fell = rolled.all.filterIsInstance<RingOut>().single()
         assertEquals("a", fell.id)
-        assertTrue(abs(fell.atMs - 400L) <= 2 * P.subStepMs, "off the edge 12 cm later at 0.3 m/s: ${fell.atMs} ms")
+        assertTrue(abs(fell.atMs - 300L) <= 2 * P.subStepMs, "off the edge 9 cm later at 0.3 m/s: ${fell.atMs} ms")
         val dashed = runDuel(nearEdge, level, 2500L, script = atStart("a" to Dash()))
         assertTrue(dashed.all.none { it is RingOut })
-        assertEquals(0.105f, dashed.last.a.pos.u, 1e-4f)
+        assertEquals(0.135f, dashed.last.a.pos.u, 1e-4f)
     }
 
     @Test
@@ -238,12 +243,14 @@ class DuelSpecialsTest {
             }
             return s.all.filterIsInstance<Hit>().single()
         }
-        assertEquals(0.375f, dashAfterDodge(1744L).speedMps, 1e-6f)
+        assertEquals(0.25f * P.counterKnockScale, dashAfterDodge(1744L).speedMps, 1e-6f) // 0.5 (T48; 0.375 before)
         assertEquals(0.25f, dashAfterDodge(1760L).speedMps, 1e-6f)
-        val late = runDuel(start, OPEN, 1500L) { st ->
+        // The first 16 ms frame after the dodge (512 ms before T48 made it 900 ms).
+        val afterDodge = (P.dodgeMs + 15L) / 16L * 16L
+        val late = runDuel(start, OPEN, afterDodge + 1000L) { st ->
             when (st.timeMs) {
                 0L -> inputs("b" to Special)
-                512L -> inputs("a" to Dash())
+                afterDodge -> inputs("a" to Dash())
                 else -> emptyMap()
             }
         }
@@ -268,14 +275,15 @@ class DuelSpecialsTest {
         // b first: it dodges at 0 and dashes at 8 (ending the dodge), a dashes at 40. They meet both dashing: a clash.
         val bFirst = play(mapOf(0L to inputs("b" to Special), 8L to inputs("b" to Dash()), 40L to inputs("a" to Dash())))
         assertEquals(listOf("Clash"), bFirst.all.filter { it is Clash || it is Hit }.map { it::class.simpleName }, "${bFirst.all}")
-        // a first: a dashes at 8 into b's dodge (it passes), b waits and dashes at 600, after its dodge: a counter, a
-        // takes it. This is what the dodge is for: a read of the other's dash.
+        // a first: a dashes at 8 into b's dodge (it passes), b waits and dashes at 600, still inside its 900 ms dodge
+        // (its dash ends the dodge; before T48 the 500 ms dodge was over by then): a counter, a takes it. This is what
+        // the dodge is for: a read of the other's dash.
         val aFirst = play(mapOf(0L to inputs("b" to Special), 8L to inputs("a" to Dash()), 600L to inputs("b" to Dash())))
         val hit = aFirst.all.filterIsInstance<Hit>().single()
-        assertEquals(Hit("b", "a", 0.375f, fromAbove = false, atMs = hit.atMs), hit)
+        assertEquals(Hit("b", "a", 0.25f * P.counterKnockScale, fromAbove = false, atMs = hit.atMs), hit) // 0.5 (T48; 0.375 before)
         assertTrue(aFirst.all.none { it is Clash })
-        // a dashes after the dodge has run out: a plain hit on b.
-        val afterIt = play(mapOf(0L to inputs("b" to Special), 600L to inputs("a" to Dash())))
+        // a dashes after the dodge has run out (at 600 ms before T48 made it 900 ms): a plain hit on b.
+        val afterIt = play(mapOf(0L to inputs("b" to Special), (P.dodgeMs + 7L) / 8L * 8L + 8L to inputs("a" to Dash())))
         assertEquals(listOf("a" to 0.25f), afterIt.all.filterIsInstance<Hit>().map { it.attacker to it.speedMps })
     }
 
@@ -305,7 +313,7 @@ class DuelSpecialsTest {
         }
         val landed = s.states.indexOfFirst { it.timeMs > 0L && !it.a.stomping }
         assertTrue(s.states[landed - 1].b.counterMs == 0L && s.states[landed].b.counterMs > 0L, "opened at the landing")
-        assertEquals(listOf(Hit("b", "a", 0.375f, false, 0L)), s.all.filterIsInstance<Hit>().map { it.copy(atMs = 0L) })
+        assertEquals(listOf(Hit("b", "a", 0.25f * P.counterKnockScale, false, 0L)), s.all.filterIsInstance<Hit>().map { it.copy(atMs = 0L) }) // 0.5 (T48; 0.375 before)
 
         // A FLY's lift lets a dash pass too, but a lift is not a dodge: no counter.
         val flyer = start.copy(b = gifted("b", Vec2(NEAR, 0f), Ability.FLY, facing = Vec2(-1f, 0f)))
@@ -380,12 +388,15 @@ class DuelSpecialsTest {
 
     @Test
     fun specialOnCooldownOrWhileBusyIsIgnored() {
-        // Pressed on every frame: each special starts at 0 and again exactly when its 6 s cooldown is over.
+        // Pressed on every frame: each special starts at 0 and again exactly when its cooldown (9 s since T48, 6 s before)
+        // is over.
         for (ability in Ability.entries) {
-            val t = runDuel(DuelState(gifted("a", Vec2.ZERO, ability), fighter("b", Vec2(0f, 0.5f))), OPEN, 7000L) {
+            val t = runDuel(DuelState(gifted("a", Vec2.ZERO, ability), fighter("b", Vec2(0f, 0.5f))), OPEN, P.specialCooldownMsFor(FighterStats.BALANCED) + 1000L) {
                 inputs("a" to Special)
             }
-            assertEquals(listOf(0L, P.specialCooldownMsFor(FighterStats.BALANCED)), t.all.filterIsInstance<SpecialStarted>().map { it.atMs }, "$ability")
+            // On the first 16 ms frame once it is over (9000 is no multiple of 16: 9008; 6000 was).
+            val again = (P.specialCooldownMsFor(FighterStats.BALANCED) + 15L) / 16L * 16L
+            assertEquals(listOf(0L, again), t.all.filterIsInstance<SpecialStarted>().map { it.atMs }, "$ability")
         }
         // Busy: stunned, dashing, airborne, out, PAUSED, on cooldown, its special still running. Special does exactly
         // what no input does.
@@ -418,24 +429,26 @@ class DuelSpecialsTest {
     fun specialCooldownShortensWithAgility() {
         val cooldowns = (1..10).map { P.specialCooldownMsFor(stats(agility = it)) }
         for (i in 1 until cooldowns.size) assertTrue(cooldowns[i] < cooldowns[i - 1], "$cooldowns")
-        assertEquals(7440L, cooldowns[0])
-        assertEquals(6000L, cooldowns[4])
-        assertEquals(4200L, cooldowns[9])
-        // Behaviour: pressed on every 8 ms frame, the second special starts one cooldown after the first.
+        // T48: 9000 * (1.15 - 0.03 AGILITY) (6000 * (1.30 - 0.06 AGILITY) = 7440 / 6000 / 4200 before).
+        assertEquals(10_080L, cooldowns[0])
+        assertEquals(9000L, cooldowns[4])
+        assertEquals(7650L, cooldowns[9])
+        // Behaviour: pressed on every 8 ms frame, the second special starts one cooldown after the first, on the 8 ms
+        // frame where it is over (7650 is no multiple of 8: 7656; the cooldowns before T48 all were).
         for (agility in listOf(1, 5, 10)) {
             val st = stats(agility = agility)
-            val t = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.HIDE, st), fighter("b", Vec2(0f, 0.5f))), OPEN, 8000L, dtMs = 8L) {
+            val t = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.HIDE, st), fighter("b", Vec2(0f, 0.5f))), OPEN, cooldowns[0] + 1000L, dtMs = 8L) {
                 inputs("a" to Special)
             }
             val times = t.all.filterIsInstance<SpecialStarted>().map { it.atMs }
-            assertEquals(P.specialCooldownMsFor(st), times[1] - times[0], "agility $agility: $times")
+            assertEquals((P.specialCooldownMsFor(st) + 7L) / 8L * 8L, times[1] - times[0], "agility $agility: $times")
         }
     }
 
     @Test
     fun hudReadsCooldownsAsFractions() {
         val start = DuelState(gifted("a", Vec2.ZERO, Ability.HIDE), fighter("b", Vec2(0f, 0.5f)))
-        val t = runDuel(start, OPEN, 7000L) { s ->
+        val t = runDuel(start, OPEN, P.specialCooldownMsFor(FighterStats.BALANCED) + 1000L) { s ->
             when (s.timeMs) {
                 0L -> inputs("a" to Special)
                 16L -> inputs("a" to Dash())
@@ -445,8 +458,9 @@ class DuelSpecialsTest {
         assertEquals(0f, DuelPhysics.dashCooldownLeft(start.a))
         assertEquals(0f, DuelPhysics.specialCooldownLeft(start.a))
         val at = t.at(768L).a
-        assertEquals((1500f - 752f) / 1500f, DuelPhysics.dashCooldownLeft(at), 1e-6f)
-        assertEquals((6000f - 768f) / 6000f, DuelPhysics.specialCooldownLeft(at), 1e-6f)
+        // T48: 2500 and 9000 ms cooldowns (1500 and 6000 before).
+        assertEquals((2500f - 752f) / 2500f, DuelPhysics.dashCooldownLeft(at), 1e-6f)
+        assertEquals((9000f - 768f) / 9000f, DuelPhysics.specialCooldownLeft(at), 1e-6f)
         val fractions = t.states.map { DuelPhysics.dashCooldownLeft(it.a) to DuelPhysics.specialCooldownLeft(it.a) }
         assertTrue(fractions.drop(2).zipWithNext().all { (x, y) -> y.first <= x.first && y.second <= x.second }, "they only run down")
         assertTrue(fractions.all { (d, s) -> d in 0f..1f && s in 0f..1f })

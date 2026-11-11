@@ -67,6 +67,7 @@ import kotlin.system.exitProcess
  *   views --ref <ref> [--bundle docs/bundled] [--fixtures <dir>] [--refs <dir>] [--out build/views] [--runs <dir>]
  *         [--live [--budget-usd 0.05] [--record [<fixturesDir>] [--force]]]
  *       T41: the missing views of one bundled or fixture character -> <out>/<ref>/view-*.png + contact.png + README.md (ViewsCommand.kt).
+ *   duel match|series|matrix ...   T48: seeded bot-vs-bot duels and the balance matrix (DuelCommand.kt); no model, no key.
  *   metrics summarise <runsDir>
  *   metrics gate <run.json>        Day 2 gate table; exit 0 only on PASS
  */
@@ -82,6 +83,7 @@ fun main(args: Array<String>) {
             "choreo" -> choreo(parseFlags(args.drop(1)))
             "pose-spike" -> poseSpike(parseFlags(args.drop(1)))
             "views" -> views(parseFlags(args.drop(1)))
+            "duel" -> duel(args.drop(1))
             "help", "--help", "-h" -> usage()
             else -> usage("unknown command: ${args[0]}")
         }
@@ -115,6 +117,12 @@ internal fun usage(error: String? = null): Int {
           pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
           views --ref <ref> [--bundle docs/bundled] [--fixtures <dir>] [--refs <dir>] [--out build/views] [--runs <dir>]
                 [--live [--budget-usd 0.05] [--record [<fixturesDir>] [--force]]]
+          duel match  --a <fighter> --b <fighter> [--arena empty|cup|small|large] [--level-a easy|normal|hard] [--level-b ...]
+                      [--seed 1] [--step-ms 33] [--params f.json] [--rules f.json] [--tuning f.json] [--bundle docs/bundled]
+          duel series (as match) [--n 200]          <fighter> = fly | roll:7,6,5,2 | @<bundled ref>
+          duel matrix [--level normal,hard] [--arenas all|empty,cup,small,large] [--n 200] [--seed 1] [--groups ability,stat]
+                      [--params f.json] [--rules f.json] [--tuning f.json] [--bundle docs/bundled] [--out build/duel]
+                      [--threads <cores>] [--check-n <n>] [--check-step-ms 16] [--gate]
           metrics summarise <runsDir>
           metrics gate <run.json>
         """.trimIndent(),

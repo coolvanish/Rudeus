@@ -25,7 +25,8 @@ import kotlinx.serialization.Serializable
  * @property sidestepRadii a sidestep on foot goes this far across the incoming dash.
  * @property stompReachShare a stomp is tried with the opponent within this share of the stomp's reach.
  * @property ramNearEdgeRadii a ram is tried with the opponent at most this far inside the boundary ("near an edge"; a
- *   [BotSkill.safeRamsOnly] bot rams wherever a miss still ends on the table)...
+ *   [BotSkill.safeRamsOnly] bot rams wherever a miss still ends on the table). T48: 8 (was 5), so a NORMAL ROLL rams
+ *   on most of a 120 x 60 cm table too, not only on the small ones (where every spot is near an edge)...
  * @property ramRoomRadii ... and the roller itself at least this far inside ("room behind itself").
  * @property walkCost a bot that weighs push directions ([BotSkill.weighsPush]) scores each as the distance the opponent
  *   would have to be pushed plus this x the walk to the spot (and round the opponent)...
@@ -54,7 +55,7 @@ data class BotTuning(
     val threatSlackRadii: Float = 0.5f,
     val sidestepRadii: Float = 2f,
     val stompReachShare: Float = 0.8f,
-    val ramNearEdgeRadii: Float = 5f,
+    val ramNearEdgeRadii: Float = 8f,
     val ramRoomRadii: Float = 3f,
     val walkCost: Float = 0.5f,
     val switchCostRadii: Float = 1f,
@@ -116,7 +117,10 @@ data class BotTuning(
  *   those directions win on its score alone made HARD lose to NORMAL (it walked along its own edge, or round the cup).
  * @property usesSpecial uses its special in its obvious situation: stomp with the opponent in reach, ram when aligned
  *   with the opponent near an edge, lift-off or dodge when a dash or a stomp is coming at it near an edge.
- * @property nearEdgeRadii "near an edge" for the lift-off, the dodge and the sidestep: at most this far inside.
+ * @property nearEdgeRadii "near an edge" for the lift-off and the dodge: at most this far inside.
+ * @property sidestepEdgeRadii "near an edge" for a [sidesteps] bot's sidestep: at most this far inside (T48 review: a
+ *   number of its own, so a HARD FLY can lift off wherever a NORMAL one does while a HARD JUMP keeps fighting in
+ *   mid-table; the same as [nearEdgeRadii] unless given).
  * @property sidesteps gets out of the way of a dash coming at it near an edge (a dash across it, else a step aside;
  *   in mid-table a hit costs a few centimetres and leaves the attacker on cooldown, so it takes it), and dodges (HIDE)
  *   wherever it stands, for the counter.
@@ -142,6 +146,7 @@ data class BotSkill(
     val sidesteps: Boolean,
     val counters: Boolean,
     val safeRamsOnly: Boolean,
+    val sidestepEdgeRadii: Float = nearEdgeRadii,
 ) {
     init {
         require(thinkMs >= 0L) { "thinkMs must be >= 0, got $thinkMs" }
@@ -153,6 +158,7 @@ data class BotSkill(
         require(wrongWayChance in 0f..1f) { "wrongWayChance must be in 0..1, got $wrongWayChance" }
         require(wanderChance in 0f..1f) { "wanderChance must be in 0..1, got $wanderChance" }
         require(nearEdgeRadii >= 0f && nearEdgeRadii.isFinite()) { "nearEdgeRadii must be >= 0, got $nearEdgeRadii" }
+        require(sidestepEdgeRadii >= 0f && sidestepEdgeRadii.isFinite()) { "sidestepEdgeRadii must be >= 0, got $sidestepEdgeRadii" }
     }
 
     companion object {
@@ -163,22 +169,31 @@ data class BotSkill(
             usesSpecial = false, nearEdgeRadii = 0f, sidesteps = false, counters = false, safeRamsOnly = false,
         )
 
-        /** The shared plan at a fifth of a second, a small aim error, the special in its obvious situation. */
+        /**
+         * The shared plan at a fifth of a second, a small aim error, the special in its obvious situation. T48:
+         * `nearEdgeRadii` 20 (was 4): a FLY lifts off and a HIDE dodges whenever a dash or a stomp comes at it, not only
+         * near an edge (in mid-table they had no special at all: equal stats, JUMP beat FLY 80 / 20).
+         */
         val NORMAL = BotSkill(
             thinkMs = 144, thinkJitterTicks = 2, dashRangeShare = 0.8f, alignCos = 0.8660254f, aimErrorShare = 0.1f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = false, weighsPush = false,
-            usesSpecial = true, nearEdgeRadii = 4f, sidesteps = false, counters = false, safeRamsOnly = false,
+            usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false,
         )
 
         /**
-         * NORMAL deciding every tick or two, leading its aim, weighing where to push (high ground), sidestepping near an
-         * edge, countering. The one tick of jitter matters: two HARD bots deciding on the same ticks mirror each other
-         * exactly on a symmetric arena (every round a tied timeout, every match a draw).
+         * NORMAL deciding every tick or a few, leading its aim, weighing where to push (high ground), sidestepping near an
+         * edge, countering. The jitter matters: two HARD bots deciding on the same ticks mirror each other on a symmetric
+         * arena (with one tick: every round a tied timeout, every match a draw). T48: `thinkJitterTicks` 3 (was 1): with
+         * one, two HARD bots of one ability still dashed together and clashed in mid-table (JUMP v JUMP on the 120 cm
+         * table: 52 % of the rounds to the clock, 34 hits per ring-out); `nearEdgeRadii` 8 (was 4) for the lift-off and
+         * the dodge, `sidestepEdgeRadii` 4 (as before T48) for the sidestep: with 8 for both, a HARD JUMP sidestepped so
+         * often that it lost to a NORMAL one (34 % on the empty table; 78 % with the sidestep at 4).
          */
         val HARD = BotSkill(
-            thinkMs = 48, thinkJitterTicks = 1, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
+            thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
-            usesSpecial = true, nearEdgeRadii = 4f, sidesteps = true, counters = true, safeRamsOnly = true,
+            usesSpecial = true, nearEdgeRadii = 8f, sidesteps = true, counters = true, safeRamsOnly = true,
+            sidestepEdgeRadii = 4f,
         )
     }
 }

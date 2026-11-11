@@ -25,6 +25,10 @@ import kz.rudy.ar.core.physics.PhysicsBody
  * @property counterMs HIDE: > 0 while the next dash started is a counter ([DashKind.COUNTER]); set to
  *   [DuelParams.counterMs] by every hit its dodge let through.
  * @property dashKind what the current dash is; [DashKind.PLAIN] whenever [dashMs] is 0.
+ * @property wobble T48: how unsteady the hits taken so far have made this fighter, 0..[DuelParams.wobbleMax]. Every hit
+ *   it takes (a clash too) is knocked [DuelParams.wobbleKnockScale] x [wobble] harder than the plain knockback, then
+ *   adds [DuelParams.wobblePerHit]; it fades by [DuelParams.wobbleDecayPerS]. Not hit points: nobody loses by wobble,
+ *   it only brings the edge closer. 0 at the start of every round ([DuelMatch] rebuilds the fighters on their marks).
  */
 @Serializable
 data class DuelFighter(
@@ -42,6 +46,7 @@ data class DuelFighter(
     val stomping: Boolean = false,
     val counterMs: Long = 0,
     val dashKind: DashKind = DashKind.PLAIN,
+    val wobble: Float = 0f,
 )
 
 /** What kind of dash a fighter is in ([DuelFighter.dashMs] > 0). */

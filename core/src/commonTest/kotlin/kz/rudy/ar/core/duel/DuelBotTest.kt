@@ -82,14 +82,22 @@ class DuelBotTest {
 
     /**
      * [strong] against [weak] on [arena], equal stats and ability on both sides: [perAbility] matches with each ability
-     * (its archetype stats), marks swapped every other match. Returns the share [strong] won, and prints the line.
+     * (its archetype stats), marks swapped every other match. Returns the share [strong] won, and prints the line;
+     * [byAbility] gets each ability's share.
      */
-    private fun share(strong: BotLevel, weak: BotLevel, arena: Level, name: String, perAbility: Int): Float {
+    private fun share(
+        strong: BotLevel,
+        weak: BotLevel,
+        arena: Level,
+        name: String,
+        perAbility: Int,
+        byAbility: MutableMap<Ability, Float> = HashMap(),
+    ): Float {
         var wins = 0
         var losses = 0
         var clock = 0
         var ended = 0
-        val byAbility = ArrayList<String>()
+        val lines = ArrayList<String>()
         for (ab in Ability.entries) {
             val st = FighterStats.defaultFor(ab)
             val s = DuelSim.series(Contestant("s", st, ab), Contestant("w", st, ab), arena, strong, weak, perAbility, 31_000L + ab.ordinal * 1_000L)
@@ -98,10 +106,11 @@ class DuelBotTest {
             losses += s.winsB
             clock += s.timeouts
             ended += s.ringOuts + s.timeouts
-            byAbility += "$ab ${s.winsA}/${s.matches}"
+            lines += "$ab ${s.winsA}/${s.matches}"
+            byAbility[ab] = s.shareA
         }
         val n = perAbility * Ability.entries.size
-        println("strength $name $strong v $weak: ${wins * 100f / n} % won, ${losses * 100f / n} % lost, clock ${clock * 100 / maxOf(1, ended)} % ($byAbility)")
+        println("strength $name $strong v $weak: ${wins * 100f / n} % won, ${losses * 100f / n} % lost, clock ${clock * 100 / maxOf(1, ended)} % ($lines)")
         return wins.toFloat() / n
     }
 
@@ -119,8 +128,12 @@ class DuelBotTest {
             val arena = DuelArenas.ALL.getValue(name)
             val overEasy = share(BotLevel.NORMAL, BotLevel.EASY, arena, name, 50)
             assertTrue(overEasy >= 0.60f, "$name: NORMAL won $overEasy against EASY")
-            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 50)
+            val perAbility = HashMap<Ability, Float>()
+            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 50, perAbility)
             assertTrue(hardOver >= 0.55f, "$name: HARD won $hardOver against NORMAL")
+            // And with every ability on its own (T48 review: a HARD JUMP losing to a NORMAL one hid in the aggregate).
+            // Measured 66..90 % per ability on these seeds; the floor keeps a 5-point margin under the lowest.
+            for ((ab, s) in perAbility) assertTrue(s >= 0.60f, "$name: HARD $ab won only $s against NORMAL $ab ($perAbility)")
         }
     }
 
@@ -211,10 +224,12 @@ class DuelBotTest {
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.FLY), arena))
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.HIDE), arena))
         assertTrue(answer(BotLevel.EASY, coming(Ability.HIDE), arena) != DuelInput.Special)
-        // In the middle of the table NORMAL keeps its dodge; HARD dodges anyway (a HIDE dodges for the counter).
+        // In the middle of the table both dodge: HARD always did (a HIDE dodges for the counter); NORMAL does since T48
+        // (`nearEdgeRadii` 20: before, in mid-table a FLY or a HIDE had no special at all); EASY still never.
         val middle = coming(Ability.HIDE, at = Vec2(0f, 0.05f))
-        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, middle, arena))
         assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, arena))
+        assertTrue(answer(BotLevel.EASY, middle, arena) != DuelInput.Special)
     }
 
     @Test
@@ -237,12 +252,15 @@ class DuelBotTest {
         }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, nearEdge, arena))
         assertTrue(answer(BotLevel.HARD, nearEdge, arena) != DuelInput.Special)
-        // In the middle, where a miss ends on the table, HARD rams; NORMAL waits for the edge.
-        val middle = fight(arena, Ability.ROLL, Vec2(0f, 0.05f), Vec2(0f, -0.02f)) { a, b ->
+        // In the middle, where a miss ends on the table, HARD rams; NORMAL waits for the edge. Since T48 "near an edge"
+        // for a ram is 8 radii (24 cm; 5 before), which is every spot of the 60 x 40 cm table: the middle of the
+        // 120 x 60 cm one, 28 cm from its nearest edge, is where NORMAL still waits.
+        val large = DuelArenas.LARGE
+        val middle = fight(large, Ability.ROLL, Vec2(0f, 0.05f), Vec2(0f, -0.02f)) { a, b ->
             a.cooling().copy(body = a.body.copy(state = a.body.state.copy(facing = Vec2(0f, -1f)))) to b
         }
-        assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, arena))
-        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, large))
+        assertTrue(answer(BotLevel.NORMAL, middle, large) != DuelInput.Special)
         // A JUMP with the opponent within the stomp's reach, on the side of its edge: NORMAL stomps, EASY never does.
         val stomp = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f)) { a, b -> a.cooling() to b }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, stomp, arena))
