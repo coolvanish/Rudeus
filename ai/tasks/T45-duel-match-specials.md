@@ -6,6 +6,8 @@ phase: v2 wave 2 (ai/build-plan-v2.md, "The game")
 gate: G4 — every match ends, 30 Hz and 60 Hz agree on the winner
 cut-if-slips: specials (the plan's cut 5: ship Dash + Jump only); never the match rules
 depends: T42 merged (`core/duel`: `DuelPhysics.step`, `DuelState`, `DuelParams`). The bot and the headless simulator are T55.
+read first: the Result of `ai/tasks/T42-duel-physics.md`, section "What T45 must know" (hits ignore height, no hit
+source but a dash and no immunity hook yet, stun and cooldown carry over a respawn, params must be passed to the helpers).
 
 ## Goal
 A duel has a beginning and an end. Two fighters start facing each other on the scanned table, a countdown runs, they
@@ -75,12 +77,17 @@ object DuelMatch {
 Rules:
 - COUNTDOWN and POINT: fighters stand on their marks facing each other, input is ignored, `DuelPhysics` is not stepped
   for hits. FIGHT: inputs go to `DuelPhysics.step`.
-- A `RingOut` in FIGHT ends the round at once: the point goes to the other fighter. Both out in the same step: no
-  point, the round replays. Round clock at 0: the fighter whose centre is farther inside the boundary (distance to the
+- A `RingOut` in FIGHT ends the round at once: the point goes to the other fighter. Two ring-outs are compared by
+  `DuelEvent.atMs` (the sub-step they happened in, added by the T42 review fixes), never by the call they arrived in or
+  by their order in the list: the earlier one loses; equal `atMs` = no point, the round replays. The result must be the
+  same at 30 and 60 Hz and with the fighters' slots swapped. Round clock at 0: the fighter whose centre is farther inside the boundary (distance to the
   nearest boundary edge) takes the point; within 1 mm: no point, replay.
 - After POINT both fighters are rebuilt on their marks (IDLE, no knock, no stun, cooldowns cleared) whatever physics
   was doing (falling, respawning). `pointsToWin` reached -> RESULT with the winner. `maxRounds` played without a
   winner -> RESULT, `winner = null`. RESULT is terminal: `step` returns the state unchanged with no events.
+- `tracking` false pauses BOTH fighters (a duel with one paused fighter lets the other dash through it, and `isOut`
+  is false for a fighter paused mid-fall). The caller clamps `dtMs` (the host's `GameLoop` does, at 50 ms); `step`
+  itself clamps to 250 ms so a hitch cannot run hundreds of sub-steps.
 - All clocks advance only by the `dtMs` given while `tracking` is true. The step is frame-rate independent in the
   same sense as T42: any split of the same total time gives the same state and the same events.
 - Never rely on a per-action event arriving on the first frame after a pause (see ai/build-plan-v2.md, "What T43's map
@@ -103,7 +110,7 @@ gains `specialMs`, `specialCooldownMs` and what a special needs; a new `DuelEven
 ## Tests required
 - `countdownIgnoresInputThenTheRoundStarts`
 - `ringOutScoresOnceAndBothReturnToTheirMarks`
-- `bothOutInTheSameStepReplaysTheRound`
+- `bothOutInTheSameSubStepReplaysTheRound` / `theEarlierRingOutLosesAtAnyFrameRateAndInEitherSlot`
 - `timeoutGoesToTheFighterFartherInsideAndATieReplays`
 - `firstToTwoWinsAndResultIsTerminal`
 - `aMatchWithoutAWinnerAfterMaxRoundsIsADraw`
