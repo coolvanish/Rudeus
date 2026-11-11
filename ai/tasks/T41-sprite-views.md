@@ -1,6 +1,6 @@
 # T41 — sprite-views
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md)
 gate: G3 — live spike on >= 5 bundled characters, a human judges the contact sheets

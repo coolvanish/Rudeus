@@ -36,8 +36,9 @@ upgrade path.
 ## 2.5D views
 `SpriteView { FRONT, SIDE, BACK }`. The sheet says which view the drawing is (`baseView`); Muse draws the other two
 (`MetaModels.drawView`, job `muse-view`, + 2 edits per character, in parallel, never fails the character).
-`ViewPicker.pick(facing, cameraForward, cameraRight, previous, views)` is pure `:core` math with 10° hysteresis; the
-host only swaps the texture and the mirror flag. Unknown quality until a live spike: `cli views --live --ref <ref>`
+`ViewPicker.pick(facing, toCamera, previous, views)` is pure `:core` math with 10° hysteresis on the bearing sector
+(`toCamera` = camera minus character in the plane; the picker derives the screen basis itself, so no host can get the
+handedness wrong); the host only swaps the texture and the mirror flag. Unknown quality until a live spike: `cli views --live --ref <ref>`
 writes a contact sheet; a human says yes/no (like the T30 pose spike).
 
 ## iOS readiness
@@ -61,7 +62,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 0 | contracts commit: `FighterStats`, `Stat`, `SpriteView`, sheet fields | core | orchestrator | — |
 | 1 | T39 ios-core-services (common file services on kotlinx-io) — **done** | core, Gradle (hand-review) | opus-high | — |
 | 1 | T40 sheet-fighter-stats — **done** | core/meta, core/domain | opus-high | contracts |
-| 1 | T41 sprite-views | core/emote, core/meta, core/pipeline, cli | opus-high | contracts |
+| 1 | T41 sprite-views — **done** (G3, the live Muse spike, is the user's) | core/emote, core/meta, core/pipeline, cli | opus-high | contracts |
 | 1 | T42 duel-physics | core/duel | opus-extra | contracts |
 | 1 | T43 thin-host-map (design, no code) — **done** | reads androidApp | fable-high | — |
 | 2 | T44 fighter-card-ui — **done** | shared | sonnet-high | T40 |
