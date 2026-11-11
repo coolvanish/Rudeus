@@ -1,6 +1,6 @@
 # T44 — fighter-card-ui
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md)
 gate: G2 — a child sees why their drawing got its stats
@@ -57,5 +57,11 @@ Tests not required: the composable itself, layout, screenshots.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: how it looks on the Pixel is the user's check
+- measured: `scripts/verify.sh` exit 0 under the lock: core 403, shared 30 (26 + 4 new in `FighterStatsUiTest`), android 2;
+  `:shared:compileKotlinIosSimulatorArm64` green.
+- built: `FighterStatsCard.kt` (`StatRow`, `statLabel`, `fighterRows`, `hasDrawnStats`, the composable); the card sits in
+  `ProcessingScreen`'s `ResultLines` under the name + ability tag, in the DONE state only. Six new ids (`stats_title`,
+  `stat_power|speed|guard|agility`, `stats_from_drawing`) and their DESIGN.md rows. One bar colour (Sky), tracks CreamDeep,
+  card Paper: Tomato/Hazard/Sun are taken by status, cliff and the one primary, and only Sky/Leaf/Grape are left.
+- cut/deferred: how it looks on the Pixel is the user's check (not seen here: no device). Open: App.kt moves on 2 s after
+  Done (`DONE_AUTO_ADVANCE_MS`); that is too short to read four reasons. App.kt is not in this brief's Owns.

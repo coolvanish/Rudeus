@@ -110,6 +110,12 @@ Material mapping: `displayLarge = display`, `headlineMedium = titleLarge = title
 - **Tag:** 24 dp, radius 8, 12 sp 800, tint variants.
 - **Character card:** Cream, no stroke, 124 dp wide; sprite on a Paper well; name 16 sp 800; ability as a small Sky tag.
   Selected = 2 dp Ink ring + Sun check badge.
+- **Fighter stats card** (T44, `FighterStatsCard`): Paper, radius 20, no stroke, 16 dp padding (12 compact); heading
+  `headline`; per stat a row of label (`label`, 100 dp), a 10-segment bar (10 dp high, 2 dp gaps, filled segments Sky,
+  empty CreamDeep), the number, and under it Spark's few words in `caption` InkSoft (not in `compact`, which the duel's
+  VS screen uses for two cards side by side). One bar colour: no four tokens read on Paper without borrowing a status
+  colour (Tomato, Hazard, Sun). A line under the bars says the numbers come from the drawing, only when they do; a
+  character without stats shows its ability's archetype and no reasons or line.
 - **Pill** (HUD status): Paper, 1 dp Line edge, 40 dp.
 - **Banner:** Paper card, 1 dp Line, status dot + title + hint, optional one action (Skip, Retry).
 - **Speech bubble:** Paper, 1 dp Line, Sun tail + Sun underline accent.
@@ -191,8 +197,8 @@ card: mono number `0.82`, "Style score", "Attempt 2 / 3", Passed (Leaf) or Not p
   Never block the child.
 - *Pipeline error / offline mid-way*: sheet over Scrim "Didn't work" + "Check the internet and try again", primary
   **Retry**, ghost **Pick a ready one** (back to Capture where bundled characters are offered).
-- *Done* (above the threshold, or the child said yes): "Done!", large sprite on the hero, name + ability tag, a dot score
-  line (Leaf when it passed, Tomato when the child took it below the threshold), one Sun **Next**. Nobody has to confirm:
+- *Done* (above the threshold, or the child said yes): "Done!", large sprite on the hero, name + ability tag, the fighter
+  stats card (Components), a dot score line (Leaf when it passed, Tomato when the child took it below the threshold), one Sun **Next**. Nobody has to confirm:
   it moves on by itself after 2 s, and Next skips the wait.
 
 ### Import — `ImportScreen` (T38)
@@ -356,6 +362,12 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | review_title | Ұнай ма? | Нравится? | Like it? |
 | review_yes | Иә, ойнаймыз | Да, играем | Yes, let's play |
 | processing_done | Дайын! | Готово! | Done! |
+| stats_title | Кейіпкердің күші | Сила героя | Hero's strength |
+| stat_power | Күш | Сила | Power |
+| stat_speed | Жылдамдық | Скорость | Speed |
+| stat_guard | Қорғаныс | Защита | Guard |
+| stat_agility | Ептілік | Ловкость | Agility |
+| stats_from_drawing | Сандар суреттен алынды. Қанат не тікен салсаң, өзгереді | Числа взяты из рисунка. Нарисуй крылья или шипы — изменятся | Numbers come from the drawing. Draw wings or spikes to change them |
 | capture_add_toys | Ойыншық қосу | Добавить игрушки | Add toys |
 | import_title | Ойыншықтар қосылып жатыр | Добавляем игрушки | Adding toys |
 | import_hint | Бірден 7-ге дейін. Сәл күте тұр | До 7 за раз. Подожди немного | Up to 7 at once. Hang on |
