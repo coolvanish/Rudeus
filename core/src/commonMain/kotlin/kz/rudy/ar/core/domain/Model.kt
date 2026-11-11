@@ -1,5 +1,7 @@
 package kz.rudy.ar.core.domain
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlin.math.sqrt
 
@@ -173,6 +175,7 @@ data class Level(
 enum class Ability { JUMP, FLY, ROLL, HIDE }
 
 /** Output of the "character sheet" model call. */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class CharacterSheet(
     /** The Kazakh name; the only one on sheets written before [names]. */
@@ -183,6 +186,20 @@ data class CharacterSheet(
     val lines: Map<String, List<String>>,
     /** Language code ("kk", "ru", "en") -> the name in that language. */
     val names: Map<String, String> = emptyMap(),
+    // The four fields below are written to JSON only when set, so a sheet without them (every v1.0 sheet.json) is
+    // byte-identical to what it was, even through `Bundle.json` (encodeDefaults = true).
+    /** Duel stats read from the picture and normalised to [FighterStats.BUDGET]; null on sheets written before T40. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val stats: FighterStats? = null,
+    /** Language code -> stat -> why the picture earned it, a few words for a child ("big wings"). Empty before T40. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val statReasons: Map<String, Map<Stat, String>> = emptyMap(),
+    /** Which side of the character the sprite shows; null = not known (sheets written before T40). */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val baseView: SpriteView? = null,
+    /** A [SpriteView.SIDE] sprite looks to the right of the picture; null = not known. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val facesRight: Boolean? = null,
 ) {
     /** The name to show in language [code]; [name] when the sheet has none in it. */
     fun nameIn(code: String): String = names[code] ?: name

@@ -1,19 +1,25 @@
 # Rudeus — AR game: your drawing is the character, your table is the level
 
-Android-only ARCore game (Kotlin Multiplatform). A child's drawing or toy becomes the character;
-real table objects become obstacles, platforms and cliffs. Hackathon deadline: **Wed Nov 4 2026, 9:00 PM ET**.
-The day-by-day plan, gates and cut lines live in `ai/build-plan.md` — read it before planning any work.
+Android-first ARCore game (Kotlin Multiplatform, iOS-ready). A child's drawing or toy becomes the character;
+real table objects become obstacles, platforms and cliffs. The hackathon build shipped as `v1.0` on Nov 4 2026
+(`ai/build-plan.md` is its record). **The current plan is `ai/build-plan-v2.md`** ("Duel on the table: draw your
+fighter", decided 2026-11-11): phases, gates and cut lines live there — read it before planning any work; where the
+two plans disagree, v2 wins.
 
 ## Modules and boundaries (enforced by hooks + review)
 
 | Module | Target | May depend on | Must NOT contain |
 |---|---|---|---|
-| `:core` | KMP android + jvm | kotlinx, Ktor | Compose, Android UI, ARCore/Filament/SceneView types |
-| `:shared` | KMP android (Compose UI) | `:core` | ARCore/SceneView types, network calls |
+| `:core` | KMP android + jvm + ios (klibs) | kotlinx, Ktor | Compose, Android UI, ARCore/Filament/SceneView types |
+| `:shared` | KMP android (Compose UI); ios target planned (T46) | `:core` | ARCore/SceneView types, network calls |
 | `:androidApp` | Android app (AR host) | `:shared`, `:core`, SceneView | business logic, physics, API parsing |
 | `:cli` | JVM main | `:core` | anything Android |
 
-- The AR view is injected into `App()` as a **slot composable** from `:androidApp`. No `expect/actual`, no stub actuals.
+- The AR view is injected into `App()` as a **slot composable** from the platform host (`:androidApp`; Swift + RealityKit
+  on iOS). Never an `expect/actual`. `expect/actual` is for leaf platform services only (HTTP engine, image codec, file
+  roots, audio, haptics) and only when both sides really work: no stub actuals. Prefer common code over an actual.
+- The host is an adapter: game rules, loops, timing and orchestration belong in `:core` / `:shared` so the iOS host
+  never has to re-implement them.
 - `:core` works in **plane coordinates** `(u, v, h)` in metres. Only `:androidApp` converts to/from ARCore `Pose`.
 - Scan is an **explicit button** (3–5 s) for the first level; after it the host may run quiet background scans when the camera settles in a new sector (≤ 4 per session, 8 s apart, `ArSlot.autoScan`, HUD switch, on by default). Never per-frame. One anchor per session. `PAUSED` freezes physics, never resets.
 - No backend. Ktor runs on the phone; the key reaches the app via `local.properties` → `BuildConfig.META_API_KEY`.
@@ -36,16 +42,22 @@ Tests live in `core/src/commonTest` and run on the JVM: `./gradlew :core:jvmTest
 ## Definition of done for any change
 1. `scripts/verify.sh` passes (core tests + shared host test + Android debug build). The Stop hook will nag if you skip it.
 2. No new dependency without a one-line reason in the task note.
-3. The relevant day gate in `ai/build-plan.md` is still reachable, or you name what to cut.
+3. The relevant gate in `ai/build-plan-v2.md` is still reachable, or you name what to cut.
 
 ## Commands
 ```
-scripts/verify.sh                 # all tests + assembleDebug (the DoD)
+scripts/verify.sh                 # all tests + core iOS klib compile + assembleDebug (the DoD)
 ./gradlew :core:jvmTest           # fast domain tests
 ./gradlew :androidApp:installDebug && scripts/device.sh run   # on the Pixel
 ./gradlew :cli:run --args="character --fixtures docs/api-samples --out runs"
 scripts/new-task.sh T07 short-slug # create an ai/tasks brief
 ```
+
+## Cloud sessions (Claude Code on the web, environment `rudeus`)
+- The Android SDK is not in the image: when `/opt/android-sdk` exists prefix builds with `ANDROID_HOME=/opt/android-sdk`;
+  when it does not, only `./gradlew :core:jvmTest :core:compileKotlinIosSimulatorArm64 :cli:compileKotlin` can run — say so.
+- No API key, no Pixel, no Mac: live model calls, device gates and anything that links for iOS are the user's.
+  Work against `FixtureApi` / `FakeModels`; never invent a recorded reply.
 
 ## Agents (in `.claude/agents/`) — pick the cheapest tier that can do the job
 | Agent | Model / effort | Use for |

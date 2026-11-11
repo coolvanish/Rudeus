@@ -10,6 +10,10 @@ plugins {
 
 kotlin {
     jvm()
+    // HAND-REVIEW: v2 iOS readiness (ai/build-plan-v2.md) — :core also compiles for iOS (device + Apple-silicon simulator).
+    // Klibs only: no framework is declared here, the Xcode-facing umbrella comes with the iOS app shell (T51).
+    iosArm64()
+    iosSimulatorArm64()
     android {
         namespace = "kz.rudy.ar.core"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -39,6 +43,9 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
     }
 }
