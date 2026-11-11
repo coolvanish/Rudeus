@@ -1,6 +1,6 @@
 # T55 — duel-bot-sim
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "The game": the opponent is a bot in `:core`, one phone)
 gate: G4 — every match ends; 30 Hz and 60 Hz agree on the winner; (the balance half of G4 is T48)
@@ -124,5 +124,158 @@ Tests not required: balance between abilities or stats (T48), the CLI, rendering
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: ...
+- **No `DuelParams` copy**: every test runs `DuelParams.DEFAULT`. With the defaults the bots do push each other off:
+  of the rounds in the win-rate tests 21 to 35 % end by the clock (table below), so the win-rate tests are decided mostly
+  by ring-outs and mean something. The exception T48 must look at: **plain-dash play rarely rings anyone out.** Two
+  NORMAL FLY or two NORMAL HIDE bots (their specials are defensive, so dashes only) ended 92 to 99 % of their rounds by
+  the clock on EMPTY and CUP_AND_BOOK, about 700 hits per ring-out (measured mid-tuning, 40 matches each). The ring-outs
+  come from the stomp (x 1.2) and the ram (x 1.5); a plain even hit (4.5 cm) is recovered from before the next one.
+- Thresholds: the brief's, all of them, none lowered. `hardBeatsEasy` and `normalIsBetweenEasyAndHard` use equal stats
+  and ability with **every ability** (its archetype stats on both sides, 50 matches each, 200 per arena), stricter
+  than one ability. Measured: HARD v EASY 100 % on EMPTY and 100 % on CUP_AND_BOOK (every ability 50/50); NORMAL v EASY
+  99.5 % and 99 %; HARD v NORMAL 94 % (JUMP 49, FLY 39, ROLL 50, HIDE 50 of 50) and 86 % (JUMP 43, FLY 34, ROLL 47, HIDE
+  48). `sidesAreFair`: 400 NORMAL v NORMAL on EMPTY, 202 / 198. No level was cut.
+- measured (2026-11-11, JVM, cloud container, after the review fixes): `:core:jvmTest` 675 tests, 0 failures (650
+  before + 25 new); `duel` 90 (65 + 13 `DuelBotTest` + 6 `DuelSimTest` + 6 `DuelRunnerTest`), **34 to 42 s** for the
+  whole duel package (the costly ones: `everyMatchFinishes` 11 to 14 s, `normalIsBetweenEasyAndHard` 8 s,
+  `hardBeatsEasy` 4 to 5 s); `:core:compileKotlinIosSimulatorArm64` green, the klib carries `DuelRunner` / `BotTuning`.
+- Review fixes (T55 review: MERGE, two small things): (1) holes (CLIFF objects) are now checked everywhere the KDoc
+  promised: a sidestep dash and a ram must run their whole path off every hole (the exact outline, segment against
+  polygon), the "opponent in the path first" excuse needs no hole before the opponent, and a walk target must keep out
+  of every hole's circle (`checked` refuses one that does not; `safe()` no longer lets the edge clamp put a target back
+  on a hole at the rim, it goes halfway to the middle, else stays where the bot is). One test per case
+  (`aRamNeverCrossesAHole`, `aSidestepNeverDashesAcrossAHole`, `aWalkTargetNeverLandsInAHoleAtTheRim`), each failing on
+  the code before the fix. The tuning arenas have no holes: every number measured above is unchanged. (2)
+  `humanSideWithABotIsExactlyDuelMatch` pins what the AR host relies on: a real mind that never wants anything (next
+  decision at `Long.MAX_VALUE`) on side a or b, the three arenas, three rule sets (defaults; countdown 0 / round 2 s /
+  pause 0; countdown 1 s / round 1.5 s / pause 100 / `maxStepMs` 77), random frames from {0, -5, 8, 48, 96, 400, 1000}
+  and 1..59 ms with tracking losses, inputs for the child, the bot's side and an unknown id: 12 600 steps, the runner's
+  state and events equal `DuelMatch.step`'s at every step, no decision, every phase reached (0.2 s).
+- The first decision of a round: at the first tick in FIGHT. The call that reaches the end of a countdown also turns
+  the phase to FIGHT, so a tick that falls exactly there is already FIGHT and the bot decides on it (countdown 2976 =
+  62 x 48: first decision at 2976). With the default 3000 ms countdown (not a multiple of 48) the first decision is at
+  3024 ms. "COUNTDOWN with 0 ms left" exists only as the start of a match with `countdownMs = 0`: the bot waits and
+  first decides at 48 ms. All three pinned in `theBotAnswersNoneOutsideTheFight`.
+  - The bot in ten lines. (1) It decides only on the 48 ms tick grid of match time; between decisions its last orders
+    (a walk) stand; `thinkMs` (+ random ticks) is its reaction time. (2) Outside FIGHT, stunned, dashing or out: None.
+    (3) A dash or a stomp coming at it near an edge: FLY / HIDE use the special (NORMAL, HARD); HARD also dashes across
+    it (else steps aside), and a HARD HIDE dodges anywhere for the counter. (4) HARD with its counter window open dashes
+    at the opponent. (5) The push direction is the opponent's nearest edge; HARD takes a spot up to 45° off it when that
+    spot is on a PLATFORM above the opponent and as deep inside. (6) Dash when the gap is within a share of the dash's
+    reach and the aim pushes along the push direction (EASY: any alignment, aim error, 25 % a random direction; HARD:
+    leads a walking opponent). (7) Special in its obvious situation: stomp with the opponent within 0.8 of the stomp's
+    reach on its edge side; ram when aligned, opponent near an edge, room behind (HARD: anywhere a miss still ends on the
+    table, never otherwise). (8) Else walk to the spot behind the opponent (round the opponent and round what blocks;
+    EASY sometimes wanders to a random spot). (9) Every walk target 2 radii inside the boundary and off holes; a dash or
+    ram only if it ends 1 radius inside with its path off every hole, or meets the opponent in its first half with no
+    hole before it. (10) Randomness: SplitMix64 on `BotMind.rng`; no trigonometry in the bot, so for a given state its
+    answer is the same on every platform. That is a promise about one decision, not about a whole match: the physics
+    uses `exp`, and the cup of CUP_AND_BOOK is built with cos / sin (`Polygon.circle`), so a whole match being the same
+    on the JVM and on iOS is not shown (iOS was compiled, never run).
+  - Every `BotTuning` default (distances in fighter radii, cosines for angles): `tickMs` 48, `edgeMarginRadii` 2,
+    `dashEndMarginRadii` 1, `inPathLateralRadii` 1, `inPathReachShare` 0.5, `standoffGapRadii` 0.6, `clearanceRadii`
+    0.6, `detourStepCos`/`Sin` 0.7071 (45°), `threatSlackRadii` 0.5, `sidestepRadii` 2, `stompReachShare` 0.8,
+    `ramNearEdgeRadii` 5, `ramRoomRadii` 3, `walkCost` 0.5, `switchCostRadii` 1, `highGroundBonusRadii` 3, `leadShare`
+    1, `knockLeadShare` 0.5, `lineOfSightRadii` 0.8, `sameDirectionCos` 0.98, `blockedPushRadii` 10. `BotSkill`
+    (EASY / NORMAL / HARD): `thinkMs` 384 / 144 / 48, `thinkJitterTicks` 4 / 2 / 1, `dashRangeShare` 0.7 / 0.8 / 0.85,
+    `alignCos` -1 / 0.866 / 0.866, `aimErrorShare` 0.35 / 0.1 / 0, `wrongWayChance` 0.25 / 0 / 0, `wanderChance` 0.2 /
+    0 / 0, `wanderMs` 1200 / 0 / 0, `leadsAim` no / no / yes, `weighsPush` no / no / yes, `usesSpecial` no / yes / yes,
+    `nearEdgeRadii` 0 / 4 / 4, `sidesteps` no / no / yes, `counters` no / no / yes, `safeRamsOnly` no / no / yes.
+  - The table: every level pair on each arena, archetype stats, the same ability on both sides, 10 matches per ability
+    (40 per row), default rules, marks 16 cm apart. Wins a / b / draws in %; clock = rounds ended by the round clock;
+    hits = Hit + Clash events. EMPTY's rows come from `theLevelTableOnEmpty` (printed on every run), the other two
+    from a one-off run with the same code.
+
+    | arena | a v b | a / b / draw % | clock | mean match | hits / ring-out |
+    |---|---|---|---|---|---|
+    | empty | EASY v EASY | 45 / 55 / 0 | 100 % | 174 s | no ring-out |
+    | empty | EASY v NORMAL | 0 / 100 / 0 | 32 % | 71 s | 41.8 |
+    | empty | EASY v HARD | 0 / 100 / 0 | 19 % | 71 s | 34.4 |
+    | empty | NORMAL v EASY | 100 / 0 / 0 | 28 % | 79 s | 44.1 |
+    | empty | NORMAL v NORMAL | 35 / 65 / 0 | 37 % | 84 s | 51.0 |
+    | empty | NORMAL v HARD | 5 / 95 / 0 | 21 % | 56 s | 27.1 |
+    | empty | HARD v EASY | 100 / 0 / 0 | 27 % | 71 s | 38.5 |
+    | empty | HARD v NORMAL | 90 / 10 / 0 | 22 % | 56 s | 28.0 |
+    | empty | HARD v HARD | 50 / 50 / 0 | 22 % | 79 s | 33.4 |
+    | cup-and-book | EASY v EASY | 60 / 40 / 0 | 99 % | 162 s | 4127 |
+    | cup-and-book | EASY v NORMAL | 0 / 100 / 0 | 30 % | 81 s | 45.9 |
+    | cup-and-book | EASY v HARD | 0 / 100 / 0 | 29 % | 76 s | 41.5 |
+    | cup-and-book | NORMAL v EASY | 100 / 0 / 0 | 32 % | 88 s | 48.1 |
+    | cup-and-book | NORMAL v NORMAL | 42 / 57 / 0 | 52 % | 105 s | 78.9 |
+    | cup-and-book | NORMAL v HARD | 17 / 82 / 0 | 27 % | 83 s | 39.8 |
+    | cup-and-book | HARD v EASY | 100 / 0 / 0 | 24 % | 71 s | 36.0 |
+    | cup-and-book | HARD v NORMAL | 95 / 5 / 0 | 31 % | 91 s | 47.0 |
+    | cup-and-book | HARD v HARD | 55 / 45 / 0 | 39 % | 120 s | 61.3 |
+    | small | EASY v EASY | 47 / 52 / 0 | 79 % | 140 s | 196.9 |
+    | small | EASY v NORMAL | 0 / 100 / 0 | 11 % | 47 s | 19.7 |
+    | small | EASY v HARD | 0 / 100 / 0 | 10 % | 49 s | 20.0 |
+    | small | NORMAL v EASY | 100 / 0 / 0 | 13 % | 58 s | 24.4 |
+    | small | NORMAL v NORMAL | 47 / 52 / 0 | 13 % | 49 s | 16.9 |
+    | small | NORMAL v HARD | 12 / 87 / 0 | 7 % | 36 s | 10.9 |
+    | small | HARD v EASY | 100 / 0 / 0 | 14 % | 48 s | 20.6 |
+    | small | HARD v NORMAL | 77 / 22 / 0 | 10 % | 40 s | 14.0 |
+    | small | HARD v HARD | 45 / 55 / 0 | 23 % | 58 s | 27.5 |
+
+    (40 matches per row: equal-level rows within +-15 points of 50 are noise; `sidesAreFair`'s 400 give 50.5 / 49.5.)
+  - Speed (`simIsFastEnough`, best of two, 72 matches mixed over the arenas, three level pairs, JUMP and HIDE): 94 to
+    108 matches/s, 200 000 to 250 000 runner steps/s at 33 ms frames, 6 600 to 8 200 s of match per second. By pair
+    and arena (table run): 25 matches/s (EASY v EASY on CUP_AND_BOOK, 162 s matches) to 625 matches/s (NORMAL v HARD on
+    SMALL), mostly following match length. Not profiled: how the time splits between physics and bot decisions.
+  - G4's halves this brief owns: **frame rate**: bot-vs-bot matches are bit-identical at 16, 33, 50, random 5..50 and
+    random 1..250 ms frames (36 runs: states, events and decisions), so 30 and 60 Hz agree on 100 % of seeded matches;
+    a mutation (bots deciding at every call instead of on ticks) fails the test, as does dropping the resume before
+    the bots read a state after a tracking gap. **Every match ends**: 1296 matches (9 level pairs x 16 ability pairs x
+    3 arenas x 3 seeds), all finished, 0 draws, 804 of 2890 rounds by the clock.
+  - Safety: `aBotAloneNeverLeavesTheTable` (3 levels x 20 seeds x 3 arenas x 60 s, the dummy pushed off 70 to 168
+    times per level and arena, the bot never); `botsNeverEmitNonFiniteOrOutsideTargets` (216 matches, 67 600 decisions:
+    60 307 MoveTo, 6 574 Dash, 719 Special; EASY never sent Special).
+- deviations:
+  1. Added to the contract: `BotSkill` (the per-level numbers, `BotTuning.easy / normal / hard`, `skill(level)`,
+     `requireFits(params)`); `BotMind.nextThinkMs / wander / wanderUntilMs / push`; `RunnerState.botOf`;
+     `RunnerStep.decisions` with `BotDecision` (what the bots sent, for tests and T48's logs); `DuelSim.match` returning
+     `SimMatch(result, final)` with an optional `marks`; `SeriesResult.rounds / ringOuts / timeouts / hits / wallSlams /
+     specials` (defaults 0) and `shareA / shareB / hitsPerRingOut`; `DuelArenas.SEPARATION_M` (0.16) and
+     `DuelArenas.marks`. Definitions: `timeoutShare` = rounds ended by the clock / rounds ended (replays counted on both
+     sides); `hits` counts each Hit and each Clash once.
+  2. Behaviour the brief's level text did not have, each forced by a measurement (series of 40): HARD sidesteps only
+     near an edge (a mid-table sidestep spent its dash on a harmless hit: HARD lost to NORMAL on CUP_AND_BOOK, 14 of
+     40); HARD's think time has one tick of jitter (two HARD bots on the same ticks mirrored each other: every round a
+     tied timeout, every match a draw, against G4); a HARD ROLL rams wherever a miss still ends on the table, not only
+     with the opponent near an edge (both conditions together meant it almost never rammed: 22 of 50 against NORMAL);
+     HARD's "prefers the high ground" is the only reason it leaves the nearest-edge push (weighing every direction on a
+     score made it walk along its own edge or round the cup and lose to NORMAL, down to 0 of 40 with ROLL); a HARD HIDE
+     dodges anywhere (the counter is its point); NORMAL and HARD react to an incoming stomp as to a dash (T45's note);
+     a stomp needs the opponent on its edge side (within 90°).
+  3. Tests: the win-rate tests use all four abilities (above); `aBotAloneNeverLeavesTheTable` plays first-to-1000 so
+     the rounds keep coming for the 60 s, the dummy 5 cm in from the far (+u, +v) corner, the bot on the first mark;
+     `botsNeverEmitNonFiniteOrOutsideTargets` plays 20 s rounds (more resets per match). Added beyond the list:
+     `theBotAnswersNoneOutsideTheFight`, `hardPrefersTheHighGround`, `aDashComingAtItNearAnEdge`,
+     `hardCountersAfterADodge`, `theRamAndTheStomp` (one `decide` each, pinning the levels' traits),
+     `arenasAreTheBriefs`, `theLevelTableOnEmpty` (prints, asserts nothing).
+- cut/deferred: nothing cut. Not done: no bot plays the clock (when the round is about to end the bot still attacks
+  rather than keeping deeper than the opponent); `DuelBot.decide` called directly on a paused match reads paused bodies
+  as paused (it then answers None): call it through `DuelRunner`, which resumes first.
+
+### What T48 must know
+- Drive bots only through `DuelSim.series / match` or `DuelRunner.step`, with the same `rules`, `params`, `physics`
+  and `tuning` as `DuelMatch.start` got. `tuning.tickMs` must be a multiple of `params.subStepMs` (`requireFits`
+  refuses otherwise). A seed is a match: the bots' generators start at `2 * seed` and `2 * seed + 1`, and a series
+  swaps the marks every other match, so side bias cancels in pairs (use even `n`).
+- Every bot number is in `BotTuning` / `BotSkill`; distances are fighter radii and reaches come from `DuelParams`
+  (`dashSpeedMps * dashMs`, `ramDashMs`), so tuning `DuelParams` moves the bot with it. `BotTuning` is `@Serializable`,
+  so a tuned set can be saved next to a tuned `DuelParams`.
+- Knockback first: two plain-dash bots almost never ring each other out (about 700 hits per ring-out, 92 to 99 % of the
+  rounds to the clock with FLY v FLY or HIDE v HIDE at NORMAL); JUMP and ROLL owe their ring-outs to the stomp and
+  the ram. EASY v EASY is all clock on EMPTY (174 s matches): the "whose drawing is stronger" show should use NORMAL
+  or HARD.
+- The clock: 7 % (SMALL) to 52 % (CUP_AND_BOOK, NORMAL v NORMAL) of the rounds between NORMAL and HARD bots are
+  decided by distance to the edge, not a push.
+  The bots do not play for it (see cut/deferred); a balance read on timeouts is partly a read on positioning.
+- The weakest spot of the ordering is FLY: HARD over NORMAL is 39 / 50 on EMPTY and 34 / 50 on CUP_AND_BOOK with FLY on
+  both sides (every other ability 43 to 50). The bots lift only when a dash or a stomp is coming near an edge.
+- CUP_AND_BOOK has many wall slams (750 to 1650 per 40 matches between NORMAL / HARD bots): fighters get pinned
+  against the cup, and matches there run 25 to 60 % longer than on EMPTY.
+- Speed: about 100 matches/s mixed (25 to 625 by pair and arena), single-threaded; series are independent per seed, so
+  the CLI can split seeds across threads (JVM only, not in `:core`).
+- Measured here with archetype stats and the same ability on both sides only. Ability against ability and stat
+  against stat is T48's.
