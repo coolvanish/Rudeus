@@ -1,6 +1,6 @@
 # T45 — duel-match-specials
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md, "The game")
 gate: G4 — every match ends, 30 Hz and 60 Hz agree on the winner
@@ -128,5 +128,130 @@ Tests not required: balance (T48), a bot (T55), rendering.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: ...
+- measured (2026-11-11, JVM, cloud container, after the review fixes): `:core:jvmTest` 625 tests, 0 failures (589
+  before + 36 new; `duel` 65 = T42's 29 unchanged + 15 `DuelMatchTest` + 12 `DuelSpecialsTest` + 7 `DuelArenaTest` + 2
+  `DuelRulesTest`); `:core:compileKotlinIosSimulatorArm64` green, the klib carries `DuelMatch`.
+  - Default numbers. `DuelRules`: pointsToWin 2, countdown 3000, round 60 000, point pause 1500 (runs as 1504, see
+    below), maxRounds 5, `maxStepMs` 250, `timeoutTieM` 0.001. `DuelParams` (all times or dimensionless, so `scaled()`
+    and T42's scale test are untouched): specialCooldownMs 6000 x (1.30 - 0.06 AGILITY) = 7440 .. 4200 ms; stomp
+    `stompRadiusRadii` 3 (centre to centre, 9 cm on the table), `stompScale` 1.2 (0.30 m/s at 5 v 5); lift `liftMs` 1200,
+    `liftSpeedScale` 1.5, `liftHeightRadii` 0.5 (new: hover 1.5 cm); ram `ramDashScale` 2.2 (550 ms, 16.5 cm),
+    `ramKnockScale` 1.5 (0.375 m/s at 5 v 5); dodge `dodgeMs` 500, `counterMs` 1500, `counterKnockScale` 1.5. Every
+    number of the brief kept.
+  - One clock on the sub-step grid. `duel.timeMs` is the match clock in every phase (tracked time only). Every phase
+    length is rounded up to whole sub-steps when it starts, and a ring-out ends FIGHT at the end of its sub-step, so
+    every transition lies on the 8 ms grid the bodies use; a call runs its time through the phases in order (a ring-out
+    at 1000 in a call 990..1023 spends the last 23 ms in POINT). Same states and the same event lists (with times) at
+    16 ms, 33 ms, random 5..50 and random 1..250 ms frames, and with 10 s tracking gaps in each phase.
+  - Ring-outs: FIGHT steps physics with an internal `DuelPhysics.stepToRingOut`, which stops after the first sub-step
+    holding a `RingOut`; the round ends there and nothing later is simulated in FIGHT. One out = the other scores; both
+    out in that sub-step (equal `atMs`) = replay. A later ring-out never reaches the judge, so neither the call it would
+    have arrived in nor the slot order matters (test: y out at 312 ms, x at 328 ms, both in one 33 ms call: x wins at
+    16/33/50/random frames and in both slots; in POINT x is frozen on the table, 16 ms short of its own fall).
+  - POINT (review fix 5): actions cut at the point; a fighter that is out keeps falling (Physics, position kept) and, on
+    the sub-step Physics would respawn it, stands on its own mark, frozen (if the frozen winner stands over that mark it
+    stays down, RESPAWNING, until the end); a fighter that is not out is not stepped at all. No event after the point's
+    own sub-step. Both rebuilt on the marks at the end, as before.
+  - Specials inside the sub-step (input at the start of the call, at the grid time, like a dash): timers count down in
+    step 1 and a lift/dodge whose time was > 0 at the start of a sub-step protects for that whole sub-step. JUMP stomp =
+    `Physics.jump` + `stomping`; the sub-step where the body goes from airborne to standing is the landing (step 3),
+    and step 4 knocks the opponent within 3 radii straight away from it: a second hit source next to the dash, judged
+    from the same post-physics positions. FLY lift = the body is JUMPING 1.5 cm above its base; each sub-step a walker
+    standing on the base is stepped by `Physics.step` at 1.5 x the walk speed, so blocking and step-up are decided at the
+    ground height (review fix 6: a 5 cm platform stops it as it stops a walker), the base follows the ground the walker
+    reached (the table plane over a hole, so it glides on; past the edge it is out). It is truly airborne: no dash, no
+    special, no separation (a dash passes under it, no Hit, the dash runs on). On the lift's last sub-step it is that
+    walker again, standing (no descent through the air, where a jump's step-up would let it climb). ROLL ram = a dash of
+    kind RAM (550 ms, x 1.5), unsteerable like any dash and, like any dash, not stopped by the edge. HIDE dodge (review
+    fix 1) = immune for 500 ms, stands firm in separation (the other goes round it), ends at once when it starts a dash;
+    every hit it lets through (a dash in contact, or a stomp in reach) sets `counterMs` to 1500 in that sub-step step 4,
+    and the next dash started while it is > 0 is a COUNTER (x 1.5). A dodge that dodged nothing gives no counter.
+  - Marks (review fixes 2, 3): `DuelArena.marks` takes the free points of a grid anchored at the spawn along the
+    boundary's long axis (principal axis of area; u for a square or circle) plus the spawn and centroid +- separation / 2
+    along and across that axis, and scans every pair: same ground height within 1 mm, >= 3 radii apart; best by (both
+    on the table first) > (separation closest to the request, in grid steps) > (midpoint closest to the spawn, in grid
+    steps) > (closest to the long axis) > exact errors. Null only when no pair of grid points qualifies, so whether marks
+    exist never depends on `separationM` (test: 36 tables x 10 separations). Resolution: grid step 1.5 cm (half a
+    radius) while the board's box holds <= 1600 points (about 60 x 60 cm), coarser by 25 % steps beyond (100 x 80 cm:
+    2.34 cm); any free patch holding a disk of 0.71 step radius holds a grid point. Cost: <= 1600 free tests and <= 1.3 M
+    pair checks; 3 .. 7 ms on the 100 x 80 cm laptop table (JVM, best of three).
+  - `DuelMatch.start` and the new `DuelMatch.rearrange` (review fixes 4, 7) refuse, by `DuelArena.startProblem`: no
+    boundary ("build it with DuelArena.arena(level, ringRadiusM) first"), a mark not free for the radius (whole circle on
+    the table, off holes, clear of what blocks), marks closer than two radii, marks at different heights. `rearrange`
+    works in COUNTDOWN (both moved onto the new marks, facing, pause kept) and POINT (stored, used for a loser's
+    reappearance and the rebuild); FIGHT and RESULT refuse.
+  - HUD reads (no event needed): `phase`, `phaseLeftMs` (FIGHT = round time left), `round`, `scoreA/B` / `scoreOf(id)`,
+    `lastPoint` (who scored and why), `winner`; per fighter `DuelPhysics.dashCooldownLeft(f, params)` and
+    `specialCooldownLeft(f, params)` = fraction of the cooldown still to run (1 just used .. 0 ready),
+    `isLifted` / `isDodging` / `isImmune` / `isRamming`, `stomping`, `counterMs > 0`, `canDash` / `canSpecial`.
+  - Speed (test JVM, best of two check-free replays): specials fuzz 114 000 .. 116 000 steps/s (all 16 ability pairs x
+    3 000 frames of 16..50 ms); T42's fuzz 93 000 .. 110 000 between runs (90 000 in T42's Result); random matches
+    133 000 match steps/s, 95 matches/s (16 seeded matches, 20 s rounds, 3 % untracked frames: 17 ring-out points, 20
+    timeouts, T42's footprint and overlap invariants asserted in every phase).
+  - The review's scenarios now: dodge at 0 then both dash at 8 ms = the same `Clash` at 80 ms as without the dodge (the
+    special spent, no counter); b dashing first = a clash; a dashing into the dodge, b dashing at 600 ms = b's counter
+    (0.375 m/s); a dashing after the dodge = a plain hit on b. 100 x 80 table with a 30 cm box on the spawn at 0.2:
+    (-0.1875, -0.0703) and (0, -0.1875), 22 cm apart round the box's corner; 60 x 60 / 25 cm box at 0.2 and 0.5, 50 x 40
+    / 5 cm cup at 0.1 and 0.2: found. 50 x 40 with a 3 cm book at (0.1, 0): both marks on the table. A raw floor level
+    at `start`: refused. POINT with a cup on the spawn: the loser falls, then stands on its mark; the winner never moves.
+    A lifted FLY walking at a 5 cm platform: stopped at its foot, ends on the table like a walker.
+- deviations (each one forced by a test or an invariant, or a gap in the brief):
+  1. `DuelFighter.ability` is `Ability? = null`, not `Ability = JUMP`: with JUMP as default T42's
+     `specialIsAcceptedAndDoesNothing` (fighters built without an ability press Special) would stomp and fail. null =
+     no special; `DuelMatch.start` sets it, and also puts the ability on the body (FLY glides, ROLL cannot jump: the
+     walking game's rules).
+  2. POINT follows the review's rule (fix 5), not "on the marks": out fighters fall, then stand on their marks; the
+     others are frozen; no events. When the frozen winner stands over the loser's mark, the loser stays down (hidden,
+     RESPAWNING) until POINT ends, so standing fighters never overlap.
+  3. Phase lengths run in whole sub-steps: POINT 1500 -> 1504 (3000 and 60 000 are already whole).
+  4. HIDE: "hits pass through" is no Hit, no knockback, the dash not spent; the bodies do not overlap (the attacker goes
+     round the dodger), so T42's "grounded fighters never overlap" holds as it is. The FLY's pass-under is real (airborne).
+  5. Added, not in the contract: `atMs` on `RoundStarted` / `Point` / `MatchOver`, `DuelMatchState.lastPoint`
+     (`PointResult`), `DuelMatch.start(..., radiusM = 3 cm)`, `DuelMatch.rearrange`, `DuelRules.maxStepMs` /
+     `timeoutTieM`, `DashKind`, `DuelFighter.stomping` / `counterMs` / `dashKind`, `DuelArena.insideDistance` /
+     `startProblem` and the search constants, the `DuelPhysics` helpers above; `MatchEvent`, `MatchStep`,
+     `DuelMatchState` are `@Serializable`.
+  6. Choices the brief left open: the stomp's knockback has no high-ground bonus and, like every T42 hit, ignores height
+     (an airborne opponent is hit); the ram emits only `SpecialStarted` (no `DashStarted`) and leaves the dash cooldown
+     alone; a dodged dash pressing in for several sub-steps keeps the counter window full until it stops (the window
+     runs from the last hit let through); marks keep 2 radii from holes too and are >= 3 radii apart; `start` asks one
+     radius of margin to the edge (the marks search two); a timeout on a level without a boundary is a replay.
+  7. T42 test files: one `when` branch for `SpecialStarted` in each of two helpers (`DuelTestSupport.at`,
+     `DuelScenarioTest.swapIds`); `DuelEvent` is sealed, so they would not compile otherwise. No T42 test body changed.
+  8. The lift's end changed with fix 6: the FLY stands on the ground on the lift's last sub-step (before: a 0.26 s
+     descent), so it can dash 8 ms after the lift. The marks' midpoint preference can pick a pair round an obstacle's
+     corner over one along its long side (the laptop case); there is no line-of-sight rule (a cup between the marks is
+     part of the arena).
+- cut/deferred: nothing cut. `rearrange` in POINT does not move frozen fighters: if the rescan put an object on one, it
+  overlaps it until POINT ends and the rebuild puts it on its mark.
+
+### What T55 must know
+- Drive a match only through `DuelMatch.step` with the same `rules`, `params`, `physics` (and the `radiusM` given to
+  `start`) every call. Frames above `rules.maxStepMs` (250) are clamped: that time is lost, so step <= 250 ms. Get the
+  arena from `DuelArena.arena` and the marks from `DuelArena.marks` (`start` refuses anything else that is not valid).
+- Inputs belong to the start of their call and apply only if the call starts in FIGHT: a call that starts in the
+  countdown drops its inputs even if the fight begins inside it. One input per fighter per call (a MoveTo and a Special
+  need two calls). In RESULT the clock stops at `MatchOver.atMs`; the rest of that call's dt is discarded.
+- A bot must decide on a fixed grid of match time, not per frame: the review measured 9 of 32 seeded matches with a
+  different winner at 16 vs 33 ms frames for a bot deciding every frame, 0 of 32 for one deciding every 96 ms. Decide
+  at multiples of 8 ms (e.g. every 96 ms) and cut the simulator's frames there, as the tests' `play` driver does; then
+  any frame rate gives the same match bit for bit.
+- The dodge is a read: a HIDE gains nothing by dodging and then dashing (the dash ends the dodge, nothing dodged = no
+  counter). It pays to dodge when the other is about to dash or land a stomp, then dash within 1.5 s of the dodged hit
+  (`counterMs > 0`). Do not dash at a lifted or dodging fighter (`isImmune`): the dash is wasted and gives a HIDE its
+  counter.
+- What a bot reads: `DuelPhysics.canDash` / `canSpecial` (pass the params), `isImmune`, `isRamming`, `stomping`,
+  `dashKind`, `counterMs`, knock/stun, `DuelArena.insideDistance` to the edge.
+- Random chase-and-dash play rarely rings anyone out from the middle of a big table (in the random-match test 20 of 37
+  points were timeouts): the bot has to push toward an edge.
+
+### What T48 must know (balance notes from the review; nothing changed in code for them)
+- A FLY's plain Jump floats 2.2 s (the walking game's fly gravity, 0.3 x) at the walking game's 2 x airborne speed:
+  faster and longer than its lift (1.5 x for 1.2 s). The lift's only perk is immunity (and gliding over a hole).
+- ROLL has no Jump verb at all (the walking game's rule, kept by putting the ability on the body).
+- The ram leaves the dash cooldown alone, so a ROLL can chain dash then ram (one 800 ms, 24 cm charge); a second ram
+  waits for the 6 s special cooldown.
+- POINT lasts 1504 ms (1500 rounded up to whole sub-steps), countdown 3000, round 60 000: a 2-0 match is at least
+  about 2 x (3000 + 1504) ms plus the fights.
+- Since the review fixes: the lift ends standing (no 0.26 s descent), and a HIDE's counter needs a dodged hit; both shift
+  FLY and HIDE against the numbers above.
