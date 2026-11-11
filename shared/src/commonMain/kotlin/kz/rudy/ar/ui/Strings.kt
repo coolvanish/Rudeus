@@ -183,6 +183,33 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     kind_dynamic("Қол", "Рука", "Hand"),
     kind_cliff("Жар", "Обрыв", "Cliff"),
 
+    // T49: the duel (picker, VS card, HUD, result). Nobody is hurt: fighters push, so no word here means hitting.
+    duel_title("Сайыс", "Дуэль", "Duel"),
+    duel_pick_opponent("Қарсыласыңды таңда", "Выбери соперника", "Pick an opponent"),
+    duel_fight("Ойнау", "Играть", "Play"),
+    duel_watch("Қарау", "Смотреть", "Watch"),
+    duel_vs("VS", "VS", "VS"),
+    /** "Round 2": the number goes after it. */
+    duel_round("Раунд", "Раунд", "Round"),
+    duel_go("Кеттік", "Вперёд", "Go"),
+    duel_point_mine("Ұпай саған", "Очко тебе", "Point for you"),
+    duel_point_foe("Ұпай қарсыласқа", "Очко сопернику", "Point for them"),
+    duel_replay("Ұпай жоқ. Қайта", "Без очка. Заново", "No point. Replay"),
+    duel_won("Жеңіс", "Победа", "You won"),
+    duel_lost("Жақсы әрекет", "Хорошая попытка", "Good try"),
+    duel_draw("Тең", "Ничья", "A draw"),
+    duel_again("Тағы", "Ещё", "Again"),
+    duel_done("Болды", "Готово", "Done"),
+    duel_dash("Ұмтыл", "Рывок", "Dash"),
+    /** The special of each ability: JUMP, FLY, ROLL, HIDE. */
+    special_stomp("Дүрс ет", "Топни", "Stomp"),
+    special_lift("Қалықта", "Парь", "Float"),
+    special_ram("Зымыра", "Разгон", "Rush"),
+    special_dodge("Жалтар", "Уклонись", "Dodge"),
+    difficulty_easy("Оңай", "Легко", "Easy"),
+    difficulty_normal("Орташа", "Средне", "Normal"),
+    difficulty_hard("Қиын", "Трудно", "Hard"),
+
     metrics_title("Метрика", "Метрика", "Metrics"),
     metrics_empty("Әзірге жоқ", "Пока пусто", "Nothing yet"),
     metrics_empty_hint("Алдымен кейіпкер жаса", "Сначала сделай героя", "Make a character first"),
