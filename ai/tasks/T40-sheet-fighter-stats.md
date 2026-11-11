@@ -1,6 +1,6 @@
 # T40 — sheet-fighter-stats
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md)
 gate: G2 — every bundled sheet yields stats with sum 20; legacy sheets parse unchanged
