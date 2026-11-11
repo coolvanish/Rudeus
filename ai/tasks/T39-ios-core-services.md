@@ -1,6 +1,6 @@
 # T39 — ios-core-services
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md, "iOS readiness")
 gate: G1 — `:core` compiles for iOS and its file services exist there
@@ -63,5 +63,43 @@ Tests not required: iOS execution in the cloud (impossible), Android instrumente
 - The Gradle diff is the dependency line(s) only
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: switching Android and the CLI to the `Io*` classes (needs the Pixel); image codec for iOS (after T43's map)
+- measured: `scripts/verify.sh` exit 0 — core 492 tests (388 before + 104 new), shared 26, android 2, 0 failed /
+  0 skipped; APK built. `:core:compileAndroidMain`, `:core:compileKotlinJvm`, `:core:compileKotlinIosArm64`,
+  `:core:compileKotlinIosSimulatorArm64`, `:core:compileIosMainKotlinMetadata` and
+  `:core:compileTestKotlinIosSimulatorArm64` green on Linux. New suites (jvm XML): Io: CharacterFolder 27,
+  FixtureSource 11, MetricsSink 8; File: 21 / 10 / 7; Memory/Map: 10 / 6 / 4.
+- proven on the JVM (crash rule): `aProcessDeathAtAnyStepOfAWriteLeavesTheOldEntryOrTheNewOne` copies the root to a
+  snapshot before step n of a write, for every n (> 10 asserted), fresh and replacing; a fresh `IoCharacterFolder` on
+  the snapshot recovers to exactly the old or the new entry (fresh write: absent or new; replacing: never absent),
+  a bystander id untouched, no scratch name left. Same for `delete` (whole entry or none). Exceptions at every step
+  (`everyFailingCallLeavesTheOldEntryOrTheNewOne`) leave the old entry or the new one. Removing the move-back from
+  recovery turns 2 tests red. Not proven: power loss — nothing is fsync'ed, so a rename can reach the disk before
+  the file data (same as `File*` today).
+- dependency: `org.jetbrains.kotlinx:kotlinx-io-core:0.9.1` in `commonMain` — one tested file implementation for
+  android, jvm and ios instead of a third copy; Ktor 3.6.1 already resolves 0.9.1 (`:core` jvm and `:androidApp`
+  debugRuntimeClasspath both show it before and after), so the APK gains no artifact.
+- API 24: kotlinx-io-core-jvm 0.9.1's `SystemFileSystem.atomicMove` looks up `java.nio.file.Files` with
+  `Class.forName` and, on `ClassNotFoundException`, throws `UnsupportedOperationException("Atomic move not supported")`
+  (checked in the jar's bytecode); Android has `java.nio.file` only from API 26 and minSdk is 24. Renames go through
+  `internal expect fun renameAtomically` (`io/RenameAtomically*.kt`): jvm and ios call `atomicMove`, android calls
+  `java.io.File.renameTo` (the call `FileCharacterFolder` makes) and throws `IOException` on false. **UNTESTED**: the
+  android actual compiles but cannot run here (`:core` has no android host tests); it needs the Pixel / an API 24 device.
+- deviation: kotlinx-io 0.9.1's `FileSystem` is a **sealed** interface, so the brief's failing `FileSystem` wrapper
+  cannot be written. `IoCharacterFolder` has an `internal` constructor with a step hook (`(String) -> Unit`, called
+  before every file-system step and rename); the public constructor is the brief's
+  `IoCharacterFolder(root, fs = SystemFileSystem)`. The tests inject failures and simulated deaths there.
+- finding F1: `FileCharacterFolder` (both copies) cannot rewrite an existing id: `File.renameTo` onto a non-empty
+  folder fails, `write` throws "cannot publish" and leaves `.writing` behind (old entry intact). Latent today
+  (`SavedCharacters` ids strictly rise). `IoCharacterFolder` replaces (old entry renamed to `.replaced-<id>`, new one
+  published, aside deleted; restored on an exception, recovered after a death). Pinned by `replacesAnExistingId = false`.
+- finding F2 (pinned by `checksNamesFirst = false`, one named test each): `IoCharacterFolder` rejects an empty / `.` /
+  `..` id, its scratch names (`.writing*`, `.replaced-*`, `.deleting-*`) and bad frame names before any I/O, never
+  lists scratch names, reads of them are empty, and a delete of a non-id is a no-op. The File copy fails an empty or
+  dot id only at the rename (after filling `.writing`), accepts and lists `.replaced-x` / `.writing`, checks frame names
+  mid-write, and `delete("")` removes the whole characters root (latent: nothing passes an empty id today).
+- other differences: Io's `delete` renames the entry to `.deleting-<id>` before deleting it and swallows I/O errors
+  like `deleteRecursively`; `Map`/`Memory` doubles differ from both on-disk ones by design (no directories:
+  `exists("dir")` false, `list` skips subfolders, any metrics name accepted).
+- cut/deferred: switching Android and the CLI to the `Io*` classes (needs the Pixel, incl. an API 24/25 run of the
+  rename actual); image codec for iOS (after T43's map); running the common tests on iOS (CI job `ios-core`,
+  `workflow_dispatch` only, not run yet).
