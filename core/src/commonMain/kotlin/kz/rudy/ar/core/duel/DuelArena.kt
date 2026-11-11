@@ -54,7 +54,7 @@ object DuelArena {
         physics: PhysicsParams = PhysicsParams.DEFAULT,
     ): Pair<Vec2, Vec2>? {
         require(radiusM > 0f && radiusM.isFinite()) { "radiusM must be > 0 and finite, got $radiusM" }
-        require(!separationM.isNaN()) { "separationM must not be NaN" }
+        require(separationM.isFinite()) { "separationM must be finite, got $separationM" }
         val least = MIN_SEPARATION_RADII * radiusM
         val step = SEPARATION_STEP_RADII * radiusM
         val centres = buildList {
@@ -62,7 +62,7 @@ object DuelArena {
             val c = arena.boundary?.centroid()
             if (c != null && c != arena.spawn && c.u.isFinite() && c.v.isFinite()) add(c)
         }
-        var sep = if (separationM.isFinite()) max(separationM, least) else least
+        var sep = max(separationM, least)
         while (true) {
             for (centre in centres) {
                 for (k in DIRS_COS.indices) {

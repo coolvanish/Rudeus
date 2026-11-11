@@ -23,6 +23,7 @@ import kz.rudy.ar.core.duel.MatchEvent.MatchOver
 import kz.rudy.ar.core.duel.MatchEvent.Point
 import kz.rudy.ar.core.duel.MatchEvent.RoundStarted
 import kotlin.random.Random
+import kotlin.time.TimeSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -43,6 +44,20 @@ private val RED = Contestant("red", FighterStats(power = 10, speed = 4, guard = 
 private val BLUE = Contestant("blue", FighterStats(power = 4, speed = 6, guard = 1, agility = 9), Ability.HIDE)
 
 private val RULES = DuelRules()
+
+/** T42's fuzz table: a cup, a bottle, a book, a low lid, a tall box, an irregular edge. */
+private val FUZZ_TABLE = Level(
+    objects = listOf(
+        cup("cup", Vec2(0.15f, 0.08f)),
+        LevelObject("bottle", "bottle", ObjectKind.OBSTACLE, Polygon.rect(Vec2(-0.2f, -0.12f), 0.07f, 0.07f), 0.2f),
+        book("book", Vec2(-0.12f, 0.1f), 0.14f, 0.1f, 0.03f),
+        LevelObject("lid", "lid", ObjectKind.OBSTACLE, Polygon.rect(Vec2(0.05f, -0.15f), 0.08f, 0.04f), 0.02f),
+        LevelObject("box", "box", ObjectKind.PLATFORM, Polygon.rect(Vec2(0.26f, -0.1f), 0.08f, 0.08f), 0.06f),
+    ),
+    boundary = Polygon(listOf(Vec2(-0.4f, -0.25f), Vec2(0.35f, -0.28f), Vec2(0.42f, 0.2f), Vec2(-0.1f, 0.3f), Vec2(-0.42f, 0.15f))),
+    spawn = Vec2(0f, 0.05f),
+)
+private val FUZZ_MARKS = DuelArena.marks(FUZZ_TABLE, R, 0.16f)!!
 
 /** A rule length as the match runs it: whole 8 ms sub-steps. */
 private fun aligned(ms: Long) = (ms + 7L) / 8L * 8L
@@ -411,6 +426,120 @@ class DuelMatchTest {
             val byTime = other.states.associateBy { it.duel.timeMs to it.phase }
             for (s in sixteen.states) byTime[s.duel.timeMs to s.phase]?.let { assertEquals(s, it, "$name at ${s.duel.timeMs} ms") }
         }
+    }
+
+    @Test
+    fun randomMatchesAlwaysEnd() {
+        // Seeded random play on T42's cluttered fuzz table: every ability against every other, frames of 16..50 ms,
+        // tracking losses. Every match reaches RESULT within maxRounds x (countdown + round + pause) of tracked time,
+        // the clock runs only while tracked, and the score always adds up.
+        val rules = DuelRules(roundMs = 20_000L)
+        val lengths = mapOf(
+            MatchPhase.COUNTDOWN to aligned(rules.countdownMs),
+            MatchPhase.FIGHT to aligned(rules.roundMs),
+            MatchPhase.POINT to aligned(rules.pointPauseMs),
+            MatchPhase.RESULT to 0L,
+        )
+        val bound = rules.maxRounds * lengths.values.sum()
+        val endings = HashMap<String, Int>()
+        fun count(key: String) { endings[key] = (endings[key] ?: 0) + 1 }
+        var steps = 0L
+        val ends = (0 until 16).map { seed ->
+            randomMatch(seed, rules) { s, out, tracking, dt ->
+                val n = out.state
+                steps++
+                if (!tracking) {
+                    assertTrue(out.events.isEmpty())
+                    assertEquals(s.duel.timeMs, n.duel.timeMs)
+                    assertTrue(n.duel.a.body.state.mode == Mode.PAUSED && n.duel.b.body.state.mode == Mode.PAUSED)
+                } else if (n.phase != MatchPhase.RESULT) {
+                    assertEquals(s.duel.timeMs + dt, n.duel.timeMs)
+                }
+                // The books: one point per Point event, never more than pointsToWin, never more rounds than allowed.
+                val scored = out.events.filterIsInstance<Point>()
+                for (p in scored) count("point ${p.reason}${if (p.winner == null) " replay" else ""}")
+                assertEquals(s.scoreA + scored.count { it.winner == "a" }, n.scoreA)
+                assertEquals(s.scoreB + scored.count { it.winner == "b" }, n.scoreB)
+                assertTrue(n.scoreA <= rules.pointsToWin && n.scoreB <= rules.pointsToWin && n.scoreA + n.scoreB <= n.round)
+                assertTrue(n.round in 1..rules.maxRounds)
+                assertTrue(n.phaseLeftMs in 0L..lengths.getValue(n.phase), "${n.phase} ${n.phaseLeftMs}")
+                if (n.phase == MatchPhase.COUNTDOWN) assertEquals(n.startA to n.startB, n.duel.a.pos to n.duel.b.pos)
+                for (f in listOf(n.duel.a, n.duel.b)) assertTrue(f.pos.u.isFinite() && f.pos.v.isFinite() && f.body.state.h.isFinite())
+                assertTrue(n.duel.timeMs <= bound, "a match ran past $bound ms")
+            }
+        }
+        for (s in ends) {
+            assertEquals(MatchPhase.RESULT, s.phase)
+            val w = s.winner
+            assertTrue(if (w == null) s.round == rules.maxRounds else s.scoreOf(w) == rules.pointsToWin, "$s")
+            assertSame(s, DuelMatch.step(s, FUZZ_TABLE, 16L, inputs("a" to Dash())).state)
+            count("${s.lastPoint?.reason}/${if (w == null) "draw" else "win"}")
+        }
+        println("random matches: ${ends.size} ended, $endings, $steps steps, ${ends.sumOf { it.duel.timeMs } / 1000} s of matches")
+        assertTrue((endings["point RING_OUT"] ?: 0) > 0 && (endings["point TIMEOUT"] ?: 0) > 0, "both endings: $endings")
+
+        // Deterministic, and timed without the checks (best of two replays).
+        var best = Double.MAX_VALUE
+        repeat(2) {
+            val mark = TimeSource.Monotonic.markNow()
+            val again = (0 until 16).map { seed -> randomMatch(seed, rules) { _, _, _, _ -> } }
+            best = minOf(best, mark.elapsedNow().inWholeMicroseconds / 1e6)
+            assertEquals(ends, again)
+        }
+        println("random matches: ${(steps / best).toLong()} match steps/s, ${(ends.size / best).toLong()} matches/s")
+    }
+
+    /** One seeded random match on [FUZZ_TABLE] (abilities by seed: all 16 pairs in seeds 0..15); returns its RESULT state. */
+    private fun randomMatch(
+        seed: Int,
+        rules: DuelRules,
+        check: (prev: DuelMatchState, out: MatchStep, tracking: Boolean, dtMs: Long) -> Unit,
+    ): DuelMatchState {
+        val rnd = Random(seed)
+        fun randomStats(): FighterStats {
+            val st = IntArray(4) { FighterStats.MIN }
+            repeat(FighterStats.BUDGET - 4 * FighterStats.MIN) {
+                var i = rnd.nextInt(4)
+                while (st[i] >= FighterStats.MAX) i = (i + 1) % 4
+                st[i]++
+            }
+            return FighterStats(st[0], st[1], st[2], st[3])
+        }
+        val a = Contestant("a", randomStats(), Ability.entries[seed % 4])
+        val b = Contestant("b", randomStats(), Ability.entries[(seed / 4) % 4])
+        var s = DuelMatch.start(a, b, FUZZ_TABLE, FUZZ_MARKS, rules)
+        // T42's fuzz plans: 0 chase the other (dash when close), 1 wander to a spot (a quarter of them off the table),
+        // 2 stand; random jumps and specials on top.
+        val plan = intArrayOf(0, 0)
+        val wander = arrayOf(Vec2.ZERO, Vec2.ZERO)
+        while (s.phase != MatchPhase.RESULT) {
+            val tracking = rnd.nextInt(100) >= 3
+            val inputs = HashMap<String, DuelInput>()
+            for ((k, pair) in listOf(s.duel.a to s.duel.b, s.duel.b to s.duel.a).withIndex()) {
+                val (me, other) = pair
+                if (rnd.nextInt(100) < 3) {
+                    plan[k] = rnd.nextInt(3)
+                    val reach = if (rnd.nextInt(4) == 0) 0.6f else 0.3f
+                    wander[k] = Vec2((rnd.nextFloat() * 2f - 1f) * reach, (rnd.nextFloat() * 2f - 1f) * reach * 0.7f)
+                }
+                val to = other.pos - me.pos
+                val roll = rnd.nextInt(100)
+                val input: DuelInput? = when {
+                    roll < 3 -> Special
+                    roll < 5 -> Jump
+                    plan[k] == 0 && to.length < 0.12f && roll < 30 -> Dash(to)
+                    plan[k] == 0 && roll < 40 -> MoveTo(other.pos)
+                    plan[k] == 1 && roll < 15 -> MoveTo(wander[k])
+                    else -> null
+                }
+                if (input != null) inputs[me.id] = input
+            }
+            val dt = rnd.nextLong(16L, 51L)
+            val out = DuelMatch.step(s, FUZZ_TABLE, dt, inputs, tracking = tracking, rules = rules)
+            check(s, out, tracking, dt)
+            s = out.state
+        }
+        return s
     }
 
     @Test
