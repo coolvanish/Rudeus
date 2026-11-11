@@ -1,4 +1,4 @@
-package kz.rudy.ar.ar
+package kz.rudy.ar.core.session
 
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
@@ -17,17 +17,19 @@ import kz.rudy.ar.core.physics.CastPhysics
 import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.physics.PhysicsParams
 
-// HAND-REVIEW: T02 — the AR host's physics driver. A plain mutable holder written only from the main thread
+// T47 — moved here from :androidApp (ar/GameLoop.kt) as it was: it holds no Android type, so any host can drive it.
+// The notes below are the host review notes the file carried, kept as they were.
+// T02 — the AR host's physics driver. A plain mutable holder written only from the main thread
 // (ARSceneView's onSessionUpdated and the tap handler), never Compose state, so a frame recomposes nothing.
 // No game rule lives here: every transition is a Physics.* call from :core. This file only measures dt and
 // maps "camera + anchor TRACKING" to Physics.pause / Physics.resume (locked decision: PAUSED freezes, never resets).
-// HAND-REVIEW: T14 — (1) `params` and the body's collision radius come from the SurfaceProfile (table or floor);
+// T14 — (1) `params` and the body's collision radius come from the SurfaceProfile (table or floor);
 // `configure` is called from a LaunchedEffect keyed on the locked surface, so it runs before the anchor exists; after
 // it only the T25 size re-runs it (the lock lives in RudeusArView; there is no guard here).
 // (2) `onFrame` reports the CharacterEvents of everything since the last report (a walkTo from the tap handler, this
 // frame's pause/resume/step) — the diff is against `lastReported`, not the previous frame's body, so a transition
 // made by the tap handler between two frames is never lost.
-// HAND-REVIEW: T21 — `jump` / `setAbility` are the Play HUD's Jump button and the character sheet's ability, main
+// T21 — `jump` / `setAbility` are the Play HUD's Jump button and the character sheet's ability, main
 // thread only, both plain Physics.* calls (ROLL cannot jump, airborne or PAUSED is a no-op: `jump` returns false so
 // the host can log `jump_ignored`). `landedAtMs` is the host clock of the last LANDED event, read by CharacterPoser
 // for the landing squash; it is recorded from the same event diff the HUD gets, so a landing is never missed.
@@ -35,7 +37,7 @@ import kz.rudy.ar.core.physics.PhysicsParams
 // player runs on it, not on the wall clock, so a tracking stall or a frame hitch cannot push a scripted tap out of its
 // beat window. `restartAtSpawn` is the debug scenario replay putting the body back at `level.spawn` (every run starts
 // the same); it is NOT the tracking path — PAUSED still freezes and never resets (locked decision, untouched).
-// HAND-REVIEW: T32 — the loop holds a `Cast` (T28) instead of one body: `CastPhysics.step` steps every member with the
+// T32 — the loop holds a `Cast` (T28) instead of one body: `CastPhysics.step` steps every member with the
 // same dt clamp, `CastPhysics.pause` / `resume` on tracking (PAUSED still freezes every member and never resets), and the
 // events come from `CastEvents.between(lastReported, cast)` per member. Everything per member (walk phase, landing clock,
 // the running emote) lives in `MemberClocks`, keyed by id. `add` / `remove` are the host's cast sync; a new member is
@@ -45,13 +47,10 @@ import kz.rudy.ar.core.physics.PhysicsParams
 // on the FIRST member only.
 
 /** `landedAtMs` before any landing: far in the past, but `now - NEVER_LANDED` cannot overflow. */
-internal const val NEVER_LANDED = Long.MIN_VALUE / 2
+const val NEVER_LANDED = Long.MIN_VALUE / 2
 
 /** Frame-to-frame dt is clamped so a hitch (GC, app switch, slow frame) cannot teleport the character. */
-internal const val MAX_STEP_DT_MS = 50L
-
-/** HAND-REVIEW: T32 — cut line 4: false steps the cast without `CastPhysics.separate` (members may overlap). */
-internal const val SEPARATION_ENABLED = true
+const val MAX_STEP_DT_MS = 50L
 
 /** Host-side clocks of one member (main thread only). */
 internal class MemberClocks {
@@ -66,9 +65,14 @@ internal class MemberClocks {
     var emoteStartSimMs: Long = 0L
 }
 
-internal class GameLoop(
+class GameLoop(
     /** Empty table until T04 wires SceneBuilder: no objects and `boundary = null` (unbounded, no cliffs). */
     var level: Level = Level(objects = emptyList(), boundary = null, spawn = Vec2.ZERO),
+    /**
+     * T32 cut line 4: false steps the cast without `CastPhysics.separate` (members may overlap). The switch itself,
+     * `SEPARATION_ENABLED`, stays in the host, which passes it here.
+     */
+    private val separate: Boolean = true,
 ) {
     var cast: Cast = Cast()
         private set
@@ -107,7 +111,7 @@ internal class GameLoop(
 
     /**
      * Size the physics for [profile] and the player's [size]: walk speed, gravity, arrive epsilon and the collision radius.
-     * HAND-REVIEW: T25 — now also called mid-game, on every Bigger / Smaller tap. Only the radius and the horizontal
+     * T25 — now also called mid-game, on every Bigger / Smaller tap. Only the radius and the horizontal
      * speeds change, so a jump in the air carries on and a paused body stays paused; the next step pushes the bigger
      * circle out of any object.
      */
@@ -201,7 +205,7 @@ internal class GameLoop(
             modeBeforePause = if (paused) Mode.IDLE else null,
         )
         cast = cast.with(first.id, body)
-        // HAND-REVIEW: T21 review fix — the teleport is not a transition: no LANDED / RESPAWNED for the HUD or the poser.
+        // T21 review fix — the teleport is not a transition: no LANDED / RESPAWNED for the HUD or the poser.
         lastReported = cast
     }
 
@@ -215,7 +219,7 @@ internal class GameLoop(
         nowMs: Long,
         tracking: Boolean,
         onEvent: (String, CharacterEvent) -> Unit = { _, _ -> },
-        /** HAND-REVIEW: T21 review fix — scripted taps run here, AFTER resume and BEFORE the step, so a Jump due on the first frame back from a pause is not dropped by `canJump`. */
+        /** T21 review fix — scripted taps run here, AFTER resume and BEFORE the step, so a Jump due on the first frame back from a pause is not dropped by `canJump`. */
         beforeStep: (() -> Unit)? = null,
     ): Cast {
         if (!tracking) {
@@ -226,7 +230,7 @@ internal class GameLoop(
             beforeStep?.invoke()
             val dt = lastStepMs?.let { (nowMs - it).coerceIn(0L, MAX_STEP_DT_MS) } ?: 0L
             lastStepMs = nowMs
-            cast = CastPhysics.step(cast, level, dt, params, separate = SEPARATION_ENABLED)
+            cast = CastPhysics.step(cast, level, dt, params, separate = separate)
             simMs += dt
             for (m in cast.members) if (m.body.state.mode == Mode.WALKING) clocks[m.id]?.let { it.walkPhaseMs += dt }
         }
