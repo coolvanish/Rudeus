@@ -68,7 +68,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 2 | T45 duel-rules-bot (match, specials, bot, headless sim) | core/duel | opus-extra | T42 |
 | 0 | `:shared` iOS klib targets (done in wave 0: 2 lines of common code + `Platform.ios.kt`) | shared, Gradle (hand-review) | orchestrator | — |
 | 4 | T46 ios-entry (`MainViewController`, the `UIKitView` bridge for the AR slot) — moved next to T51: it cannot be run without the Mac | shared/iosMain | opus-high | T43 |
-| 2 | T47 thin-host S1: `GameLoop` to `core.session`, verbatim, pinned by tests | core + androidApp (hand-review) | opus-high | T43 |
+| 2 | T47 thin-host S1: `GameLoop` to `core.session`, verbatim, pinned by tests — **merged, `review` until the Pixel check** ("hand over the lens") | core + androidApp (hand-review) | opus-high | T43 |
 | 3 | T52 thin-host S2: billboard maths to `BillboardPoser` -> `NodePose` | core + androidApp (hand-review) | opus-extra | T47 |
 | 3 | T53 thin-host S3: `TableEngine` (commands, scenario start, cast sync, surface lock, then the frame step) | core + shared + androidApp (hand-review) | fable-high draft | T52 |
 | 3 | T54 thin-host S4: taps and finger grab behind `ArPort` | core + androidApp (hand-review) | fable-high draft | T53 |
@@ -92,6 +92,10 @@ After every implementing brief: `rudeus-reviewer` on the diff, fixes in the same
   of view at the screen edges, against a 10° hysteresis). The duel's 60 s round clock runs on simulated time, so a
   tracking loss does not run the round down.
 - Of the `expect/actual` candidates only the image codec deserves one, and not before T51.
+- Found by T47's characterization tests (behaviour of v1.0, not changed): an action issued on the first frame back
+  from a tracking loss loses its event. A jump from `beforeStep` on that frame reports only RESUMED, never JUMPED (no
+  jump sound, no HUD reaction); by the same rule a `walkTo` there loses STARTED_WALKING. The duel must not rely on
+  per-action events on the resume frame (T45 reads state, not events); fixing the loop is a separate, small brief.
 
 ## Gates (measurable)
 - **G1 foundation**: `:core` and `:shared` compile for `iosSimulatorArm64` + `iosArm64` (klibs; Linux or the Mac), gated by `scripts/verify.sh`. **Reached 2026-11-11** for the code that exists; every later brief must keep it.
