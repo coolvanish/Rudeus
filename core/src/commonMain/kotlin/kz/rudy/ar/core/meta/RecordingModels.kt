@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.SpriteView
+import kz.rudy.ar.core.domain.Stat
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseSpec
@@ -157,15 +158,33 @@ class RecordingModels(
     companion object {
         const val NOTE_PREFIX = "recorded by cli character --live on"
 
-        /** The model JSON shape [SheetParser.fromJson] reads: `name, names, personality, ability` (lowercase), `lines`. */
+        /**
+         * The model JSON shape [SheetParser.fromJson] reads: `name, names, personality, ability` (lowercase), `lines`,
+         * and since T40, each only when the sheet has it: `stats` (`{"power": 6, ...}`), `why` (language -> stat ->
+         * reason), `view` (`"front"`), `faces` (`"right"` / `"left"`). A sheet without them records exactly what it did
+         * before T40.
+         */
         fun sheetJson(sheet: CharacterSheet): JsonObject = JsonObject(
-            mapOf(
-                "name" to JsonPrimitive(sheet.name),
-                "names" to JsonObject(sheet.names.mapValues { (_, n) -> JsonPrimitive(n) }),
-                "personality" to JsonPrimitive(sheet.personality),
-                "ability" to JsonPrimitive(sheet.ability.name.lowercase()),
-                "lines" to JsonObject(sheet.lines.mapValues { (_, l) -> JsonArray(l.map { JsonPrimitive(it) }) }),
-            ),
+            buildMap {
+                put("name", JsonPrimitive(sheet.name))
+                put("names", JsonObject(sheet.names.mapValues { (_, n) -> JsonPrimitive(n) }))
+                put("personality", JsonPrimitive(sheet.personality))
+                put("ability", JsonPrimitive(sheet.ability.name.lowercase()))
+                put("lines", JsonObject(sheet.lines.mapValues { (_, l) -> JsonArray(l.map { JsonPrimitive(it) }) }))
+                sheet.stats?.let { s -> put("stats", JsonObject(Stat.entries.associate { it.name.lowercase() to JsonPrimitive(s[it]) })) }
+                if (sheet.statReasons.isNotEmpty()) {
+                    put(
+                        "why",
+                        JsonObject(
+                            sheet.statReasons.mapValues { (_, perStat) ->
+                                JsonObject(perStat.entries.associate { (stat, text) -> stat.name.lowercase() to JsonPrimitive(text) })
+                            },
+                        ),
+                    )
+                }
+                sheet.baseView?.let { put("view", JsonPrimitive(it.name.lowercase())) }
+                sheet.facesRight?.let { put("faces", JsonPrimitive(if (it) "right" else "left")) }
+            },
         )
     }
 }

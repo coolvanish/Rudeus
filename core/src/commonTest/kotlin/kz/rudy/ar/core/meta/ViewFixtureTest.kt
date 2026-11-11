@@ -32,9 +32,10 @@ class ViewFixtureTest {
         assertFailsWith<MetaError.Parse> { api.drawView("cat-01", sprite, emptyList(), SpriteView.SIDE) }
         assertFailsWith<MetaError.FixtureMissing> { api.drawView("cat-02", sprite, emptyList(), SpriteView.BACK) }
 
-        // The committed hand-made sample: both views a SIDE base asks for, flagged synthetic, never "probed".
+        // The committed hand-made sample: every view (its T40 sheet is a FRONT base; a SIDE base would ask for FRONT),
+        // flagged synthetic, never "probed".
         val disk = FixtureApi(DiskFixtureSource.repoRoot(), root)
-        for (view in listOf(SpriteView.BACK, SpriteView.FRONT)) {
+        for (view in SpriteView.entries) {
             val png = disk.drawView("sample-01", sprite, emptyList(), view)
             assertEquals(listOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte()), png.take(4), "$view is a PNG")
         }

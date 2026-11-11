@@ -1,5 +1,6 @@
 package kz.rudy.ar.core.emote
 
+import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.domain.Vec2
 import kotlin.math.PI
@@ -75,6 +76,18 @@ class SpriteViews private constructor(
         }
 
         /**
+         * The one rule for a character's base view and direction, fresh from the pipeline or reloaded from disk: the
+         * [sheet]'s `baseView ?: SIDE` and `facesRight ?: false` (a sheet without them, every v1.0 one, gives [NONE] when
+         * nothing is drawn).
+         */
+        fun of(sheet: CharacterSheet, drawn: Map<SpriteView, ByteArray> = emptyMap()): SpriteViews =
+            of(sheet.baseView ?: SpriteView.SIDE, sheet.facesRight ?: false, drawn)
+
+        /** [fromFiles] with the base view and direction of [sheet], as [of] (sheet) takes them. */
+        fun fromFiles(sheet: CharacterSheet, files: Map<String, ByteArray>): SpriteViews =
+            fromFiles(sheet.baseView ?: SpriteView.SIDE, sheet.facesRight ?: false, files)
+
+        /**
          * The inverse of [files]: names [parseFileName] reads, then [of] (so a file of the [base] view is dropped).
          * Other names (pose frames `hello-1.png`, anything else) are ignored.
          */
@@ -100,79 +113,100 @@ class SpriteViews private constructor(
     }
 }
 
-/** What the host shows: the picture of [view] (the base sprite when [view] is [SpriteViews.base]), flipped horizontally when [mirrored]. */
-data class ViewChoice(val view: SpriteView, val mirrored: Boolean)
+/**
+ * What the host shows: the picture of [view] (the base sprite when [view] is [SpriteViews.base]), flipped horizontally
+ * when [mirrored]. [sector] is where the character's bearing is (BACK / SIDE / FRONT, hysteresis applied), whatever
+ * picture ends up standing in for it; [ViewPicker] carries it to the next frame, so hand the last choice back as
+ * `previous`.
+ */
+data class ViewChoice(val view: SpriteView, val mirrored: Boolean, val sector: SpriteView)
 
 /**
- * Which of a character's pictures to show for a camera (T41). Pure plane-coordinate maths, called by the AR host once
- * per frame per character: scalar arithmetic only, and the result is one of six shared [ViewChoice] instances, so a
- * call allocates nothing.
+ * Which of a character's pictures to show (T41). Pure plane-coordinate maths, called by the AR host once per frame per
+ * character: scalar arithmetic only, and the result is one of 18 shared [ViewChoice] instances (or [previous] itself),
+ * so a call allocates nothing.
  *
- * The bearing: θ = atan2(f · R̂, f · F̂), the facing [f] seen in the camera's frame (F̂ = cameraForward, R̂ =
- * cameraRight, both normalised; they need not be perpendicular). |θ| <= 45° -> BACK (it walks away from us),
- * |θ| >= 135° -> FRONT (it walks towards us), else SIDE. [HYSTERESIS_DEG] widens the sector of the previous view
- * (the one shown, fallbacks included), boundaries inclusive: BACK holds up to 55°, FRONT down to 125°, SIDE from 35°
- * to 145°; past that the plain sectors decide.
+ * **Frame and handedness.** Plane coordinates are the right-handed frame of the session anchor: u = anchor-local X,
+ * v = anchor-local Z, h = Y up (androidApp `ar/PlaneCoords.kt`; an iOS host must map ARKit's anchor-local X / Z to
+ * u / v the same way). [toCamera] is the camera position minus the character position in that plane. The picker
+ * derives its own basis from it: forward F = -toCamera normalised, the direction we look at THIS character along (not
+ * the optical axis: at the screen edge they differ by up to half the field of view, more than the hysteresis), and
+ * screen-right R = (-F.v, F.u). A camera looking along +v has screen-right -u. That is the vector the Android host
+ * flips by today (`right = (cos y, -sin y)`, `y = atan2(toCam.u, toCam.v)`, androidApp `ar/CharacterNode.kt`).
  *
- * A wanted view the character lacks falls back to SIDE, then to the base sprite. A real FRONT or BACK picture (drawn,
- * or the base when it is that view) is never mirrored. A SIDE picture, and the base whenever it stands in for a view the
- * character lacks, is mirrored when the direction it was drawn looking (a drawn SIDE looks right, the base
- * [SpriteViews.baseFacesRight]) differs from the screen direction: screen-right when f · R̂ > 0. When |f̂ · R̂| <=
- * [MIRROR_DEADBAND] the screen direction is unclear (it walks almost straight at or away from us) and the previous
- * mirror flag holds if the same picture was showing, else it is not mirrored. That is the host's flip rule
- * (`FLIP_DEADBAND = 0.15` in androidApp CharacterNode.kt), so a character with [SpriteViews.NONE] gets exactly the
- * flip it gets today.
+ * **Sector.** θ = atan2(f · R, f · F), the facing f seen from the camera: |θ| <= 45° BACK (it walks away from us),
+ * |θ| >= 135° FRONT (it walks towards us), else SIDE. The previous choice's [ViewChoice.sector] is widened by
+ * [HYSTERESIS_DEG], boundaries inclusive: BACK holds to 55°, FRONT down to 125°, SIDE from 35° to 145°. The sector
+ * never depends on which pictures exist, so a missing view cannot make it flicker.
  *
- * Degenerate input (a zero facing, or a zero camera vector: the camera straight above the table) returns [previous],
- * or the base sprite unmirrored when there is none.
+ * **Picture.** The sector's view when the character has it, else SIDE, else the base sprite.
+ *
+ * **Mirror.** A real FRONT or BACK picture (drawn, or the base when it is that view) is never mirrored. A SIDE picture,
+ * and the base whenever it stands in for another sector, is mirrored when the direction it was drawn looking (a drawn
+ * SIDE looks right, the base [SpriteViews.baseFacesRight]) differs from the screen direction (screen-right when
+ * f · R > 0). When |f̂ · R| <= [MIRROR_DEADBAND] the screen direction is unclear and the previous flag holds if the same
+ * picture was showing, else it is not mirrored: the host's flip rule (`FLIP_DEADBAND = 0.15`, starting unflipped), so a
+ * character with [SpriteViews.NONE] flips exactly as today.
+ *
+ * **Degenerate input** (a zero or NaN [facing], or [toCamera] shorter than [MIN_TO_CAMERA_M]: the camera straight above
+ * the character) returns [previous], else the base sprite unmirrored (sector = the base view).
  */
 object ViewPicker {
     const val HYSTERESIS_DEG = 10f
 
-    /** Half-width of the BACK and FRONT sectors around the camera axis. */
+    /** Half-width of the BACK and FRONT sectors around the line of sight. */
     const val SECTOR_DEG = 45f
 
-    /** |f̂ · R̂| at or below this keeps the previous mirror flag; equals the host's `FLIP_DEADBAND`. */
+    /** |f̂ · R| at or below this keeps the previous mirror flag; equals the host's `FLIP_DEADBAND`. */
     const val MIRROR_DEADBAND = 0.15f
 
-    /** Squared length below which a vector counts as zero. */
+    /** A camera closer than this in the plane (1 cm) is straight above the character: no bearing. */
+    const val MIN_TO_CAMERA_M = 0.01f
+
+    /** Squared length below which a facing counts as zero. */
     private const val EPS_SQ = 1e-12f
 
     private const val RAD_TO_DEG = (180.0 / PI).toFloat()
 
-    // The six possible answers, shared: index = view.ordinal * 2 + (mirrored ? 1 : 0).
-    private val CHOICES: Array<ViewChoice> = Array(SpriteView.entries.size * 2) { ViewChoice(SpriteView.entries[it / 2], it % 2 == 1) }
+    private val VIEWS = SpriteView.entries
 
-    private fun choice(view: SpriteView, mirrored: Boolean): ViewChoice = CHOICES[view.ordinal * 2 + if (mirrored) 1 else 0]
+    // The 18 possible answers, shared: index = (sector * 3 + view) * 2 + mirrored.
+    private val CHOICES: Array<ViewChoice> = Array(VIEWS.size * VIEWS.size * 2) {
+        ViewChoice(view = VIEWS[(it / 2) % VIEWS.size], mirrored = it % 2 == 1, sector = VIEWS[it / (2 * VIEWS.size)])
+    }
 
-    fun pick(facing: Vec2, cameraForward: Vec2, cameraRight: Vec2, previous: ViewChoice?, views: SpriteViews): ViewChoice {
+    private fun choice(view: SpriteView, mirrored: Boolean, sector: SpriteView): ViewChoice =
+        CHOICES[(sector.ordinal * VIEWS.size + view.ordinal) * 2 + if (mirrored) 1 else 0]
+
+    fun pick(facing: Vec2, toCamera: Vec2, previous: ViewChoice?, views: SpriteViews): ViewChoice {
         val ff = facing.lengthSquared
-        val fwd = cameraForward.lengthSquared
-        val rgt = cameraRight.lengthSquared
-        if (!(ff > EPS_SQ && fwd > EPS_SQ && rgt > EPS_SQ)) return previous ?: choice(views.base, false) // NaN lands here too
-        val along = facing.dot(cameraForward) / sqrt(fwd) // |f| cos θ
-        val across = facing.dot(cameraRight) / sqrt(rgt) // |f| sin θ, > 0 = screen-right
-        if (along * along + across * across <= EPS_SQ * ff) return previous ?: choice(views.base, false) // F ∥ R
+        val tc = toCamera.lengthSquared
+        // Written so that NaN lands in the degenerate branch too.
+        if (!(ff > EPS_SQ && tc >= MIN_TO_CAMERA_M * MIN_TO_CAMERA_M)) return previous ?: choice(views.base, false, views.base)
+        val len = sqrt(tc)
+        // F = -toCamera / len; R = (-F.v, F.u) = (toCamera.v, -toCamera.u) / len.
+        val along = -(facing.u * toCamera.u + facing.v * toCamera.v) / len // |f| cos θ
+        val across = (facing.u * toCamera.v - facing.v * toCamera.u) / len // |f| sin θ, > 0 = screen-right
         val deg = abs(atan2(across, along)) * RAD_TO_DEG // 0 = away from us, 180 = towards us
 
-        val wanted = wantedView(deg, previous?.view)
+        val sector = sectorOf(deg, previous?.sector)
         val shown = when {
-            views.has(wanted) -> wanted
+            views.has(sector) -> sector
             views.has(SpriteView.SIDE) -> SpriteView.SIDE
             else -> views.base
         }
-        // A real FRONT or BACK picture, shown for itself, keeps its orientation.
-        if (shown == wanted && shown != SpriteView.SIDE) return choice(shown, false)
+        // A real FRONT or BACK picture, shown for its own sector, keeps its orientation.
+        if (shown == sector && shown != SpriteView.SIDE) return choice(shown, false, sector)
 
         val drawnRight = if (shown == views.base) views.baseFacesRight else true
         val sinNorm = across / sqrt(ff)
         val mirrored = if (abs(sinNorm) > MIRROR_DEADBAND) (sinNorm > 0f) != drawnRight
         else previous?.takeIf { it.view == shown }?.mirrored ?: false
-        return choice(shown, mirrored)
+        return choice(shown, mirrored, sector)
     }
 
-    /** The sector of [deg] (0..180), with the previous view's sector widened by [HYSTERESIS_DEG]. */
-    private fun wantedView(deg: Float, previous: SpriteView?): SpriteView {
+    /** The sector of [deg] (0..180), with the [previous] sector widened by [HYSTERESIS_DEG]. */
+    private fun sectorOf(deg: Float, previous: SpriteView?): SpriteView {
         val back = SECTOR_DEG
         val front = 180f - SECTOR_DEG
         when (previous) {

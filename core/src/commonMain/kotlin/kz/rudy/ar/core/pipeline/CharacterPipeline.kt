@@ -46,8 +46,10 @@ data class CharacterResult(
     /** The gate said no (`gatePassed=false`), but a person looked at this sprite and took it ([CharacterPipeline] `review`). */
     val accepted: Boolean = false,
     /**
-     * T41: the character's other views (stage `views`), with the base view and its direction from [sheet];
-     * [SpriteViews.NONE] when the pipeline does not draw them. A view that failed is simply absent.
+     * T41: the character's other views (stage `views`). The base view and its direction always come from [sheet]
+     * ([SpriteViews.of] (sheet)), drawn or not, exactly as [kz.rudy.ar.core.bundle.SavedCharacters] reads them back;
+     * nothing is drawn when the pipeline does not draw views, and a view that failed is simply absent. The default
+     * [SpriteViews.NONE] is for results built without a sheet's view information.
      */
     val views: SpriteViews = SpriteViews.NONE,
 )
@@ -174,7 +176,7 @@ class CharacterPipeline(
      * four frames at ~2 call latencies).
      */
     private val frameConcurrency: Int = DEFAULT_FRAME_CONCURRENCY,
-    /** T41: draw the missing views (stage `views`) after the stylize loop; off = no call, no stage, [SpriteViews.NONE]. */
+    /** T41: draw the missing views (stage `views`) after the stylize loop; off = no call, no stage, nothing drawn (the base from the sheet). */
     private val spriteViews: Boolean = false,
     private val review: (suspend (attempt: Int, score: Float) -> Boolean)? = null,
 ) {
@@ -335,7 +337,8 @@ class CharacterPipeline(
                 val emotes = if (frames == null) choreo.emotes else choreo.emotes.withFrames(frames.frames.counts())
                 CharacterResult(
                     ref, sprite, sheet.sheet, bestScore, passed, attempt, mask, emotes, frames?.frames ?: PoseFrames.EMPTY, accepted,
-                    views?.views ?: SpriteViews.NONE,
+                    // Views off: nothing drawn, but the base view and direction still come from the sheet, as on load.
+                    views?.views ?: SpriteViews.of(sheet.sheet),
                 )
             }
         } catch (e: Throwable) {
@@ -467,11 +470,11 @@ class CharacterPipeline(
     private suspend fun views(ref: String, input: ByteArray, refs: List<ByteArray>, sheet: CharacterSheet, permits: Semaphore): ViewsOutcome =
         coroutineScope {
             val t0 = metrics.now()
-            val base = sheet.baseView ?: SpriteView.SIDE
+            val base = SpriteViews.of(sheet).base
             val drawn: List<Pair<SpriteView, Drawn>> = SpriteViews.missing(base).map { view ->
                 async { view to permits.withPermit { drawMatted(SpriteViews.MAX_SIDE) { models.drawView(ref, input, refs, view) } } }
             }.awaitAll()
-            val views = SpriteViews.of(base, sheet.facesRight ?: false, drawn.mapNotNull { (v, d) -> d.frame?.let { v to it } }.toMap())
+            val views = SpriteViews.of(sheet, drawn.mapNotNull { (v, d) -> d.frame?.let { v to it } }.toMap())
             ViewsOutcome(views, drawn.count { it.second.returned }, metrics.now() - t0, views.drawn.isNotEmpty())
         }
 

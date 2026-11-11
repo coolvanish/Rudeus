@@ -1,7 +1,6 @@
 package kz.rudy.ar.core.bundle
 
 import kz.rudy.ar.core.domain.CharacterSheet
-import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.emote.SpriteViews
@@ -81,7 +80,7 @@ class SavedCharacters(
 
     /** Missing views: the base sprite, as in v1.0. */
     private fun viewsOf(sheet: CharacterSheet, files: Map<String, ByteArray>): SpriteViews =
-        SpriteViews.fromFiles(sheet.baseView ?: SpriteView.SIDE, sheet.facesRight ?: false, files)
+        SpriteViews.fromFiles(sheet, files)
 
     /** The stamps of every character in the folder, newest first. */
     private fun stamps(): List<Long> =

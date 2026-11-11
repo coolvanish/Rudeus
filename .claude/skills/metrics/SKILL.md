@@ -20,7 +20,7 @@ p50 < 40 s, <= $0.05 per character.
   "characters": [
     {
       "input": "drawings/cat-01.jpg",
-      "stages": [ { "name": "cutout|stylize|matte|gate|review|sheet|choreo|frames", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
+      "stages": [ { "name": "cutout|stylize|matte|gate|rescore|review|sheet|choreo|frames|views", "ms": 1234, "costUsd": 0.005, "attempt": 1, "ok": true, "measured": false } ],
       "gateScore": 0.82, "gatePassed": true, "retries": 0, "totalMs": 31200, "totalCostUsd": 0.031, "aborted": false
     }
   ],
@@ -39,6 +39,11 @@ A sheet stage with `ok: false` means the character shipped the fallback sheet; a
 four model-drawn pose frames (hello-1, hello-2, roar-1, roar-2), one Muse edit each, drawn after the stylize loop and recorded last, after
 `choreo`; `ms` is the wall time of the batch (two edits in flight), `costUsd` what Muse metered (else `CostTable.poseUsd` $0.01 per frame
 Muse returned), `ok` = all four came back and matted. `ok: false` with frames in the bundle entry means a partial set.
+`views` (T41, only when the pipeline runs with `spriteViews`, and the only stage of `cli views`): the character's missing
+views (`SpriteViews.missing` of the sheet's `baseView ?: SIDE`: two of FRONT / SIDE / BACK), one Muse edit each (job `muse-view`),
+drawn alongside the frames under the same two permits once the sheet is known, recorded last, after `frames`; `ms` runs from
+the sheet being known to the last view (waiting for a permit included), `costUsd` what Muse metered (else `CostTable.viewUsd`
+$0.01 per view Muse returned), `ok` = at least one view came back and matted. A failed view never fails the character.
 `rescore` (added 2026-10-28, T11) is the gate's colour-free look (`Prompts.STYLE_SCORE_NO_COLOUR` + outline-only
 deterministic half), run in parallel with `gate` on every attempt since commit 13b3be9 (run 2026-10-28T09-11-21Z ran
 it only after a failed `gate`; earlier runs have no `rescore` at all). Each stage's `ok` is its own look's verdict; the attempt keeps the higher score and passes

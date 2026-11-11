@@ -3,9 +3,10 @@
   "job": "muse-view",
   "ref": "sample-01",
   "synthetic": true,
-  "note": "Hand-made (T41), not a Muse reply: sample-01's square seen from behind (no face) and from the front (eyes and mouth), 64 px on Muse's opaque white background, so the matte has something to cut. sample-01 has no baseView on its sheet, so it is a SIDE base and the pipeline asks for BACK and FRONT.",
+  "note": "Hand-made (T41), not a Muse reply: sample-01's square seen from behind (no face), from the front (eyes and mouth) and in profile looking right, 64 px on Muse's opaque white background, so the matte has something to cut. sample-01's sheet (T40) says view front, faces right, so the pipeline asks for BACK and SIDE; FRONT is here for a SIDE-based replay.",
   "outputs": [
     "sample-01.view-front.png",
-    "sample-01.view-back.png"
+    "sample-01.view-back.png",
+    "sample-01.view-side.png"
   ]
 }

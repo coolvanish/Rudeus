@@ -19,7 +19,10 @@ import kotlin.time.Instant
 
 @Serializable
 data class StageMetrics(
-    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "review" | "sheet" | "choreo" (and "table" | "voice" when those jobs are measured). */
+    /**
+     * "cutout" | "stylize" | "matte" | "gate" | "rescore" | "review" | "sheet" | "choreo" | "frames" (T33) | "views" (T41)
+     * (and "table" | "voice" when those jobs are measured).
+     */
     val name: String,
     val ms: Long,
     val costUsd: Double,

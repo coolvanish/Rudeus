@@ -1330,6 +1330,29 @@ class SpriteViewsStageTest {
     }
 
     @Test
+    fun oneRuleForTheBaseViewFreshOrReloaded() = runTest {
+        val v1 = FakeModels.DEFAULT_SHEET // no baseView / facesRight: every v1.0 sheet
+        val t40 = FakeModels.DEFAULT_SHEET.copy(baseView = SpriteView.FRONT, facesRight = true)
+        for (sheet in listOf(v1, t40)) {
+            for (on in listOf(false, true)) {
+                val models = FakeModels(scores = listOf(0.9f), views = allViews, sheet = sheet)
+                val result = CharacterPipeline(models, StyleGate(), metrics(), spriteViews = on).run("cat-01", image, refs, "")
+                assertEquals(sheet.baseView ?: SpriteView.SIDE, result.views.base, "views=$on")
+                assertEquals(sheet.facesRight ?: false, result.views.baseFacesRight, "views=$on")
+                assertEquals(if (on) 2 else 0, result.views.drawn.size)
+
+                val folder = kz.rudy.ar.core.io.MemoryCharacterFolder()
+                kz.rudy.ar.core.bundle.SavedCharacters(folder, clock = { 1000L })
+                    .save(result.sprite, result.sheet, result.emotes, result.frames, result.views)
+                val loaded = kz.rudy.ar.core.bundle.SavedCharacters(folder).load().single()
+                assertEquals(result.views, loaded.views, "sheet=${sheet.baseView} views=$on: same pictures and base after a restart")
+            }
+        }
+        // Views off with a v1.0 sheet is still the v1.0 billboard.
+        assertSame(SpriteViews.NONE, CharacterPipeline(FakeModels(scores = listOf(0.9f)), StyleGate(), metrics()).run("cat-01", image, refs, "").views)
+    }
+
+    @Test
     fun viewsWaitForTheSheet() = runTest {
         // The sheet decides the base view, so the view calls start only once it is back.
         val models = FakeModels(scores = listOf(0.9f), views = allViews, delays = mapOf("characterSheet" to 5_000L, "drawView" to 1_000L))
