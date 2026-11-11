@@ -3,7 +3,7 @@
   "job": "spark-sheet",
   "ref": "sample-02",
   "synthetic": true,
-  "note": "'sheet' is the model's JSON as returned; SheetParser normalises it.",
+  "note": "'sheet' is the model's JSON as returned; SheetParser normalises it. Hand-written for T40: stats/why/view/faces are raw model-shape values, StatBudget rebalances the stats.",
   "sheet": {
     "name": "Қоян",
     "personality": "Shy but quick.",
@@ -23,6 +23,34 @@
         "Смотри!",
         "Молодец!"
       ]
-    }
+    },
+    "stats": {
+      "power": 2,
+      "speed": 9,
+      "guard": 2,
+      "agility": 7
+    },
+    "why": {
+      "kk": {
+        "power": "кішкентай тұмсық",
+        "speed": "үлкен қанаттар",
+        "guard": "жеңіл дене",
+        "agility": "кішкентай әрі жеңіл"
+      },
+      "ru": {
+        "power": "маленький клюв",
+        "speed": "большие крылья",
+        "guard": "лёгкое тело",
+        "agility": "маленький и лёгкий"
+      },
+      "en": {
+        "power": "small beak",
+        "speed": "big wings",
+        "guard": "light body",
+        "agility": "small and light"
+      }
+    },
+    "view": "side",
+    "faces": "right"
   }
 }
