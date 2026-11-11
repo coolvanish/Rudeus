@@ -62,7 +62,8 @@ interface CaptureHost {
     suspend fun importCharacter(photo: ByteArray, maxAttempts: Int, onEvent: (PipelineEvent) -> Unit): CharacterResult =
         makeCharacter(photo, review = { attempt, _ -> attempt >= maxAttempts }, onEvent = onEvent)
 
-    /** Play is on screen with the captured character: the host logs shutter -> Play for the Day 3 gate. */
+    /** Play is on screen with the captured character: the host logs shutter -> Play for the Day 3 gate.
+     * Since T44 the child taps Next on Done, so that time includes the tap (reading the fighter card), not only the pipeline. */
     fun playEntered()
 
     /**

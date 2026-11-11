@@ -1,6 +1,6 @@
 # T44 — fighter-card-ui
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md)
 gate: G2 — a child sees why their drawing got its stats
@@ -57,5 +57,16 @@ Tests not required: the composable itself, layout, screenshots.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: how it looks on the Pixel is the user's check
+- measured: `scripts/verify.sh` exit 0 under the lock: core 403, shared 30 (26 + 4 new in `FighterStatsUiTest`), android 2;
+  `:shared:compileKotlinIosSimulatorArm64` green.
+- built: `FighterStatsCard.kt` (`StatRow`, `statLabel`, `fighterRows`, `hasDrawnStats`, the composable); the card sits in
+  `ProcessingScreen`'s `ResultLines` under the name + ability tag, in the DONE state only. Six new ids (`stats_title`,
+  `stat_power|speed|guard|agility`, `stats_from_drawing`) and their DESIGN.md rows. One bar colour (Sky), tracks CreamDeep,
+  card Paper: Tomato/Hazard/Sun are taken by status, cliff and the one primary, and only Sky/Leaf/Grape are left.
+- follow-up: Done no longer auto-advances. `App.kt` lost the `LaunchedEffect` that waited `DONE_AUTO_ADVANCE_MS` (2 s)
+  and the constant; the existing primary **Next** (`onContinue = ::useResult`) is the only way on. The shutter -> Play
+  time the host logs (`playEntered`, `capture_to_play_ms`) now includes the child's tap; KDoc on `CaptureHost.playEntered`
+  and DESIGN.md say so. Review and gate-failed buttons unchanged.
+- cut/deferred: how it looks on the Pixel is the user's check (not seen here: no device). Open Pixel check: on a short
+  screen the sprite well shrinks to its 96 dp minimum and the hero column may overflow with the card in it; no scrolling
+  added blind.

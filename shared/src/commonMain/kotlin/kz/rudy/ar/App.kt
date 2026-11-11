@@ -95,9 +95,6 @@ private const val PHOTO_PREFIX = "photo-"
 /** T24: a voice transcript bubble stays this long (shorter than a character line: it only confirms what was heard). */
 private const val VOICE_BUBBLE_MS = 2000L
 
-/** "Done!" with the character's name stays this long before Processing moves on by itself (DESIGN.md "Processing"). */
-private const val DONE_AUTO_ADVANCE_MS = 2000L
-
 /**
  * Minimal navigation shell. :androidApp calls
  * `App(arView = { modifier, slot -> RudeusArView(modifier, slot, scanner = host) }, capture = host)`.
@@ -680,14 +677,7 @@ fun App(
                                 }
                             }
                         }
-                        // Above the threshold, or once the child said yes, nobody has to confirm: a moment with the
-                        // named character, then the table. Next skips the wait, and leaving the screen cancels it.
-                        LaunchedEffect(processing.status) {
-                            if (processing.status == ProcessingStatus.DONE) {
-                                delay(DONE_AUTO_ADVANCE_MS)
-                                useResult()
-                            }
-                        }
+                        // T44: Done waits for the child's tap on Next (onContinue): the fighter card needs time to read.
                         ProcessingScreen(
                             state = processing,
                             onRetry = {
