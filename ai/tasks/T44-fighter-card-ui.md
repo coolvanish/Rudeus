@@ -63,5 +63,10 @@ Tests not required: the composable itself, layout, screenshots.
   `ProcessingScreen`'s `ResultLines` under the name + ability tag, in the DONE state only. Six new ids (`stats_title`,
   `stat_power|speed|guard|agility`, `stats_from_drawing`) and their DESIGN.md rows. One bar colour (Sky), tracks CreamDeep,
   card Paper: Tomato/Hazard/Sun are taken by status, cliff and the one primary, and only Sky/Leaf/Grape are left.
-- cut/deferred: how it looks on the Pixel is the user's check (not seen here: no device). Open: App.kt moves on 2 s after
-  Done (`DONE_AUTO_ADVANCE_MS`); that is too short to read four reasons. App.kt is not in this brief's Owns.
+- follow-up: Done no longer auto-advances. `App.kt` lost the `LaunchedEffect` that waited `DONE_AUTO_ADVANCE_MS` (2 s)
+  and the constant; the existing primary **Next** (`onContinue = ::useResult`) is the only way on. The shutter -> Play
+  time the host logs (`playEntered`, `capture_to_play_ms`) now includes the child's tap; KDoc on `CaptureHost.playEntered`
+  and DESIGN.md say so. Review and gate-failed buttons unchanged.
+- cut/deferred: how it looks on the Pixel is the user's check (not seen here: no device). Open Pixel check: on a short
+  screen the sprite well shrinks to its 96 dp minimum and the hero column may overflow with the card in it; no scrolling
+  added blind.

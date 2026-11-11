@@ -198,8 +198,8 @@ card: mono number `0.82`, "Style score", "Attempt 2 / 3", Passed (Leaf) or Not p
 - *Pipeline error / offline mid-way*: sheet over Scrim "Didn't work" + "Check the internet and try again", primary
   **Retry**, ghost **Pick a ready one** (back to Capture where bundled characters are offered).
 - *Done* (above the threshold, or the child said yes): "Done!", large sprite on the hero, name + ability tag, the fighter
-  stats card (Components), a dot score line (Leaf when it passed, Tomato when the child took it below the threshold), one Sun **Next**. Nobody has to confirm:
-  it moves on by itself after 2 s, and Next skips the wait.
+  stats card (Components), a dot score line (Leaf when it passed, Tomato when the child took it below the threshold), one Sun **Next**. Done waits for
+  that tap (no timer): a child needs more than 2 s to read four stats and their reasons. The shutter -> Play time the host logs now includes it.
 
 ### Import — `ImportScreen` (T38)
 Paper. Reached from Capture's **Add toys** after the system picker (up to 7 photos; the picker itself stops at 7). Back
