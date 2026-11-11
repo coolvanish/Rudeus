@@ -22,10 +22,13 @@ import kz.rudy.ar.core.duel.MatchEvent.Fight
 import kz.rudy.ar.core.duel.MatchEvent.MatchOver
 import kz.rudy.ar.core.duel.MatchEvent.Point
 import kz.rudy.ar.core.duel.MatchEvent.RoundStarted
+import kz.rudy.ar.core.physics.Physics
 import kotlin.random.Random
 import kotlin.time.TimeSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -240,15 +243,126 @@ class DuelMatchTest {
         }
         for (t in results) {
             assertEquals(Point(winner, PointReason.RING_OUT, first.atMs + 3000L), t.points.first(), "${t.points}")
-            // The winner still flies off, in POINT, on the very sub-step it did without the match: shown, not scored.
-            val falls = t.fight().filterIsInstance<RingOut>().take(2).map { it.id to it.atMs }
-            assertEquals(listOf(loser to first.atMs + 3000L, winner to second.atMs + 3000L), falls)
+            // The winner, which the physics alone would carry off 16 ms later, is frozen on the table in POINT instead.
+            val falls = t.fight().filterIsInstance<RingOut>().map { it.id to it.atMs }
+            assertEquals(listOf(loser to first.atMs + 3000L), falls)
             val afterRound = t.states.first { it.round == 2 }
             assertEquals(1 to 0, afterRound.scoreOf(winner) to afterRound.scoreOf(loser))
             assertEquals(1, t.points.count { it.atMs < afterRound.duel.timeMs })
         }
         // Same events everywhere (the slot swap only changes which side scoreA counts).
         for (t in results.drop(1)) assertEquals(results[0].all, t.all)
+    }
+
+    @Test
+    fun theWinnerCannotFallDuringPoint() {
+        // The case above: at the point x is still sliding toward its edge, 16 ms from falling off. In POINT it is frozen
+        // where it stands (no motion, no fall, no event), and stands on its mark when the phase ends.
+        val tiny = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
+        val x = Contestant("x", FighterStats(10, 1, 1, 8), Ability.JUMP)
+        val y = Contestant("y", FighterStats(8, 1, 2, 9), Ability.JUMP)
+        val marks = Vec2(-0.04f, 0f) to Vec2(0.042f, 0f)
+        val t = play(DuelMatch.start(x, y, tiny, marks), tiny, maxMs = 5_000L, script = { r ->
+            if (r == 1) mapOf(0L to inputs("x" to Dash(), "y" to Dash())) else emptyMap()
+        })
+        val k = t.events.indexOfFirst { e -> e.any { it is Point } }
+        val atPoint = t.states[k].duel["x"]!!
+        assertTrue(atPoint.knock.length > 0.05f && tiny.boundary!!.contains(atPoint.pos), "still flying, still on the table: $atPoint")
+        val pause = t.states.filter { it.phase == MatchPhase.POINT }
+        assertTrue(pause.size > 50)
+        for (s in pause) assertEquals(atPoint, s.duel["x"], "frozen at ${s.duel.timeMs} ms")
+        val all = t.all
+        assertEquals(emptyList(), all.drop(all.indexOfFirst { it is Point } + 1), "nothing comes out of POINT")
+        assertEquals(marks.first, t.states.first { it.round == 2 }.duel["x"]!!.pos)
+    }
+
+    @Test
+    fun theLoserReappearsOnItsMarkNeverOnTheSpawn() {
+        // A cup stands on the level's spawn point, where Physics would respawn the loser. In POINT the loser falls, then
+        // stands on its own mark, frozen; never on the spawn, never in the cup. The winner does not move. (Both walk up
+        // first, so red's dash ends away from blue's mark: a winner standing over it would keep blue down to the end.)
+        val onSpawn = cup("cup", Vec2(-0.05f, -0.13f), radius = 0.03f)
+        val arena = NARROW.copy(objects = listOf(onSpawn), spawn = Vec2(-0.05f, -0.13f))
+        val start = DuelMatch.start(RED, BLUE, arena, MARKS)
+        val t = play(start, arena, maxMs = 8_000L, script = { r ->
+            if (r == 1) {
+                mapOf(0L to inputs("blue" to MoveTo(Vec2(0.08f, 0.1f)), "red" to MoveTo(Vec2(0.02f, 0.1f))), 1600L to inputs("red" to Dash(Vec2(1f, 0f))))
+            } else {
+                emptyMap()
+            }
+        })
+        assertEquals(listOf("red"), t.points.map { it.winner })
+        val pause = t.states.filter { it.phase == MatchPhase.POINT }
+        val blue = pause.map { it.duel.b }
+        val standing = blue.indexOfFirst { it.pos == RIGHT }
+        assertTrue(standing > 5, "falls first, then stands: $standing of ${blue.size}")
+        assertTrue(blue.take(standing).all { DuelPhysics.isOut(it, arena) })
+        assertTrue(blue.take(standing).any { it.body.state.h < 0f && it.body.state.mode == Mode.FALLING }, "the fall is shown")
+        for (f in blue.drop(standing)) assertEquals(start.duel.b, f, "on its mark, as built")
+        assertTrue(t.states.none { it.duel.b.pos.distanceTo(arena.spawn) < 0.01f }, "never at the spawn")
+        for (s in pause) assertEquals(pause.first().duel.a, s.duel.a, "red frozen at ${s.duel.timeMs} ms")
+        for (s in t.states) for (f in listOf(s.duel.a, s.duel.b)) {
+            val st = f.body.state
+            assertTrue(!Physics.blocks(onSpawn, st.h) || distanceToPolygon(st.pos, onSpawn.footprint) >= st.radiusM - 0.001f, "${f.id} in the cup")
+        }
+    }
+
+    @Test
+    fun rearrangeMovesTheMarksBetweenRounds() {
+        // The child put a cup on red's mark between rounds and one Scan rebuilt the arena.
+        val moved = NARROW.copy(objects = listOf(cup("cup", LEFT)))
+        val newMarks = assertNotNull(DuelArena.marks(moved, R, 0.12f))
+        assertTrue(DuelArena.startProblem(moved, MARKS, R) != null, "the old marks no longer do")
+
+        // In COUNTDOWN both stand on the new marks at once, facing each other; the countdown runs on.
+        val start = DuelMatch.start(RED, BLUE, NARROW, MARKS)
+        val counting = DuelMatch.step(start, NARROW, 200L).state
+        val re = DuelMatch.rearrange(counting, moved, newMarks)
+        assertEquals(newMarks, re.startA to re.startB)
+        assertEquals(newMarks, re.duel.a.pos to re.duel.b.pos)
+        assertTrue(re.duel.a.body.state.facing.distanceTo((newMarks.second - newMarks.first).normalized()) < 1e-6f)
+        assertEquals(counting.phaseLeftMs to counting.duel.timeMs, re.phaseLeftMs to re.duel.timeMs)
+        assertFailsWith<IllegalArgumentException> { DuelMatch.rearrange(counting, moved, MARKS) }
+        // Paused (tracking lost) bodies stay paused.
+        val paused = DuelMatch.step(counting, NARROW, 16L, tracking = false).state
+        assertTrue(DuelMatch.rearrange(paused, moved, newMarks).duel.a.body.state.mode == Mode.PAUSED)
+
+        // In POINT the marks are taken at once and used: blue, still falling, reappears on its new mark, and both start
+        // round 2 on them.
+        val t = play(start, NARROW, maxMs = 4_000L, script = redDashes)
+        val point = t.states.first { it.phase == MatchPhase.POINT }
+        assertTrue(DuelPhysics.isOut(point.duel.b, NARROW))
+        var s = DuelMatch.rearrange(point, moved, newMarks)
+        assertEquals(point.duel, s.duel, "nobody moves in POINT")
+        while (s.phase == MatchPhase.POINT) {
+            s = DuelMatch.step(s, moved, 16L).state
+            if (s.phase == MatchPhase.POINT && !DuelPhysics.isOut(s.duel.b, moved)) assertEquals(newMarks.second, s.duel.b.pos)
+        }
+        assertEquals(MatchPhase.COUNTDOWN, s.phase)
+        assertEquals(newMarks, s.duel.a.pos to s.duel.b.pos)
+
+        // Not in FIGHT, not in RESULT.
+        val fighting = play(start, NARROW, maxMs = 3_100L).last
+        assertEquals(MatchPhase.FIGHT, fighting.phase)
+        assertFailsWith<IllegalArgumentException> { DuelMatch.rearrange(fighting, moved, newMarks) }
+        val over = play(start, NARROW, script = redDashes).last
+        assertEquals(MatchPhase.RESULT, over.phase)
+        assertFailsWith<IllegalArgumentException> { DuelMatch.rearrange(over, moved, newMarks) }
+    }
+
+    @Test
+    fun aMatchMidFightRoundTripsThroughJson() {
+        // 200 ms into round 1: red (JUMP) in the air on a stomp, blue (HIDE) dodging; then a counter window, a point.
+        val t = play(DuelMatch.start(RED, BLUE, NARROW, MARKS), NARROW, maxMs = 3_200L, script = { mapOf(0L to inputs("red" to Special, "blue" to Special)) })
+        val mid = t.last
+        assertTrue(mid.phase == MatchPhase.FIGHT && mid.duel.a.stomping && DuelPhysics.isDodging(mid.duel.b), "$mid")
+        val json = Json { encodeDefaults = true }
+        assertEquals(mid, json.decodeFromString(DuelMatchState.serializer(), json.encodeToString(DuelMatchState.serializer(), mid)))
+        val step = MatchStep(mid, t.all)
+        assertEquals(step, Json.decodeFromString(MatchStep.serializer(), Json.encodeToString(MatchStep.serializer(), step)))
+        val later = play(mid, NARROW, maxMs = 6_000L, script = { mapOf(1000L to inputs("red" to Dash())) })
+        val inPoint = later.states.first { it.phase == MatchPhase.POINT }
+        assertEquals(inPoint, Json.decodeFromString(DuelMatchState.serializer(), Json.encodeToString(DuelMatchState.serializer(), inPoint)))
     }
 
     @Test
@@ -464,7 +578,20 @@ class DuelMatchTest {
                 assertTrue(n.round in 1..rules.maxRounds)
                 assertTrue(n.phaseLeftMs in 0L..lengths.getValue(n.phase), "${n.phase} ${n.phaseLeftMs}")
                 if (n.phase == MatchPhase.COUNTDOWN) assertEquals(n.startA to n.startB, n.duel.a.pos to n.duel.b.pos)
-                for (f in listOf(n.duel.a, n.duel.b)) assertTrue(f.pos.u.isFinite() && f.pos.v.isFinite() && f.body.state.h.isFinite())
+                if (n.phase == MatchPhase.POINT && s.phase == MatchPhase.POINT) assertTrue(out.events.isEmpty(), "an event in POINT: ${out.events}")
+                // T42's invariants, in every phase: no circle inside what blocks at its feet, standing fighters apart.
+                for (f in listOf(n.duel.a, n.duel.b)) {
+                    val st = f.body.state
+                    assertTrue(st.pos.u.isFinite() && st.pos.v.isFinite() && st.h.isFinite())
+                    val inside = FUZZ_TABLE.objects.firstOrNull {
+                        Physics.blocks(it, st.h) && (it.footprint.contains(st.pos) || distanceToPolygon(st.pos, it.footprint) < st.radiusM - 0.001f)
+                    }
+                    assertNull(inside?.id, "${f.id} in ${inside?.id} in ${n.phase} at ${n.duel.timeMs} ms: $st")
+                }
+                val ground = setOf(Mode.IDLE, Mode.WALKING)
+                if (n.duel.a.body.state.mode in ground && n.duel.b.body.state.mode in ground) {
+                    assertTrue(n.duel.a.pos.distanceTo(n.duel.b.pos) >= 2 * R - 1e-4f, "overlap in ${n.phase} at ${n.duel.timeMs} ms")
+                }
                 assertTrue(n.duel.timeMs <= bound, "a match ran past $bound ms")
             }
         }

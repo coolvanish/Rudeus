@@ -88,15 +88,19 @@ data class MatchStep(val state: DuelMatchState, val events: List<MatchEvent>)
  *   a point for the other; both out in that same sub-step (equal `atMs`) = a replay. So two ring-outs are judged by the
  *   sub-step they happened in, never by the call they arrived in. Round clock at 0 without a ring-out: the fighter
  *   whose centre is farther inside the boundary ([DuelArena.insideDistance]) takes the point; within
- *   [DuelRules.timeoutTieM], or on a level without a boundary, a replay. Either way [MatchEvent.Point].
+ *   [DuelRules.timeoutTieM] a replay. Either way [MatchEvent.Point].
  * - POINT ([DuelRules.pointPauseMs]): what both were doing stops (dash, walk target, lift-off, dodge, stomp, counter:
- *   [DuelPhysics.endActions]); inputs ignored; the bodies go on under [DuelPhysics] (the loser falls, the winner's
- *   knockback runs out; nothing can hit: no dash and no stomp is left), and what it reports is passed on as
- *   [MatchEvent.Fight] (a WallSlam, the other one falling off too: they no longer score). At 0 both are rebuilt on
- *   their marks (IDLE, no knockback, stun or special, cooldowns cleared) whatever physics was doing; then RESULT if a
- *   fighter has [DuelRules.pointsToWin] (or [DuelRules.maxRounds] rounds were played: a draw, [MatchEvent.MatchOver]),
+ *   [DuelPhysics.endActions]); inputs ignored. A fighter that is out ([DuelPhysics.isOut]) keeps falling as Physics
+ *   makes it fall (that is the thing to see), and on the sub-step Physics would respawn it, it stands on its own mark
+ *   instead, frozen (if the other one stands over that mark it stays out of sight until the end). A fighter that is not
+ *   out is frozen where it stands for the whole phase: nothing moves it, nothing can make it fall. No event comes out of
+ *   POINT. At 0 both are rebuilt on their marks (IDLE, no knockback, stun or special, cooldowns cleared); then RESULT if
+ *   a fighter has [DuelRules.pointsToWin] (or [DuelRules.maxRounds] rounds were played: a draw, [MatchEvent.MatchOver]),
  *   else the next round's COUNTDOWN.
  * - RESULT: terminal, [step] returns the state unchanged with no events.
+ *
+ * **Between rounds** the arena may be rescanned (objects moved): [rearrange] takes the new arena's marks in COUNTDOWN
+ * or POINT.
  *
  * **Tracking.** `tracking = false` (the AR session lost tracking) pauses BOTH bodies ([Physics.pause]): no clock runs,
  * no input applies, no event; the state stays paused until a call with `tracking = true` resumes both and goes on
@@ -108,7 +112,9 @@ object DuelMatch {
      * The match before its first countdown: [a] in slot `a` on `marks.first`, [b] on `marks.second`, facing each other,
      * standing on whatever ground is there, with [radiusM] collision circles ([SurfaceProfile.radiusAt]) and their
      * abilities on both the duel fighter (the special) and the body (the walking game's FLY glide, ROLL no-jump).
-     * `duel.timeMs` starts at 0.
+     * `duel.timeMs` starts at 0. Requires (see [DuelArena.startProblem]) an arena with a boundary (a raw floor level
+     * would make every match a draw: build it with [DuelArena.arena] first) and marks that are free spots for [radiusM]
+     * on it, apart, at the same ground height ([DuelArena.marks] gives such marks).
      */
     fun start(
         a: Contestant,
@@ -121,7 +127,7 @@ object DuelMatch {
         radiusM: Float = SurfaceProfile.TABLE.radiusM,
     ): DuelMatchState {
         require(a.id != b.id) { "duel contestants need distinct ids, got '${a.id}' twice" }
-        require(radiusM > 0f && radiusM.isFinite()) { "radiusM must be > 0 and finite, got $radiusM" }
+        DuelArena.startProblem(arena, marks, radiusM, physics)?.let { throw IllegalArgumentException(it) }
         val (ma, mb) = marks
         fun fresh(c: Contestant) =
             DuelFighter(c.id, PhysicsBody(CharacterState(radiusM = radiusM, ability = c.ability)), c.stats, ability = c.ability)
@@ -199,15 +205,83 @@ object DuelMatch {
                     }
                     if (left <= 0L) break
                     val d = minOf(left, s.phaseLeftMs)
-                    val out = DuelPhysics.step(s.duel, arena, d, emptyMap(), params, physics)
-                    for (e in out.events) events += MatchEvent.Fight(e)
-                    s = s.copy(duel = out.state, phaseLeftMs = s.phaseLeftMs - d)
+                    s = s.copy(duel = pointStep(s, arena, d, params, physics), phaseLeftMs = s.phaseLeftMs - d)
                     left -= d
                     pending = emptyMap()
                 }
             }
         }
         return MatchStep(s, events)
+    }
+
+    /**
+     * The arena was rescanned between rounds (objects moved): [marks], valid on the new [arena] as for [start]
+     * ([DuelArena.startProblem], for the fighters' radius), become the marks both fighters start the next rounds on.
+     * Allowed in COUNTDOWN, where both are moved onto them at once facing each other, and in POINT, where they are used
+     * from now on (a loser that already stands on its old mark stays there until the phase ends). FIGHT and RESULT
+     * refuse. Pass the new arena to every [step] from now on.
+     */
+    fun rearrange(
+        state: DuelMatchState,
+        arena: Level,
+        marks: Pair<Vec2, Vec2>,
+        physics: PhysicsParams = PhysicsParams.DEFAULT,
+    ): DuelMatchState {
+        require(state.phase == MatchPhase.COUNTDOWN || state.phase == MatchPhase.POINT) {
+            "rearrange only between rounds (COUNTDOWN or POINT), not in ${state.phase}"
+        }
+        val a = state.duel.a
+        val b = state.duel.b
+        val radius = maxOf(a.body.state.radiusM, b.body.state.radiusM)
+        DuelArena.startProblem(arena, marks, radius, physics)?.let { throw IllegalArgumentException(it) }
+        val (ma, mb) = marks
+        val moved = state.copy(startA = ma, startB = mb)
+        if (state.phase != MatchPhase.COUNTDOWN) return moved
+        fun keepPause(f: DuelFighter, g: DuelFighter) = if (f.body.state.mode == Mode.PAUSED) g.copy(body = Physics.pause(g.body)) else g
+        return moved.copy(
+            duel = state.duel.copy(a = keepPause(a, onMark(a, ma, mb, arena, physics)), b = keepPause(b, onMark(b, mb, ma, arena, physics))),
+        )
+    }
+
+    /**
+     * [d] ms of POINT on the sub-step grid. Only a fighter that is out moves: it falls as Physics makes it fall (its
+     * position kept, as [DuelPhysics] keeps an out body's) and, on the sub-step Physics would respawn it, stands on its
+     * own mark instead, frozen; if the other fighter stands over that mark it stays down (RESPAWNING) to the end of the
+     * phase. A fighter that is not out does not move at all. No events.
+     */
+    private fun pointStep(s: DuelMatchState, arena: Level, d: Long, params: DuelParams, physics: PhysicsParams): DuelState {
+        val sub = params.subStepMs
+        val t0 = s.duel.timeMs
+        val cells = (t0 + d).floorDiv(sub) - t0.floorDiv(sub)
+        var a = s.duel.a
+        var b = s.duel.b
+        for (i in 0 until cells) {
+            a = fallOrStand(a, b, s.startA, s.startB, arena, sub, physics)
+            b = fallOrStand(b, a, s.startB, s.startA, arena, sub, physics)
+        }
+        return DuelState(a, b, t0 + d)
+    }
+
+    private fun fallOrStand(
+        f: DuelFighter,
+        other: DuelFighter,
+        mark: Vec2,
+        toward: Vec2,
+        arena: Level,
+        sub: Long,
+        physics: PhysicsParams,
+    ): DuelFighter {
+        if (!DuelPhysics.isOut(f, arena)) return f
+        val body = f.body
+        val next = if (body.state.mode == Mode.RESPAWNING) {
+            body
+        } else {
+            val after = Physics.step(body, arena, sub, physics)
+            if (after.state.mode == Mode.RESPAWNING || after.state.pos == body.state.pos) after else after.copy(state = after.state.copy(pos = body.state.pos))
+        }
+        if (next.state.mode != Mode.RESPAWNING) return f.copy(body = next)
+        if (other.body.state.pos.distanceTo(mark) < next.state.radiusM + other.body.state.radiusM) return f.copy(body = next)
+        return onMark(f, mark, toward, arena, physics)
     }
 
     /** [ms] rounded up to whole sub-steps of [params]. */
