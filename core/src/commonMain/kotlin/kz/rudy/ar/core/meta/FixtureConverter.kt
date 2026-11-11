@@ -48,7 +48,7 @@ object FixtureConverter {
         val base = Fixture(job = job, ref = ref, synthetic = synthetic, note = note, latencyMs = latencyMs)
         return try {
             when (job) {
-                Jobs.MUSE_STYLIZE, Jobs.MUSE_POSE -> {
+                Jobs.MUSE_STYLIZE, Jobs.MUSE_POSE, Jobs.MUSE_VIEW -> {
                     val payload = parseStylize(decode(StylizeResponse.serializer(), rawJson))
                     val extra = if (isRedacted(payload)) "; payload redacted, sibling ${outputName(ref)} must be saved by scripts/probe-meta.sh" else ""
                     base.copy(outputs = listOf(outputName(ref)), note = note + extra)

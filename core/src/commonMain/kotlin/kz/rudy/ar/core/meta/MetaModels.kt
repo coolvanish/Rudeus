@@ -1,6 +1,7 @@
 package kz.rudy.ar.core.meta
 
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseSpec
 
@@ -57,6 +58,16 @@ interface MetaModels {
     suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray =
         throw MetaError.Provider("drawPose not forwarded by ${this::class.simpleName}")
 
+    /**
+     * Muse Image edit (T41): the matted [sprite] redrawn as seen from [view] ([ViewPrompts.view]), with the style
+     * [refs]; PNG on Muse's opaque white background, matted by the caller as a pose frame is. Metered under
+     * [Jobs.MUSE_VIEW]. Like [drawPose], the body here only keeps implementations outside :core compiling until they
+     * forward it; it throws, so the pipeline records a failed `views` stage and the character keeps its base sprite.
+     * Every implementation and decorator in core/meta forwards it.
+     */
+    suspend fun drawView(ref: String, sprite: ByteArray, refs: List<ByteArray>, view: SpriteView): ByteArray =
+        throw MetaError.Provider("drawView not forwarded by ${this::class.simpleName}")
+
     /** Voice Transcribe: [pcm16kMono] 16-bit little-endian PCM, 16 kHz mono, in language [lang] ("kk", "ru"). */
     suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String
 }
@@ -82,6 +93,9 @@ object Jobs {
 
     /** [MetaModels.drawPose]: a Muse edit per pose frame (fixtures in docs/api-samples/muse-pose, `outputs` named `<ref>.<emote>-<n>.png`). */
     const val MUSE_POSE = "muse-pose"
+
+    /** [MetaModels.drawView]: a Muse edit per missing view (fixtures in docs/api-samples/muse-view, `outputs` named `<ref>.view-<view>.png`). */
+    const val MUSE_VIEW = "muse-view"
     const val VOICE = "voice"
 
     /** Prompts that distinguish a cutout call from a table scan. */
@@ -91,5 +105,5 @@ object Jobs {
     fun segmentJob(prompts: List<String>): String =
         if (prompts.isNotEmpty() && prompts.all { it in CUTOUT_PROMPTS }) SAM_CUTOUT else SAM_TABLE
 
-    val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, MUSE_POSE, SPARK_SCORE, SPARK_SHEET, SPARK_CHOREO, VOICE)
+    val ALL = listOf(SAM_CUTOUT, SAM_TABLE, SAM_RIG, MUSE_STYLIZE, MUSE_POSE, MUSE_VIEW, SPARK_SCORE, SPARK_SHEET, SPARK_CHOREO, VOICE)
 }

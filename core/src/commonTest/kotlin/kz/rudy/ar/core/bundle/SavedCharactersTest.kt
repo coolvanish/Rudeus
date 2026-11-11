@@ -5,6 +5,9 @@ import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.Choreographies
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
+import kz.rudy.ar.core.emote.PoseFrames
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.io.MemoryCharacterFolder
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -142,5 +145,39 @@ class SavedFramesTest {
         assertEquals(listOf("odd files", "old"), loaded.map { it.sheet.name })
         assertEquals(listOf(kz.rudy.ar.core.emote.PoseFrames.EMPTY, kz.rudy.ar.core.emote.PoseFrames.EMPTY), loaded.map { it.frames })
         assertEquals(kz.rudy.ar.core.emote.PoseFrames.EMPTY, SavedCharacters(MemoryCharacterFolder()).save(png(3), sheet("new")).frames)
+    }
+}
+
+class SavedViewsTest {
+    private fun png(n: Int) = byteArrayOf(n.toByte(), 0x50, 0x4E, 0x47)
+
+    @Test
+    fun savedCharacterKeepsViewsNextToFrames() {
+        val folder = MemoryCharacterFolder()
+        // A FRONT drawing looking right (what T40's sheet will say); the pipeline drew BACK and SIDE.
+        val sheet = CharacterSheet(
+            name = "Түлкі", personality = "", ability = Ability.ROLL, lines = emptyMap(),
+            baseView = SpriteView.FRONT, facesRight = true,
+        )
+        val frames = PoseFrames.of(mapOf(Emote.HELLO to listOf(png(1))))
+        val views = SpriteViews.of(SpriteView.FRONT, true, mapOf(SpriteView.BACK to png(7), SpriteView.SIDE to png(8)))
+        val saved = SavedCharacters(folder, clock = { 1000L }).save(png(0), sheet, EmoteSet.defaults(), frames, views)
+        assertEquals(views, saved.views)
+        assertEquals(setOf("hello-1.png", "view-back.png", "view-side.png"), folder.frames.getValue(saved.id).keys, "one folder for both")
+
+        val loaded = SavedCharacters(folder).load().single()
+        assertEquals(views, loaded.views)
+        assertEquals(frames, loaded.frames, "the views are not frames")
+        assertEquals(sheet, loaded.sheet)
+
+        // Views without frames travel in the frames map all the same; a sheet without baseView reads a SIDE base.
+        val plain = CharacterSheet(name = "Мысық", personality = "", ability = Ability.JUMP, lines = emptyMap())
+        val backOnly = SpriteViews.of(SpriteView.SIDE, false, mapOf(SpriteView.BACK to png(9)))
+        val folder2 = MemoryCharacterFolder()
+        SavedCharacters(folder2, clock = { 2000L }).save(png(0), plain, views = backOnly)
+        val back = SavedCharacters(folder2).load().single()
+        assertEquals(backOnly, back.views)
+        assertEquals(PoseFrames.EMPTY, back.frames)
+        assertEquals(SpriteViews.NONE, SavedCharacters(MemoryCharacterFolder()).save(png(3), plain).views)
     }
 }

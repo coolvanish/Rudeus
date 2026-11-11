@@ -31,6 +31,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseSpec
@@ -50,6 +51,7 @@ import kotlin.io.encoding.Base64
  * - choreograph: `POST /chat/completions` on the same Spark model, one text part ([Prompts.choreograph]) + the
  *   picture when given, strict json_schema [Prompts.CHOREOGRAPHY_FORMAT]; metered under [Jobs.SPARK_CHOREO].
  * - drawPose (T33): the stylize call with a pose prompt ([Prompts.pose]), the matted sprite + refs; metered under [Jobs.MUSE_POSE].
+ * - drawView (T41): the same call with a view prompt ([ViewPrompts.view]); metered under [Jobs.MUSE_VIEW].
  * - transcribe: multipart `POST /asr/transcribe` with a `request` JSON part and an `audio` WAV part.
  */
 class MetaApi(
@@ -95,6 +97,10 @@ class MetaApi(
         val prompt = Prompts.pose(spec) ?: throw MetaError.Provider("no pose prompt for ${spec.name}")
         return edit(ref, "drawPose[${spec.name}]", Jobs.MUSE_POSE, sprite, refs, prompt)
     }
+
+    /** T41: the same edit call as [drawPose] with the prompt of [view], metered under [Jobs.MUSE_VIEW]. */
+    override suspend fun drawView(ref: String, sprite: ByteArray, refs: List<ByteArray>, view: SpriteView): ByteArray =
+        edit(ref, "drawView[${view.name.lowercase()}]", Jobs.MUSE_VIEW, sprite, refs, ViewPrompts.view(view))
 
     /** One Muse Image edit of [image] with [prompt] and up to [MAX_STYLE_REFS] [refs], metered under [job]. */
     private suspend fun edit(ref: String, call: String, job: String, image: ByteArray, refs: List<ByteArray>, prompt: String): ByteArray {

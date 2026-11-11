@@ -2,6 +2,9 @@ package kz.rudy.ar.core.bundle
 
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.domain.Ability
+import kz.rudy.ar.core.domain.SpriteView
+import kz.rudy.ar.core.emote.SpriteViews
+import kz.rudy.ar.core.meta.DiskFixtureSource
 import kz.rudy.ar.core.meta.FakeModels
 import kz.rudy.ar.core.pipeline.CharacterResult
 import kotlin.test.Test
@@ -105,5 +108,35 @@ class BundleFramesTest {
         val old = """{"schema":1,"characters":[{"ref":"cat-01","name":"Мысық","ability":"JUMP","gateScore":0.8,"gatePassed":true,
             "attempts":1,"sprite":"cat-01/sprite.png","sheet":"cat-01/sheet.json","provider":"meta","runId":"2026-10-28T12-00-00Z","choreo":"cat-01/choreo.json"}]}"""
         assertEquals(null, Bundle.decodeIndex(old).characters.single().frames)
+    }
+}
+
+class BundleViewsTest {
+    private fun png(n: Int) = byteArrayOf(n.toByte(), 0x50, 0x4E, 0x47)
+
+    @Test
+    fun bundleIndexWithoutViewsIsUnchanged() {
+        val result = CharacterResult("cat-01", byteArrayOf(1), FakeModels.DEFAULT_SHEET, 0.8f, true, 1, null)
+        val e = Bundle.entry(result, "meta", "2026-11-11T12-00-00Z")
+        assertEquals(null, e.views)
+        val text = Bundle.encodeIndex(BundleIndex().upsert(e))
+        assertEquals(false, text.contains("\"views\""), text)
+        assertEquals(true, text.contains("\"frames\": null"), "the older optional fields are written as before")
+
+        // The committed bundle index re-encodes byte for byte: adding the field changed nothing on disk.
+        val committed = DiskFixtureSource.repoRoot().readText("docs/bundled/${Bundle.INDEX}")!!
+        assertEquals(committed, Bundle.encodeIndex(Bundle.decodeIndex(committed)))
+    }
+
+    @Test
+    fun bundleEntryListsTheViewPathsAndRoundTrips() {
+        val views = SpriteViews.of(SpriteView.SIDE, false, mapOf(SpriteView.BACK to png(1), SpriteView.FRONT to png(2)))
+        val result = CharacterResult("cat-01", byteArrayOf(1), FakeModels.DEFAULT_SHEET, 0.8f, true, 1, null, views = views)
+        val e = Bundle.entry(result, "meta", "2026-11-11T12-00-00Z")
+        assertEquals(mapOf(SpriteView.FRONT to "cat-01/views/front.png", SpriteView.BACK to "cat-01/views/back.png"), e.views)
+        assertEquals("cat-01/views/side.png", Bundle.viewPath("cat-01", SpriteView.SIDE))
+        val text = Bundle.encodeIndex(BundleIndex().upsert(e))
+        assertEquals(true, text.contains("\"BACK\": \"cat-01/views/back.png\""), text)
+        assertEquals(e, Bundle.decodeIndex(text).characters.single())
     }
 }

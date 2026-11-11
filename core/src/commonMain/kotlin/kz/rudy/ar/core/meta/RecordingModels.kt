@@ -4,9 +4,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseSpec
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.io.joinPath
 import kotlin.time.Instant
 
@@ -29,6 +31,7 @@ fun interface FixtureWriter {
  * | characterSheet| `spark-sheet/<ref>.fixture.json` `sheet` in the model JSON shape         |
  * | choreograph   | `spark-choreo/<ref>.fixture.json` `text`: the set in the reply shape      |
  * | drawPose      | `muse-pose/<ref>.<emote>-<n>.png` (raw bytes) + fixture `outputs`, one per frame (T33) |
+ * | drawView      | `muse-view/<ref>.view-<view>.png` (raw bytes) + fixture `outputs`, one per view (T41)  |
  *
  * The choreo `text` is [ChoreographyParser.toJson] of the sanitised set (the raw reply never leaves [MetaApi]); it
  * replays to the same choreographies with source `spark`; a set whose five emotes all fell back (source `default`)
@@ -52,6 +55,7 @@ class RecordingModels(
     private val segmented = HashSet<String>()
     private val outputs = HashMap<String, MutableList<String>>()
     private val poseOutputs = HashMap<String, MutableList<String>>()
+    private val viewOutputs = HashMap<String, MutableList<String>>()
     private val scores = HashMap<String, MutableList<Float>>()
     private val techniqueScores = HashMap<String, MutableList<Float>>()
     private val firstLatency = HashMap<String, Long>()
@@ -114,13 +118,19 @@ class RecordingModels(
         return set
     }
 
-    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray {
-        val (png, ms) = timed { inner.drawPose(ref, sprite, refs, spec) }
-        val names = poseOutputs.getOrPut(ref) { ArrayList() }
-        val name = "$ref.${spec.name}.png"
-        writer.write(joinPath(Jobs.MUSE_POSE, name), png)
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray =
+        recordNamed(Jobs.MUSE_POSE, ref, "$ref.${spec.name}.png", poseOutputs) { inner.drawPose(ref, sprite, refs, spec) }
+
+    override suspend fun drawView(ref: String, sprite: ByteArray, refs: List<ByteArray>, view: SpriteView): ByteArray =
+        recordNamed(Jobs.MUSE_VIEW, ref, "$ref.${SpriteViews.fileName(view)}", viewOutputs) { inner.drawView(ref, sprite, refs, view) }
+
+    /** One named Muse output of [job]: the PNG as [name] and the fixture's `outputs`, each name once. */
+    private suspend fun recordNamed(job: String, ref: String, name: String, outputs: HashMap<String, MutableList<String>>, call: suspend () -> ByteArray): ByteArray {
+        val (png, ms) = timed { call() }
+        val names = outputs.getOrPut(ref) { ArrayList() }
+        writer.write(joinPath(job, name), png)
         if (name !in names) names += name
-        write(Jobs.MUSE_POSE, ref, latency(Jobs.MUSE_POSE, ref, ms)) { it.copy(outputs = names.toList()) }
+        write(job, ref, latency(job, ref, ms)) { it.copy(outputs = names.toList()) }
         return png
     }
 

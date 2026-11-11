@@ -119,6 +119,8 @@ data class CostTable(
     val choreoUsd: Double = 0.013,
     /** Per drawn frame of stage `frames` ([kz.rudy.ar.core.meta.Jobs.MUSE_POSE]): one Muse Image edit each. */
     val poseUsd: Double = 0.010,
+    /** Per drawn view of stage `views` ([kz.rudy.ar.core.meta.Jobs.MUSE_VIEW], T41): one Muse Image edit each, like a pose frame. */
+    val viewUsd: Double = 0.010,
     val tableUsd: Double = 0.0125,
     val voiceUsd: Double = 0.0003,
 )
