@@ -19,7 +19,7 @@ compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has
 | T49 duel-ui | pure `duelHud` model, HUD, opponent picker, VS card, result; not wired into the app | done; look UNTESTED until T50 |
 | T52 thin-host S2 | billboard maths moved to `core.session.BillboardPoser` -> `NodePose`, 25 tests; `CharacterNode.kt` 252 -> 162 lines | needs your Pixel run |
 | T53 thin-host S3a | brief only | waits for the two Pixel runs above |
-| T55 duel-bot-sim | bot, tick-grid runner, headless simulator | in progress when this was written |
+| T55 duel-bot-sim | seeded bot (EASY / NORMAL / HARD), `DuelRunner` (bots decide on a tick grid: identical matches at any frame length), `DuelSim`, three tuning arenas. Measured: plain dashes almost never ring anyone out (FLY / HIDE mirrors end 92–99 % of rounds by the clock): the numbers are not a game yet, T48 tunes them | done |
 
 ## 2. Install and log
 Check the branch out in the MAIN checkout on the Mac (a worktree build has no key), then:

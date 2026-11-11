@@ -1,6 +1,6 @@
 # T55 — duel-bot-sim
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "The game": the opponent is a bot in `:core`, one phone)
 gate: G4 — every match ends; 30 Hz and 60 Hz agree on the winner; (the balance half of G4 is T48)

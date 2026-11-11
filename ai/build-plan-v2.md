@@ -67,7 +67,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 1 | T43 thin-host-map (design, no code) — **done** | reads androidApp | fable-high | — |
 | 2 | T44 fighter-card-ui — **done** | shared | sonnet-high | T40 |
 | 2 | T45 duel-match-specials (rounds, points, marks, one special per ability) — **done** | core/duel | opus-extra | T42 |
-| 3 | T55 duel-bot-sim (seeded bot, three levels; headless match simulator) | core/duel | opus-extra | T45 |
+| 3 | T55 duel-bot-sim (seeded bot, three levels; headless match simulator) — **done** | core/duel | opus-extra | T45 |
 | 0 | `:shared` iOS klib targets (done in wave 0: 2 lines of common code + `Platform.ios.kt`) | shared, Gradle (hand-review) | orchestrator | — |
 | 4 | T46 ios-entry (`MainViewController`, the `UIKitView` bridge for the AR slot) — moved next to T51: it cannot be run without the Mac | shared/iosMain | opus-high | T43 |
 | 2 | T47 thin-host S1: `GameLoop` to `core.session`, verbatim, pinned by tests — **merged, `review` until the Pixel check** ("hand over the lens") | core + androidApp (hand-review) | opus-high | T43 |
