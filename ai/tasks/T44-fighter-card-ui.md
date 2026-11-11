@@ -1,6 +1,6 @@
 # T44 — fighter-card-ui
 
-status: review
+status: done
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md)
 gate: G2 — a child sees why their drawing got its stats
