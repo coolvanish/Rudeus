@@ -68,6 +68,7 @@ import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
 import kz.rudy.ar.core.scenario.Scenarios
+import kz.rudy.ar.core.session.GameLoop
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -168,6 +169,8 @@ import kotlin.math.abs
 // one already running finishes (the switch stops new frames, not the one in flight). A button press that joins a quiet
 // scan is answered and recorded as manual. Still never per-frame: the policy decides, the scan is one grab, and at most
 // four of them a session.
+// HAND-REVIEW: T47 — GameLoop (the physics driver) comes from :core (core.session), moved as it was and pinned by
+// JVM tests. PAUSED still freezes every member and never resets; one anchor per session; nothing else changed here.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
@@ -184,6 +187,9 @@ private const val CAST_ENABLED = true
 
 /** HAND-REVIEW: T32 — cut line 5: false turns the finger grab off; a tap on a member makes it active, a tap on the table walks the active one. */
 private const val CAST_TOUCH_ENABLED = true
+
+/** HAND-REVIEW: T32 — cut line 4: false steps the cast without `CastPhysics.separate` (members may overlap). */
+private const val SEPARATION_ENABLED = true
 
 /** The member id used when a slot carries no cast at all (a v1.0 slot): the legacy sprite / ability fields. */
 private const val LEGACY_ID = "legacy"
@@ -303,7 +309,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val grabMarginPx = remember { floatArrayOf(0f) }
     grabMarginPx[0] = GRAB_MARGIN_DP * LocalDensity.current.density
     val projector = remember { ScreenProjector() }
-    val loop = remember { GameLoop() }
+    val loop = remember { GameLoop(separate = SEPARATION_ENABLED) }
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
     val scanQuiet = remember { booleanArrayOf(false) } // T37: the pending scan is a quiet one (no onScanned); cleared with scanPending
     val policy = remember { AutoScanPolicy() } // T37: fed from the frame callback only; reset with the anchor

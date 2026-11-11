@@ -1,6 +1,6 @@
 # T47 — thin-host-step-1
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S1 of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` still compiles for iOS); protects G5 ("no tracking reset")
@@ -171,8 +171,63 @@ Tests not required: Compose, AR rendering, `RudeusArView`, `MemberClocks` on its
   that was tapped; nobody jumps, slides or returns to the middle. In `scripts/device.sh log` there is no `cast_add`
   after the blip. If any of that fails, revert commit C and report what was seen.
 
-## Result (filled on acceptance)
-- measured: ...
-- step-3 diff at commit B: ...
-- Pixel check: ...
-- cut/deferred: ...
+## Result (filled 2026-11-11, cloud container, no device)
+- commits: A `53fa35f` (pin tests against the host class), B `3b48316` (core class + the same tests), C = the commit
+  that carries this Result (host switches over).
+- measured (test XML):
+  - A: `:androidApp:testDebugUnitTest` 23 = 2 + 21 `GameLoopPinTest`, 0 failed.
+  - B: `:core:jvmTest` 425 = 403 + 22 `GameLoopTest` (the 21 pin cases + `separationCanBeSwitchedOff`), 0 failed;
+    android still 23, 0 failed; `:core:compileKotlinIosSimulatorArm64` and `:core:compileTestKotlinIosSimulatorArm64` green.
+    The same 21 assertions are green against both classes at B.
+  - C: `scripts/verify.sh` exit 0: core 425, shared 26, android 2 (back to the baseline), apk built.
+  - host diff (C, `androidApp/src/main`): `GameLoop.kt` deleted (243 lines), `RudeusArView.kt` 7 insertions, 1 deletion
+    (import, two-line T47 header, `SEPARATION_ENABLED` with its note after `CAST_TOUCH_ENABLED`, `GameLoop(separate = SEPARATION_ENABLED)`).
+    No SceneView / ARCore call added, removed or changed.
+  - `grep -rn "HAND-REVIEW" core/src`: empty. The test file differs from the pin test only in the package line, the
+    class name (`GameLoopPinTest` -> `GameLoopTest`) and the appended `:core`-only case.
+- step-3 diff at commit B (only differences 1-3; comments stripped by the brief's `grep -vE`):
+  ```
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  21c21
+  < internal const val NEVER_LANDED = Long.MIN_VALUE / 2
+  ---
+  > const val NEVER_LANDED = Long.MIN_VALUE / 2
+  23,25c23
+  < internal const val MAX_STEP_DT_MS = 50L
+  <
+  < internal const val SEPARATION_ENABLED = true
+  ---
+  > const val MAX_STEP_DT_MS = 50L
+  36c34
+  < internal class GameLoop(
+  ---
+  > class GameLoop(
+  37a36
+  >     private val separate: Boolean = true,
+  159c158
+  <             cast = CastPhysics.step(cast, level, dt, params, separate = SEPARATION_ENABLED)
+  ---
+  >             cast = CastPhysics.step(cast, level, dt, params, separate = separate)
+  ```
+- found by the characterization tests (asserted as the loop really does; `GameLoop` unchanged):
+  1. `beforeStepRunsAfterResumeAndBeforeTheStep`: the brief expected the first frame back from a pause to report
+     JUMPED for a jump issued from the hook. It reports RESUMED only: the diff is PAUSED -> JUMPING and
+     `CharacterEvents.between` emits one mode transition per diff, PAUSED -> anything = RESUMED. So that jump never
+     produces JUMPED (no jump sound / HUD reaction); its LANDED arrives as usual. The same applies to a `walkTo` from
+     an IDLE member on that frame (STARTED_WALKING is folded into RESUMED; inferred from the same rule, not tested).
+     On the device this hits a scripted scenario beat that falls due on the resume frame, or a HUD Jump queued for
+     that frame. This was the only first version that failed.
+  2. `restartAtSpawnPutsTheFirstMemberBackWithoutEvents`: `restartAtSpawn` sets `lastReported = cast` for the WHOLE
+     cast, so a not-yet-reported transition of another member (a jump made between frames) is dropped too. Pinned
+     as found; it only matters for the debug scenario replay.
+  3. `scenarioOnTheSimulatedClockMatchesScenarioRunner`: the 700 ms stall is placed at 7 s of simulated time (hero
+     mid-walk on the book); there the only extra events are PAUSED and RESUMED. Per finding 1, a stall that ends on a
+     frame where a beat falls due would also lose that beat's JUMPED / STARTED_WALKING (inferred, not tested).
+  A follow-up brief may decide whether finding 1 deserves a fix (e.g. report the transition the hook made); this one
+  moves the loop as it is.
+- Pixel check ("hand over the lens"): UNTESTED (no device in the cloud container). Needs the human's Pixel run.
+- cut/deferred: nothing cut. The `GameLoop.walkPhaseMs` KDoc links in `ar/CharacterNode.kt` are now stale, as the
+  brief allows (S2 rewrites that file).
