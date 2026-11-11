@@ -78,6 +78,19 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     review_yes("Иә, ойнаймыз", "Да, играем", "Yes, let's play"),
     processing_done("Дайын!", "Готово!", "Done!"),
 
+    // T44: the fighter stats card (Processing "done"; the duel's VS screen shows two).
+    stats_title("Кейіпкердің күші", "Сила героя", "Hero's strength"),
+    stat_power("Күш", "Сила", "Power"),
+    stat_speed("Жылдамдық", "Скорость", "Speed"),
+    stat_guard("Қорғаныс", "Защита", "Guard"),
+    stat_agility("Ептілік", "Ловкость", "Agility"),
+    /** One line under the bars when the numbers were read from the drawing (not the ability's archetype). */
+    stats_from_drawing(
+        "Сандар суреттен алынды. Қанат не тікен салсаң, өзгереді",
+        "Числа взяты из рисунка. Нарисуй крылья или шипы — изменятся",
+        "Numbers come from the drawing. Draw wings or spikes to change them",
+    ),
+
     // T38: the Import screen (several photos at once, nothing is played).
     import_title("Ойыншықтар қосылып жатыр", "Добавляем игрушки", "Adding toys"),
     import_hint("Бірден 7-ге дейін. Сәл күте тұр", "До 7 за раз. Подожди немного", "Up to 7 at once. Hang on"),

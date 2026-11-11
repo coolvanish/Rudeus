@@ -18,13 +18,19 @@
 #   and no "en" lines (SheetParser pads them with its generic English lines).
 # probed 2026-10-28: max_completion_tokens 600 returned finish_reason "length" with content null (reasoning tokens
 #   count against the budget) -> raised to 2048 and reasoning_effort "low" (mirrors core/meta Prompts).
+# changed 2026-11-11 (T40): the sheet also carries the duel stats: "stats" {power, speed, guard, agility} raw 1-10
+#   (StatBudget.normalise rebalances them to 20 points), "why" {kk, ru, en} -> {power, speed, guard, agility} reasons of
+#   at most 4 words, "view" front|side|back, "faces" left|right. All four are required in the strict schema and optional
+#   for SheetParser (sheets recorded before have none and fight with their ability's archetype).
+#   max_completion_tokens 2048 -> 3072: the visible reply roughly doubles (~500 tokens) and judging the picture adds
+#   reasoning. Unprobed with stats until the live re-record.
 {
   "model": "muse-spark-1.3-contributor",
   "messages": [
     {
       "role": "user",
       "content": [
-        { "type": "text", "text": "The image shows a character a child drew. Reply with JSON only: {\"names\": {\"kk\": a short friendly name in Kazakh (Cyrillic script), \"ru\": the same name in Russian, \"en\": the same name in English}, \"personality\": one sentence, \"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], \"ru\": [the same 5 lines in Russian], \"en\": [the same 5 lines in English]}}. Lines are for a child, max 6 words each." },
+        { "type": "text", "text": "The image shows a character a child drew. Reply with JSON only: {\"names\": {\"kk\": a short friendly name in Kazakh (Cyrillic script), \"ru\": the same name in Russian, \"en\": the same name in English}, \"personality\": one sentence, \"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], \"ru\": [the same 5 lines in Russian], \"en\": [the same 5 lines in English]}, \"stats\": {\"power\": 1 to 10, \"speed\": 1 to 10, \"guard\": 1 to 10, \"agility\": 1 to 10}, \"why\": {\"kk\": {\"power\": reason, \"speed\": reason, \"guard\": reason, \"agility\": reason} in Kazakh, \"ru\": the same reasons in Russian, \"en\": the same reasons in English}, \"view\": one of \"front\",\"side\",\"back\", \"faces\": one of \"left\",\"right\"}. Lines are for a child, max 6 words each. Score the stats from what is visible on the character, never from its name: claws, horns or a big body give power; wings, wheels or long legs give speed; a shell, armour or a thick body give guard; a small light body, a tail or many legs give agility. The scores are rebalanced afterwards so every character gets the same total: spreading them matters more than their size, so score high what the character clearly has and low what it lacks. Each reason names what you see, at most 4 words, for a child. \"view\" is which side of the character the picture shows (front: it looks at us, side: a profile, back: it looks away); \"faces\" is where a side view looks in the picture, and only matters for a side view." },
         { "type": "image_url", "image_url": { "url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" } }
       ]
     }
@@ -59,12 +65,65 @@
               "en": { "type": "array", "items": { "type": "string" } }
             },
             "required": ["kk", "ru", "en"]
-          }
+          },
+          "stats": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "power": { "type": "integer" },
+              "speed": { "type": "integer" },
+              "guard": { "type": "integer" },
+              "agility": { "type": "integer" }
+            },
+            "required": ["power", "speed", "guard", "agility"]
+          },
+          "why": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kk": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "power": { "type": "string" },
+                  "speed": { "type": "string" },
+                  "guard": { "type": "string" },
+                  "agility": { "type": "string" }
+                },
+                "required": ["power", "speed", "guard", "agility"]
+              },
+              "ru": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "power": { "type": "string" },
+                  "speed": { "type": "string" },
+                  "guard": { "type": "string" },
+                  "agility": { "type": "string" }
+                },
+                "required": ["power", "speed", "guard", "agility"]
+              },
+              "en": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "power": { "type": "string" },
+                  "speed": { "type": "string" },
+                  "guard": { "type": "string" },
+                  "agility": { "type": "string" }
+                },
+                "required": ["power", "speed", "guard", "agility"]
+              }
+            },
+            "required": ["kk", "ru", "en"]
+          },
+          "view": { "type": "string", "enum": ["front", "side", "back"] },
+          "faces": { "type": "string", "enum": ["left", "right"] }
         },
-        "required": ["names", "personality", "ability", "lines"]
+        "required": ["names", "personality", "ability", "lines", "stats", "why", "view", "faces"]
       }
     }
   },
   "reasoning_effort": "low",
-  "max_completion_tokens": 2048
+  "max_completion_tokens": 3072
 }

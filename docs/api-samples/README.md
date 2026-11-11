@@ -62,7 +62,7 @@ Only the field for the job is present:
 | `muse-pose` | `outputs` | sibling PNG file names named `<ref>.<emote>-<n>.png` (`hello-1`..`roar-2`); `FixtureApi.drawPose` picks by frame name, whatever the call order |
 | `muse-view` | `outputs` | sibling PNG file names named `<ref>.view-<view>.png` (`view-back`, `view-front`, `view-side`); `FixtureApi.drawView` picks by view, whatever the call order |
 | `spark-score` | `scores` | one gate score per call in order (attempt 1, 2, 3); the last one repeats |
-| `spark-sheet` | `sheet` | the model's JSON exactly as returned; `SheetParser` maps unknown abilities to JUMP and pads to 5 lines |
+| `spark-sheet` | `sheet` | the model's JSON exactly as returned; `SheetParser` maps unknown abilities to JUMP and pads to 5 lines; optional since T40: `stats` (raw 1–10, `StatBudget` rebalances to 20), `why` (reasons per stat in kk/ru/en), `view`, `faces`. Without them the duel uses the ability's archetype |
 | `spark-choreo` | `text` | the choreography reply content (`{hello, bye, dance, spin, roar}`), parsed by `ChoreographyParser`; recordings store `ChoreographyParser.toJson` of the sanitised set |
 | `voice` | `text` | the transcript |
 

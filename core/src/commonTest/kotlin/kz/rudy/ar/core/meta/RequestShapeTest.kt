@@ -1,6 +1,8 @@
 package kz.rudy.ar.core.meta
 
 import kz.rudy.ar.core.emote.Emote
+import kz.rudy.ar.core.domain.SpriteView
+import kz.rudy.ar.core.domain.Stat
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -110,7 +112,7 @@ class RequestShapeTest {
         val body = encode(ChatRequest.serializer(), req)
         assertEquals(setOf("model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"), body.keys)
         assertEquals("muse-spark-1.3-contributor", body["model"]!!.jsonPrimitive.content, "contributor tier, never standard")
-        assertEquals(2048, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "600 ran out on the Day 1 probe")
+        assertEquals(3072, body["max_completion_tokens"]!!.jsonPrimitive.content.toInt(), "600 ran out on the Day 1 probe; T40 doubled the reply")
         assertEquals("low", body["reasoning_effort"]!!.jsonPrimitive.content)
         val message = body["messages"]!!.jsonArray.single().jsonObject
         assertEquals(setOf("role", "content"), message.keys)
@@ -123,7 +125,10 @@ class RequestShapeTest {
         assertEquals(setOf("name", "schema", "strict"), js.keys)
         assertEquals("CharacterSheet", js["name"]!!.jsonPrimitive.content)
         val schema = js["schema"]!!.jsonObject
-        assertEquals(listOf("names", "personality", "ability", "lines"), (schema["required"] as JsonArray).map { it.jsonPrimitive.content })
+        assertEquals(
+            listOf("names", "personality", "ability", "lines", "stats", "why", "view", "faces"),
+            (schema["required"] as JsonArray).map { it.jsonPrimitive.content },
+        )
         val ability = schema["properties"]!!.jsonObject["ability"]!!.jsonObject
         assertEquals(listOf("jump", "fly", "roll", "hide"), ability["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
         assertEquals("false", schema["additionalProperties"]!!.jsonPrimitive.content)
@@ -137,7 +142,7 @@ class RequestShapeTest {
         val withImage = encode(ChatRequest.serializer(), ChatRequest.characterSheet(model, "", pngBytes))
         assertEquals(setOf("model", "messages", "response_format", "reasoning_effort", "max_completion_tokens"), withImage.keys)
         assertEquals("json_schema", withImage["response_format"]!!.jsonObject["type"]!!.jsonPrimitive.content)
-        assertEquals(2048, withImage["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
+        assertEquals(Prompts.SHEET_MAX_COMPLETION_TOKENS, withImage["max_completion_tokens"]!!.jsonPrimitive.content.toInt())
         assertEquals("low", withImage["reasoning_effort"]!!.jsonPrimitive.content)
         val parts = withImage["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf("text", "image_url"), parts.map { it["type"]!!.jsonPrimitive.content })
@@ -162,9 +167,39 @@ class RequestShapeTest {
         val tmplBody = MetaApi.json.parseToJsonElement(tmpl).jsonObject
         assertEquals(withImage.keys, tmplBody.keys)
         assertEquals(withImage["response_format"], tmplBody["response_format"])
+        assertEquals(withImage["max_completion_tokens"], tmplBody["max_completion_tokens"], "template budget matches the code")
         val tmplParts = tmplBody["messages"]!!.jsonArray.single().jsonObject["content"]!!.jsonArray.map { it.jsonObject }
         assertEquals(listOf("text", "image_url"), tmplParts.map { it["type"]!!.jsonPrimitive.content })
         assertEquals(text, tmplParts[0]["text"]!!.jsonPrimitive.content)
+    }
+
+    /** T40: the strict schema asks for the duel stats, a reason per stat in each language, the view and the facing. */
+    @Test
+    fun sheetSchemaListsEveryRequiredKey() {
+        val schema = Prompts.CHARACTER_SHEET_SCHEMA
+        fun JsonObject.required() = this["required"]!!.jsonArray.map { it.jsonPrimitive.content }
+        fun JsonObject.prop(key: String) = this["properties"]!!.jsonObject[key]!!.jsonObject
+        val top = listOf("names", "personality", "ability", "lines", "stats", "why", "view", "faces")
+        assertEquals(top, schema.required())
+        assertEquals(top.toSet(), schema["properties"]!!.jsonObject.keys, "every property is required (strict)")
+        val statKeys = listOf("power", "speed", "guard", "agility")
+        assertEquals(Stat.entries.map { it.name.lowercase() }, statKeys)
+        val stats = schema.prop("stats")
+        assertEquals(statKeys, stats.required())
+        assertEquals("false", stats["additionalProperties"]!!.jsonPrimitive.content)
+        assertTrue(stats["properties"]!!.jsonObject.values.all { it.jsonObject["type"]!!.jsonPrimitive.content == "integer" })
+        val why = schema.prop("why")
+        assertEquals(SheetParser.LANGUAGES, why.required())
+        for (lang in SheetParser.LANGUAGES) {
+            val reasons = why.prop(lang)
+            assertEquals(statKeys, reasons.required(), lang)
+            assertEquals("false", reasons["additionalProperties"]!!.jsonPrimitive.content, lang)
+        }
+        assertEquals(listOf("front", "side", "back"), schema.prop("view")["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(SpriteView.entries.map { it.name.lowercase() }, schema.prop("view")["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("left", "right"), schema.prop("faces")["enum"]!!.jsonArray.map { it.jsonPrimitive.content })
+        val prompt = Prompts.characterSheet("", withImage = true)
+        for (key in listOf("\"stats\"", "\"why\"", "\"view\"", "\"faces\"")) assertTrue(key in prompt, "prompt names $key")
     }
 
     @Test

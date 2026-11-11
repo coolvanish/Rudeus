@@ -39,6 +39,7 @@ import kz.rudy.ar.ui.LocalLang
 import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.components.AbilityTag
 import kz.rudy.ar.ui.components.BottomSheet
+import kz.rudy.ar.ui.components.FighterStatsCard
 import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.GlyphIcon
@@ -209,6 +210,8 @@ private fun ResultLines(state: ProcessingState) {
             )
             AbilityTag(sheet.ability)
         }
+        // T44: why the drawing got its numbers (Done only; a card the child is asked about does not carry it).
+        if (state.status == ProcessingStatus.DONE) FighterStatsCard(sheet, Modifier.fillMaxWidth())
     }
     state.gateScore?.let { score ->
         // The gate's verdict, not the status: a sprite the child took is Done with a score that did not pass.

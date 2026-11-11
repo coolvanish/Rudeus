@@ -49,6 +49,11 @@ if they are larger than a screen: summarise shape and sizes instead.
   `names`: one name each in `kk`, `ru`, `en`. Fixtures recorded before that have one `name` (kept as the Kazakh name) and no
   `en` lines (padded with generic ones), so a bundle regenerated from them loses its translations (`BundledLanguagesTest`
   fails) until they are re-recorded.
+  Since T40 the reply also has `stats` {power, speed, guard, agility} (raw scores, any range; `StatBudget.normalise`
+  makes every fighter 1..10 per stat and exactly 20 in total; none usable -> `stats == null`), `why` {kk, ru, en} ->
+  {stat: reason} (trimmed, <= 40 chars, blanks dropped), `view` front|side|back -> `baseView`, `faces` left|right ->
+  `facesRight`. All four are required in the strict schema, optional for the parser: sheets recorded before have none
+  and `CharacterSheet.fighter` gives them the archetype of their ability. `sample-01`/`sample-02` carry them (synthetic).
 - Cutout: a single mask; multiple masks -> take the largest connected component.
 - Table: one mask per prompt; empty mask -> object absent, not an error.
 

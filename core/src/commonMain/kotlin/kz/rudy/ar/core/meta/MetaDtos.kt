@@ -243,7 +243,7 @@ data class ChatRequest(
 ) {
     companion object {
         /**
-         * The character-sheet call (docs/api-samples/spark-sheet/request.json.tmpl): json_schema output, 2048 tokens,
+         * The character-sheet call (docs/api-samples/spark-sheet/request.json.tmpl): json_schema output, 3072 tokens,
          * reasoning low. With an [image]: one text part + one `image_url` part (like the score call), so Spark vision
          * writes the sheet looking at the character; without: the plain-string message.
          */
@@ -435,9 +435,21 @@ object Prompts {
         return "$subject $SHEET_INSTRUCTIONS"
     }
 
+    // T40: the duel stats. Spark scores what it sees, raw 1-10; StatBudget.normalise rebalances them to the budget.
     private const val SHEET_INSTRUCTIONS = "Reply with JSON only: {\"names\": {\"kk\": a short friendly name in Kazakh (Cyrillic script), \"ru\": the same name in Russian, \"en\": the same name in English}, \"personality\": one sentence, " +
         "\"ability\": one of \"jump\",\"fly\",\"roll\",\"hide\", \"lines\": {\"kk\": [5 short lines in Kazakh the character says], " +
-        "\"ru\": [the same 5 lines in Russian], \"en\": [the same 5 lines in English]}}. Lines are for a child, max 6 words each."
+        "\"ru\": [the same 5 lines in Russian], \"en\": [the same 5 lines in English]}, " +
+        "\"stats\": {\"power\": 1 to 10, \"speed\": 1 to 10, \"guard\": 1 to 10, \"agility\": 1 to 10}, " +
+        "\"why\": {\"kk\": {\"power\": reason, \"speed\": reason, \"guard\": reason, \"agility\": reason} in Kazakh, " +
+        "\"ru\": the same reasons in Russian, \"en\": the same reasons in English}, " +
+        "\"view\": one of \"front\",\"side\",\"back\", \"faces\": one of \"left\",\"right\"}. Lines are for a child, max 6 words each. " +
+        "Score the stats from what is visible on the character, never from its name: claws, horns or a big body give power; " +
+        "wings, wheels or long legs give speed; a shell, armour or a thick body give guard; a small light body, a tail or " +
+        "many legs give agility. The scores are rebalanced afterwards so every character gets the same total: spreading " +
+        "them matters more than their size, so score high what the character clearly has and low what it lacks. Each " +
+        "reason names what you see, at most 4 words, for a child. \"view\" is which side of the character the picture " +
+        "shows (front: it looks at us, side: a profile, back: it looks away); \"faces\" is where a side view looks in " +
+        "the picture, and only matters for a side view."
 
     // Muse Image returns background "opaque" (docs: the field is always "opaque"), so the cutout's transparency is
     // lost; hence "plain white background": CharacterPipeline mattes it away (SpriteMatte, SAM pass as fallback).
@@ -495,8 +507,25 @@ object Prompts {
            "ability":{"type":"string","enum":["jump","fly","roll","hide"]},
            "lines":{"type":"object","additionalProperties":false,
                     "properties":{"kk":{"type":"array","items":{"type":"string"}},"ru":{"type":"array","items":{"type":"string"}},"en":{"type":"array","items":{"type":"string"}}},
-                    "required":["kk","ru","en"]}},
-         "required":["names","personality","ability","lines"]}
+                    "required":["kk","ru","en"]},
+           "stats":{"type":"object","additionalProperties":false,
+                    "properties":{"power":{"type":"integer"},"speed":{"type":"integer"},"guard":{"type":"integer"},"agility":{"type":"integer"}},
+                    "required":["power","speed","guard","agility"]},
+           "why":{"type":"object","additionalProperties":false,
+                  "properties":{
+                    "kk":{"type":"object","additionalProperties":false,
+                          "properties":{"power":{"type":"string"},"speed":{"type":"string"},"guard":{"type":"string"},"agility":{"type":"string"}},
+                          "required":["power","speed","guard","agility"]},
+                    "ru":{"type":"object","additionalProperties":false,
+                          "properties":{"power":{"type":"string"},"speed":{"type":"string"},"guard":{"type":"string"},"agility":{"type":"string"}},
+                          "required":["power","speed","guard","agility"]},
+                    "en":{"type":"object","additionalProperties":false,
+                          "properties":{"power":{"type":"string"},"speed":{"type":"string"},"guard":{"type":"string"},"agility":{"type":"string"}},
+                          "required":["power","speed","guard","agility"]}},
+                  "required":["kk","ru","en"]},
+           "view":{"type":"string","enum":["front","side","back"]},
+           "faces":{"type":"string","enum":["left","right"]}},
+         "required":["names","personality","ability","lines","stats","why","view","faces"]}
         """.trimIndent(),
     ).jsonObject
 
@@ -577,7 +606,12 @@ object Prompts {
     /** Five choreographies of up to 16 keys each are ~1-2k output tokens plus reasoning; unprobed (T30 probes it live). */
     const val CHOREO_MAX_COMPLETION_TOKENS = 4096
     const val CHOREO_REASONING_EFFORT = "low"
-    const val SHEET_MAX_COMPLETION_TOKENS = 2048
+    /**
+     * T40: the reply grows from ~250 to ~500 visible tokens (stats, 12 reasons in kk/ru/en, view, faces) and the model
+     * now has to judge the picture, so the reasoning share grows too; 2048 left ~1.5k for reasoning, 3072 restores the
+     * margin the Day 1 probe asked for. Unprobed with stats until the live re-record.
+     */
+    const val SHEET_MAX_COMPLETION_TOKENS = 3072
     const val SCORE_REASONING_EFFORT = "low"
     const val SHEET_REASONING_EFFORT = "low"
 }

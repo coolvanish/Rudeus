@@ -11,7 +11,7 @@ two plans disagree, v2 wins.
 | Module | Target | May depend on | Must NOT contain |
 |---|---|---|---|
 | `:core` | KMP android + jvm + ios (klibs) | kotlinx, Ktor | Compose, Android UI, ARCore/Filament/SceneView types |
-| `:shared` | KMP android (Compose UI); ios target planned (T46) | `:core` | ARCore/SceneView types, network calls |
+| `:shared` | KMP android + ios (klibs), Compose UI | `:core` | ARCore/SceneView types, network calls |
 | `:androidApp` | Android app (AR host) | `:shared`, `:core`, SceneView | business logic, physics, API parsing |
 | `:cli` | JVM main | `:core` | anything Android |
 
@@ -46,7 +46,7 @@ Tests live in `core/src/commonTest` and run on the JVM: `./gradlew :core:jvmTest
 
 ## Commands
 ```
-scripts/verify.sh                 # all tests + core iOS klib compile + assembleDebug (the DoD)
+scripts/verify.sh                 # all tests + core/shared iOS klib compile + assembleDebug (the DoD)
 ./gradlew :core:jvmTest           # fast domain tests
 ./gradlew :androidApp:installDebug && scripts/device.sh run   # on the Pixel
 ./gradlew :cli:run --args="character --fixtures docs/api-samples --out runs"
