@@ -103,7 +103,17 @@ Keep the whole duel test package under about 90 s; say how long it takes.
   the before and after tables and the verdicts
 - No file outside "Owns" changed
 
-## Result (filled on acceptance)
-- measured: ...
-- what a human must decide: ...
-- cut/deferred: ...
+## Result (in progress: kept current after every candidate)
+- **Wobble**: not decided yet. The lever is written behind `wobblePerHit = 0` (exactly today's physics: every T42/T45
+  test passes with it) so a candidate can switch it on through `--params` without recompiling.
+- Baseline (today's defaults, `docs/duel-balance.md` "Before", n = 200, 232 s on 4 threads): A1 FAIL (4.0..93.3 %:
+  ROLL takes 82..93 % of the field, FLY 4..23 %), A2 FAIL (78 sides out), A3 FAIL (24 pairs; FLY v FLY and HIDE v HIDE
+  67..98 %), A4 FAIL (12.4..56.7 hits per ring-out), A5 PASS (43..98 s), A6 FAIL (89 of 128: SPEED 8 0.5..25 %, GUARD 8
+  up to 100 %), A7 FAIL (5: 45..64 % on cup-and-book and large), A8 PASS (57 600 replays identical). The new test
+  `aRingOutIsReachableOnLarge` fails on it: a victim that walks back to its mark takes 79 hits in 120 s and stays on
+  the 120 x 60 cm table.
+
+### Candidate log
+| # | what changed | A1 | A2 | A3 | A4 | A5 | A6 | A7 | note |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | baseline | 4.0..93.3 | 78 out | 24 out | 12.4..56.7 | 43..98 s | 89 out | 5 out | |

@@ -102,6 +102,19 @@ data class DuelParams(
      */
     val counterMs: Long = 1500,
     val counterKnockScale: Float = 1.5f,
+
+    // Wobble (T48): every hit a fighter takes in a round makes the next one push it farther, so a ring-out takes a few
+    // hits on a large table without one hit being a ring-out on a small one. Dimensionless and per second, so they
+    // follow the surface without being in [scaled]. wobblePerHit = 0 is the physics without it, exactly.
+
+    /** Wobble a fighter gains with every hit it takes (a dash, a ram, a counter, a stomp; each side of a clash). */
+    val wobblePerHit: Float = 0f,
+    /** A hit on a fighter with wobble w knocks it (1 + [wobbleKnockScale] * w) x the plain knockback. */
+    val wobbleKnockScale: Float = 1f,
+    /** Wobble never exceeds this. */
+    val wobbleMax: Float = 0f,
+    /** Wobble lost per second of fight (0 = it stays until the round ends). */
+    val wobbleDecayPerS: Float = 0f,
 ) {
     init {
         // T48 searches these numbers: refuse any set that could divide by zero, reverse a push or stun forever.
@@ -138,7 +151,13 @@ data class DuelParams(
         positive("ramKnockScale", ramKnockScale)
         positive("counterKnockScale", counterKnockScale)
         require((dashMs * ramDashScale).isFinite()) { "ramDashScale must be finite, got $ramDashScale" }
+        for ((name, v) in listOf(
+            "wobblePerHit" to wobblePerHit, "wobbleKnockScale" to wobbleKnockScale, "wobbleMax" to wobbleMax, "wobbleDecayPerS" to wobbleDecayPerS,
+        )) require(v >= 0f && v.isFinite()) { "$name must be >= 0 and finite, got $v" }
     }
+
+    /** The knockback factor of a hit on a fighter with [wobble]: `1 + wobbleKnockScale * wobble` (wobble clamped to 0..[wobbleMax]). */
+    fun wobbleFactor(wobble: Float): Float = 1f + wobbleKnockScale * wobble.coerceIn(0f, wobbleMax)
 
     /** Walk speed of a fighter with [stats]: `physics.walkSpeedMps * duelSpeedScale * (speedBase + speedPerPoint * SPEED)`. */
     fun walkSpeedMpsFor(stats: FighterStats, physics: PhysicsParams = PhysicsParams.DEFAULT): Float =
