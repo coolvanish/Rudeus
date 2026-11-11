@@ -211,10 +211,12 @@ class DuelBotTest {
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.FLY), arena))
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.HIDE), arena))
         assertTrue(answer(BotLevel.EASY, coming(Ability.HIDE), arena) != DuelInput.Special)
-        // In the middle of the table NORMAL keeps its dodge; HARD dodges anyway (a HIDE dodges for the counter).
+        // In the middle of the table both dodge: HARD always did (a HIDE dodges for the counter); NORMAL does since T48
+        // (`nearEdgeRadii` 20: before, in mid-table a FLY or a HIDE had no special at all); EASY still never.
         val middle = coming(Ability.HIDE, at = Vec2(0f, 0.05f))
-        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, middle, arena))
         assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, arena))
+        assertTrue(answer(BotLevel.EASY, middle, arena) != DuelInput.Special)
     }
 
     @Test
@@ -237,12 +239,15 @@ class DuelBotTest {
         }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, nearEdge, arena))
         assertTrue(answer(BotLevel.HARD, nearEdge, arena) != DuelInput.Special)
-        // In the middle, where a miss ends on the table, HARD rams; NORMAL waits for the edge.
-        val middle = fight(arena, Ability.ROLL, Vec2(0f, 0.05f), Vec2(0f, -0.02f)) { a, b ->
+        // In the middle, where a miss ends on the table, HARD rams; NORMAL waits for the edge. Since T48 "near an edge"
+        // for a ram is 8 radii (24 cm; 5 before), which is every spot of the 60 x 40 cm table: the middle of the
+        // 120 x 60 cm one, 28 cm from its nearest edge, is where NORMAL still waits.
+        val large = DuelArenas.LARGE
+        val middle = fight(large, Ability.ROLL, Vec2(0f, 0.05f), Vec2(0f, -0.02f)) { a, b ->
             a.cooling().copy(body = a.body.copy(state = a.body.state.copy(facing = Vec2(0f, -1f)))) to b
         }
-        assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, arena))
-        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, large))
+        assertTrue(answer(BotLevel.NORMAL, middle, large) != DuelInput.Special)
         // A JUMP with the opponent within the stomp's reach, on the side of its edge: NORMAL stomps, EASY never does.
         val stomp = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f)) { a, b -> a.cooling() to b }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, stomp, arena))

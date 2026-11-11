@@ -142,6 +142,27 @@ class DuelBalanceTest {
     }
 
     @Test
+    fun acceptanceHoldsOnASample() {
+        // A reduced matrix: the ability cells on the four arenas at NORMAL and HARD, 20 matches each (1600, a few
+        // seconds), judged by A1 and A3 with widened margins. Not the acceptance itself (`duel matrix --n 200` is, see
+        // docs/duel-balance.md: A1 fails it at 9.7..87.7 %): a guard that turns red when a later change breaks the
+        // balance badly: an ability that (almost) never or always wins against the field, or rounds left to the clock.
+        val cells = DuelMatrix.abilityCells(DuelArenas.MATRIX.keys.toList(), listOf(BotLevel.NORMAL, BotLevel.HARD))
+        val results = cells.map { c -> CellResult(c, DuelMatrix.tally(DuelMatrix.play(c, DuelArenas.MATRIX.getValue(c.arena), 1L, 21L))) }
+        val wide = Acceptance(fieldMin = 0.05f, fieldMax = 0.95f, clockMax = 0.15f, clockMaxLarge = 0.25f)
+        val verdicts = DuelMatrix.acceptance(results, stepsAgree = null, t = wide).associateBy { it.id }
+        val strict = DuelMatrix.acceptance(results, stepsAgree = null).associateBy { it.id }
+        println("acceptanceHoldsOnASample: A1 ${verdicts.getValue("A1").measured}, A3 ${verdicts.getValue("A3").measured}, A4 ${strict.getValue("A4").measured}, A5 ${strict.getValue("A5").measured}")
+        for (id in listOf("A1", "A3")) {
+            val v = verdicts.getValue(id)
+            assertTrue(v.pass, "$id ${v.measured} out of ${v.threshold}: ${v.failures}")
+        }
+        // Every one of them ended, and the rounds ended on the table.
+        assertTrue(results.all { it.tally.unfinished == 0 && it.tally.matches == 20 })
+        assertTrue(strict.getValue("A3").pass && strict.getValue("A4").pass, "A3 ${strict.getValue("A3")}, A4 ${strict.getValue("A4")}")
+    }
+
+    @Test
     fun aSplitSeedRangePlaysTheSameMatches() {
         // What lets the CLI spread a cell over threads: the matches of seeds 4..9 are the same played in one call or two.
         val cell = abilityCell(Ability.ROLL, Ability.HIDE, arena = "small")
@@ -157,11 +178,18 @@ class DuelBalanceTest {
     // -- the smallest and the largest table -----------------------------------------------------------------------
 
     /** Steps [start] on [level] in 16 ms frames until [stop] or [maxMs]; [script] gives the inputs of each frame. */
-    private fun drive(start: DuelState, level: Level, maxMs: Long, stop: (DuelStep) -> Boolean, script: (DuelState) -> Map<String, DuelInput>): Pair<DuelState, List<DuelEvent>> {
+    private fun drive(
+        start: DuelState,
+        level: Level,
+        maxMs: Long,
+        stop: (DuelStep) -> Boolean,
+        params: DuelParams = DuelParams.DEFAULT,
+        script: (DuelState) -> Map<String, DuelInput>,
+    ): Pair<DuelState, List<DuelEvent>> {
         var s = start
         val events = ArrayList<DuelEvent>()
         while (s.timeMs < maxMs) {
-            val out = DuelPhysics.step(s, level, 16L, script(s))
+            val out = DuelPhysics.step(s, level, 16L, script(s), params)
             events += out.events
             s = out.state
             if (stop(out)) break
@@ -194,35 +222,49 @@ class DuelBalanceTest {
         assertTrue(farthest < nearestEdge, "slide $farthest m, edge $nearestEdge m")
     }
 
-    @Test
-    fun aRingOutIsReachableOnLarge() {
-        // The 120 x 60 cm table. The victim starts on its mark (30 cm from the nearest edge) and walks back to it whenever
-        // it may; the attacker (5/5/5/5 both) walks round to the side away from that edge and dashes at it whenever it
-        // can. Within A4's 8 hits the victim is off the table.
+    /**
+     * The 120 x 60 cm table, 5/5/5/5 both: the victim starts on its mark, 30 cm from the nearest edge; the attacker walks
+     * round to the side away from that edge and dashes at it whenever it can, until somebody rings out or 120 s pass.
+     * [recovers]: the victim walks back to its mark whenever it may (else it stands). Returns the hits it took, who went
+     * off, and when.
+     */
+    private fun pushOffLarge(recovers: Boolean, params: DuelParams = DuelParams.DEFAULT): Triple<Int, List<String>, Long> {
         val arena = DuelArenas.LARGE
         val (mark, other) = DuelArenas.marks(arena)
         val toEdge = Vec2(0f, -1f) // the nearest edge from the mark: v = -0.30
         val standoff = 2 * R + 0.6f * R
-        val reach = DuelParams.DEFAULT.dashSpeedMps * DuelParams.DEFAULT.dashMs / 1000f
+        val reach = params.dashSpeedMps * params.dashMs / 1000f
         val start = DuelState(fighter("a", other, facing = Vec2(-1f, 0f)), fighter("b", mark, facing = Vec2(1f, 0f)))
-        val (end, events) = drive(start, arena, 120_000L, { out -> out.events.any { it is DuelEvent.RingOut } }) { s ->
+        val (end, events) = drive(start, arena, 120_000L, { out -> out.events.any { it is DuelEvent.RingOut } }, params) { s ->
             val ins = HashMap<String, DuelInput>()
             val a = s.a
             val b = s.b
-            if (DuelPhysics.acceptsInput(b, arena)) ins["b"] = MoveTo(mark)
-            if (DuelPhysics.acceptsInput(a, arena)) {
+            if (recovers && DuelPhysics.acceptsInput(b, arena, params)) ins["b"] = MoveTo(mark)
+            if (DuelPhysics.acceptsInput(a, arena, params)) {
                 val spot = b.pos - toEdge * standoff
                 val toB = b.pos - a.pos
                 val gap = toB.length - 2 * R
                 val behind = (a.pos - b.pos).normalized().dot(-toEdge) > 0.9f
-                ins["a"] = if (behind && gap <= reach * 0.8f && DuelPhysics.canDash(a, arena)) Dash(toB) else MoveTo(spot)
+                ins["a"] = if (behind && gap <= reach * 0.8f && DuelPhysics.canDash(a, arena, params)) Dash(toB) else MoveTo(spot)
             }
             ins
         }
-        val hits = events.count { it is DuelEvent.Hit && it.victim == "b" }
-        val out = events.filterIsInstance<DuelEvent.RingOut>()
-        println("aRingOutIsReachableOnLarge: ${out.map { it.id }} after $hits hits at ${end.timeMs} ms")
-        assertEquals(listOf("b"), out.map { it.id }, "the victim (only) went off; $hits hits in ${end.timeMs} ms")
+        return Triple(events.count { it is DuelEvent.Hit && it.victim == "b" }, events.filterIsInstance<DuelEvent.RingOut>().map { it.id }, end.timeMs)
+    }
+
+    @Test
+    fun aRingOutIsReachableOnLarge() {
+        // A scripted series of hits (the victim stands) pushes it from its mark off the 120 cm table within A4's 8 hits.
+        val (hits, out, ms) = pushOffLarge(recovers = false)
+        assertEquals(listOf("b"), out, "the victim (only) went off; $hits hits in $ms ms")
         assertTrue(hits in 1..8, "$hits hits")
+        // Measured, not asserted: without wobble the same series needs more hits; a victim that walks back to its mark
+        // after every hit (as a child might) needs more again (T48's Result; before T48 it was never pushed off).
+        val (flat, flatOut, _) = pushOffLarge(recovers = false, params = DuelParams.DEFAULT.copy(wobblePerHit = 0f))
+        val (walking, walkingOut, walkingMs) = pushOffLarge(recovers = true)
+        println(
+            "aRingOutIsReachableOnLarge: standing victim off after $hits hits ($ms ms); without wobble $flat hits $flatOut; " +
+                "walking back to its mark: $walking hits $walkingOut ($walkingMs ms)",
+        )
     }
 }

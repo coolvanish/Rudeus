@@ -284,6 +284,25 @@ class DuelHudModelTest {
     }
 
     @Test
+    fun hudModelShowsWobble() {
+        // T48's wobble as a share of the most there is (wobbleMax 4 by default): steady at the start, half after two
+        // hits, full at the cap and never past it; from both sides alike; 0 when the params have no wobble.
+        val s = start()
+        assertEquals(0f, hud(s).me.wobble)
+        assertEquals(0f, hud(s).foe.wobble)
+        val shaken = s.inFight().withA { it.copy(wobble = 2f) }
+        assertEquals(0.5f, hud(shaken, me = "red").me.wobble, 1e-6f)
+        assertEquals(0.5f, hud(shaken, me = "blue").foe.wobble, 1e-6f)
+        assertEquals(0f, hud(shaken, me = "red").foe.wobble)
+        assertEquals(1f, hud(s.inFight().withA { it.copy(wobble = DuelParams.DEFAULT.wobbleMax) }).me.wobble)
+        assertEquals(1f, hud(s.inFight().withA { it.copy(wobble = 99f) }).me.wobble)
+        assertEquals(0f, hud(shaken, params = DuelParams.DEFAULT.copy(wobblePerHit = 0f, wobbleMax = 0f)).me.wobble)
+        // A real hit: red dashes blue, blue's wobble is one hit of four.
+        val hit = advance(fightOf(s), 400L, mapOf("red" to DuelInput.Dash()))
+        assertEquals(DuelParams.DEFAULT.wobblePerHit / DuelParams.DEFAULT.wobbleMax, hud(hit).foe.wobble, 1e-6f)
+    }
+
+    @Test
     fun everyDuelStringHasThreeLanguages() {
         val required = listOf(
             StringId.duel_title, StringId.duel_pick_opponent, StringId.duel_fight, StringId.duel_watch, StringId.duel_vs,

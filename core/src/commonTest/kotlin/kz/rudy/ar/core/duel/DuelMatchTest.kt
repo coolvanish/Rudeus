@@ -213,13 +213,14 @@ class DuelMatchTest {
 
     @Test
     fun theEarlierRingOutLosesAtAnyFrameRateAndInEitherSlot() {
-        // A clash on the 20 cm table: y, a little weaker and 2 mm closer to its edge, leaves the table two sub-steps
-        // before x does, so in a 33 ms frame both ring-outs arrive in the same DuelPhysics call. The earlier one loses,
-        // whatever the frames or the slots.
+        // A clash on the 20 cm table: y, a little weaker and 0.6 mm closer to its edge, leaves the table two sub-steps
+        // before x does (376 and 392 ms), so in a 33 ms frame both ring-outs arrive in the same DuelPhysics call. The
+        // earlier one loses, whatever the frames or the slots. (x's mark was -0.04 before T48's stat factors moved the
+        // two ring-outs 40 ms apart; -0.0414 puts them back two sub-steps apart in one call.)
         val tiny = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
         val x = Contestant("x", FighterStats(10, 1, 1, 8), Ability.JUMP)
         val y = Contestant("y", FighterStats(8, 1, 2, 9), Ability.JUMP)
-        val marks = Vec2(-0.04f, 0f) to Vec2(0.042f, 0f)
+        val marks = Vec2(-0.0414f, 0f) to Vec2(0.042f, 0f)
 
         // The physics alone (no match): both fly off, y first, 16 ms apart, in one 33 ms call.
         val raw = DuelMatch.start(x, y, tiny, marks).duel

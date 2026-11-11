@@ -25,7 +25,8 @@ import kotlinx.serialization.Serializable
  * @property sidestepRadii a sidestep on foot goes this far across the incoming dash.
  * @property stompReachShare a stomp is tried with the opponent within this share of the stomp's reach.
  * @property ramNearEdgeRadii a ram is tried with the opponent at most this far inside the boundary ("near an edge"; a
- *   [BotSkill.safeRamsOnly] bot rams wherever a miss still ends on the table)...
+ *   [BotSkill.safeRamsOnly] bot rams wherever a miss still ends on the table). T48: 8 (was 5), so a NORMAL ROLL rams
+ *   on most of a 120 x 60 cm table too, not only on the small ones (where every spot is near an edge)...
  * @property ramRoomRadii ... and the roller itself at least this far inside ("room behind itself").
  * @property walkCost a bot that weighs push directions ([BotSkill.weighsPush]) scores each as the distance the opponent
  *   would have to be pushed plus this x the walk to the spot (and round the opponent)...
@@ -54,7 +55,7 @@ data class BotTuning(
     val threatSlackRadii: Float = 0.5f,
     val sidestepRadii: Float = 2f,
     val stompReachShare: Float = 0.8f,
-    val ramNearEdgeRadii: Float = 5f,
+    val ramNearEdgeRadii: Float = 8f,
     val ramRoomRadii: Float = 3f,
     val walkCost: Float = 0.5f,
     val switchCostRadii: Float = 1f,
@@ -163,22 +164,28 @@ data class BotSkill(
             usesSpecial = false, nearEdgeRadii = 0f, sidesteps = false, counters = false, safeRamsOnly = false,
         )
 
-        /** The shared plan at a fifth of a second, a small aim error, the special in its obvious situation. */
+        /**
+         * The shared plan at a fifth of a second, a small aim error, the special in its obvious situation. T48:
+         * `nearEdgeRadii` 20 (was 4): a FLY lifts off and a HIDE dodges whenever a dash or a stomp comes at it, not only
+         * near an edge (in mid-table they had no special at all: equal stats, JUMP beat FLY 80 / 20).
+         */
         val NORMAL = BotSkill(
             thinkMs = 144, thinkJitterTicks = 2, dashRangeShare = 0.8f, alignCos = 0.8660254f, aimErrorShare = 0.1f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = false, weighsPush = false,
-            usesSpecial = true, nearEdgeRadii = 4f, sidesteps = false, counters = false, safeRamsOnly = false,
+            usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false,
         )
 
         /**
-         * NORMAL deciding every tick or two, leading its aim, weighing where to push (high ground), sidestepping near an
-         * edge, countering. The one tick of jitter matters: two HARD bots deciding on the same ticks mirror each other
-         * exactly on a symmetric arena (every round a tied timeout, every match a draw).
+         * NORMAL deciding every tick or a few, leading its aim, weighing where to push (high ground), sidestepping near an
+         * edge, countering. The jitter matters: two HARD bots deciding on the same ticks mirror each other on a symmetric
+         * arena (with one tick: every round a tied timeout, every match a draw). T48: `thinkJitterTicks` 3 (was 1): with
+         * one, two HARD bots of one ability still dashed together and clashed in mid-table (JUMP v JUMP on the 120 cm
+         * table: 52 % of the rounds to the clock, 34 hits per ring-out); `nearEdgeRadii` 8 (was 4).
          */
         val HARD = BotSkill(
-            thinkMs = 48, thinkJitterTicks = 1, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
+            thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
-            usesSpecial = true, nearEdgeRadii = 4f, sidesteps = true, counters = true, safeRamsOnly = true,
+            usesSpecial = true, nearEdgeRadii = 8f, sidesteps = true, counters = true, safeRamsOnly = true,
         )
     }
 }

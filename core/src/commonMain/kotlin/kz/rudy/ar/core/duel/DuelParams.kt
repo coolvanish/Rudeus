@@ -20,9 +20,12 @@ import kotlin.math.roundToLong
 data class DuelParams(
     /** Duel walk speed multiplier on [PhysicsParams.walkSpeedMps] (the walking game strolls; a duel hurries). */
     val duelSpeedScale: Float = 2f,
-    /** Walk speed factor = [speedBase] + [speedPerPoint] * SPEED (0.76 .. 1.30). */
-    val speedBase: Float = 0.70f,
-    val speedPerPoint: Float = 0.06f,
+    /**
+     * Walk speed factor = [speedBase] + [speedPerPoint] * SPEED (0.60 .. 1.50; T48: was 0.70 + 0.06, worth too little
+     * against the POWER, GUARD and AGILITY a fast drawing gives up).
+     */
+    val speedBase: Float = 0.50f,
+    val speedPerPoint: Float = 0.10f,
     /**
      * Replaces [PhysicsParams.rollSpeedScale] inside a duel. 1 = the SPEED formula alone sets the walk speed for every
      * ability (the walking game's ROLL x 2 would otherwise stack on top of the stats).
@@ -33,19 +36,23 @@ data class DuelParams(
     val dashMs: Long = 250,
     /** Dash speed along the dash direction (replaces walking while it lasts). 250 ms x 0.30 m/s = 7.5 cm. */
     val dashSpeedMps: Float = 0.30f,
-    /** Base dash cooldown, counted from the dash start: [dashCooldownMs] * ([cooldownBase] - [cooldownPerAgility] * AGILITY). */
-    val dashCooldownMs: Long = 1500,
-    val cooldownBase: Float = 1.30f,
-    val cooldownPerAgility: Float = 0.06f,
+    /**
+     * Base dash cooldown, counted from the dash start: [dashCooldownMs] * ([cooldownBase] - [cooldownPerAgility] * AGILITY)
+     * (2800 .. 2125 ms, 2500 at AGILITY 5; T48: was 1500 * (1.30 - 0.06 AGILITY): a slower beat, so a round is a few
+     * exchanges, and AGILITY worth as much a point as the others).
+     */
+    val dashCooldownMs: Long = 2500,
+    val cooldownBase: Float = 1.15f,
+    val cooldownPerAgility: Float = 0.03f,
 
-    /** Knockback speed given by a POWER 5 attacker to a GUARD 5 victim. */
+    /** Knockback speed given by a POWER 5 attacker to a GUARD 5 victim (with no wobble: 4.5 cm of slide). */
     val knockSpeedMps: Float = 0.25f,
-    /** Attacker factor = [powerBase] + [powerPerPoint] * POWER. */
-    val powerBase: Float = 0.55f,
-    val powerPerPoint: Float = 0.09f,
-    /** Victim divisor = [guardBase] + [guardPerPoint] * GUARD. */
-    val guardBase: Float = 0.55f,
-    val guardPerPoint: Float = 0.09f,
+    /** Attacker factor = [powerBase] + [powerPerPoint] * POWER (0.68 .. 1.40; T48: was 0.55 + 0.09). */
+    val powerBase: Float = 0.60f,
+    val powerPerPoint: Float = 0.08f,
+    /** Victim divisor = [guardBase] + [guardPerPoint] * GUARD (T48: was 0.55 + 0.09). */
+    val guardBase: Float = 0.60f,
+    val guardPerPoint: Float = 0.08f,
     /** Knockback multiplier when the attacker's feet are more than [fromAboveMinM] above the victim's (high ground). */
     val fromAboveScale: Float = 1.25f,
     val fromAboveMinM: Float = 0.01f,
@@ -79,40 +86,45 @@ data class DuelParams(
 
     /**
      * Base special cooldown, counted from the special's start and scaled by agility like the dash:
-     * [specialCooldownMs] * ([cooldownBase] - [cooldownPerAgility] * AGILITY) (7440 .. 4200 ms, 6000 at AGILITY 5).
+     * [specialCooldownMs] * ([cooldownBase] - [cooldownPerAgility] * AGILITY) (10 080 .. 7650 ms, 9000 at AGILITY 5;
+     * T48: was 6000. The stomp and the ram are hits outside the dash cooldown, and with wobble every extra hit counts).
      */
-    val specialCooldownMs: Long = 6000,
+    val specialCooldownMs: Long = 9000,
     /** JUMP stomp: an opponent whose centre is within this many of the stomper's radii of the landing point is hit. */
     val stompRadiusRadii: Float = 3f,
-    /** JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it). */
-    val stompScale: Float = 1.2f,
+    /** JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it; T48: was 1.2). */
+    val stompScale: Float = 0.85f,
     /** FLY lift-off: how long the fighter hovers, cannot be hit and walks at [liftSpeedScale] x its walk speed. */
     val liftMs: Long = 1200,
     val liftSpeedScale: Float = 1.5f,
     /** FLY lift-off: hover height of the feet above the ground under them, in fighter radii (0.5 = 1.5 cm on the table). */
     val liftHeightRadii: Float = 0.5f,
-    /** ROLL ram: a dash [ramDashScale] x as long as [dashMs] (550 ms, 16.5 cm) hitting with [ramKnockScale] x the knockback. */
-    val ramDashScale: Float = 2.2f,
-    val ramKnockScale: Float = 1.5f,
-    /** HIDE dodge: for [dodgeMs] hits pass through the fighter (a dash of its own ends the dodge at once). */
-    val dodgeMs: Long = 500,
+    /**
+     * ROLL ram: a dash [ramDashScale] x as long as [dashMs] (325 ms, 9.75 cm) hitting with [ramKnockScale] x the
+     * knockback (T48: was 2.2 x and 1.5 x: a ram is a hit outside the dash cooldown, and ROLL took 82..93 % of the field).
+     */
+    val ramDashScale: Float = 1.3f,
+    val ramKnockScale: Float = 1.1f,
+    /** HIDE dodge: for [dodgeMs] hits pass through the fighter (a dash of its own ends the dodge at once; T48: was 500). */
+    val dodgeMs: Long = 900,
     /**
      * HIDE counter: a hit the dodge let through opens a window of [counterMs] from that sub-step; the first dash started
-     * in it hits with [counterKnockScale] x. A dodge that dodged nothing gives no counter.
+     * in it hits with [counterKnockScale] x (T48: was 1.5). A dodge that dodged nothing gives no counter.
      */
     val counterMs: Long = 1500,
-    val counterKnockScale: Float = 1.5f,
+    val counterKnockScale: Float = 2.0f,
 
     // Wobble (T48): every hit a fighter takes in a round makes the next one push it farther, so a ring-out takes a few
     // hits on a large table without one hit being a ring-out on a small one. Dimensionless and per second, so they
-    // follow the surface without being in [scaled]. wobblePerHit = 0 is the physics without it, exactly.
+    // follow the surface without being in [scaled]. wobblePerHit = 0 is the physics without it, exactly. Defaults: hit n
+    // of a round knocks 1, 1.7, 2.4, 3.1, then 3.8 x (4.5, 7.7, 10.8, 14.0, 17.1 cm at 5 v 5).
 
     /** Wobble a fighter gains with every hit it takes (a dash, a ram, a counter, a stomp; each side of a clash). */
-    val wobblePerHit: Float = 0f,
+    val wobblePerHit: Float = 1f,
     /** A hit on a fighter with wobble w knocks it (1 + [wobbleKnockScale] * w) x the plain knockback. */
-    val wobbleKnockScale: Float = 1f,
+    val wobbleKnockScale: Float = 0.7f,
     /** Wobble never exceeds this. */
-    val wobbleMax: Float = 0f,
+    val wobbleMax: Float = 4f,
     /** Wobble lost per second of fight (0 = it stays until the round ends). */
     val wobbleDecayPerS: Float = 0f,
 ) {
