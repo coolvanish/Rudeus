@@ -22,7 +22,8 @@ import kz.rudy.ar.core.physics.PhysicsBody
  *   ([DuelParams.dodgeMs]). The stomp lasts until its jump lands ([stomping]); the ram is a dash ([dashKind]).
  * @property specialCooldownMs > 0: a Special input is ignored. Counted from the special's start.
  * @property stomping JUMP: in the air on a stomp; the landing knocks the opponent away.
- * @property counterMs HIDE: > 0 while the next dash started is a counter ([DashKind.COUNTER]).
+ * @property counterMs HIDE: > 0 while the next dash started is a counter ([DashKind.COUNTER]); set to
+ *   [DuelParams.counterMs] by every hit its dodge let through.
  * @property dashKind what the current dash is; [DashKind.PLAIN] whenever [dashMs] is 0.
  */
 @Serializable
@@ -52,7 +53,7 @@ enum class DashKind {
     /** ROLL's special: [DuelParams.ramDashMs] long, [DuelParams.ramKnockScale] x the knockback, along `facing`. */
     RAM,
 
-    /** HIDE's first dash after a dodge: [DuelParams.counterKnockScale] x the knockback. */
+    /** HIDE's first dash after its dodge let a hit through: [DuelParams.counterKnockScale] x the knockback. */
     COUNTER,
 }
 

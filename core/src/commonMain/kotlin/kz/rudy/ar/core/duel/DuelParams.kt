@@ -94,9 +94,12 @@ data class DuelParams(
     /** ROLL ram: a dash [ramDashScale] x as long as [dashMs] (550 ms, 16.5 cm) hitting with [ramKnockScale] x the knockback. */
     val ramDashScale: Float = 2.2f,
     val ramKnockScale: Float = 1.5f,
-    /** HIDE dodge: for [dodgeMs] hits pass through the fighter. */
+    /** HIDE dodge: for [dodgeMs] hits pass through the fighter (a dash of its own ends the dodge at once). */
     val dodgeMs: Long = 500,
-    /** HIDE counter: the first dash started within [counterMs] of the dodge's start hits with [counterKnockScale] x. */
+    /**
+     * HIDE counter: a hit the dodge let through opens a window of [counterMs] from that sub-step; the first dash started
+     * in it hits with [counterKnockScale] x. A dodge that dodged nothing gives no counter.
+     */
     val counterMs: Long = 1500,
     val counterKnockScale: Float = 1.5f,
 ) {

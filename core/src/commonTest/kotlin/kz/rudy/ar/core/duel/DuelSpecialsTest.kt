@@ -100,8 +100,9 @@ class DuelSpecialsTest {
         assertEquals(SpecialStarted("b", Ability.FLY, 0L), t.all.filterIsInstance<SpecialStarted>().single())
         assertTrue(t.all.filter { it.atMs < 2000L }.none { it is Hit || it is Clash }, "a dash passes under: ${t.all}")
 
-        // Lifted 1.2 s: hovering 1.5 cm up (JUMPING, no vertical speed), in place, unknocked.
-        for (s in t.states.filter { it.timeMs in 16L..P.liftMs }) {
+        // Lifted 1.2 s: hovering 1.5 cm up (JUMPING, no vertical speed), in place, unknocked; on its last sub-step it is
+        // back on the table.
+        for (s in t.states.filter { it.timeMs in 16L until P.liftMs }) {
             val b = s.b.body
             assertEquals(Mode.JUMPING, b.state.mode, "at ${s.timeMs} ms")
             assertEquals(P.liftHeightRadii * R, b.state.h, 1e-6f, "hover height at ${s.timeMs} ms")
@@ -113,9 +114,10 @@ class DuelSpecialsTest {
         // The dash carried on for its full 7.5 cm: a ends past b's centre, under it.
         assertEquals(P.dashSpeedMps * P.dashMs / 1000f, t.at(256L).a.pos.u, 1e-4f)
         assertTrue(t.at(256L).a.pos.u > start.b.pos.u)
-        // After the lift b comes down on top of a, and separation parts them the step it lands.
-        val landed = t.states.indexOfFirst { it.timeMs > P.liftMs && grounded(it.b) }
-        assertTrue(landed > 0 && t.states[landed].timeMs < 1600L, "came down at ${t.states.getOrNull(landed)?.timeMs} ms")
+        // When the lift ends b stands on the table on top of a, and separation parts them in that same sub-step.
+        val landed = t.states.indexOfFirst { it.timeMs > 0L && grounded(it.b) }
+        assertEquals(P.liftMs, t.states[landed].timeMs, "back on the table when the lift ends")
+        assertEquals(0f, t.states[landed].b.body.state.h)
         assertTrue(t.states[landed - 1].b.body.state.h > 0f)
         for (s in t.states.drop(landed)) assertTrue(s.a.pos.distanceTo(s.b.pos) >= 2 * R - 1e-4f, "overlap at ${s.timeMs} ms")
         // Once down it can be hit again.
@@ -209,7 +211,13 @@ class DuelSpecialsTest {
             if (s.timeMs > 0L) assertEquals(s.timeMs < P.dodgeMs, DuelPhysics.isDodging(s.b), "dodging at ${s.timeMs} ms")
         }
         assertTrue(before.filter { it.timeMs in 16L..240L }.all { it.a.dashMs > 0L }, "the dash carried on: ${before.take(18).map { it.a.dashMs }}")
-        // The counter, 608 ms after the dodge: 1.5x the knockback.
+        // The dodged dash opened b's counter window: from its first contact, held full while a pressed into b (until
+        // a's dash ended at 256 ms), then counterMs (1.5 s) running down.
+        assertEquals(0L, t.at(0L).b.counterMs)
+        assertEquals(P.counterMs, t.at(16L).b.counterMs, "the first contact opens it")
+        assertEquals(P.counterMs, t.at(256L).b.counterMs, "a's dash pressed in until 256 ms")
+        assertEquals(P.counterMs - 96L, t.at(352L).b.counterMs)
+        // The counter, at 608 ms: 1.5x the knockback.
         val counter = t.all.filterIsInstance<Hit>().single()
         assertEquals("b" to "a", counter.attacker to counter.victim)
         assertEquals(P.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED) * P.counterKnockScale, counter.speedMps, 1e-6f)
@@ -218,20 +226,20 @@ class DuelSpecialsTest {
         assertEquals(0L, countering.counterMs, "a counter is used once")
         assertEquals(DashKind.PLAIN, t.at(624L).b.dashKind, "the hit ended it")
 
-        // The counter window is 1.5 s from the dodge: a dash at 1488 ms still counters, one at 1600 ms is plain. And once
-        // the dodge is over b can be hit.
+        // The window runs counterMs from the last sub-step the dodge let a hit through (256 ms): a dash at 1744 ms still
+        // counters, one at 1760 ms is plain. And once the dodge is over b can be hit.
         fun dashAfterDodge(at: Long): Hit {
             val s = runDuel(start, OPEN, at + 600L) { st ->
                 when (st.timeMs) {
-                    0L -> inputs("b" to Special)
+                    0L -> inputs("a" to Dash(), "b" to Special)
                     at -> inputs("b" to Dash())
                     else -> emptyMap()
                 }
             }
             return s.all.filterIsInstance<Hit>().single()
         }
-        assertEquals(0.375f, dashAfterDodge(1488L).speedMps, 1e-6f)
-        assertEquals(0.25f, dashAfterDodge(1600L).speedMps, 1e-6f)
+        assertEquals(0.375f, dashAfterDodge(1744L).speedMps, 1e-6f)
+        assertEquals(0.25f, dashAfterDodge(1760L).speedMps, 1e-6f)
         val late = runDuel(start, OPEN, 1500L) { st ->
             when (st.timeMs) {
                 0L -> inputs("b" to Special)
@@ -240,6 +248,134 @@ class DuelSpecialsTest {
             }
         }
         assertEquals(listOf("a"), late.all.filterIsInstance<Hit>().map { it.attacker }, "hit right after the dodge: ${late.all}")
+    }
+
+    @Test
+    fun dodgeThenDashIsNoBetterThanADash() {
+        // The review's case: a at 0, b (HIDE) 10 cm away facing it, 8 ms frames.
+        val start = DuelState(fighter("a", Vec2.ZERO), gifted("b", Vec2(0.1f, 0f), Ability.HIDE, facing = Vec2(-1f, 0f)))
+        fun play(script: Map<Long, Map<String, DuelInput>>) = runDuel(start, OPEN, 1500L, dtMs = 8L) { s -> script[s.timeMs] ?: emptyMap() }
+        val plain = play(mapOf(8L to inputs("a" to Dash(), "b" to Dash())))
+        assertEquals(listOf<DuelEvent>(Clash("a", "b", 80L)), plain.all.filter { it is Clash || it is Hit })
+
+        // b dodges at 0, both dash at 8: b's dash ends its dodge, so it is the very same clash, and the special is spent.
+        val dodged = play(mapOf(0L to inputs("b" to Special), 8L to inputs("a" to Dash(), "b" to Dash())))
+        assertEquals(plain.all, dodged.all.filter { it !is SpecialStarted }, "the same exchange")
+        assertEquals(plain.last.a, dodged.last.a)
+        assertEquals(plain.last.b, dodged.last.b.copy(specialCooldownMs = 0L))
+        assertTrue(dodged.states.all { it.b.counterMs == 0L }, "nothing was dodged, no counter")
+
+        // b first: it dodges at 0 and dashes at 8 (ending the dodge), a dashes at 40. They meet both dashing: a clash.
+        val bFirst = play(mapOf(0L to inputs("b" to Special), 8L to inputs("b" to Dash()), 40L to inputs("a" to Dash())))
+        assertEquals(listOf("Clash"), bFirst.all.filter { it is Clash || it is Hit }.map { it::class.simpleName }, "${bFirst.all}")
+        // a first: a dashes at 8 into b's dodge (it passes), b waits and dashes at 600, after its dodge: a counter, a
+        // takes it. This is what the dodge is for: a read of the other's dash.
+        val aFirst = play(mapOf(0L to inputs("b" to Special), 8L to inputs("a" to Dash()), 600L to inputs("b" to Dash())))
+        val hit = aFirst.all.filterIsInstance<Hit>().single()
+        assertEquals(Hit("b", "a", 0.375f, fromAbove = false, atMs = hit.atMs), hit)
+        assertTrue(aFirst.all.none { it is Clash })
+        // a dashes after the dodge has run out: a plain hit on b.
+        val afterIt = play(mapOf(0L to inputs("b" to Special), 600L to inputs("a" to Dash())))
+        assertEquals(listOf("a" to 0.25f), afterIt.all.filterIsInstance<Hit>().map { it.attacker to it.speedMps })
+    }
+
+    @Test
+    fun counterOnlyAfterADodgedHit() {
+        // A dodge with nothing coming gives no counter: b's dash after it is plain.
+        val start = DuelState(fighter("a", Vec2.ZERO), gifted("b", Vec2(NEAR, 0f), Ability.HIDE, facing = Vec2(-1f, 0f)))
+        val idle = runDuel(start, OPEN, 1300L) { s ->
+            when (s.timeMs) {
+                0L -> inputs("b" to Special)
+                608L -> inputs("b" to Dash())
+                else -> emptyMap()
+            }
+        }
+        assertTrue(idle.states.all { it.b.counterMs == 0L })
+        assertEquals(listOf(0.25f), idle.all.filterIsInstance<Hit>().map { it.speedMps })
+
+        // A stomp the dodge let through opens it too: a (JUMP) stomps beside b, b dodges over the landing, then counters.
+        val stomper = DuelState(gifted("a", Vec2.ZERO, Ability.JUMP), gifted("b", Vec2(2 * R, 0f), Ability.HIDE, facing = Vec2(-1f, 0f)))
+        val s = runDuel(stomper, OPEN, 1800L) { st ->
+            when (st.timeMs) {
+                0L -> inputs("a" to Special)
+                320L -> inputs("b" to Special)
+                1008L -> inputs("b" to Dash())
+                else -> emptyMap()
+            }
+        }
+        val landed = s.states.indexOfFirst { it.timeMs > 0L && !it.a.stomping }
+        assertTrue(s.states[landed - 1].b.counterMs == 0L && s.states[landed].b.counterMs > 0L, "opened at the landing")
+        assertEquals(listOf(Hit("b", "a", 0.375f, false, 0L)), s.all.filterIsInstance<Hit>().map { it.copy(atMs = 0L) })
+
+        // A FLY's lift lets a dash pass too, but a lift is not a dodge: no counter.
+        val flyer = start.copy(b = gifted("b", Vec2(NEAR, 0f), Ability.FLY, facing = Vec2(-1f, 0f)))
+        val lifted = runDuel(flyer, OPEN, 1000L, script = atStart("a" to Dash(), "b" to Special))
+        assertTrue(lifted.all.none { it is Hit })
+        assertTrue(lifted.states.all { it.b.counterMs == 0L })
+    }
+
+    @Test
+    fun dashingEndsTheDodge() {
+        // b (HIDE) dodges at 0. At 96 ms a dashes at it: alone, b's dodge lets it through; if b starts a dash of its own
+        // (sideways) at 96 too, the dodge is over at once and the two clash.
+        val start = DuelState(fighter("a", Vec2.ZERO), gifted("b", Vec2(NEAR, 0f), Ability.HIDE, facing = Vec2(0f, 1f)))
+        val through = runDuel(start, OPEN, 600L) { s ->
+            when (s.timeMs) {
+                0L -> inputs("b" to Special)
+                96L -> inputs("a" to Dash())
+                else -> emptyMap()
+            }
+        }
+        assertTrue(through.all.none { it is Hit || it is Clash }, "${through.all}")
+        val both = runDuel(start, OPEN, 600L) { s ->
+            when (s.timeMs) {
+                0L -> inputs("b" to Special)
+                96L -> inputs("a" to Dash(), "b" to Dash())
+                else -> emptyMap()
+            }
+        }
+        assertEquals(listOf("Clash"), both.all.filter { it is Clash || it is Hit }.map { it::class.simpleName }, "${both.all}")
+        // The dodge ends the moment the dash starts: no special time left, not dodging, the special still cooling down.
+        val dashing = DuelPhysics.step(both.at(96L), OPEN, 4L, inputs("a" to Dash(), "b" to Dash())).state.b
+        assertTrue(dashing.dashMs > 0L)
+        assertEquals(0L, dashing.specialMs)
+        assertFalse(DuelPhysics.isDodging(dashing) || DuelPhysics.isImmune(dashing))
+        assertTrue(dashing.specialCooldownMs > 0L)
+    }
+
+    @Test
+    fun liftedFighterClimbsNoHigherThanAWalker() {
+        // A 5 cm platform blocks a walker (4 cm step-up); lifted 1.5 cm, a FLY still meets it as a walker would.
+        val box = LevelObject("box", "box", ObjectKind.PLATFORM, Polygon.rect(Vec2(0.1f, 0f), 0.06f, 0.06f), 0.05f)
+        val level = Level(listOf(box), boundary = Polygon.rect(Vec2.ZERO, 0.6f, 0.4f), spawn = Vec2(-0.2f, 0f))
+        fun walk(lift: Boolean) = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.2f, 0.15f))), level, 2500L) { s ->
+            when (s.timeMs) {
+                0L -> inputs("a" to MoveTo(Vec2(0.2f, 0f)))
+                16L -> if (lift) inputs("a" to Special) else emptyMap()
+                else -> emptyMap()
+            }
+        }
+        for (lift in listOf(true, false)) {
+            val t = walk(lift)
+            assertTrue(t.states.none { box.footprint.contains(it.a.pos) }, "lift $lift: on the box")
+            assertTrue(t.states.all { distanceToPolygon(it.a.pos, box.footprint) >= R - 1e-4f }, "lift $lift: into the box")
+            assertEquals(0f, t.last.a.body.state.h, "lift $lift: on the table")
+            assertEquals(0.04f, t.last.a.pos.u, 1e-4f, "lift $lift: stopped by the box")
+            if (lift) assertTrue(t.states.filter { DuelPhysics.isLifted(it.a) }.all { it.a.body.state.h == P.liftHeightRadii * R })
+        }
+        // A 3 cm book is a step a walker takes: lifted, the FLY takes it too, hovering 1.5 cm above it, and lands on it.
+        val bookLevel = Level(listOf(book("book", Vec2(0.15f, 0f))), boundary = Polygon.rect(Vec2.ZERO, 0.6f, 0.4f), spawn = Vec2(-0.2f, 0f))
+        val onto = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.2f, 0.15f))), bookLevel, 2500L) { s ->
+            when (s.timeMs) {
+                0L -> inputs("a" to MoveTo(Vec2(0.15f, 0f)))
+                16L -> inputs("a" to Special)
+                else -> emptyMap()
+            }
+        }
+        assertEquals(0.03f + P.liftHeightRadii * R, onto.at(1200L).a.body.state.h, 1e-6f, "hovering above the book")
+        assertEquals(Vec2(0.15f, 0f), onto.last.a.pos)
+        assertEquals(0.03f, onto.last.a.body.state.h)
+        assertEquals(Mode.IDLE, onto.last.a.body.state.mode)
     }
 
     @Test
@@ -323,7 +459,7 @@ class DuelSpecialsTest {
     @Test
     fun fuzzWithSpecialsKeepsTheInvariants() {
         // T42's fuzz level and checks, with every fighter given a special it presses at random (and on purpose near the
-        // other one): JUMP-FLY, ROLL-HIDE, FLY-ROLL, HIDE-JUMP, so every ability meets two others.
+        // other one): all 16 ordered ability pairs, same-ability pairs included.
         val level = Level(
             objects = listOf(
                 cup("cup", Vec2(0.15f, 0.08f)),
@@ -335,8 +471,8 @@ class DuelSpecialsTest {
             boundary = Polygon(listOf(Vec2(-0.4f, -0.25f), Vec2(0.35f, -0.28f), Vec2(0.42f, 0.2f), Vec2(-0.1f, 0.3f), Vec2(-0.42f, 0.15f))),
             spawn = Vec2(0f, 0.05f),
         )
-        val pairs = listOf(Ability.JUMP to Ability.FLY, Ability.ROLL to Ability.HIDE, Ability.FLY to Ability.ROLL, Ability.HIDE to Ability.JUMP)
-        val steps = 10_000
+        val pairs = Ability.entries.flatMap { x -> Ability.entries.map { y -> x to y } }
+        val steps = 3_000
         val counts = HashMap<String, Int>()
         fun count(key: String) { counts[key] = (counts[key] ?: 0) + 1 }
         val ends = pairs.mapIndexed { i, (x, y) ->

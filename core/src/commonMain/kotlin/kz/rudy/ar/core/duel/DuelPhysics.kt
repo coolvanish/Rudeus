@@ -43,10 +43,10 @@ import kotlin.math.min
  * 3. [Physics.step] with the fighter's walk speed ([DuelParams.walkSpeedMpsFor]): walking, jumping, step-up onto
  *    platforms, falling, respawning, exactly as the walking game does it, with duel rules on top: an out fighter
  *    stays where it left the level until Physics respawns it; a body that came down this sub-step is pushed out of
- *    what blocks at its new feet height at once (Physics would do it one sub-step later); a lifted FLY is held
- *    [DuelParams.liftHeightRadii] radii above the ground under it (JUMPING, no vertical speed, walking at
- *    [DuelParams.liftSpeedScale] x), and starts to come down with gravity the sub-step after its lift ends; a stomping
- *    JUMP that was airborne and now stands has landed.
+ *    what blocks at its new feet height at once (Physics would do it one sub-step later); a lifted FLY walks as a
+ *    walker on the ground under it would and is held [DuelParams.liftHeightRadii] radii above that ground (JUMPING, no
+ *    vertical speed), and on the lift's last sub-step is that walker again, standing on the ground, see [liftStep]; a
+ *    stomping JUMP that was airborne and now stands has landed.
  * 4. Hits, every one judged from the positions after step 3, none of them by height (an airborne fighter is hit too),
  *    never on a lifted or dodging victim, never by or on a PAUSED or out fighter:
  *    - a dash: circles overlapping while one of them dashed in this sub-step. The victim gets
@@ -54,7 +54,8 @@ import kotlin.math.min
  *      more than `fromAboveMinM` higher; x `ramKnockScale` for a ram, x `counterKnockScale` for a counter), its walk
  *      target is dropped, its own dash ends and its stun timer is set to at least [DuelParams.hitStunMsFor]; the
  *      attacker's dash ends, so a dash hits at most once. Both dashing and both hittable: [DuelEvent.Clash], each takes
- *      the other's knockback and both dashes end. A dash that meets a lifted or dodging fighter carries on.
+ *      the other's knockback and both dashes end. A dash that meets a lifted or dodging fighter carries on; a dodging
+ *      one gets a counter window for it (so does a dodged stomp).
  *    - a stomp's landing: an opponent whose centre is within `stompRadiusRadii` stomper radii of the landing point gets
  *      `stompScale` x the plain knockback straight away from it, the same stun, and a [DuelEvent.Hit] with
  *      `fromAbove = true`.
@@ -73,10 +74,13 @@ import kotlin.math.min
  * counter window it is a counter. `Special` starts the special of [DuelFighter.ability] when [canSpecial]
  * ([DuelEvent.SpecialStarted], the special cooldown starts):
  * - JUMP stomp: [Physics.jump] (the walk target stays); the landing is a hit (step 4).
- * - FLY lift-off: the body rises to the hover height at once and hovers for `liftMs`; it cannot dash while lifted (it
- *   is airborne) but can walk off the edge.
+ * - FLY lift-off: the body rises to the hover height at once and hovers for `liftMs`, walking as it would on the ground
+ *   under it (same obstacles, same step-up) at `liftSpeedScale` x; it cannot dash while lifted (it is airborne) but can
+ *   walk off the edge.
  * - ROLL ram: a dash along `facing`, `ramDashMs` long, `ramKnockScale` x the knockback; the dash cooldown is untouched.
- * - HIDE dodge: `dodgeMs` of passing hits, and the next dash started within `counterMs` is a counter.
+ * - HIDE dodge: for `dodgeMs` hits pass through, until the fighter starts a dash (a dash ends the dodge at once). Each
+ *   hit the dodge lets through (a dash or a stomp that would have hit) opens a counter window of `counterMs` from that
+ *   sub-step: the next dash started in it is a counter. A dodge that dodged nothing gives no counter.
  */
 object DuelPhysics {
 
@@ -279,6 +283,8 @@ object DuelPhysics {
             dashCooldownMs = params.cooldownMsFor(f.stats),
             dashKind = if (counter) DashKind.COUNTER else DashKind.PLAIN,
             counterMs = if (counter) 0L else f.counterMs,
+            // Starting a dash ends a dodge at once: nobody dashes while it cannot be hit.
+            specialMs = if (isDodging(f)) 0L else f.specialMs,
         )
     }
 
@@ -307,7 +313,7 @@ object DuelPhysics {
                 val body = stopWalking(f.body)
                 f.copy(body = body.copy(state = body.state.copy(facing = d)), dashMs = params.ramDashMs, dashDir = d, dashKind = DashKind.RAM)
             }
-            Ability.HIDE -> f.copy(specialMs = params.dodgeMs, counterMs = params.counterMs)
+            Ability.HIDE -> f.copy(specialMs = params.dodgeMs)
         }
         events += DuelEvent.SpecialStarted(f.id, ability, atMs)
         return started.copy(specialCooldownMs = params.specialCooldownMsFor(f.stats))
@@ -351,16 +357,19 @@ object DuelPhysics {
         /** This sub-step only (set by [advance]): hovering on a FLY lift-off. */
         var lifted = false
 
-        /** This sub-step only (set by [advance]): lifted or dodging, so it cannot be hit. */
-        var immune = false
+        /** This sub-step only (set by [advance]): in a HIDE dodge. */
+        var dodging = false
+
+        /** Lifted or dodging this sub-step: it cannot be hit. */
+        val immune: Boolean get() = lifted || dodging
 
         /** The walking-game parameters with this fighter's duel walk speed. */
         val walkPhysics: PhysicsParams =
             physics.copy(walkSpeedMps = params.walkSpeedMpsFor(stats, physics), rollSpeedScale = params.rollSpeedScale)
 
-        /** While lifted the body is JUMPING: its walk speed is the duel walk speed x [DuelParams.liftSpeedScale]. */
-        val liftPhysics: PhysicsParams =
-            if (ability == Ability.FLY) walkPhysics.copy(jumpSpeedScale = params.liftSpeedScale) else walkPhysics
+        /** A lifted FLY walks its base (see [liftStep]) at the duel walk speed x [DuelParams.liftSpeedScale]. */
+        val liftWalkPhysics: PhysicsParams =
+            if (ability == Ability.FLY) walkPhysics.copy(walkSpeedMps = walkPhysics.walkSpeedMps * params.liftSpeedScale) else walkPhysics
 
         val paused: Boolean get() = body.state.mode == Mode.PAUSED
 
@@ -395,7 +404,7 @@ object DuelPhysics {
     /** Timers and duel motion of one sub-step (steps 1 and 2). Returns true when [w] dashed during it. */
     private fun advance(w: Work, wasOut: Boolean, c: Consts, atMs: Long, events: MutableList<DuelEvent>): Boolean {
         w.lifted = false
-        w.immune = false
+        w.dodging = false
         if (w.paused) return false
         val p = c.params
         w.dashCooldownMs = (w.dashCooldownMs - c.sub).coerceAtLeast(0L)
@@ -403,7 +412,7 @@ object DuelPhysics {
         if (w.counterMs > 0L) w.counterMs = (w.counterMs - c.sub).coerceAtLeast(0L)
         if (w.specialMs > 0L) {
             w.lifted = w.ability == Ability.FLY
-            w.immune = w.ability == Ability.FLY || w.ability == Ability.HIDE
+            w.dodging = w.ability == Ability.HIDE
             w.specialMs = (w.specialMs - c.sub).coerceAtLeast(0L)
         }
         if (w.knock.length <= p.knockStunMps) w.stunMs = (w.stunMs - c.sub).coerceAtLeast(0L)
@@ -415,7 +424,7 @@ object DuelPhysics {
             w.specialMs = 0L
             w.stomping = false
             w.lifted = false
-            w.immune = false
+            w.dodging = false
             return false
         }
         val knock0 = w.knock
@@ -430,7 +439,9 @@ object DuelPhysics {
 
         val s = w.body.state
         val start = s.pos + disp
-        val moved = moveThrough(c.level, c.physics, s.pos, start, s.h, s.radiusM)
+        // A lifted FLY is moved at its base, like everything else it does (see liftStep).
+        val feetH = if (w.lifted) s.h - liftHeight(s, p) else s.h
+        val moved = moveThrough(c.level, c.physics, s.pos, start, feetH, s.radiusM)
         w.moveTo(moved.pos)
         val obstacle = moved.obstacle
         if (knock0 != Vec2.ZERO && obstacle != null) {
@@ -455,8 +466,12 @@ object DuelPhysics {
 
     /** Step 3. Returns true when [w]'s stomp landed in it. */
     private fun physicsStep(w: Work, wasOut: Boolean, c: Consts): Boolean {
+        if (w.lifted) {
+            liftStep(w, c)
+            return false
+        }
         val before = w.body
-        val after = Physics.step(before, c.level, c.sub, if (w.lifted) w.liftPhysics else w.walkPhysics)
+        val after = Physics.step(before, c.level, c.sub, w.walkPhysics)
         val s0 = before.state
         val s = after.state
         w.body = when {
@@ -470,27 +485,42 @@ object DuelPhysics {
             }
             else -> after
         }
-        if (wasOut) return false
-        if (w.lifted) hover(w, s0.h, c)
-        if (!w.stomping) return false
+        if (wasOut || !w.stomping) return false
         val landed = (s0.mode == Mode.JUMPING || s0.mode == Mode.FALLING) && grounded(w.body.state.mode)
         if (landed) w.stomping = false
         return landed
     }
 
+    /** The hover height of a lifted body: [DuelParams.liftHeightRadii] of its radii. */
+    private fun liftHeight(s: CharacterState, p: DuelParams): Float = p.liftHeightRadii * s.radiusM
+
     /**
-     * FLY lift-off: the feet held [DuelParams.liftHeightRadii] radii above the ground under them (the table over a hole),
-     * JUMPING with no vertical speed, whatever Physics did this sub-step (gravity, a landing on a book on the way).
-     * Coming down off something (a book) is put off while the circle would overlap what blocks lower down, so the body
-     * never sinks into an object: it stays at the height it had ([h0]) until it is clear.
+     * One sub-step of a FLY lift-off. The hover is height only: the fighter moves exactly as a walker standing on its
+     * base would (the base = the hover height minus [liftHeight], the ground under it), at the lifted walk speed, so
+     * what blocks it and what it can step up onto are decided at the base, never at the hover height. The base then
+     * follows the ground the walker reached; over a hole or past the edge (where a walker would start to fall) it is the
+     * table plane, so a lifted FLY glides over a hole and, past the boundary, is out. Coming down off something (a book)
+     * the circle is pushed out of what blocks at the new base, as a walker coming down is. The body stays JUMPING at
+     * base + lift with no vertical speed. On the lift's last sub-step the fighter becomes that walker: standing on its
+     * base (or starting to fall where the walker would: off a book, into a hole), never descending through the air,
+     * where a jump's step-up would let it climb what a walker cannot.
      */
-    private fun hover(w: Work, h0: Float, c: Consts) {
+    private fun liftStep(w: Work, c: Consts) {
         val s = w.body.state
-        if (s.mode == Mode.RESPAWNING || s.mode == Mode.PAUSED) return
-        val ground = Physics.groundHeight(c.level, s.pos, s.h, c.physics) ?: 0f
-        var h = ground + c.params.liftHeightRadii * s.radiusM
-        if (h < h0 && pushOut(c.level, c.physics, s.pos, h, s.radiusM).pos != s.pos) h = h0
-        w.body = w.body.copy(state = s.copy(h = h, mode = Mode.JUMPING), verticalVelocity = 0f)
+        val lift = liftHeight(s, c.params)
+        // The exact ground value (s.h - lift is a float or two off it); the table plane over a hole.
+        val base = Physics.groundHeight(c.level, s.pos, s.h - lift, c.physics) ?: 0f
+        val walker = PhysicsBody(s.copy(h = base, mode = if (s.target != null) Mode.WALKING else Mode.IDLE), 0f, null, w.body.blocked)
+        val walked = Physics.step(walker, c.level, c.sub, w.liftWalkPhysics)
+        if (w.specialMs == 0L) {
+            w.body = walked
+            return
+        }
+        val m = walked.state
+        val ground = Physics.groundHeight(c.level, m.pos, m.h, c.physics) ?: 0f
+        val pos = if (ground < base - Physics.H_EPS) moveThrough(c.level, c.physics, m.pos, m.pos, ground, s.radiusM).pos else m.pos
+        val hovering = s.copy(pos = pos, h = ground + lift, target = m.target, facing = m.facing, mode = Mode.JUMPING)
+        w.body = PhysicsBody(hovering, verticalVelocity = 0f, modeBeforePause = null, blocked = walked.blocked)
     }
 
     private class Moved(val pos: Vec2, val obstacle: LevelObject?)
@@ -555,6 +585,12 @@ object DuelPhysics {
         val p = c.params
         val dist = sa.pos.distanceTo(sb.pos)
         val contact = dist < sa.radiusM + sb.radiusM
+        // What would hit each one, were it not immune.
+        val reachesB = (dashA && contact) || (landA && dist <= p.stompRadiusRadii * sa.radiusM)
+        val reachesA = (dashB && contact) || (landB && dist <= p.stompRadiusRadii * sb.radiusM)
+        // A dodge that lets a hit through opens the counter window, from this sub-step, for counterMs.
+        if (b.dodging && reachesB) b.counterMs = p.counterMs
+        if (a.dodging && reachesA) a.counterMs = p.counterMs
         val dashHitsB = dashA && contact && !b.immune
         val dashHitsA = dashB && contact && !a.immune
         val stompHitsB = landA && !b.immune && dist <= p.stompRadiusRadii * sa.radiusM
