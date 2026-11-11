@@ -40,9 +40,10 @@ data class BotMind(
 /**
  * The duel's bot: reads a [DuelMatchState] (state only, never events: they can be lost on the first frame after a
  * tracking gap) and answers one [DuelInput] for its fighter. Pure: the same arguments give the same answer on every
- * platform (no clock, no `kotlin.random`, no trigonometry; its randomness is the generator in [BotMind]). Call it
- * through [DuelRunner], which asks it only on the [BotTuning.tickMs] grid of match time, so a match does not depend on
- * the frame rate. Every number is in [BotTuning] / [BotSkill].
+ * platform (no clock, no `kotlin.random`, no trigonometry; its randomness is the generator in [BotMind]); that is a
+ * promise about one decision, not about a whole match, whose physics uses `exp`. Call it through [DuelRunner], which
+ * asks it only on the [BotTuning.tickMs] grid of match time, so a match does not depend on the frame rate. Every
+ * number is in [BotTuning] / [BotSkill].
  *
  * **The plan every level shares.** Push the opponent toward the edge nearest to it: stand so that the opponent is
  * between the bot and that edge ([BotTuning.standoffGapRadii] off it), walking round the opponent and round whatever
@@ -52,8 +53,10 @@ data class BotMind(
  *
  * **It never gives the game away.** A [DuelInput.MoveTo] target is always inside the boundary by the margin (the
  * boundary is the convex hull a scan builds, so the walk there stays on the table) and off every hole; a dash or a ram
- * is started only when it would end [BotTuning.dashEndMarginRadii] inside, or when the opponent is in its path first;
- * no input carries a non-finite number.
+ * is started only when it would end [BotTuning.dashEndMarginRadii] inside with its whole path off every hole, or when
+ * the opponent is in its path first with no hole on the way to it; no input carries a non-finite number. (A path is
+ * judged against a hole's outline; an end point or a walk target against its bounding circle: safe, coarse for a long
+ * strip.)
  *
  * **Levels** ([BotSkill]): EASY is slow to react, wanders, dashes when close whatever the alignment, sometimes the wrong
  * way, never uses the special. NORMAL plays the plan and uses its special in the obvious situation: stomp with the
@@ -135,8 +138,11 @@ private class Rng(var state: Long) {
     }
 }
 
-/** A circle the bot keeps out of: a blocking object or a hole, as its bounding circle grown by what it needs. */
-private class Keep(val c: Vec2, val r: Float, val hole: Boolean, val bare: Float)
+/**
+ * A circle the bot keeps out of: a blocking object or a hole, as its bounding circle ([bare] radius) grown by what it
+ * needs ([r]). A hole also keeps its [outline], for the exact test of a dash's path.
+ */
+private class Keep(val c: Vec2, val r: Float, val hole: Boolean, val bare: Float, val outline: Polygon? = null)
 
 /** The boundary as edge lines with inward normals (exact inside distances for the convex hull a scan builds). */
 private class Board(val poly: Polygon) {
@@ -266,7 +272,7 @@ private class Brain(
         val c = o.footprint.centroid()
         var bare = 0f
         for (p in o.footprint.points) bare = maxOf(bare, p.distanceTo(c))
-        Keep(c, bare + if (hole) margin else r + t.clearanceRadii * r, hole, bare)
+        Keep(c, bare + if (hole) margin else r + t.clearanceRadii * r, hole, bare, if (hole) o.footprint else null)
     }
 
     fun think(): DuelInput {
@@ -322,12 +328,12 @@ private class Brain(
         return DuelInput.MoveTo(route(goal))
     }
 
-    /** [input] as sent: finite, a walk target inside by the margin, a unit dash direction; anything else is None. */
+    /**
+     * [input] as sent: finite, a walk target inside by the margin and off every hole ([fitTarget]), a unit dash
+     * direction; anything else is None.
+     */
     fun checked(input: DuelInput): DuelInput = when (input) {
-        is DuelInput.MoveTo -> {
-            val p = input.target
-            if (finite(p) && boundary.contains(p) && board.inside(p) >= margin - 1e-5f) input else DuelInput.None
-        }
+        is DuelInput.MoveTo -> if (fitTarget(input.target)) input else DuelInput.None
         is DuelInput.Dash -> {
             val d = input.dir
             if (d != null && finite(d) && abs(d.length - 1f) < 1e-3f) input else DuelInput.None
@@ -444,9 +450,8 @@ private class Brain(
         if (board.inside(me) < t.ramRoomRadii * r) return false
         if (gap > ramReach * skill.dashRangeShare || abs(toFoe.dot(facing.perp())) > t.inPathLateralRadii * r) return false
         if (!clearLine(me, them)) return false
-        val end = me + facing * ramReach
-        val endSafe = endsOnTable(end)
-        return if (skill.safeRamsOnly) endSafe else endSafe || inPath(facing, ramReach)
+        // The checks of a plain dash, holes included: a miss runs the whole ram.
+        return if (skill.safeRamsOnly) runsOnTable(facing, ramReach) else dashSafe(facing, ramReach)
     }
 
     // -- getting out of the way -----------------------------------------------------------------------------------
@@ -466,7 +471,7 @@ private class Brain(
                 if (w == Vec2.ZERO) continue
                 // Not into the attacker, and never off the table (no "opponent in the path" excuse here).
                 if (w.dot(toFoe) > 0f && abs(toFoe.dot(w.perp())) < contact) continue
-                if (endsOnTable(me + w * dashReach) && clearLine(me, me + w * dashReach)) return DuelInput.Dash(w)
+                if (runsOnTable(w, dashReach) && clearLine(me, me + w * dashReach)) return DuelInput.Dash(w)
             }
         }
         for (w in ways.take(2)) {
@@ -478,23 +483,38 @@ private class Brain(
 
     // -- safety ---------------------------------------------------------------------------------------------------
 
-    /** A dash along unit [dir] of [reach] is safe: it ends on the table, or the opponent is in its path first. */
-    private fun dashSafe(dir: Vec2, reach: Float): Boolean =
-        (endsOnTable(me + dir * reach) && clearOfHoles(me, me + dir * reach)) || inPath(dir, reach)
+    /**
+     * A dash along unit [dir] of [reach] is safe: it ends on the table and its whole path stays off every hole, or the
+     * opponent is in its path first (and the path up to it stays off every hole).
+     */
+    private fun dashSafe(dir: Vec2, reach: Float): Boolean = runsOnTable(dir, reach) || inPath(dir, reach)
+
+    /** A dash along unit [dir] of [reach] that hits nothing ends on the table, its path clear of every hole. */
+    private fun runsOnTable(dir: Vec2, reach: Float): Boolean {
+        val end = me + dir * reach
+        return endsOnTable(end) && clearOfHoles(me, end)
+    }
 
     private fun endsOnTable(end: Vec2): Boolean =
         finite(end) && boundary.contains(end) && board.inside(end) >= t.dashEndMarginRadii * r && keeps.none { it.hole && end.distanceTo(it.c) < it.bare + r }
 
-    private fun clearOfHoles(from: Vec2, to: Vec2): Boolean = keeps.none { it.hole && near(from, to, it.c, it.bare) }
+    /** The centre's straight path from [from] to [to] neither touches nor crosses a hole's outline (a body falls when its centre is over one). */
+    private fun clearOfHoles(from: Vec2, to: Vec2): Boolean = keeps.none { it.hole && it.outline != null && touches(from, to, it.outline) }
 
-    /** The opponent can be hit and a dash along unit [dir] meets it early: within [BotTuning.inPathReachShare] of [reach]. */
+    /** [p] keeps out of every hole as a walk target must: outside each hole's circle (bounding circle + margin). */
+    private fun offHoles(p: Vec2): Boolean = keeps.none { it.hole && p.distanceTo(it.c) < it.r - 1e-5f }
+
+    /**
+     * The opponent can be hit and a dash along unit [dir] meets it early, within [BotTuning.inPathReachShare] of
+     * [reach], with no hole on the way to it.
+     */
     private fun inPath(dir: Vec2, reach: Float): Boolean {
         if (!foeHittable) return false
         val along = toFoe.dot(dir)
         val lateral = abs(toFoe.dot(dir.perp()))
         if (along <= 0f || lateral > t.inPathLateralRadii * r || lateral >= contact) return false
         val meet = along - sqrt(contact * contact - lateral * lateral)
-        return meet <= reach * t.inPathReachShare
+        return meet <= reach * t.inPathReachShare && clearOfHoles(me, me + dir * meet)
     }
 
     /** Nothing that blocks (at the bot's feet) stands between [from] and [to]. */
@@ -573,7 +593,14 @@ private class Brain(
         return fallback ?: goal
     }
 
-    /** [p] made a fine walk target: [margin] inside the boundary, out of every circle the bot keeps out of. */
+    /** A walk target the bot may send: finite, [margin] inside the boundary, off every hole ([offHoles]). */
+    private fun fitTarget(p: Vec2): Boolean = finite(p) && boundary.contains(p) && board.inside(p) >= margin - 1e-5f && offHoles(p)
+
+    /**
+     * [p] made a walk target: [margin] inside the boundary, out of every circle the bot keeps out of. When the edge and
+     * a hole near it push the point back and forth (a hole at the rim), or the boundary is not convex, the point goes
+     * halfway to the middle until it fits, else the bot's own place; what still does not fit [checked] turns into None.
+     */
     fun safe(p: Vec2): Vec2 {
         var q = if (finite(p)) p else boundary.centroid()
         repeat(3) {
@@ -585,14 +612,13 @@ private class Brain(
             }
         }
         q = board.clamp(q, margin)
-        if (boundary.contains(q) && board.inside(q) >= margin - 1e-5f) return q
-        // Not convex after all, or no room: halfway to the middle until it holds.
+        if (fitTarget(q)) return q
         val middle = boundary.centroid()
         repeat(8) {
             q = (q + middle) * 0.5f
-            if (boundary.contains(q) && board.inside(q) >= margin - 1e-5f) return q
+            if (fitTarget(q)) return q
         }
-        return middle
+        return if (fitTarget(me)) me else middle
     }
 
     private fun randomDirection(): Vec2 {
@@ -616,6 +642,29 @@ private const val S22 = 0.38268343f
 private const val C45 = 0.70710677f
 
 private fun finite(p: Vec2) = p.u.isFinite() && p.v.isFinite()
+
+/** The segment [a]-[b] touches or crosses [poly]: an end inside it, or an edge met (touching counts). */
+private fun touches(a: Vec2, b: Vec2, poly: Polygon): Boolean {
+    if (poly.contains(a) || poly.contains(b)) return true
+    val pts = poly.points
+    for (i in pts.indices) if (segmentsTouch(a, b, pts[i], pts[(i + 1) % pts.size])) return true
+    return false
+}
+
+private fun segmentsTouch(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2): Boolean {
+    val d1 = orient(p3, p4, p1)
+    val d2 = orient(p3, p4, p2)
+    val d3 = orient(p1, p2, p3)
+    val d4 = orient(p1, p2, p4)
+    if (((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f)) && ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f))) return true
+    return (d1 == 0f && within(p3, p4, p1)) || (d2 == 0f && within(p3, p4, p2)) ||
+        (d3 == 0f && within(p1, p2, p3)) || (d4 == 0f && within(p1, p2, p4))
+}
+
+private fun orient(a: Vec2, b: Vec2, c: Vec2): Float = (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u)
+
+private fun within(a: Vec2, b: Vec2, p: Vec2): Boolean =
+    p.u >= minOf(a.u, b.u) && p.u <= maxOf(a.u, b.u) && p.v >= minOf(a.v, b.v) && p.v <= maxOf(a.v, b.v)
 
 /** The segment [a]-[b] passes closer than [rho] to [c]. */
 private fun near(a: Vec2, b: Vec2, c: Vec2, rho: Float): Boolean {

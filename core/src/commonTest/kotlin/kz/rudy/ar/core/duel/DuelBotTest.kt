@@ -3,7 +3,9 @@ package kz.rudy.ar.core.duel
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.FighterStats
 import kz.rudy.ar.core.domain.Level
+import kz.rudy.ar.core.domain.LevelObject
 import kz.rudy.ar.core.domain.ObjectKind
+import kz.rudy.ar.core.domain.Polygon
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.domain.defaultFor
 import kz.rudy.ar.core.physics.Physics
@@ -145,6 +147,15 @@ class DuelBotTest {
         val fights = starts.zip(ends)
         assertTrue(t.decisions.size > 100)
         for (d in t.decisions) assertTrue(fights.any { (s, e) -> d.atMs >= s && d.atMs < e }, "a decision at ${d.atMs} ms, outside the fights $fights")
+        // The first decision: the first tick in FIGHT. The 3000 ms countdown is no multiple of 48: 3024. A countdown that
+        // ends on a tick (2976 = 62 x 48): that tick, the call reaching it having already turned the phase to FIGHT. No
+        // countdown: the start is COUNTDOWN with 0 ms left, the bot waits, so 48.
+        assertEquals(3024L, t.decisions.first().atMs)
+        for ((countdown, first) in listOf(2976L to 2976L, 0L to 48L)) {
+            val rules = DuelRules(countdownMs = countdown)
+            val c = botMatch(Contestant("a", FighterStats.BALANCED, Ability.JUMP), Contestant("b", FighterStats.BALANCED, Ability.ROLL), arena, BotLevel.HARD, BotLevel.HARD, 1L, rules)
+            assertEquals(first, runRunner(c, arena, maxMs = countdown + 500L, rules = rules).decisions.first().atMs, "countdown $countdown")
+        }
         val countdown = start.match
         val mind = start.botA!!
         assertEquals(mind to DuelInput.None, DuelBot.decide(mind, "a", countdown, arena))
@@ -236,6 +247,59 @@ class DuelBotTest {
         val stomp = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f)) { a, b -> a.cooling() to b }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, stomp, arena))
         assertTrue(answer(BotLevel.EASY, stomp, arena) != DuelInput.Special)
+    }
+
+    // -- holes (CLIFF objects inside the boundary): no dash path, ram path or walk target into one ------------------
+
+    private fun hole(center: Vec2, w: Float, d: Float) = LevelObject("hole", "hole", ObjectKind.CLIFF, Polygon.rect(center, w, d), 0f)
+
+    private fun DuelFighter.facing(f: Vec2) = copy(body = body.copy(state = body.state.copy(facing = f)))
+
+    @Test
+    fun aRamNeverCrossesAHole() {
+        // HARD ROLL 11 cm above the opponent, facing it, a 4 x 1 cm hole half way: a ram that missed would end on the
+        // table (6.5 cm below the opponent) but cross the hole on the way. Without the hole HARD rams.
+        val gap = hole(Vec2(0f, 0.045f), 0.04f, 0.01f)
+        fun safeRam(arena: Level) = fight(arena, Ability.ROLL, Vec2(0f, 0.1f), Vec2(0f, -0.01f)) { a, b -> a.cooling().facing(Vec2(0f, -1f)) to b }
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, safeRam(DuelArenas.EMPTY), DuelArenas.EMPTY))
+        val holed = DuelArenas.EMPTY.copy(objects = listOf(gap))
+        assertTrue(answer(BotLevel.HARD, safeRam(holed), holed) != DuelInput.Special, "HARD rammed across the hole")
+        // NORMAL rams the opponent near the edge because it is in the path first: not when a hole lies before it.
+        val before = hole(Vec2(0f, -0.06f), 0.04f, 0.01f)
+        fun pathRam(arena: Level) = fight(arena, Ability.ROLL, Vec2(0f, -0.03f), Vec2(0f, -0.13f)) { a, b -> a.cooling().facing(Vec2(0f, -1f)) to b }
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, pathRam(DuelArenas.EMPTY), DuelArenas.EMPTY))
+        val holed2 = DuelArenas.EMPTY.copy(objects = listOf(before))
+        assertTrue(answer(BotLevel.NORMAL, pathRam(holed2), holed2) != DuelInput.Special, "NORMAL rammed into the hole before the opponent")
+    }
+
+    @Test
+    fun aSidestepNeverDashesAcrossAHole() {
+        // HARD 4 cm from the bottom edge, a dash coming down at it; its first way out (+u) runs over a 1 x 4 cm hole 2 cm
+        // to its right, whose end would be fine: it takes the other way.
+        fun coming(arena: Level) = fight(arena, Ability.JUMP, Vec2(0f, -0.16f), Vec2(0f, -0.07f)) { a, b ->
+            a to b.copy(dashMs = 200L, dashDir = Vec2(0f, -1f), dashCooldownMs = 1_000L)
+        }
+        assertEquals(DuelInput.Dash(Vec2(1f, 0f)), answer(BotLevel.HARD, coming(DuelArenas.EMPTY), DuelArenas.EMPTY))
+        val holed = DuelArenas.EMPTY.copy(objects = listOf(hole(Vec2(0.02f, -0.16f), 0.01f, 0.04f)))
+        val side = answer(BotLevel.HARD, coming(holed), holed)
+        assertTrue(side is DuelInput.Dash && side.dir!!.u < -0.9f, "$side")
+    }
+
+    @Test
+    fun aWalkTargetNeverLandsInAHoleAtTheRim() {
+        // The same dash coming, HARD's own dash cooling: it steps aside on foot. To the right the edge margin and a 6 x 2
+        // cm hole at the rim push the step back and forth (it used to end on the hole's edge, (0.06, -0.14)); the
+        // target it sends keeps its whole circle off the hole.
+        val rim = hole(Vec2(0.06f, -0.13f), 0.06f, 0.02f)
+        val holed = DuelArenas.EMPTY.copy(objects = listOf(rim))
+        val state = fight(holed, Ability.JUMP, Vec2(0f, -0.16f), Vec2(0f, -0.07f)) { a, b ->
+            a.cooling() to b.copy(dashMs = 200L, dashDir = Vec2(0f, -1f), dashCooldownMs = 1_000L)
+        }
+        val step = answer(BotLevel.HARD, state, holed)
+        assertTrue(step is DuelInput.MoveTo, "$step")
+        val p = step.target
+        assertTrue(!rim.footprint.contains(p) && distanceToPolygon(p, rim.footprint) >= R, "target $p is ${distanceToPolygon(p, rim.footprint)} m from the hole")
+        assertTrue(DuelArena.insideDistance(holed.boundary!!, p) >= TUNING_DEFAULT.edgeMarginRadii * R - 1e-4f)
     }
 
     private fun assertSafe(d: BotDecision, arena: Level, margin: Float, what: String) {

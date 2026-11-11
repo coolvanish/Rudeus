@@ -113,6 +113,69 @@ class DuelRunnerTest {
     }
 
     @Test
+    fun humanSideWithABotIsExactlyDuelMatch() {
+        // What the AR host relies on: with a real bot on one side that never wants anything (its next decision is at
+        // Long.MAX_VALUE, so the whole bot path runs: the resume, the cut at every tick, the asking, and it answers None),
+        // the runner is DuelMatch.step for the child's side, step for step: random frames (empty, negative, on the tick,
+        // longer than maxStepMs), tracking losses, inputs for the child, for the bot's side and for nobody.
+        val asleep = BotMind(BotLevel.HARD, rng = 42L, nextThinkMs = Long.MAX_VALUE)
+        val ruleSets = listOf(
+            DuelRules(),
+            DuelRules(countdownMs = 0L, roundMs = 2_000L, pointPauseMs = 0L),
+            DuelRules(countdownMs = 1_000L, roundMs = 1_500L, pointPauseMs = 100L, maxStepMs = 77L),
+        )
+        val listed = longArrayOf(0L, -5L, 8L, 48L, 96L, 400L, 1_000L)
+        var steps = 0
+        var results = 0
+        val phases = mutableSetOf<MatchPhase>()
+        for ((k, arena) in DuelArenas.ALL.values.withIndex()) for ((j, rules) in ruleSets.withIndex()) for (botSide in 0..1) {
+            val rnd = Random(100 * k + 10 * j + botSide)
+            val (botId, childId) = if (botSide == 0) "red" to "blue" else "blue" to "red"
+            fun fresh(): Pair<DuelMatchState, RunnerState> {
+                val m = DuelMatch.start(RED, BLUE, arena, DuelArenas.marks(arena), rules)
+                return m to if (botSide == 0) RunnerState(m, botA = asleep) else RunnerState(m, botB = asleep)
+            }
+            var (m, r) = fresh()
+            repeat(700) {
+                val dt = if (rnd.nextInt(3) == 0) listed[rnd.nextInt(listed.size)] else rnd.nextLong(1L, 60L)
+                val tracking = rnd.nextInt(25) != 0
+                val child = m.duel[childId]!!.body.state.pos
+                val bot = m.duel[botId]!!.body.state.pos
+                val inputs = HashMap<String, DuelInput>()
+                when (rnd.nextInt(8)) {
+                    0 -> inputs[childId] = Dash(bot - child)
+                    1 -> inputs[childId] = MoveTo(bot)
+                    2 -> inputs[childId] = Special
+                    3 -> inputs[childId] = Jump
+                    4 -> inputs[childId] = MoveTo(Vec2(0.5f, 0.1f))
+                    else -> Unit
+                }
+                if (rnd.nextInt(3) == 0) inputs[botId] = Dash(child - bot)
+                if (rnd.nextInt(8) == 0) inputs["nobody"] = Special
+                val a = DuelMatch.step(m, arena, dt, inputs - botId, tracking, rules)
+                val b = DuelRunner.step(r, arena, dt, inputs, tracking, rules)
+                assertEquals(a.state, b.state.match, "arena $k, rules $j, bot side $botSide, step $it")
+                assertEquals(a.events, b.events, "arena $k, rules $j, bot side $botSide, step $it")
+                assertTrue(b.decisions.isEmpty())
+                assertEquals(asleep, b.state.botOf(botId))
+                assertEquals(null, b.state.botOf(childId))
+                m = a.state
+                r = b.state
+                phases += m.phase
+                steps++
+                if (m.phase == MatchPhase.RESULT && rnd.nextInt(4) == 0) {
+                    results++
+                    val (m2, r2) = fresh()
+                    m = m2
+                    r = r2
+                }
+            }
+        }
+        println("humanSideWithABotIsExactlyDuelMatch: $steps steps equal, $results matches to RESULT, phases $phases")
+        assertEquals(MatchPhase.entries.toSet(), phases)
+    }
+
+    @Test
     fun aHumanInputForABotSideIsIgnored() {
         val arena = DuelArenas.EMPTY
         val oneBot = botMatch(RED, BLUE, arena, BotLevel.NORMAL, BotLevel.NORMAL, 4L).copy(botB = null)

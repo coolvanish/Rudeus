@@ -5,7 +5,9 @@ import kotlinx.serialization.Serializable
 /**
  * Every number of the duel bot ([DuelBot]); the CLI (T48) searches them. Distances are in fighter radii (a bot plays a
  * floor duel as it plays the table), reaches come from [DuelParams] (a dash goes `dashSpeedMps * dashMs`), times are
- * ms of match time, angles are cosines: the bot uses no trigonometry, so it computes the same bits on every platform.
+ * ms of match time, angles are cosines: the bot uses no trigonometry, so for a given state it gives the same answer on
+ * every platform. (A whole match is another matter: the physics uses `exp`, and a level may be built with cos / sin, as
+ * [DuelArenas.CUP_AND_BOOK]'s cup is.)
  *
  * @property tickMs the decision grid: bots decide only at match times that are multiples of it ([DuelRunner]). A
  *   multiple of [DuelParams.subStepMs], so a decision lands on a physics sub-step.

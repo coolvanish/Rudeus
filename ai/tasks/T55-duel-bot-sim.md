@@ -135,10 +135,27 @@ Tests not required: balance between abilities or stats (T48), the CLI, rendering
   than one ability. Measured: HARD v EASY 100 % on EMPTY and 100 % on CUP_AND_BOOK (every ability 50/50); NORMAL v EASY
   99.5 % and 99 %; HARD v NORMAL 94 % (JUMP 49, FLY 39, ROLL 50, HIDE 50 of 50) and 86 % (JUMP 43, FLY 34, ROLL 47, HIDE
   48). `sidesAreFair`: 400 NORMAL v NORMAL on EMPTY, 202 / 198. No level was cut.
-- measured (2026-11-11, JVM, cloud container): `:core:jvmTest` 671 tests, 0 failures (650 before + 21 new); `duel`
-  86 (65 + 10 `DuelBotTest` + 6 `DuelSimTest` + 5 `DuelRunnerTest`), **36 to 42 s** for the whole duel package (the
-  costly ones: `everyMatchFinishes` 11 to 14 s, `normalIsBetweenEasyAndHard` 8 s, `hardBeatsEasy` 4 to 5 s);
-  `:core:compileKotlinIosSimulatorArm64` green, the klib carries `DuelRunner` / `BotTuning`.
+- measured (2026-11-11, JVM, cloud container, after the review fixes): `:core:jvmTest` 675 tests, 0 failures (650
+  before + 25 new); `duel` 90 (65 + 13 `DuelBotTest` + 6 `DuelSimTest` + 6 `DuelRunnerTest`), **34 to 42 s** for the
+  whole duel package (the costly ones: `everyMatchFinishes` 11 to 14 s, `normalIsBetweenEasyAndHard` 8 s,
+  `hardBeatsEasy` 4 to 5 s); `:core:compileKotlinIosSimulatorArm64` green, the klib carries `DuelRunner` / `BotTuning`.
+- Review fixes (T55 review: MERGE, two small things): (1) holes (CLIFF objects) are now checked everywhere the KDoc
+  promised: a sidestep dash and a ram must run their whole path off every hole (the exact outline, segment against
+  polygon), the "opponent in the path first" excuse needs no hole before the opponent, and a walk target must keep out
+  of every hole's circle (`checked` refuses one that does not; `safe()` no longer lets the edge clamp put a target back
+  on a hole at the rim, it goes halfway to the middle, else stays where the bot is). One test per case
+  (`aRamNeverCrossesAHole`, `aSidestepNeverDashesAcrossAHole`, `aWalkTargetNeverLandsInAHoleAtTheRim`), each failing on
+  the code before the fix. The tuning arenas have no holes: every number measured above is unchanged. (2)
+  `humanSideWithABotIsExactlyDuelMatch` pins what the AR host relies on: a real mind that never wants anything (next
+  decision at `Long.MAX_VALUE`) on side a or b, the three arenas, three rule sets (defaults; countdown 0 / round 2 s /
+  pause 0; countdown 1 s / round 1.5 s / pause 100 / `maxStepMs` 77), random frames from {0, -5, 8, 48, 96, 400, 1000}
+  and 1..59 ms with tracking losses, inputs for the child, the bot's side and an unknown id: 12 600 steps, the runner's
+  state and events equal `DuelMatch.step`'s at every step, no decision, every phase reached (0.2 s).
+- The first decision of a round: at the first tick in FIGHT. The call that reaches the end of a countdown also turns
+  the phase to FIGHT, so a tick that falls exactly there is already FIGHT and the bot decides on it (countdown 2976 =
+  62 x 48: first decision at 2976). With the default 3000 ms countdown (not a multiple of 48) the first decision is at
+  3024 ms. "COUNTDOWN with 0 ms left" exists only as the start of a match with `countdownMs = 0`: the bot waits and
+  first decides at 48 ms. All three pinned in `theBotAnswersNoneOutsideTheFight`.
   - The bot in ten lines. (1) It decides only on the 48 ms tick grid of match time; between decisions its last orders
     (a walk) stand; `thinkMs` (+ random ticks) is its reaction time. (2) Outside FIGHT, stunned, dashing or out: None.
     (3) A dash or a stomp coming at it near an edge: FLY / HIDE use the special (NORMAL, HARD); HARD also dashes across
@@ -150,8 +167,11 @@ Tests not required: balance between abilities or stats (T48), the CLI, rendering
     reach on its edge side; ram when aligned, opponent near an edge, room behind (HARD: anywhere a miss still ends on the
     table, never otherwise). (8) Else walk to the spot behind the opponent (round the opponent and round what blocks;
     EASY sometimes wanders to a random spot). (9) Every walk target 2 radii inside the boundary and off holes; a dash or
-    ram only if it ends 1 radius inside or meets the opponent in its first half. (10) Randomness: SplitMix64 on
-    `BotMind.rng`; no trigonometry anywhere, so the same bits on every platform.
+    ram only if it ends 1 radius inside with its path off every hole, or meets the opponent in its first half with no
+    hole before it. (10) Randomness: SplitMix64 on `BotMind.rng`; no trigonometry in the bot, so for a given state its
+    answer is the same on every platform. That is a promise about one decision, not about a whole match: the physics
+    uses `exp`, and the cup of CUP_AND_BOOK is built with cos / sin (`Polygon.circle`), so a whole match being the same
+    on the JVM and on iOS is not shown (iOS was compiled, never run).
   - Every `BotTuning` default (distances in fighter radii, cosines for angles): `tickMs` 48, `edgeMarginRadii` 2,
     `dashEndMarginRadii` 1, `inPathLateralRadii` 1, `inPathReachShare` 0.5, `standoffGapRadii` 0.6, `clearanceRadii`
     0.6, `detourStepCos`/`Sin` 0.7071 (45°), `threatSlackRadii` 0.5, `sidestepRadii` 2, `stompReachShare` 0.8,
