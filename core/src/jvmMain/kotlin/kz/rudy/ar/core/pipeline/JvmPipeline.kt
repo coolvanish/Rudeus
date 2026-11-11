@@ -19,6 +19,8 @@ object JvmPipeline {
         onEvent: ((PipelineEvent) -> Unit)? = null,
         /** T33: also draw the pose frames (`character --frames`). */
         poseFrames: Boolean = false,
+        /** T41: also draw the missing views (stage `views`). */
+        spriteViews: Boolean = false,
     ): CharacterPipeline =
         CharacterPipeline(
             models = models,
@@ -30,5 +32,6 @@ object JvmPipeline {
             imageResizer = if (downscale) JvmRaster::downscale else null,
             onEvent = onEvent,
             poseFrames = poseFrames,
+            spriteViews = spriteViews,
         )
 }

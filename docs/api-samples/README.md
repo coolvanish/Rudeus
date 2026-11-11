@@ -29,9 +29,11 @@ docs/api-samples/
                                      `cli choreo --live --record`; sample-01 is hand-written (synthetic)
   muse-pose/<ref>.fixture.json       the drawn pose frames of <ref> (`outputs`, T33): `<ref>.<emote>-<n>.png` siblings, one Muse edit
                                      each; toy_dino's are the T30 spike (contact.png + README.md hold the human verdict)
+  muse-view/<ref>.fixture.json       the drawn views of <ref> (`outputs`, T41): `<ref>.view-<view>.png` siblings (`view-back`,
+                                     `view-front`, `view-side`), one Muse edit each; sample-01 is hand-made (synthetic)
 ```
 
-Jobs (= folder names, `Jobs` in MetaModels.kt): `sam-cutout`, `sam-table`, `sam-rig`, `muse-stylize`, `muse-pose`,
+Jobs (= folder names, `Jobs` in MetaModels.kt): `sam-cutout`, `sam-table`, `sam-rig`, `muse-stylize`, `muse-pose`, `muse-view`,
 `spark-score`, `spark-sheet`, `spark-choreo`, `voice`. A `<ref>` is the input's stable name (`sample-01`, later `cat-01`);
 the same `<ref>` across folders describes one character.
 
@@ -58,6 +60,7 @@ Only the field for the job is present:
 | `sam-table` | `masks` | one per prompt from `prompts.json`; an absent object (SAM returned no match) is a mask with `label`, `width`, `height` and no `rle`/`bbox` |
 | `muse-stylize` | `outputs` | sibling PNG file names, one per stylize attempt; the last one repeats |
 | `muse-pose` | `outputs` | sibling PNG file names named `<ref>.<emote>-<n>.png` (`hello-1`..`roar-2`); `FixtureApi.drawPose` picks by frame name, whatever the call order |
+| `muse-view` | `outputs` | sibling PNG file names named `<ref>.view-<view>.png` (`view-back`, `view-front`, `view-side`); `FixtureApi.drawView` picks by view, whatever the call order |
 | `spark-score` | `scores` | one gate score per call in order (attempt 1, 2, 3); the last one repeats |
 | `spark-sheet` | `sheet` | the model's JSON exactly as returned; `SheetParser` maps unknown abilities to JUMP and pads to 5 lines; optional since T40: `stats` (raw 1–10, `StatBudget` rebalances to 20), `why` (reasons per stat in kk/ru/en), `view`, `faces`. Without them the duel uses the ability's archetype |
 | `spark-choreo` | `text` | the choreography reply content (`{hello, bye, dance, spin, roar}`), parsed by `ChoreographyParser`; recordings store `ChoreographyParser.toJson` of the sanitised set |
@@ -132,6 +135,7 @@ header lists its own `# unverified:` lines.
 | `spark-sheet` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema`) | `muse-spark-1.3-contributor` | yes — https://dev.meta.ai/docs/features/structured-output ; Kazakh quality unverified |
 | `spark-choreo` | `https://api.meta.ai` | `/v1/chat/completions` | json (`response_format: json_schema` "Choreographies", strict; text + `image_url` sprite <= 512 px) | `muse-spark-1.3-contributor` | call shape as `spark-sheet`; strict schema acceptance, token budget, latency and cost unverified until T30's live run |
 | `muse-pose` | `https://api.meta.ai` | `/v1/images/edits` | json, as `muse-stylize` with `Prompts.pose` (the matted sprite <= 1024 px + refs) | `muse-image-1.0` | yes — T30 spike 2026-11-04: 4/4 frames, 11.6-13.7 s, $0.01 each |
+| `muse-view` | `https://api.meta.ai` | `/v1/images/edits` | json, as `muse-pose` with `ViewPrompts.view` (the matted sprite <= 1024 px + refs) | `muse-image-1.0` | call shape as `muse-pose`; whether Muse holds the character across views is unverified until the G3 spike (`cli views --live`) |
 | `voice` | `https://api.meta.ai` | `/v1/asr/transcribe` | multipart (`request` JSON part + `audio` WAV) | `muse-voice-transcribe-1.0` | yes — https://dev.meta.ai/docs/api-reference/voice/transcribe ; Kazakh is NOT in the 25 supported languages |
 
 What the docs say that the code did not expect:

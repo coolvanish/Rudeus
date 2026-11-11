@@ -11,6 +11,9 @@ package kz.rudy.ar.core.pipeline
  * The sheet starts right after the cutout and runs alongside the loop; its Finished arrives after the last gate.
  * With a reviewer, a below-threshold attempt with attempts left adds Started(review) Finished(review) after Finished(rescore);
  * `ok` on Finished(review) is the answer (true = this sprite ships, false = the next attempt starts).
+ * After Finished(sheet) come Started(choreo) Finished(choreo), then, when the pipeline draws them, Started(frames)
+ * Finished(frames) (T33) and Started(views) Finished(views) (T41); each of these runs in the background and reports
+ * its Started and Finished back to back once it is done.
  */
 sealed interface PipelineEvent {
     data class StageStarted(val stage: String, val attempt: Int) : PipelineEvent

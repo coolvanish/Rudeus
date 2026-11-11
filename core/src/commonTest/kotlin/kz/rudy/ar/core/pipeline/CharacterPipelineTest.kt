@@ -10,6 +10,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kz.rudy.ar.core.domain.Ability
+import kz.rudy.ar.core.domain.SpriteView
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.io.ArrayRaster
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.io.argbOf
@@ -25,6 +27,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CharacterPipelineTest {
@@ -1213,5 +1216,150 @@ class PoseFramesStageTest {
         assertEquals("frames", frames.name)
         assertEquals(2_000L, frames.ms, "four 1 s edits, two in flight: two call latencies")
         assertTrue(models.calls.indexOf("stylize:cat-01") < models.calls.indexOfFirst { it.startsWith("drawPose") }, "after the sprite exists")
+    }
+}
+
+class SpriteViewsStageTest {
+    private fun metrics(): MetricsLog {
+        var t = 1_000_000L
+        return MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { t += 10; t })
+    }
+
+    private val image = byteArrayOf(1, 2, 3)
+    private val refs = listOf(byteArrayOf(4), byteArrayOf(5))
+    private fun png(n: Int) = byteArrayOf(n.toByte(), 0x50, 0x4E, 0x47)
+    private val allViews = mapOf(SpriteView.FRONT to png(1), SpriteView.SIDE to png(2), SpriteView.BACK to png(3))
+
+    @Test
+    fun pipelineDrawsMissingViewsWhenOn() = runTest {
+        val models = FakeModels(scores = listOf(0.9f), views = allViews)
+        val log = metrics()
+        val events = ArrayList<PipelineEvent>()
+        val result = CharacterPipeline(
+            models, StyleGate(), log,
+            imageResizer = { b, side -> b + side.toByte() },
+            onEvent = { events += it },
+            spriteViews = true,
+        ).run("cat-01", image, refs, "")
+
+        // Today's sheets have no baseView: a SIDE base looking left, so Muse draws BACK then FRONT, never SIDE.
+        assertEquals(SpriteView.SIDE, result.views.base)
+        assertFalse(result.views.baseFacesRight)
+        assertEquals(setOf(SpriteView.BACK, SpriteView.FRONT), result.views.drawn.keys)
+        assertContentEquals(png(3) + SpriteViews.MAX_SIDE.toByte(), result.views.picture(SpriteView.BACK), "each view bounded to MAX_SIDE")
+        assertEquals(listOf("drawView:cat-01:back", "drawView:cat-01:front"), models.calls.filter { it.startsWith("drawView") })
+        assertTrue(models.viewInputs.values.all { it.contentEquals(models.sprite + CharacterPipeline.MUSE_INPUT_MAX_SIDE.toByte()) }, "Muse sees the sprite at <= 1024")
+        assertEquals(PoseFrames.EMPTY, result.frames, "views do not need frames")
+
+        val c = log.toRun().characters.single()
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo", "views"), c.stages.map { it.name })
+        val views = c.stages.last()
+        assertTrue(views.ok)
+        assertEquals(1, views.attempt)
+        assertEquals(2 * log.costs.viewUsd, views.costUsd, 1e-9)
+        assertFalse(views.measured)
+        assertEquals(listOf("choreo", "views"), events.filterIsInstance<PipelineEvent.StageFinished>().takeLast(2).map { it.stage })
+        assertEquals(result, (events.last() as PipelineEvent.Finished).result)
+
+        // A FRONT drawing looking right (T40's sheet): BACK and SIDE are drawn, after frames in the stage list.
+        val front = FakeModels(scores = listOf(0.9f), views = allViews, frames = mapOf("hello-1" to png(9)),
+            sheet = FakeModels.DEFAULT_SHEET.copy(baseView = SpriteView.FRONT, facesRight = true))
+        val log2 = metrics()
+        val r2 = CharacterPipeline(front, StyleGate(), log2, poseFrames = true, spriteViews = true).run("cat-02", image, refs, "")
+        assertEquals(SpriteViews.of(SpriteView.FRONT, true, mapOf(SpriteView.BACK to png(3), SpriteView.SIDE to png(2))), r2.views)
+        assertEquals(listOf("drawView:cat-02:back", "drawView:cat-02:side"), front.calls.filter { it.startsWith("drawView") })
+        assertEquals(listOf("frames", "views"), log2.toRun().characters.single().stages.takeLast(2).map { it.name })
+    }
+
+    @Test
+    fun pipelineOffMakesNoViewCall() = runTest {
+        val models = FakeModels(scores = listOf(0.9f), views = allViews)
+        val log = metrics()
+        val result = CharacterPipeline(models, StyleGate(), log, poseFrames = false).run("cat-01", image, refs, "")
+        assertSame(SpriteViews.NONE, result.views)
+        assertTrue(models.calls.none { it.startsWith("drawView") })
+        assertEquals(listOf("cutout", "stylize", "gate", "rescore", "sheet", "choreo"), log.toRun().characters.single().stages.map { it.name })
+    }
+
+    @Test
+    fun failedViewNeverFailsTheCharacter() = runTest {
+        for (error in listOf<Throwable>(MetaError.Http(500, "muse down"), MetaError.Network("offline"), CancellationException("timeout"))) {
+            val models = FakeModels(scores = listOf(0.9f), views = allViews, viewError = error)
+            val log = metrics()
+            val result = CharacterPipeline(models, StyleGate(), log, spriteViews = true).run("cat-01", image, refs, "")
+            assertTrue(result.gatePassed, "$error")
+            assertEquals(SpriteViews.NONE, result.views, "$error: nothing drawn, the base sprite as in v1.0")
+            val views = log.toRun().characters.single().stages.single { it.name == CharacterPipeline.STAGE_VIEWS }
+            assertFalse(views.ok)
+            assertEquals(0.0, views.costUsd)
+        }
+        // FRONT has no fake picture (its call throws): the character ships with BACK only.
+        val partial = FakeModels(scores = listOf(0.9f), views = mapOf(SpriteView.BACK to png(3)))
+        val log = metrics()
+        val result = CharacterPipeline(partial, StyleGate(), log, spriteViews = true).run("cat-01", image, refs, "")
+        assertEquals(setOf(SpriteView.BACK), result.views.drawn.keys)
+        val stage = log.toRun().characters.single().stages.last()
+        assertTrue(stage.ok, "at least one view came back")
+        assertEquals(log.costs.viewUsd, stage.costUsd, 1e-9)
+
+        // A degenerate matte drops the view, but Muse was paid for it. The sprite (byte 0x50) mattes fine.
+        val unmattable = FakeModels(scores = listOf(0.9f), views = allViews)
+        val log2 = metrics()
+        val r2 = CharacterPipeline(unmattable, StyleGate(), log2, spriteMatter = { if (it[0] == 3.toByte() || it[0] == 1.toByte()) null else it }, spriteViews = true)
+            .run("cat-01", image, refs, "")
+        assertEquals(SpriteViews.NONE, r2.views)
+        val s2 = log2.toRun().characters.single().stages.last()
+        assertFalse(s2.ok)
+        assertEquals(2 * log2.costs.viewUsd, s2.costUsd, 1e-9)
+    }
+
+    @Test
+    fun viewsShareTheFramesConcurrencyLimit() = runTest {
+        val models = FakeModels(
+            scores = listOf(0.9f), views = allViews,
+            frames = mapOf("hello-1" to png(1), "hello-2" to png(2), "roar-1" to png(3), "roar-2" to png(4)),
+            delays = mapOf("drawPose" to 1_000L, "drawView" to 1_000L),
+        )
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        val start = testScheduler.currentTime
+        CharacterPipeline(models, StyleGate(), log, poseFrames = true, spriteViews = true).run("cat-01", image, refs, "")
+        val stages = log.toRun().characters.single().stages
+        assertEquals(2_000L, stages.single { it.name == "frames" }.ms, "four frames first, two at a time")
+        assertEquals(3_000L, stages.single { it.name == "views" }.ms, "the two views wait for a permit: six edits, two in flight")
+        assertEquals(3_000L, testScheduler.currentTime - start)
+    }
+
+    @Test
+    fun oneRuleForTheBaseViewFreshOrReloaded() = runTest {
+        val v1 = FakeModels.DEFAULT_SHEET // no baseView / facesRight: every v1.0 sheet
+        val t40 = FakeModels.DEFAULT_SHEET.copy(baseView = SpriteView.FRONT, facesRight = true)
+        for (sheet in listOf(v1, t40)) {
+            for (on in listOf(false, true)) {
+                val models = FakeModels(scores = listOf(0.9f), views = allViews, sheet = sheet)
+                val result = CharacterPipeline(models, StyleGate(), metrics(), spriteViews = on).run("cat-01", image, refs, "")
+                assertEquals(sheet.baseView ?: SpriteView.SIDE, result.views.base, "views=$on")
+                assertEquals(sheet.facesRight ?: false, result.views.baseFacesRight, "views=$on")
+                assertEquals(if (on) 2 else 0, result.views.drawn.size)
+
+                val folder = kz.rudy.ar.core.io.MemoryCharacterFolder()
+                kz.rudy.ar.core.bundle.SavedCharacters(folder, clock = { 1000L })
+                    .save(result.sprite, result.sheet, result.emotes, result.frames, result.views)
+                val loaded = kz.rudy.ar.core.bundle.SavedCharacters(folder).load().single()
+                assertEquals(result.views, loaded.views, "sheet=${sheet.baseView} views=$on: same pictures and base after a restart")
+            }
+        }
+        // Views off with a v1.0 sheet is still the v1.0 billboard.
+        assertSame(SpriteViews.NONE, CharacterPipeline(FakeModels(scores = listOf(0.9f)), StyleGate(), metrics()).run("cat-01", image, refs, "").views)
+    }
+
+    @Test
+    fun viewsWaitForTheSheet() = runTest {
+        // The sheet decides the base view, so the view calls start only once it is back.
+        val models = FakeModels(scores = listOf(0.9f), views = allViews, delays = mapOf("characterSheet" to 5_000L, "drawView" to 1_000L))
+        val log = MetricsLog(source = "cli", provider = "fixture", device = "test", clock = { testScheduler.currentTime })
+        CharacterPipeline(models, StyleGate(), log, spriteViews = true).run("cat-01", image, refs, "")
+        assertTrue(models.calls.indexOf("characterSheet:cat-01") < models.calls.indexOfFirst { it.startsWith("drawView") })
+        assertEquals(6_000L, testScheduler.currentTime, "5 s sheet, then both views at once")
+        assertEquals(1_000L, log.toRun().characters.single().stages.last().ms)
     }
 }

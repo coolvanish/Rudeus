@@ -1,6 +1,6 @@
 # T41 — sprite-views
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md)
 gate: G3 — live spike on >= 5 bundled characters, a human judges the contact sheets
@@ -49,27 +49,22 @@ class SpriteViews private constructor(
 }
 // content equality + hashCode like PoseFrames, so a saved character round-trips in tests
 
-data class ViewChoice(val view: SpriteView, val mirrored: Boolean)
+// Changed after review (2026-11-11): one input for the camera (no separate forward/right to get the hand wrong) and
+// the hysteresis carried on the bearing sector, not on the picture shown.
+data class ViewChoice(val view: SpriteView, val mirrored: Boolean, val sector: SpriteView)
 
 object ViewPicker {
     const val HYSTERESIS_DEG = 10f
     /**
-     * Which picture to show. All vectors are in the plane (u, v) and need not be unit length:
-     * [facing] = where the character looks (CharacterState.facing), [cameraForward] = the camera's view direction
-     * projected onto the plane, [cameraRight] = the camera's right axis projected onto the plane.
-     *   facing along cameraForward (within 45 deg)  -> BACK   (it walks away from us)
-     *   facing against cameraForward (within 45 deg) -> FRONT (it walks towards us)
-     *   otherwise SIDE, looking screen-right when facing . cameraRight > 0
-     * [previous] holds until the angle is HYSTERESIS_DEG past a boundary, so a character walking along a boundary
-     * does not flicker. A wanted view that [views] lacks falls back to SIDE, then to the base sprite.
-     * mirrored = the host flips the quad horizontally. A real FRONT or BACK picture is never mirrored. A SIDE
-     * picture, and the base sprite whenever it stands in for a view the character lacks, is mirrored when the
-     * direction it was drawn looking (drawn SIDE views always look right; the base uses baseFacesRight) differs
-     * from the screen direction (facing . cameraRight > 0 = screen-right). That is today's flip rule.
-     * Degenerate input (zero facing or zero camera vectors: the camera is straight above) returns [previous], or the
-     * base sprite unmirrored when there is none.
+     * [facing] = where the character looks (CharacterState.facing); [toCamera] = camera position minus character
+     * position in the plane. F = -toCamera normalised, screen-right R = (-F.v, F.u) (right-handed plane frame: u =
+     * anchor X, v = anchor Z; a camera looking along +v has screen-right -u, the host's `(cos y, -sin y)`).
+     *   |θ| <= 45 deg BACK, >= 135 deg FRONT, else SIDE, θ = atan2(f.R, f.F); previous.sector widened by HYSTERESIS_DEG.
+     *   Picture: the sector's view, else SIDE, else the base. Mirror: as before (real FRONT/BACK never; SIDE or a
+     *   standing-in base by drawn direction vs screen direction, 0.15 dead band).
+     * Degenerate (toCamera < 1 cm, zero or NaN facing): previous, else the base unmirrored.
      */
-    fun pick(facing: Vec2, cameraForward: Vec2, cameraRight: Vec2, previous: ViewChoice?, views: SpriteViews): ViewChoice
+    fun pick(facing: Vec2, toCamera: Vec2, previous: ViewChoice?, views: SpriteViews): ViewChoice
 }
 ```
 `MetaModels`:
@@ -83,7 +78,8 @@ suspend fun drawView(ref: String, sprite: ByteArray, refs: List<ByteArray>, view
 - `ViewPrompts.view(view)`: same character, identical colours, outline and proportions, seen from the front / from
   behind / from the side looking right; keep the drawing style of the first image; plain white background. Reuse the
   request builder `drawPose` uses (same endpoint, same shape).
-- `CharacterPipeline(spriteViews: Boolean = false, ...)`: off = no call, no stage, `CharacterResult.views == SpriteViews.NONE`.
+- `CharacterPipeline(spriteViews: Boolean = false, ...)`: off = no call, no stage, nothing drawn; `CharacterResult.views` is
+  `SpriteViews.of(sheet)` (base and direction from the sheet, changed after review: was `NONE`).
   On: after the stylize loop (and after the sheet is known: `sheet.baseView ?: SIDE`, `sheet.facesRight ?: false`),
   stage `views`: one `drawView` per `SpriteViews.missing(base)`, concurrently with the `frames` stage and bounded by
   the same concurrency limit; each result matted exactly as a pose frame is; a failed or unmattable view is simply
@@ -117,5 +113,44 @@ Tests not required: the CLI argument parser, contact-sheet pixels, live calls.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: G3 (the live spike and the human verdict) is the user's, on the Mac
+- after review (merged with 9efa471, T39/T40/T43/T44): `:core:jvmTest` 538 green (532 at the merge + 6: ViewPickerTest
+  8 -> 11, SpriteViewsStageTest 5 -> 6, RecordingModelsTest +2); `scripts/verify.sh` OK (shared 30, android 2);
+  `cli views --ref sample-01`: back + side, exit 0; `cli character --all`: sprites, stages and costs identical to the
+  merge commit 641579f.
+- measured (cloud session 2026-11-11, no key, no device): `:core:jvmTest` 413 green (388 + 25 new: SpriteViewsTest 4,
+  ViewPickerTest 8, ViewFixtureTest 5, SpriteViewsStageTest 5, BundleViewsTest 2, SavedViewsTest 1);
+  `scripts/verify.sh` OK (includes `:core:compileKotlinIosSimulatorArm64` + its test klib, `:cli:compileKotlin`,
+  `:androidApp:assembleDebug`; shared 26, android 2). `cli views --ref sample-01 --fixtures docs/api-samples --out
+  build/t41-views`: 2/2 views (back, front) matted, contact.png + README.md, exit 0. `cli character --all` (fixtures):
+  sprites byte-identical and every stage / cost identical to the same run at 1b52cbb (only timings differ).
+- ViewPicker as built after review (the first version keyed hysteresis on the picture shown, so a base standing in for
+  a missing view flickered its mirror at a boundary, and took separate forward / right vectors whose hand the tests got
+  wrong): `pick(facing, toCamera, previous, views)`. F = -toCamera normalised (the line of sight to THIS character),
+  screen-right R = (-F.v, F.u), the host's `(cos y, -sin y)`; θ = atan2(f·R, f·F); sector BACK |θ| <= 45°, FRONT >= 135°,
+  else SIDE, the previous `ViewChoice.sector` widened by 10° (inclusive), independent of which pictures exist. Picture:
+  the sector's view, else SIDE, else the base. Mirror: real FRONT/BACK never; SIDE or a standing-in base when
+  (f·R > 0) != drawn direction (drawn SIDE = right, base = baseFacesRight); |f̂·R| <= 0.15 keeps the previous flag of the
+  same picture, else unmirrored. toCamera < 1 cm or a zero/NaN facing -> previous, else the base unmirrored. 18 shared
+  `ViewChoice`s, no allocation. Tests: the host formula (CharacterNode.kt:211-219) as a frame-by-frame oracle over a
+  2000-frame walk for both base directions; 0..360..0 sweeps and +-1° wobbles at every boundary for six view sets
+  (FRONT{BACK}, FRONT{}, BACK{FRONT}, SIDE{}, SIDE-right{BACK}, full): at most one change per crossing, none closer
+  than 10°; a steady bearing gives one choice.
+- Changed from the contract after review: `CharacterResult.views` is `SpriteViews.of(sheet)` (base and direction from
+  the sheet) even with views off, the same rule `SavedCharacters.load` uses, so a T40 sheet `{view: front, faces: right}`
+  picks the same before and after a restart; `NONE` only means "no sheet information" (a v1.0 sheet still gives NONE).
+  `RecordingModels.sheetJson` now writes `stats`, `why`, `view`, `faces` in the model-reply shape when the sheet has
+  them (a sheet without them records byte for byte what it did). The muse-view sample gained `sample-01.view-side.png`
+  because sample-01's T40 sheet is a FRONT base looking right (the CLI now draws back + side for it).
+- For T50 (host): the app's `DeferredModels` (androidApp/.../di/AndroidCaptureHost.kt:517-530) forwards neither
+  `drawView` nor `drawPose`; it must before views or frames are turned on in the app, or every call is a failed stage.
+  A character can now carry up to 7 pictures (sprite + 4 frames + 2 views), each at most 768 px: about 7 x 2.36 MB =
+  16.5 MB of RGBA texture per character. The host passes `toCamera = cameraLocal - state.pos` and hands the last
+  `ViewChoice` back as `previous`; an iOS host must map ARKit's anchor-local X / Z to u / v exactly as PlaneCoords.kt does.
+- Choices the brief left open: bundle view files are `<ref>/views/back.png` (view name, not `view-back.png`); the CLI also
+  writes `<out>/<ref>/README.md` (the human-answer table, like PoseSpike) and keeps an unmattable view as
+  `view-<view>.raw.png` so the human can still judge Muse; `--record` takes an optional dir (default `--fixtures`) and
+  rewrites `muse-view/meta.json` from the measured calls; the CLI draws one view at a time, the pipeline two at a time
+  sharing the frames' permits. `CostTable.viewUsd = 0.010`.
+- cut/deferred: G3 (the live spike and the human verdict) is the user's, on the Mac:
+  `./gradlew :cli:run --args="views --live --ref <ref> --record --out build/views"` for >= 5 bundled refs (~$0.02 each,
+  `--budget-usd` default 0.05), then fill each `build/views/<ref>/README.md`. No host change (T50).

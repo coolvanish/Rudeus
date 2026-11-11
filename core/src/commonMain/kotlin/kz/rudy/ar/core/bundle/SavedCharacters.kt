@@ -3,12 +3,15 @@ package kz.rudy.ar.core.bundle
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.io.CharacterFolder
 import kotlin.time.Clock
 
 /**
  * A character made on this phone and kept on disk. [emotes]: the defaults when its choreo.json is missing or unreadable;
- * [frames] (T33): its drawn pose frames, empty when it has none.
+ * [frames] (T33): its drawn pose frames, empty when it has none. [views] (T41): its drawn views, kept in the same
+ * `frames/` folder as `view-<view>.png` (no change to [CharacterFolder]); the base view and direction come from
+ * [sheet] (`baseView ?: SIDE`, `facesRight ?: false`), so [SpriteViews.NONE] for every sheet without them.
  */
 class SavedCharacter(
     val id: String,
@@ -16,6 +19,7 @@ class SavedCharacter(
     val sprite: ByteArray,
     val emotes: EmoteSet = EmoteSet.defaults(),
     val frames: PoseFrames = PoseFrames.EMPTY,
+    val views: SpriteViews = SpriteViews.NONE,
 )
 
 /**
@@ -32,13 +36,22 @@ class SavedCharacters(
 ) {
     init { require(maxKept > 0) }
 
-    /** Throws when the folder cannot be written; nothing is evicted then. */
-    fun save(sprite: ByteArray, sheet: CharacterSheet, emotes: EmoteSet = EmoteSet.defaults(), frames: PoseFrames = PoseFrames.EMPTY): SavedCharacter {
+    /**
+     * Throws when the folder cannot be written; nothing is evicted then. [views] travel next to the frames; their base
+     * should be the [sheet]'s (the pipeline's are), since that is where [load] reads it back from.
+     */
+    fun save(
+        sprite: ByteArray,
+        sheet: CharacterSheet,
+        emotes: EmoteSet = EmoteSet.defaults(),
+        frames: PoseFrames = PoseFrames.EMPTY,
+        views: SpriteViews = SpriteViews.NONE,
+    ): SavedCharacter {
         val stamps = stamps()
         val id = idOf(maxOf(clock(), (stamps.firstOrNull() ?: 0L) + 1))
-        folder.write(id, sprite, Bundle.encodeSheet(sheet), Bundle.encodeEmotes(emotes), frames.files())
+        folder.write(id, sprite, Bundle.encodeSheet(sheet), Bundle.encodeEmotes(emotes), frames.files() + views.files())
         stamps.drop(maxKept - 1).forEach { folder.delete(idOf(it)) }
-        return SavedCharacter(id, sheet, sprite, emotes, frames)
+        return SavedCharacter(id, sheet, sprite, emotes, frames, views)
     }
 
     fun load(): List<SavedCharacter> = stamps().mapNotNull { read(idOf(it)) }
@@ -46,7 +59,10 @@ class SavedCharacters(
     private fun read(id: String): SavedCharacter? = try {
         val sprite = folder.readSprite(id)?.takeIf { it.isNotEmpty() }
         val sheet = folder.readSheet(id)
-        if (sprite == null || sheet == null) null else SavedCharacter(id, Bundle.decodeSheet(sheet), sprite, emotesOf(id), framesOf(id))
+        if (sprite == null || sheet == null) null else Bundle.decodeSheet(sheet).let { s ->
+            val files = filesOf(id)
+            SavedCharacter(id, s, sprite, emotesOf(id), framesOf(files), viewsOf(s, files))
+        }
     } catch (e: Exception) {
         null
     }
@@ -55,9 +71,16 @@ class SavedCharacters(
     private fun emotesOf(id: String): EmoteSet =
         try { folder.readChoreo(id)?.let(Bundle::decodeEmotes) } catch (e: Exception) { null } ?: EmoteSet.defaults()
 
+    /** The `frames/` folder (pose frames and views); unreadable = empty, it never drops the character. */
+    private fun filesOf(id: String): Map<String, ByteArray> = try { folder.readFrames(id) } catch (e: Exception) { emptyMap() }
+
     /** Missing or unreadable frames never drop the character either: it plays its emotes on the base sprite. */
-    private fun framesOf(id: String): PoseFrames =
-        try { PoseFrames.fromFiles(folder.readFrames(id)) } catch (e: Exception) { PoseFrames.EMPTY }
+    private fun framesOf(files: Map<String, ByteArray>): PoseFrames =
+        try { PoseFrames.fromFiles(files) } catch (e: Exception) { PoseFrames.EMPTY }
+
+    /** Missing views: the base sprite, as in v1.0. */
+    private fun viewsOf(sheet: CharacterSheet, files: Map<String, ByteArray>): SpriteViews =
+        SpriteViews.fromFiles(sheet, files)
 
     /** The stamps of every character in the folder, newest first. */
     private fun stamps(): List<Long> =

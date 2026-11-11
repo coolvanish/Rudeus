@@ -64,6 +64,9 @@ import kotlin.system.exitProcess
  *       --frames-only draws them without a new Spark call (offline: muse-pose/<ref>.fixture.json).
  *   pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
  *       four Muse pose edits of one sprite, matted, + contact.png + README.md for a human verdict (PoseSpike.kt).
+ *   views --ref <ref> [--bundle docs/bundled] [--fixtures <dir>] [--refs <dir>] [--out build/views] [--runs <dir>]
+ *         [--live [--budget-usd 0.05] [--record [<fixturesDir>] [--force]]]
+ *       T41: the missing views of one bundled or fixture character -> <out>/<ref>/view-*.png + contact.png + README.md (ViewsCommand.kt).
  *   metrics summarise <runsDir>
  *   metrics gate <run.json>        Day 2 gate table; exit 0 only on PASS
  */
@@ -78,6 +81,7 @@ fun main(args: Array<String>) {
             "scan" -> scan(parseFlags(args.drop(1)))
             "choreo" -> choreo(parseFlags(args.drop(1)))
             "pose-spike" -> poseSpike(parseFlags(args.drop(1)))
+            "views" -> views(parseFlags(args.drop(1)))
             "help", "--help", "-h" -> usage()
             else -> usage("unknown command: ${args[0]}")
         }
@@ -109,6 +113,8 @@ internal fun usage(error: String? = null): Int {
           choreo --bundle <dir> (--ref <ref> | --all) [--fixtures <dir>] [--out runs] [--frames | --frames-only] [--refs <dir>]
                  [--live [--budget-usd 0.20] [--record <fixturesDir> [--force]]]
           pose-spike --bundle <dir> --ref <ref> --out <dir> --live [--budget-usd 0.10] [--refs <dir>] [--runs runs]
+          views --ref <ref> [--bundle docs/bundled] [--fixtures <dir>] [--refs <dir>] [--out build/views] [--runs <dir>]
+                [--live [--budget-usd 0.05] [--record [<fixturesDir>] [--force]]]
           metrics summarise <runsDir>
           metrics gate <run.json>
         """.trimIndent(),

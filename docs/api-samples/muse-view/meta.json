@@ -1,0 +1,10 @@
+{
+  "job": "muse-view",
+  "endpoint": "POST /v1/images/edits",
+  "model": "muse-image-1.0",
+  "requestShape": "{model, prompt: ViewPrompts.view(view), images:[{image_url:data-url} x (matted sprite <= 1024 px + <=9 refs)], n:1, response_format:b64_json, output_format:png, reasoning_strength:low}",
+  "latencyMs": 0,
+  "costUsd": 0.01,
+  "synthetic": true,
+  "notes": "T41: not probed yet. The call is the muse-pose edit (MetaApi.edit) with a view prompt instead of a pose prompt, priced like it ($0.01 per image). sample-01 is hand-made. The live spike that decides G3 is `cli views --live --ref <ref> --record` on >= 5 bundled characters, judged on each contact.png by a human; it replaces this file with measured figures."
+}

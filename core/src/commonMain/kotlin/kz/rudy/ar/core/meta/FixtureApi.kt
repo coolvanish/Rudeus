@@ -5,9 +5,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseSpec
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.io.FixtureSource
 import kz.rudy.ar.core.io.joinPath
 import kotlin.concurrent.atomics.AtomicReference
@@ -25,6 +27,7 @@ import kotlin.concurrent.atomics.update
  * | sam-table    | `masks`   | one per prompt; an absent object is a mask with no rle/bbox         |
  * | muse-stylize | `outputs` | sibling PNG file names, one per attempt (last one repeats)          |
  * | muse-pose    | `outputs` | sibling PNG file names, one per frame, named `<ref>.<emote>-<n>.png` |
+ * | muse-view    | `outputs` | sibling PNG file names, one per view, named `<ref>.view-<view>.png`  |
  * | spark-score  | `scores`  | one score per call, in order (last one repeats)                     |
  * | spark-score  | `techniqueScores` | [scoreTechnique] calls, in order (last one repeats); absent in
  * |              |           | fixtures recorded before 2026-10-28, which then throw on that call   |
@@ -158,12 +161,23 @@ class FixtureApi(
      * `muse-pose/<ref>.fixture.json`: the output named for the frame (`<anything>.<spec.name>.png` or `<spec.name>.png`),
      * whatever the call order, so the pipeline's concurrent frame calls replay deterministically.
      */
-    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray {
-        val fx = load(Jobs.MUSE_POSE, ref)
-        val name = fx.outputs.orEmpty().firstOrNull { val stem = it.removeSuffix(".png"); stem == spec.name || stem.endsWith(".${spec.name}") }
-            ?: throw MetaError.Parse("${fixturePath(Jobs.MUSE_POSE, ref)}: no output for ${spec.name}")
-        val path = joinPath(root, Jobs.MUSE_POSE, name)
-        replay(Jobs.MUSE_POSE, fx)
+    override suspend fun drawPose(ref: String, sprite: ByteArray, refs: List<ByteArray>, spec: PoseSpec): ByteArray =
+        namedOutput(Jobs.MUSE_POSE, ref, spec.name)
+
+    /**
+     * `muse-view/<ref>.fixture.json`: the output named for the view (`<anything>.view-<view>.png` or `view-<view>.png`),
+     * whatever the call order, as [drawPose] does for frames. A view the fixture lacks throws [MetaError.Parse].
+     */
+    override suspend fun drawView(ref: String, sprite: ByteArray, refs: List<ByteArray>, view: SpriteView): ByteArray =
+        namedOutput(Jobs.MUSE_VIEW, ref, SpriteViews.fileName(view).removeSuffix(".png"))
+
+    /** The sibling PNG of [job]'s fixture for [ref] whose stem is [stem] or ends in `.<stem>`. */
+    private suspend fun namedOutput(job: String, ref: String, stem: String): ByteArray {
+        val fx = load(job, ref)
+        val name = fx.outputs.orEmpty().firstOrNull { val s = it.removeSuffix(".png"); s == stem || s.endsWith(".$stem") }
+            ?: throw MetaError.Parse("${fixturePath(job, ref)}: no output for $stem")
+        val path = joinPath(root, job, name)
+        replay(job, fx)
         return source.readBytes(path) ?: throw MetaError.FixtureMissing(path)
     }
 

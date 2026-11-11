@@ -19,7 +19,10 @@ import kotlin.time.Instant
 
 @Serializable
 data class StageMetrics(
-    /** "cutout" | "stylize" | "matte" | "gate" | "rescore" | "review" | "sheet" | "choreo" (and "table" | "voice" when those jobs are measured). */
+    /**
+     * "cutout" | "stylize" | "matte" | "gate" | "rescore" | "review" | "sheet" | "choreo" | "frames" (T33) | "views" (T41)
+     * (and "table" | "voice" when those jobs are measured).
+     */
     val name: String,
     val ms: Long,
     val costUsd: Double,
@@ -119,6 +122,8 @@ data class CostTable(
     val choreoUsd: Double = 0.013,
     /** Per drawn frame of stage `frames` ([kz.rudy.ar.core.meta.Jobs.MUSE_POSE]): one Muse Image edit each. */
     val poseUsd: Double = 0.010,
+    /** Per drawn view of stage `views` ([kz.rudy.ar.core.meta.Jobs.MUSE_VIEW], T41): one Muse Image edit each, like a pose frame. */
+    val viewUsd: Double = 0.010,
     val tableUsd: Double = 0.0125,
     val voiceUsd: Double = 0.0003,
 )

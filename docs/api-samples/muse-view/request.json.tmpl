@@ -1,0 +1,20 @@
+# path: /v1/images/edits
+# base-url: https://api.meta.ai   (export META_BASE_URL=https://api.meta.ai ; the path above carries /v1)
+# content-type: json
+# model: muse-image-1.0
+# T41: the muse-stylize / muse-pose edit call (MetaApi.edit, same body shape), with ViewPrompts.view(view) as the prompt.
+#   The first image is the matted sprite (<= 1024 px), the rest the style refs ({{REF_IMAGE_ITEMS}}, max 9).
+#   The prompt below is BACK; FRONT swaps "seen from behind, showing its back" for "seen from the front, facing us",
+#   SIDE for "seen from the side, in profile, looking to the right". Mirrors core/meta ViewPrompts.
+# unverified: whether Muse keeps the character across views (the G3 spike, `cli views --live`); price as muse-pose, $0.01/image.
+{
+  "model": "muse-image-1.0",
+  "prompt": "the very same character, identical colours, outline and proportions, seen from behind, showing its back. Keep the drawing style of the first image. Plain white background, nothing else in the picture.",
+  "images": [
+    { "image_url": "data:{{INPUT_MIME}};base64,{{INPUT_B64}}" }{{REF_IMAGE_ITEMS}}
+  ],
+  "n": 1,
+  "response_format": "b64_json",
+  "output_format": "png",
+  "reasoning_strength": "low"
+}

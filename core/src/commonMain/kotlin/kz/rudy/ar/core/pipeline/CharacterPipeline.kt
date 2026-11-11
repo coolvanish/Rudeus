@@ -9,9 +9,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.emote.PoseSpec
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.io.RasterImage
 import kz.rudy.ar.core.meta.Jobs
 import kz.rudy.ar.core.meta.MaskResult
@@ -43,6 +45,13 @@ data class CharacterResult(
     val frames: PoseFrames = PoseFrames.EMPTY,
     /** The gate said no (`gatePassed=false`), but a person looked at this sprite and took it ([CharacterPipeline] `review`). */
     val accepted: Boolean = false,
+    /**
+     * T41: the character's other views (stage `views`). The base view and its direction always come from [sheet]
+     * ([SpriteViews.of] (sheet)), drawn or not, exactly as [kz.rudy.ar.core.bundle.SavedCharacters] reads them back;
+     * nothing is drawn when the pipeline does not draw views, and a view that failed is simply absent. The default
+     * [SpriteViews.NONE] is for results built without a sheet's view information.
+     */
+    val views: SpriteViews = SpriteViews.NONE,
 )
 
 /**
@@ -83,6 +92,15 @@ internal class PreparedRefs(val muse: List<ByteArray>, val spark: List<ByteArray
  * every frame came back and matted. Frames are kept per emote from index 0 while contiguous, the result's emotes are
  * keyed for them ([EmoteSet.withFrames]), and nothing fails the character: a call that throws is a missing frame.
  * A batch still in flight when the character fails or is cancelled is cancelled and not recorded.
+ *
+ * With [spriteViews] (T41), once the stylize loop has its sprite and the sheet is known, [MetaModels.drawView] draws
+ * [SpriteViews.missing] of the sheet's base view (`sheet.baseView ?: SIDE`, looking right when `sheet.facesRight ?:
+ * false`) from the same Muse input and refs as the frames, alongside them and under the same [frameConcurrency]
+ * permits (frames and views share one limit). Each view is matted and bounded exactly as a frame is (to
+ * [SpriteViews.MAX_SIDE]); a call or matte that fails is a missing view. Stage `views` (attempt 1) is recorded after
+ * `frames` (ms from the sheet being known to the last view, cost metered under [Jobs.MUSE_VIEW], else `costs.viewUsd`
+ * per view Muse returned); `ok` = at least one view came back. Views never fail the character; a batch in flight
+ * when the character fails or is cancelled is cancelled and not recorded, as for frames.
  *
  * [rasterDecoder] (e.g. `JvmRaster::decode`) enables the deterministic gate half; without it the model
  * score alone decides. [cutoutComposer] turns (photo, mask) into the transparent PNG Muse receives; without
@@ -153,8 +171,13 @@ class CharacterPipeline(
     private val onEvent: ((PipelineEvent) -> Unit)? = null,
     /** T33: draw the pose frames (stage `frames`) after the stylize loop; off = no call, no stage, no frames. */
     private val poseFrames: Boolean = false,
-    /** Muse edits in flight at once for the frames (the stylize loop never runs two; 2 keeps the batch at ~2 call latencies). */
+    /**
+     * Muse edits in flight at once for the frames and the views together (the stylize loop never runs two; 2 keeps the
+     * four frames at ~2 call latencies).
+     */
     private val frameConcurrency: Int = DEFAULT_FRAME_CONCURRENCY,
+    /** T41: draw the missing views (stage `views`) after the stylize loop; off = no call, no stage, nothing drawn (the base from the sheet). */
+    private val spriteViews: Boolean = false,
     private val review: (suspend (attempt: Int, score: Float) -> Boolean)? = null,
 ) {
     init {
@@ -290,11 +313,16 @@ class CharacterPipeline(
                     throw e
                 }
 
-                // 5. frames (T33): from the sprite that ships, while the sheet and the choreography are awaited. A
-                // failure below (a throwing listener) leaves this scope and cancels a batch in flight: not recorded.
+                // 5. frames (T33) and views (T41): from the sprite that ships, while the sheet and the choreography are
+                // awaited; one permit pool for both. A failure below (a throwing listener) leaves this scope and cancels
+                // a batch in flight: not recorded.
                 val sprite = checkNotNull(best)
+                val museSprite = if (poseFrames || spriteViews) fit(sprite, MUSE_INPUT_MAX_SIDE) else sprite
+                val permits = Semaphore(frameConcurrency)
                 val framesMark = metrics.costMark(Jobs.MUSE_POSE)
-                val framesCall = if (poseFrames) async { frames(ref, sprite, museRefs) } else null
+                val viewsMark = metrics.costMark(Jobs.MUSE_VIEW)
+                val framesCall = if (poseFrames) async { frames(ref, museSprite, museRefs, permits) } else null
+                val viewsCall = if (spriteViews) async { views(ref, museSprite, museRefs, sheetCall.await().sheet, permits) } else null
 
                 val sheet = sheetCall.await()
                 record(STAGE_SHEET, sheet.ms, 1, sheet.ok, sheetCost(sheetMark, sheet.ok))
@@ -302,10 +330,16 @@ class CharacterPipeline(
                 recordChoreo(choreo, choreoMark)
                 val frames = framesCall?.await()
                 if (frames != null) recordFrames(frames, framesMark)
+                val views = viewsCall?.await()
+                if (views != null) recordViews(views, viewsMark)
 
                 metrics.endCharacter(gateScore = bestScore, gatePassed = passed, retries = attempt - 1)
                 val emotes = if (frames == null) choreo.emotes else choreo.emotes.withFrames(frames.frames.counts())
-                CharacterResult(ref, sprite, sheet.sheet, bestScore, passed, attempt, mask, emotes, frames?.frames ?: PoseFrames.EMPTY, accepted)
+                CharacterResult(
+                    ref, sprite, sheet.sheet, bestScore, passed, attempt, mask, emotes, frames?.frames ?: PoseFrames.EMPTY, accepted,
+                    // Views off: nothing drawn, but the base view and direction still come from the sheet, as on load.
+                    views?.views ?: SpriteViews.of(sheet.sheet),
+                )
             }
         } catch (e: Throwable) {
             if (e is CancellationException && !currentCoroutineContext().isActive) {
@@ -402,17 +436,25 @@ class CharacterPipeline(
         record(STAGE_FRAMES, outcome.ms, 1, outcome.ok, metrics.costSince(mark, outcome.returned * metrics.costs.poseUsd))
     }
 
+    /** [returned] = views Muse answered (billed), whether or not they matted; [views] = the ones that ship. */
+    private class ViewsOutcome(val views: SpriteViews, val returned: Int, val ms: Long, val ok: Boolean)
+
+    /** Records stage `views`: the estimate counts every view Muse returned, as each is one billed edit. */
+    private fun recordViews(outcome: ViewsOutcome, mark: CostMark) {
+        emit(PipelineEvent.StageStarted(STAGE_VIEWS, 1))
+        record(STAGE_VIEWS, outcome.ms, 1, outcome.ok, metrics.costSince(mark, outcome.returned * metrics.costs.viewUsd))
+    }
+
     /**
-     * The frame batch, in its own coroutine: every [PoseSpec.DRAWN] frame, at most [frameConcurrency] at once. Never
-     * throws except on a real cancellation of the caller; a frame whose call or matte fails is simply missing, and an
-     * emote's frames are kept from index 0 while contiguous (a HELLO with only frame 1 ships none).
+     * The frame batch, in its own coroutine: every [PoseSpec.DRAWN] frame of [input] (the sprite fitted for Muse), each
+     * call holding one of [permits]. Never throws except on a real cancellation of the caller; a frame whose call or
+     * matte fails is simply missing, and an emote's frames are kept from index 0 while contiguous (a HELLO with only
+     * frame 1 ships none).
      */
-    private suspend fun frames(ref: String, sprite: ByteArray, refs: List<ByteArray>): FramesOutcome = coroutineScope {
+    private suspend fun frames(ref: String, input: ByteArray, refs: List<ByteArray>, permits: Semaphore): FramesOutcome = coroutineScope {
         val t0 = metrics.now()
-        val input = fit(sprite, MUSE_INPUT_MAX_SIDE)
-        val permits = Semaphore(frameConcurrency)
         val drawn: List<Pair<PoseSpec, Drawn>> = PoseSpec.DRAWN.map { spec ->
-            async { spec to permits.withPermit { drawFrame(ref, input, refs, spec) } }
+            async { spec to permits.withPermit { drawMatted(PoseFrames.MAX_SIDE) { models.drawPose(ref, input, refs, spec) } } }
         }.awaitAll()
         val byEmote = PoseFrames.DRAWN.associateWith { e ->
             drawn.filter { it.first.emote == e }.sortedBy { it.first.index }.map { it.second.frame }.takeWhile { it != null }.filterNotNull()
@@ -421,12 +463,30 @@ class CharacterPipeline(
         FramesOutcome(frames, drawn.count { it.second.returned }, metrics.now() - t0, frames.count == PoseSpec.DRAWN.size)
     }
 
+    /**
+     * The view batch (T41), in its own coroutine: [SpriteViews.missing] of [sheet]'s base view, each call holding one of
+     * [permits], matted like a frame. Never throws except on a real cancellation of the caller.
+     */
+    private suspend fun views(ref: String, input: ByteArray, refs: List<ByteArray>, sheet: CharacterSheet, permits: Semaphore): ViewsOutcome =
+        coroutineScope {
+            val t0 = metrics.now()
+            val base = SpriteViews.of(sheet).base
+            val drawn: List<Pair<SpriteView, Drawn>> = SpriteViews.missing(base).map { view ->
+                async { view to permits.withPermit { drawMatted(SpriteViews.MAX_SIDE) { models.drawView(ref, input, refs, view) } } }
+            }.awaitAll()
+            val views = SpriteViews.of(sheet, drawn.mapNotNull { (v, d) -> d.frame?.let { v to it } }.toMap())
+            ViewsOutcome(views, drawn.count { it.second.returned }, metrics.now() - t0, views.drawn.isNotEmpty())
+        }
+
     private class Drawn(val frame: ByteArray?, val returned: Boolean)
 
-    /** One frame: the Muse edit, then the matte ([spriteMatter], the raw edit without one) bounded to [PoseFrames.MAX_SIDE]. */
-    private suspend fun drawFrame(ref: String, input: ByteArray, refs: List<ByteArray>, spec: PoseSpec): Drawn {
+    /**
+     * One Muse edit ([call]: a pose frame or a view), then the matte ([spriteMatter], the raw edit without one; no SAM
+     * fallback) bounded to [maxSide]. A call that throws was not returned; a degenerate matte was returned but is dropped.
+     */
+    private suspend inline fun drawMatted(maxSide: Int, call: () -> ByteArray): Drawn {
         val png = try {
-            models.drawPose(ref, input, refs, spec)
+            call()
         } catch (e: CancellationException) {
             if (!currentCoroutineContext().isActive) throw e
             return Drawn(null, returned = false)
@@ -438,7 +498,7 @@ class CharacterPipeline(
         } catch (e: Throwable) {
             null
         }
-        return Drawn(matted?.let { fit(it, PoseFrames.MAX_SIDE) }, returned = true)
+        return Drawn(matted?.let { fit(it, maxSide) }, returned = true)
     }
 
     /**
@@ -540,6 +600,9 @@ class CharacterPipeline(
 
         /** T33: the drawn pose frames, one batch after the stylize loop; recorded after `choreo`, only with `poseFrames`. */
         const val STAGE_FRAMES = "frames"
+
+        /** T41: the drawn views, one batch alongside the frames; recorded after `frames`, only with `spriteViews`. */
+        const val STAGE_VIEWS = "views"
 
         /** Two Muse edits in flight for the frames: four frames in about two call latencies, without hammering Muse. */
         const val DEFAULT_FRAME_CONCURRENCY = 2

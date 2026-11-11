@@ -155,4 +155,47 @@ class RecordingModelsTest {
         assertEquals("{}", replay.load(Jobs.SPARK_CHOREO, "cat-01").text)
         assertEquals(EmoteSet.defaults(), replay.choreograph("cat-01", FakeModels.DEFAULT_SHEET), "every emote fell back: still source=default")
     }
+
+    @Test
+    fun aRecordedSheetKeepsStatsReasonsViewAndFaces() = runTest {
+        val sheet = FakeModels.DEFAULT_SHEET.copy(
+            stats = kz.rudy.ar.core.domain.FighterStats(power = 6, speed = 4, guard = 3, agility = 7),
+            statReasons = mapOf(
+                "kk" to mapOf(kz.rudy.ar.core.domain.Stat.POWER to "өткір тырнақтар"),
+                "en" to mapOf(kz.rudy.ar.core.domain.Stat.POWER to "sharp claws", kz.rudy.ar.core.domain.Stat.AGILITY to "long tail"),
+            ),
+            baseView = kz.rudy.ar.core.domain.SpriteView.FRONT,
+            facesRight = true,
+        )
+        val writer = MemoryWriter(root)
+        val rec = RecordingModels(FakeModels(sheet = sheet), writer, clock())
+        assertEquals(sheet, rec.characterSheet("cat-01", ""))
+
+        val replay = FixtureApi(writer.source, root)
+        val recorded = replay.load(Jobs.SPARK_SHEET, "cat-01").sheet!!
+        assertEquals(setOf("name", "names", "personality", "ability", "lines", "stats", "why", "view", "faces"), recorded.keys)
+        assertEquals("front", (recorded["view"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals("right", (recorded["faces"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals(sheet, replay.characterSheet("cat-01", ""), "the model-reply shape replays to the same sheet")
+        assertEquals(false, SheetParser.fromJson(RecordingModels.sheetJson(sheet.copy(facesRight = false))).facesRight, "left is written too")
+    }
+
+    @Test
+    fun aSheetWithoutT40FieldsRecordsWhatItAlwaysDid() {
+        val sheet = FakeModels.DEFAULT_SHEET.copy(names = mapOf("kk" to "Мысық", "en" to "Kitty"))
+        val json = RecordingModels.sheetJson(sheet)
+        val before = kotlinx.serialization.json.JsonObject(
+            mapOf(
+                "name" to kotlinx.serialization.json.JsonPrimitive(sheet.name),
+                "names" to kotlinx.serialization.json.JsonObject(sheet.names.mapValues { (_, n) -> kotlinx.serialization.json.JsonPrimitive(n) }),
+                "personality" to kotlinx.serialization.json.JsonPrimitive(sheet.personality),
+                "ability" to kotlinx.serialization.json.JsonPrimitive("jump"),
+                "lines" to kotlinx.serialization.json.JsonObject(
+                    sheet.lines.mapValues { (_, l) -> kotlinx.serialization.json.JsonArray(l.map { kotlinx.serialization.json.JsonPrimitive(it) }) },
+                ),
+            ),
+        )
+        assertEquals(before, json)
+        assertEquals(before.toString(), json.toString(), "same keys in the same order")
+    }
 }

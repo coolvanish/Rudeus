@@ -3,6 +3,7 @@ package kz.rudy.ar.core.meta
 import kotlinx.coroutines.delay
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseSpec
 
@@ -34,6 +35,10 @@ class FakeModels(
     var frames: Map<String, ByteArray> = emptyMap(),
     /** When set, every [drawPose] throws it (after its delay). */
     var poseError: Throwable? = null,
+    /** What [drawView] returns per view (T41); a view not here throws [MetaError.Provider]. */
+    var views: Map<SpriteView, ByteArray> = emptyMap(),
+    /** When set, every [drawView] throws it (after its delay). */
+    var viewError: Throwable? = null,
     var delays: Map<String, Long> = emptyMap(),
 ) : MetaModels {
     val calls = ArrayList<String>()
@@ -46,6 +51,8 @@ class FakeModels(
     val choreoImages = ArrayList<ByteArray?>()
     /** The sprite each [drawPose] call received, by [PoseSpec.name]. */
     val poseInputs = LinkedHashMap<String, ByteArray>()
+    /** The sprite each [drawView] call received, by view. */
+    val viewInputs = LinkedHashMap<SpriteView, ByteArray>()
     private var scoreIndex = 0
     private var techniqueIndex = 0
 
@@ -116,6 +123,14 @@ class FakeModels(
         pause("drawPose")
         poseError?.let { throw it }
         return frames[spec.name] ?: throw MetaError.Provider("no fake frame ${spec.name}")
+    }
+
+    override suspend fun drawView(ref: String, sprite: ByteArray, refs: List<ByteArray>, view: SpriteView): ByteArray {
+        calls += "drawView:$ref:${view.name.lowercase()}"
+        viewInputs[view] = sprite
+        pause("drawView")
+        viewError?.let { throw it }
+        return views[view] ?: throw MetaError.Provider("no fake view $view")
     }
 
     override suspend fun transcribe(ref: String, pcm16kMono: ByteArray, lang: String): String {

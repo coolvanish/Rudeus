@@ -1,13 +1,17 @@
 package kz.rudy.ar.core.bundle
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.SpriteView
 import kz.rudy.ar.core.emote.ChoreographyParser
 import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
+import kz.rudy.ar.core.emote.SpriteViews
 import kz.rudy.ar.core.pipeline.CharacterResult
 
 /*
@@ -18,6 +22,8 @@ import kz.rudy.ar.core.pipeline.CharacterResult
  *   <bundle>/<ref>/sheet.json    CharacterSheet JSON
  *   <bundle>/<ref>/choreo.json   the five emote choreographies (ChoreographyParser.toJson; absent before T29)
  *   <bundle>/<ref>/frames/<emote>-<n>.png   the drawn pose frames (T33; listed in the entry's `frames`, absent when none)
+ *   <bundle>/<ref>/views/<view>.png         the drawn views, `back.png` / `front.png` / `side.png` (T41; listed in the
+ *                                           entry's `views`, absent when none; the base view is the sprite itself)
  *
  * Paths inside the index are relative to the bundle dir, '/'-separated. Keep this format boring.
  */
@@ -46,6 +52,13 @@ data class BundleEntry(
      * `{"HELLO": ["cat-01/frames/hello-1.png", "cat-01/frames/hello-2.png"], "ROAR": [...]}`; null = none drawn.
      */
     val frames: Map<Emote, List<String>>? = null,
+    /**
+     * T41: relative paths of the drawn views, e.g. `{"BACK": "cat-01/views/back.png"}`; null = none drawn. Written only
+     * when set, so an index without views (every one before T41) stays byte-identical through [Bundle.json].
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val views: Map<SpriteView, String>? = null,
 )
 
 @Serializable
@@ -76,6 +89,13 @@ object Bundle {
     fun framePaths(ref: String, frames: PoseFrames): Map<Emote, List<String>>? =
         frames.byEmote.mapValues { (e, list) -> list.indices.map { framePath(ref, e, it) } }.takeIf { it.isNotEmpty() }
 
+    /** `<ref>/views/<view>.png`, e.g. `cat-01/views/back.png` (T41). */
+    fun viewPath(ref: String, view: SpriteView): String = "$ref/$VIEWS/${view.name.lowercase()}.png"
+
+    /** [BundleEntry.views] for [views]: the drawn ones only (the base is the sprite); null when there are none. */
+    fun viewPaths(ref: String, views: SpriteViews): Map<SpriteView, String>? =
+        views.drawn.keys.associateWith { viewPath(ref, it) }.takeIf { it.isNotEmpty() }
+
     fun entry(result: CharacterResult, provider: String, runId: String): BundleEntry = BundleEntry(
         ref = result.ref,
         name = result.sheet.name,
@@ -89,6 +109,8 @@ object Bundle {
         runId = runId,
         choreo = choreoPath(result.ref),
         frames = framePaths(result.ref, result.frames),
+        // Whoever writes the entry writes these files too (no command draws views into a bundle yet: T50's job).
+        views = viewPaths(result.ref, result.views),
     )
 
     /** Parses an existing index; null text (no index yet) yields an empty one. */
@@ -110,4 +132,5 @@ object Bundle {
     private const val SHEET = "sheet.json"
     private const val CHOREO = "choreo.json"
     private const val FRAMES = "frames"
+    private const val VIEWS = "views"
 }
