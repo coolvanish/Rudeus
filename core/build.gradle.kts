@@ -29,6 +29,9 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+            // HAND-REVIEW: T39 — one common file implementation (io/Io*.kt) for android, jvm and ios instead of a third copy;
+            // declared explicitly instead of leaning on Ktor's transitive kotlinx-io (same 0.9.1, the APK gains nothing).
+            implementation(libs.kotlinx.io.core)
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.contentNegotiation)
             implementation(libs.ktor.serialization.json)

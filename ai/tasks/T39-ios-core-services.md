@@ -1,6 +1,6 @@
 # T39 — ios-core-services
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 1 (ai/build-plan-v2.md, "iOS readiness")
 gate: G1 — `:core` compiles for iOS and its file services exist there
@@ -63,5 +63,25 @@ Tests not required: iOS execution in the cloud (impossible), Android instrumente
 - The Gradle diff is the dependency line(s) only
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: switching Android and the CLI to the `Io*` classes (needs the Pixel); image codec for iOS (after T43's map)
+- measured: `scripts/verify.sh` exit 0 in 82 s — core 481 tests (388 before + 93 new), shared 26, android 2, 0 failed /
+  0 skipped; APK built. `:core:compileKotlinIosArm64`, `:core:compileKotlinIosSimulatorArm64` and
+  `:core:compileTestKotlinIosSimulatorArm64` green on Linux. New suites (jvm XML): Io: CharacterFolder 20,
+  FixtureSource 11, MetricsSink 8; File: 17 / 10 / 7; Memory/Map: 10 / 6 / 4. `everyFailingCallLeavesTheOldEntryOrTheNewOne`
+  fails each of the >10 file-system steps of a write once, fresh and replacing, and finds the entry whole every time.
+- dependency: `org.jetbrains.kotlinx:kotlinx-io-core:0.9.1` in `commonMain` — one tested file implementation for
+  android, jvm and ios instead of a third copy; Ktor 3.6.1 already resolves 0.9.1 (`:core` jvm and `:androidApp`
+  debugRuntimeClasspath both show it before and after), so the APK gains no artifact.
+- deviation: kotlinx-io 0.9.1's `FileSystem` is a **sealed** interface ("Extending sealed classes or interfaces from a
+  different module is prohibited"), so the brief's failing `FileSystem` wrapper cannot be written. `IoCharacterFolder`
+  has an `internal` constructor with a step hook (`(String) -> Unit`, called before every file-system call); the
+  public constructor is the brief's `IoCharacterFolder(root, fs = SystemFileSystem)`. The tests inject failures there.
+- finding F1: `FileCharacterFolder` (both copies) cannot rewrite an existing id: `File.renameTo` onto a non-empty
+  folder fails, `write` throws "cannot publish" and leaves `.writing` behind (old entry intact). Latent today
+  (`SavedCharacters` ids strictly rise). `IoCharacterFolder` replaces (old entry moved to `.replaced`, swapped, restored
+  on failure). Pinned in jvmTest by `replacesAnExistingId = false`: fixing the File copy turns those tests red.
+- other File vs Io differences: Io validates the id (also not empty, `.`, `..`, `.writing`, `.replaced`) and every
+  frame name before any I/O (File checks frame names mid-write, leaving `.writing`; an empty id there fails at the
+  rename); Io's `delete` swallows I/O errors like `deleteRecursively` does; `Map`/`Memory` doubles differ from both
+  on-disk ones by design (no directories: `exists("dir")` false, `list` skips subfolders, any metrics name accepted).
+- cut/deferred: switching Android and the CLI to the `Io*` classes (needs the Pixel); image codec for iOS (after T43's
+  map); running the common tests on iOS (CI job `ios-core`, `workflow_dispatch` only, not run yet).
