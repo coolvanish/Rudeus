@@ -171,6 +171,7 @@ import kotlin.math.abs
 // four of them a session.
 // HAND-REVIEW: T47 — GameLoop (the physics driver) comes from :core (core.session), moved as it was and pinned by
 // JVM tests. PAUSED still freezes every member and never resets; one anchor per session; nothing else changed here.
+// HAND-REVIEW: T52 — the poser's maths is a pure BillboardPoser returning a NodePose; nothing else changed here.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
@@ -241,7 +242,7 @@ private class SlotState(var surface: Surface) {
 
 /** T32: one member's render side. `node` is written by the PlaneNode's `apply` and read by the frame callback. */
 private class MemberRig(val id: String, val sprite: CharacterSprite) {
-    val poser = CharacterPoser(sprite)
+    val poser = CharacterPoser(id, sprite)
     var node: PlaneNode? = null
 }
 

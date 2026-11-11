@@ -1,6 +1,6 @@
 # T52 — thin-host-step-2
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S2 of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` still compiles for iOS); a precondition of T53 and T50
@@ -273,9 +273,139 @@ Tests not required: Compose, AR rendering, `CharacterPoser.apply`, the sprite an
   rotation re-expressed in `:core` (the only part that is not a move); if it is still wrong, it is commit A's split,
   revert that too and report what was seen.
 
-## Result (filled on acceptance)
-- measured: ...
-- step-2 and step-3 diffs: ...
-- found by the characterization tests: ...
-- Pixel check: ...
-- cut/deferred: ...
+## Result (filled 2026-11-11, cloud container, no device)
+- commits: A `f881b35` (host split + `BillboardPoserPinTest` + `NodeRotationTest`), B `0469482` (`:core` class + the
+  same tests), C `8c97f42` (the host switches over: the import and the note, nothing else). This Result is a fourth,
+  docs-only commit, so that reverting C alone touches only the host.
+- measured (test XML):
+  - A: `:androidApp:testDebugUnitTest` 28 = 2 + 25 `BillboardPoserPinTest` + 1 `NodeRotationTest`, 0 failed (re-run
+    with `--rerun` after the commit, not from the build cache); `:androidApp:assembleDebug` green.
+  - B: `:core:jvmTest` 614 = 589 + 25 `BillboardPoserTest`, 0 failed; android still 28, 0 failed;
+    `:core:compileKotlinIosSimulatorArm64` and `:core:compileTestKotlinIosSimulatorArm64` green. The same 25
+    assertions are green against both classes at this commit.
+  - C: `scripts/verify.sh` exit 0: core 614, shared 30, android 3 (the baseline 2 + `NodeRotationTest`), apk built.
+  - Equivalence beyond the 25 (a throwaway androidApp unit test at B, deleted before committing): the host and the
+    `:core` poser fed the same 200 000 random frames (both `facesRight`, bias 0 and 0.6, every `Mode`, random emotes
+    with tilt +-40, spin +-360 and hop, sizes 0.5-2, the camera at the feet or straight above on 10 % of frames):
+    1 800 000 output floats, 0 differing bits (max abs diff 0.0), 0 flip differences. The re-expressed rotation is
+    bit-exact on the JVM: kotlin-math 1.8.0's `Quaternion.Companion.fromAxisAngle` is `angle * 0.017453292f`, then
+    `Math.sin / Math.cos((r * 0.5f).toDouble()).toFloat()` times the normalised axis (read with `javap` from
+    `kotlin-math-jvm-1.8.0.jar`), and `Quat.fromAxisAngle(axis, angle * DEG_TO_RAD)` computes the same floats; the
+    Hamilton product is term for term the same. On iOS `kotlin.math.sin` is the platform's: not measured here.
+  - Mutation check at A (the host file restored byte for byte after each, `cmp`): the product as `Q_z * Q_y` turns
+    `rotationIsYawThenTiltAboutTheQuadsOwnAxis` and `bowLeansTheWayTheSpriteLooks` red; the bow's sign flipped
+    (`lean = if (facesRight) flip else -flip`) turns the same two red. Both bugs the Pixel found once now fail on the JVM.
+  - host diff (`git diff 313b2a5 --stat -- androidApp/src/main`, the same as `<A>^..<C>`): `CharacterNode.kt` 17+ / 106-
+    (252 -> 162 lines), `RudeusArView.kt` 2+ / 1- (`CharacterPoser(id, sprite)` and the T52 header line); no
+    `ar/BillboardPoser.kt` left. No SceneView or ARCore call added, removed or changed: the same three setters get the
+    same values. No compiler warning in any T52 file (forced recompiles of `:androidApp:compileDebugKotlin` and the
+    `:core` iOS test klib). `grep -rn "HAND-REVIEW" core/src`: empty. Files changed: only those under "Owns".
+- step-2 diff, run right after committing A (`git show HEAD^:...CharacterNode.kt` saved to a scratch file first, since
+  the worktree guard refuses `git` inside `<(...)`; that copy is `cmp`-equal to 313b2a5's; the body of `pose` is
+  `BillboardPoser.kt:108-158`): three hunks, old 207, 225, 250, exactly the four lines allowed.
+  ```
+  7c7,8
+  <         node.position = localPosition(state.pos + toCam * pull, state.h + hopM + upToCam * pull)
+  ---
+  >         val pos = state.pos + toCam * pull
+  >         val h = state.h + hopM + upToCam * pull
+  25c26
+  <         node.quaternion = hamilton(Quaternion.fromAxisAngle(Y_AXIS, yawDeg), Quaternion.fromAxisAngle(Z_AXIS, (emotePose?.tiltDeg ?: 0f) * lean))
+  ---
+  >         val rotation = billboardRotation(yawDeg, (emotePose?.tiltDeg ?: 0f) * lean)
+  50c51
+  <         node.scale = Scale(x = flip * sx * (1f - pull) * size, y = sy * (1f - pull) * size, z = 1f)
+  ---
+  >         return NodePose(id, pos, h, rotation, scaleX = sx * (1f - pull) * size, scaleY = sy * (1f - pull) * size, mirrored = flip < 0f)
+  ```
+- step-3 diff at B (comments stripped by the brief's `grep -vE`): only differences 1-3.
+  ```
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  3,4c3
+  < import dev.romainguy.kotlin.math.Float3
+  < import dev.romainguy.kotlin.math.Quaternion
+  ---
+  > import kotlinx.serialization.Serializable
+  9a9
+  > import kz.rudy.ar.core.geometry.Vec3
+  30,31c30,31
+  < internal val Y_AXIS = Float3(0f, 1f, 0f)
+  < internal val Z_AXIS = Float3(0f, 0f, 1f)
+  ---
+  > internal val Y_AXIS = Vec3(0f, 1f, 0f)
+  > internal val Z_AXIS = Vec3(0f, 0f, 1f)
+  33,38c33
+  < internal fun hamilton(a: Quaternion, b: Quaternion) = Quaternion(
+  <     a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+  <     a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+  <     a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+  <     a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  < )
+  ---
+  > private const val DEG_TO_RAD = 0.017453292f
+  40,43c35,36
+  < internal fun billboardRotation(yawDeg: Float, tiltDeg: Float): Quat {
+  <     val q = hamilton(Quaternion.fromAxisAngle(Y_AXIS, yawDeg), Quaternion.fromAxisAngle(Z_AXIS, tiltDeg))
+  <     return Quat(q.x, q.y, q.z, q.w)
+  < }
+  ---
+  > internal fun billboardRotation(yawDeg: Float, tiltDeg: Float): Quat =
+  >     Quat.fromAxisAngle(Y_AXIS, yawDeg * DEG_TO_RAD) * Quat.fromAxisAngle(Z_AXIS, tiltDeg * DEG_TO_RAD)
+  45c38,39
+  < internal data class NodePose(
+  ---
+  > @Serializable
+  > data class NodePose(
+  55c49
+  < internal class BillboardPoser(
+  ---
+  > class BillboardPoser(
+  ```
+  and the two test files:
+  ```
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  35c35
+  < class BillboardPoserPinTest {
+  ---
+  > class BillboardPoserTest {
+  ```
+- found by the characterization tests: **no hand-derived expectation was wrong.** All 25 were green against the
+  unmodified host maths on the first run, including the golden quaternion (0.18301, 0.68301, 0.18301, 0.68301) and
+  `x = -0.18301` for the other order, the bob (0.95, 1.08) / (1.05, 0.92), the landing (1.03125, 0.96875) at 60 ms, and
+  `flipMatchesViewPickerForASideBaseSprite` on all 2 000 frames for both `facesRight`. What the tests pin beyond the
+  brief's wording (v1.0 behaviour, not changed, no fix proposed here):
+  1. The emote's hop is not shrunk by the feet-depth pull: `h = state.h + hop * heightM * size + (cameraHeightM -
+     state.h) * pull` while the quad scales by `1 - pull`, and the pull aims at the physics feet, not the hopped ones. So
+     with the bias on a hop looks `1 / (1 - pull)` times higher on screen than with it off: about 8 % at 50 cm, up to
+     2x under the 0.5 cap (camera within about 7 cm). Pinned in `hopRaisesByHopTimesHeightTimesSize`.
+  2. The pull is a share of the size-1 height (`heightM * feetDepthBias`, not times `size`): at size 2 the quad is still
+     pulled 3.6 cm, a smaller share of its height. Pinned in `sizeScalesBothAxes` ((1 - 0.072) x 2 at 50 cm).
+  3. The pull jumps at the lens: 0 within 1 mm of the feet, the 0.5 cap from just outside (2 mm). Pinned in
+     `feetDepthBiasIsCappedAtHalfWayAndOffAtTheLens`; only a camera within millimetres of the feet sees it.
+  4. A body PAUSED mid-rise shows (1, 1), not the stretch (the stretch reads mode JUMPING). Pinned in
+     `idleFallingAndPausedAreUnitScale`.
+  5. `|along|` exactly at `FLIP_DEADBAND` holds (strict `>`), as `ViewPicker` does. Pinned in
+     `flipHoldsInsideTheDeadbandAndStartsUnmirrored`.
+  6. T47's finding 1 seen through the poser: a jump from `beforeStep` on the resume frame reports RESUMED only, still
+     stretches on every rising frame (state, not events), and its LANDED is reported, so the landing frame squashes.
+- deviations from the letter of the brief (none changes behaviour):
+  1. The comment in the body at old line 203 reads `// See feetDepthBias.` instead of `// See FEET_DEPTH_BIAS.`: the
+     brief's `sed` rewrites comments too, so keeping the old words would have shown a fourth hunk. The constructor's
+     KDoc says `feetDepthBias` is the host's `FEET_DEPTH_BIAS`.
+  2. `CharacterPoser.apply` keeps its original one-parameter-per-line list (the brief's sketch wraps it in two lines):
+     the same signature with fewer changed lines. Its KDoc is now one line pointing to `BillboardPoser.pose`, where the
+     parameter docs moved.
+  3. The T52 `HAND-REVIEW` note in `CharacterNode.kt` sits above the class KDoc, not between KDoc and class. In commit C
+     it gained the words by re-wrapping its first line into two (one line changed, one added).
+  4. `Y_AXIS` / `Z_AXIS` stay `internal` in `:core` (as in the host file) so the step-3 diff shows only the type change.
+  5. The Result rides in its own commit, not in C (see "commits").
+- Pixel check ("walk, bow, jump"): UNTESTED (no device in the cloud container). Needs your Pixel run; if anything is
+  off, revert C first, then A, as "Done when" says.
+- cut/deferred: nothing cut. The flip still does not call `ViewPicker` (decision 1, T50). The `[GameLoop....]` KDoc
+  links on `pose` now resolve in `:core` (same package).
