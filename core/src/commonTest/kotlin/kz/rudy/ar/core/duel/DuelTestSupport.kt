@@ -82,6 +82,7 @@ internal fun runDuel(
 /** [this] with [DuelEvent.atMs] set to [at] (0 = "any time": compare the content of events only). */
 internal fun DuelEvent.at(at: Long = 0L): DuelEvent = when (this) {
     is DuelEvent.DashStarted -> copy(atMs = at)
+    is DuelEvent.SpecialStarted -> copy(atMs = at)
     is DuelEvent.Hit -> copy(atMs = at)
     is DuelEvent.Clash -> copy(atMs = at)
     is DuelEvent.WallSlam -> copy(atMs = at)

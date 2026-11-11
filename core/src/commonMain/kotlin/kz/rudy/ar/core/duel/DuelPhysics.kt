@@ -1,5 +1,6 @@
 package kz.rudy.ar.core.duel
 
+import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.LevelObject
@@ -28,28 +29,39 @@ import kotlin.math.min
  * bodies trail [DuelState.timeMs] by less than one sub-step. Inputs apply at the start of their call.
  *
  * **One sub-step**, in this order:
- * 1. Timers: dash cooldown and dash time count down; the stun timer counts down only while `|knock| <=
- *    knockStunMps`. A PAUSED fighter is frozen whole (timers, knockback, body) and takes no part in anything below.
- * 2. Duel motion: the dash (`dashSpeedMps` along `dashDir`) and the knockback (exact exponential decay over the
- *    sub-step) move the body through the obstacle rules walking uses: push-out from every object that [Physics.blocks]
- *    at the feet height, and an obstacle never pushes anyone over a cliff. A knockback pressed into a blocking object at
- *    `>= wallSlamMinMps` (its component into the surface) is a wall slam: knockback zeroed, `wallSlamStunMs` added,
- *    [DuelEvent.WallSlam]; slower contact slides (the into-surface part of the knockback is dropped). A fighter that is
- *    out ([isOut]) gets no duel motion; its knockback and dash are dropped.
+ * 1. Timers: dash and special cooldowns, the counter window, the special's time (lift-off, dodge) and the dash time
+ *    count down; the stun timer counts down only while `|knock| <= knockStunMps`. A fighter whose lift-off or dodge
+ *    time was > 0 at the start of the sub-step is lifted / dodging for the whole sub-step (it cannot be hit). A PAUSED
+ *    fighter is frozen whole (timers, knockback, body) and takes no part in anything below.
+ * 2. Duel motion: the dash (`dashSpeedMps` along `dashDir`, a ram too) and the knockback (exact exponential decay over
+ *    the sub-step) move the body through the obstacle rules walking uses: push-out from every object that
+ *    [Physics.blocks] at the feet height, and an obstacle never pushes anyone over a cliff. A knockback pressed into a
+ *    blocking object at `>= wallSlamMinMps` (its component into the surface) is a wall slam: knockback zeroed,
+ *    `wallSlamStunMs` added, [DuelEvent.WallSlam]; slower contact slides (the into-surface part of the knockback is
+ *    dropped). A fighter that is out ([isOut]) gets no duel motion; its knockback, dash, lift-off, dodge and stomp are
+ *    dropped. No dash stops at the boundary: a dash or a ram that misses near the edge carries its fighter off.
  * 3. [Physics.step] with the fighter's walk speed ([DuelParams.walkSpeedMpsFor]): walking, jumping, step-up onto
- *    platforms, falling, respawning, exactly as the walking game does it, with two duel rules on top: an out fighter
- *    stays where it left the level until Physics respawns it, and a body that came down this sub-step is pushed out of
- *    what blocks at its new feet height at once (Physics would do it one sub-step later).
- * 4. Hits: circles overlapping in the plane (height ignored, so an airborne fighter is hit too) while one of them
- *    dashed in this sub-step. The victim gets [DuelParams.knockSpeedMpsFor] along the attacker's `dashDir`
- *    (x `fromAboveScale` when the attacker's feet are more than `fromAboveMinM` higher), its walk target is dropped and
- *    its stun timer set to at least [DuelParams.hitStunMsFor]; the attacker's dash ends, so a dash hits at most once.
- *    Both dashing: [DuelEvent.Clash], each takes the other's knockback and both dashes end. Neither PAUSED nor out
- *    fighters hit or are hit.
- * 5. Separation of two grounded (IDLE / WALKING) fighters that overlap, see [separate].
+ *    platforms, falling, respawning, exactly as the walking game does it, with duel rules on top: an out fighter
+ *    stays where it left the level until Physics respawns it; a body that came down this sub-step is pushed out of
+ *    what blocks at its new feet height at once (Physics would do it one sub-step later); a lifted FLY is held
+ *    [DuelParams.liftHeightRadii] radii above the ground under it (JUMPING, no vertical speed, walking at
+ *    [DuelParams.liftSpeedScale] x), and starts to come down with gravity the sub-step after its lift ends; a stomping
+ *    JUMP that was airborne and now stands has landed.
+ * 4. Hits, every one judged from the positions after step 3, none of them by height (an airborne fighter is hit too),
+ *    never on a lifted or dodging victim, never by or on a PAUSED or out fighter:
+ *    - a dash: circles overlapping while one of them dashed in this sub-step. The victim gets
+ *      [DuelParams.knockSpeedMpsFor] along the attacker's `dashDir` (x `fromAboveScale` when the attacker's feet are
+ *      more than `fromAboveMinM` higher; x `ramKnockScale` for a ram, x `counterKnockScale` for a counter), its walk
+ *      target is dropped, its own dash ends and its stun timer is set to at least [DuelParams.hitStunMsFor]; the
+ *      attacker's dash ends, so a dash hits at most once. Both dashing and both hittable: [DuelEvent.Clash], each takes
+ *      the other's knockback and both dashes end. A dash that meets a lifted or dodging fighter carries on.
+ *    - a stomp's landing: an opponent whose centre is within `stompRadiusRadii` stomper radii of the landing point gets
+ *      `stompScale` x the plain knockback straight away from it, the same stun, and a [DuelEvent.Hit] with
+ *      `fromAbove = true`.
+ * 5. Separation of two grounded (IDLE / WALKING) fighters that overlap, see [separate]; a dodging fighter stands firm.
  * 6. Ring-out: a fighter that was not [isOut] at the start of the sub-step and is now gets [DuelEvent.RingOut] and
- *    loses its walk target. It stays out (and ignores input) until Physics respawns it, so one excursion is one
- *    ring-out. What follows the respawn is the caller's (T45).
+ *    loses its walk target, lift-off, dodge, stomp and counter. It stays out (and ignores input) until Physics respawns
+ *    it, so one excursion is one ring-out. What follows is the match's ([DuelMatch]).
  *
  * **Events** carry their simulated time ([DuelEvent.atMs]) and come in canonical order (time, kind, id), so neither the
  * frame rate nor the slot a fighter sits in changes the list.
@@ -57,8 +69,14 @@ import kotlin.math.min
  * **Input** ([acceptsInput]): stunned, dashing, PAUSED or out fighters ignore it, and so does every fighter a non-finite
  * target or direction. `MoveTo` is [Physics.walkTo], `Jump` is [Physics.jump], `Dash` starts a dash
  * ([DuelEvent.DashStarted]) unless it is on cooldown or the fighter is not on the ground (IDLE / WALKING); it drops the
- * walk target and turns `facing` to the dash direction (a null or zero direction = along `facing`). `Special` is
- * accepted and does nothing (T45).
+ * walk target and turns `facing` to the dash direction (a null or zero direction = along `facing`); inside a HIDE's
+ * counter window it is a counter. `Special` starts the special of [DuelFighter.ability] when [canSpecial]
+ * ([DuelEvent.SpecialStarted], the special cooldown starts):
+ * - JUMP stomp: [Physics.jump] (the walk target stays); the landing is a hit (step 4).
+ * - FLY lift-off: the body rises to the hover height at once and hovers for `liftMs`; it cannot dash while lifted (it
+ *   is airborne) but can walk off the edge.
+ * - ROLL ram: a dash along `facing`, `ramDashMs` long, `ramKnockScale` x the knockback; the dash cooldown is untouched.
+ * - HIDE dodge: `dodgeMs` of passing hits, and the next dash started within `counterMs` is a counter.
  */
 object DuelPhysics {
 
@@ -75,11 +93,35 @@ object DuelPhysics {
         inputs: Map<String, DuelInput> = emptyMap(),
         params: DuelParams = DuelParams.DEFAULT,
         physics: PhysicsParams = PhysicsParams.DEFAULT,
+    ): DuelStep = run(state, level, dtMs, inputs, params, physics, stopAtRingOut = false)
+
+    /**
+     * [step], except that it stops at the end of the first sub-step in which somebody rang out: the returned state's
+     * `timeMs` is then that sub-step's grid time (so `<= state.timeMs + dtMs`), and every [DuelEvent.RingOut] in the
+     * list has that `atMs`. A round ends there ([DuelMatch]); nothing after it is simulated.
+     */
+    internal fun stepToRingOut(
+        state: DuelState,
+        level: Level,
+        dtMs: Long,
+        inputs: Map<String, DuelInput>,
+        params: DuelParams,
+        physics: PhysicsParams,
+    ): DuelStep = run(state, level, dtMs, inputs, params, physics, stopAtRingOut = true)
+
+    private fun run(
+        state: DuelState,
+        level: Level,
+        dtMs: Long,
+        inputs: Map<String, DuelInput>,
+        params: DuelParams,
+        physics: PhysicsParams,
+        stopAtRingOut: Boolean,
     ): DuelStep {
         if (dtMs <= 0L) return DuelStep(state, emptyList())
         val sub = params.subStepMs
         val firstCell = state.timeMs.floorDiv(sub)
-        val end = state.timeMs + dtMs
+        var end = state.timeMs + dtMs
         val cells = end.floorDiv(sub) - firstCell
         val events = ArrayList<DuelEvent>(2)
         val appliedAt = firstCell * sub
@@ -87,7 +129,13 @@ object DuelPhysics {
         val b = Work(applyInput(state.b, inputs[state.b.id], level, params, physics, appliedAt, events), params, physics)
         if (cells > 0L) {
             val c = Consts(level, params, physics)
-            for (i in 1L..cells) subStep(a, b, c, (firstCell + i) * sub, events)
+            for (i in 1L..cells) {
+                val t = (firstCell + i) * sub
+                if (subStep(a, b, c, t, events) && stopAtRingOut) {
+                    end = t
+                    break
+                }
+            }
         }
         if (events.size > 1) events.sortWith(CANONICAL)
         return DuelStep(DuelState(a.done(), b.done(), end), events)
@@ -106,6 +154,58 @@ object DuelPhysics {
         val mode = f.body.state.mode
         return f.dashCooldownMs <= 0L && (mode == Mode.IDLE || mode == Mode.WALKING) && acceptsInput(f, level, params)
     }
+
+    /**
+     * A Special input would start [f]'s special now: it has an [DuelFighter.ability], the special is off cooldown and
+     * not running, [f] is on the ground (IDLE / WALKING) and [acceptsInput] (not stunned, dashing, PAUSED or out). A
+     * JUMP stomp also needs a body that can jump (not a ROLL body), a ROLL ram a facing.
+     */
+    fun canSpecial(f: DuelFighter, level: Level, params: DuelParams = DuelParams.DEFAULT): Boolean {
+        val ability = f.ability ?: return false
+        val s = f.body.state
+        if (f.specialCooldownMs > 0L || f.specialMs > 0L || !grounded(s.mode) || !acceptsInput(f, level, params)) return false
+        return when (ability) {
+            Ability.JUMP -> s.ability != Ability.ROLL
+            Ability.ROLL -> s.facing.normalized() != Vec2.ZERO
+            Ability.FLY, Ability.HIDE -> true
+        }
+    }
+
+    /** FLY lift-off running: hovering, cannot be hit, cannot dash. */
+    fun isLifted(f: DuelFighter): Boolean = f.ability == Ability.FLY && f.specialMs > 0L
+
+    /** HIDE dodge running: hits pass through, separation leaves it where it stands. */
+    fun isDodging(f: DuelFighter): Boolean = f.ability == Ability.HIDE && f.specialMs > 0L
+
+    /** Cannot be hit (by a dash or a stomp): lifted or dodging. */
+    fun isImmune(f: DuelFighter): Boolean = isLifted(f) || isDodging(f)
+
+    /** In a ROLL ram. */
+    fun isRamming(f: DuelFighter): Boolean = f.dashMs > 0L && f.dashKind == DashKind.RAM
+
+    /** The HUD's dash cooldown: the fraction of it still to run, 1 = just dashed, 0 = ready. Pass the params in use. */
+    fun dashCooldownLeft(f: DuelFighter, params: DuelParams = DuelParams.DEFAULT): Float =
+        fraction(f.dashCooldownMs, params.cooldownMsFor(f.stats))
+
+    /** The HUD's special cooldown: the fraction of it still to run, 1 = just used, 0 = ready. Pass the params in use. */
+    fun specialCooldownLeft(f: DuelFighter, params: DuelParams = DuelParams.DEFAULT): Float =
+        fraction(f.specialCooldownMs, params.specialCooldownMsFor(f.stats))
+
+    private fun fraction(left: Long, total: Long): Float =
+        if (left <= 0L || total <= 0L) 0f else (left.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+
+    /**
+     * [f] with everything it was doing stopped: no walk target (a WALKING body stands), no dash, no lift-off, dodge,
+     * stomp or counter. Knockback, stun, cooldowns and the body's vertical motion stay. The match calls it at a point.
+     */
+    internal fun endActions(f: DuelFighter): DuelFighter = f.copy(
+        body = stopWalking(f.body),
+        dashMs = 0L,
+        dashKind = DashKind.PLAIN,
+        specialMs = 0L,
+        stomping = false,
+        counterMs = 0L,
+    )
 
     /**
      * Out of the level, the ring-out condition:
@@ -157,12 +257,13 @@ object DuelPhysics {
         atMs: Long,
         events: MutableList<DuelEvent>,
     ): DuelFighter = when (input) {
-        null, DuelInput.None, DuelInput.Special -> f
+        null, DuelInput.None -> f
         is DuelInput.MoveTo ->
             if (input.target.isFinite() && acceptsInput(f, level, params)) f.copy(body = Physics.walkTo(f.body, input.target)) else f
         DuelInput.Jump -> if (acceptsInput(f, level, params)) f.copy(body = Physics.jump(f.body, physics)) else f
         is DuelInput.Dash ->
             if (input.dir?.isFinite() != false && canDash(f, level, params)) startDash(f, input.dir, params, atMs, events) else f
+        DuelInput.Special -> if (canSpecial(f, level, params)) startSpecial(f, params, physics, atMs, events) else f
     }
 
     private fun startDash(f: DuelFighter, dir: Vec2?, params: DuelParams, atMs: Long, events: MutableList<DuelEvent>): DuelFighter {
@@ -170,12 +271,46 @@ object DuelPhysics {
         val d = dir?.normalized()?.takeIf { it != Vec2.ZERO } ?: facing.takeIf { it != Vec2.ZERO } ?: return f
         events += DuelEvent.DashStarted(f.id, atMs)
         val body = stopWalking(f.body)
+        val counter = f.counterMs > 0L
         return f.copy(
             body = body.copy(state = body.state.copy(facing = d)),
             dashMs = params.dashMs,
             dashDir = d,
             dashCooldownMs = params.cooldownMsFor(f.stats),
+            dashKind = if (counter) DashKind.COUNTER else DashKind.PLAIN,
+            counterMs = if (counter) 0L else f.counterMs,
         )
+    }
+
+    /** Starts [f]'s special ([canSpecial] holds), see [DuelPhysics]. */
+    private fun startSpecial(
+        f: DuelFighter,
+        params: DuelParams,
+        physics: PhysicsParams,
+        atMs: Long,
+        events: MutableList<DuelEvent>,
+    ): DuelFighter {
+        val ability = f.ability ?: return f
+        val started = when (ability) {
+            Ability.JUMP -> {
+                val body = Physics.jump(f.body, physics)
+                if (body.state.mode != Mode.JUMPING) return f
+                f.copy(body = body, stomping = true)
+            }
+            Ability.FLY -> {
+                val s = f.body.state
+                val lifted = s.copy(mode = Mode.JUMPING, h = s.h + params.liftHeightRadii * s.radiusM)
+                f.copy(body = f.body.copy(state = lifted, verticalVelocity = 0f), specialMs = params.liftMs)
+            }
+            Ability.ROLL -> {
+                val d = f.body.state.facing.normalized().takeIf { it != Vec2.ZERO } ?: return f
+                val body = stopWalking(f.body)
+                f.copy(body = body.copy(state = body.state.copy(facing = d)), dashMs = params.ramDashMs, dashDir = d, dashKind = DashKind.RAM)
+            }
+            Ability.HIDE -> f.copy(specialMs = params.dodgeMs, counterMs = params.counterMs)
+        }
+        events += DuelEvent.SpecialStarted(f.id, ability, atMs)
+        return started.copy(specialCooldownMs = params.specialCooldownMsFor(f.stats))
     }
 
     /** Drops the walk target; a WALKING body stands (IDLE). Airborne bodies keep their mode. */
@@ -201,15 +336,31 @@ object DuelPhysics {
         val id = original.id
         val stats = original.stats
         val dashDir = original.dashDir
+        val ability = original.ability
         var body = original.body
         var knock = original.knock
         var stunMs = original.stunMs
         var dashMs = original.dashMs
         var dashCooldownMs = original.dashCooldownMs
+        var specialMs = original.specialMs
+        var specialCooldownMs = original.specialCooldownMs
+        var stomping = original.stomping
+        var counterMs = original.counterMs
+        var dashKind = original.dashKind
+
+        /** This sub-step only (set by [advance]): hovering on a FLY lift-off. */
+        var lifted = false
+
+        /** This sub-step only (set by [advance]): lifted or dodging, so it cannot be hit. */
+        var immune = false
 
         /** The walking-game parameters with this fighter's duel walk speed. */
         val walkPhysics: PhysicsParams =
             physics.copy(walkSpeedMps = params.walkSpeedMpsFor(stats, physics), rollSpeedScale = params.rollSpeedScale)
+
+        /** While lifted the body is JUMPING: its walk speed is the duel walk speed x [DuelParams.liftSpeedScale]. */
+        val liftPhysics: PhysicsParams =
+            if (ability == Ability.FLY) walkPhysics.copy(jumpSpeedScale = params.liftSpeedScale) else walkPhysics
 
         val paused: Boolean get() = body.state.mode == Mode.PAUSED
 
@@ -217,34 +368,54 @@ object DuelPhysics {
             body = body.copy(state = body.state.copy(pos = p))
         }
 
-        fun done(): DuelFighter =
-            original.copy(body = body, knock = knock, stunMs = stunMs, dashMs = dashMs, dashCooldownMs = dashCooldownMs)
+        fun done(): DuelFighter = original.copy(
+            body = body, knock = knock, stunMs = stunMs, dashMs = dashMs, dashCooldownMs = dashCooldownMs,
+            specialMs = specialMs, specialCooldownMs = specialCooldownMs, stomping = stomping, counterMs = counterMs,
+            dashKind = dashKind,
+        )
     }
 
-    private fun subStep(a: Work, b: Work, c: Consts, atMs: Long, events: MutableList<DuelEvent>) {
+    /** One sub-step ending at [atMs]; true when somebody rang out in it. */
+    private fun subStep(a: Work, b: Work, c: Consts, atMs: Long, events: MutableList<DuelEvent>): Boolean {
         val wasOutA = isOut(a.body, c.level)
         val wasOutB = isOut(b.body, c.level)
         val dashA = advance(a, wasOutA, c, atMs, events)
         val dashB = advance(b, wasOutB, c, atMs, events)
-        physicsStep(a, wasOutA, c)
-        physicsStep(b, wasOutB, c)
-        hits(a, b, dashA, dashB, c, atMs, events)
+        val landA = physicsStep(a, wasOutA, c)
+        val landB = physicsStep(b, wasOutB, c)
+        hits(a, b, dashA, dashB, landA, landB, c, atMs, events)
         separate(a, b, c)
-        ringOut(a, wasOutA, c, atMs, events)
-        ringOut(b, wasOutB, c, atMs, events)
+        val outA = ringOut(a, wasOutA, c, atMs, events)
+        val outB = ringOut(b, wasOutB, c, atMs, events)
+        if (a.dashMs == 0L) a.dashKind = DashKind.PLAIN
+        if (b.dashMs == 0L) b.dashKind = DashKind.PLAIN
+        return outA || outB
     }
 
     /** Timers and duel motion of one sub-step (steps 1 and 2). Returns true when [w] dashed during it. */
     private fun advance(w: Work, wasOut: Boolean, c: Consts, atMs: Long, events: MutableList<DuelEvent>): Boolean {
+        w.lifted = false
+        w.immune = false
         if (w.paused) return false
         val p = c.params
         w.dashCooldownMs = (w.dashCooldownMs - c.sub).coerceAtLeast(0L)
+        if (w.specialCooldownMs > 0L) w.specialCooldownMs = (w.specialCooldownMs - c.sub).coerceAtLeast(0L)
+        if (w.counterMs > 0L) w.counterMs = (w.counterMs - c.sub).coerceAtLeast(0L)
+        if (w.specialMs > 0L) {
+            w.lifted = w.ability == Ability.FLY
+            w.immune = w.ability == Ability.FLY || w.ability == Ability.HIDE
+            w.specialMs = (w.specialMs - c.sub).coerceAtLeast(0L)
+        }
         if (w.knock.length <= p.knockStunMps) w.stunMs = (w.stunMs - c.sub).coerceAtLeast(0L)
         val dashActiveMs = minOf(w.dashMs, c.sub)
         w.dashMs = (w.dashMs - c.sub).coerceAtLeast(0L)
         if (wasOut) {
             w.knock = Vec2.ZERO
             w.dashMs = 0L
+            w.specialMs = 0L
+            w.stomping = false
+            w.lifted = false
+            w.immune = false
             return false
         }
         val knock0 = w.knock
@@ -282,10 +453,10 @@ object DuelPhysics {
         return dashActiveMs > 0L
     }
 
-    /** Step 3. */
-    private fun physicsStep(w: Work, wasOut: Boolean, c: Consts) {
+    /** Step 3. Returns true when [w]'s stomp landed in it. */
+    private fun physicsStep(w: Work, wasOut: Boolean, c: Consts): Boolean {
         val before = w.body
-        val after = Physics.step(before, c.level, c.sub, w.walkPhysics)
+        val after = Physics.step(before, c.level, c.sub, if (w.lifted) w.liftPhysics else w.walkPhysics)
         val s0 = before.state
         val s = after.state
         w.body = when {
@@ -299,6 +470,27 @@ object DuelPhysics {
             }
             else -> after
         }
+        if (wasOut) return false
+        if (w.lifted) hover(w, s0.h, c)
+        if (!w.stomping) return false
+        val landed = (s0.mode == Mode.JUMPING || s0.mode == Mode.FALLING) && grounded(w.body.state.mode)
+        if (landed) w.stomping = false
+        return landed
+    }
+
+    /**
+     * FLY lift-off: the feet held [DuelParams.liftHeightRadii] radii above the ground under them (the table over a hole),
+     * JUMPING with no vertical speed, whatever Physics did this sub-step (gravity, a landing on a book on the way).
+     * Coming down off something (a book) is put off while the circle would overlap what blocks lower down, so the body
+     * never sinks into an object: it stays at the height it had ([h0]) until it is clear.
+     */
+    private fun hover(w: Work, h0: Float, c: Consts) {
+        val s = w.body.state
+        if (s.mode == Mode.RESPAWNING || s.mode == Mode.PAUSED) return
+        val ground = Physics.groundHeight(c.level, s.pos, s.h, c.physics) ?: 0f
+        var h = ground + c.params.liftHeightRadii * s.radiusM
+        if (h < h0 && pushOut(c.level, c.physics, s.pos, h, s.radiusM).pos != s.pos) h = h0
+        w.body = w.body.copy(state = s.copy(h = h, mode = Mode.JUMPING), verticalVelocity = 0f)
     }
 
     private class Moved(val pos: Vec2, val obstacle: LevelObject?)
@@ -341,17 +533,35 @@ object DuelPhysics {
         return Moved(pos, best)
     }
 
-    /** Step 4. */
-    private fun hits(a: Work, b: Work, dashA: Boolean, dashB: Boolean, c: Consts, atMs: Long, events: MutableList<DuelEvent>) {
-        if (!dashA && !dashB) return
+    /**
+     * Step 4: dash contacts and stomp landings, all judged from the positions after step 3 (a knockback given here
+     * moves nobody before the next sub-step, so the order of the calls below cannot change an outcome).
+     */
+    private fun hits(
+        a: Work,
+        b: Work,
+        dashA: Boolean,
+        dashB: Boolean,
+        landA: Boolean,
+        landB: Boolean,
+        c: Consts,
+        atMs: Long,
+        events: MutableList<DuelEvent>,
+    ) {
+        if (!dashA && !dashB && !landA && !landB) return
         if (a.paused || b.paused || isOut(a.body, c.level) || isOut(b.body, c.level)) return
         val sa = a.body.state
         val sb = b.body.state
-        if (sa.pos.distanceTo(sb.pos) >= sa.radiusM + sb.radiusM) return
         val p = c.params
-        if (dashA && dashB) {
-            val toA = p.knockSpeedMpsFor(b.stats, a.stats, fromAbove(sb.h, sa.h, p))
-            val toB = p.knockSpeedMpsFor(a.stats, b.stats, fromAbove(sa.h, sb.h, p))
+        val dist = sa.pos.distanceTo(sb.pos)
+        val contact = dist < sa.radiusM + sb.radiusM
+        val dashHitsB = dashA && contact && !b.immune
+        val dashHitsA = dashB && contact && !a.immune
+        val stompHitsB = landA && !b.immune && dist <= p.stompRadiusRadii * sa.radiusM
+        val stompHitsA = landB && !a.immune && dist <= p.stompRadiusRadii * sb.radiusM
+        if (dashHitsA && dashHitsB) {
+            val toA = p.knockSpeedMpsFor(b.stats, a.stats, fromAbove(sb.h, sa.h, p)) * knockScale(b, p)
+            val toB = p.knockSpeedMpsFor(a.stats, b.stats, fromAbove(sa.h, sb.h, p)) * knockScale(a, p)
             val dirA = a.dashDir
             val dirB = b.dashDir
             knockBack(a, dirB * toA, p)
@@ -359,25 +569,48 @@ object DuelPhysics {
             a.dashMs = 0L
             b.dashMs = 0L
             events += if (a.id < b.id) DuelEvent.Clash(a.id, b.id, atMs) else DuelEvent.Clash(b.id, a.id, atMs)
-        } else if (dashA) {
+        } else if (dashHitsB) {
             hit(a, b, p, atMs, events)
-        } else {
+        } else if (dashHitsA) {
             hit(b, a, p, atMs, events)
         }
+        // A stomper is never dashing (a dash starts only on the ground, a stomp only when not dashing), so a fighter is
+        // the victim of at most one of the hits above and one below, and never of both from the same attacker.
+        if (stompHitsB) stomp(a, b, p, atMs, events)
+        if (stompHitsA) stomp(b, a, p, atMs, events)
     }
 
     private fun hit(attacker: Work, victim: Work, p: DuelParams, atMs: Long, events: MutableList<DuelEvent>) {
         val above = fromAbove(attacker.body.state.h, victim.body.state.h, p)
-        val speed = p.knockSpeedMpsFor(attacker.stats, victim.stats, above)
+        val speed = p.knockSpeedMpsFor(attacker.stats, victim.stats, above) * knockScale(attacker, p)
         knockBack(victim, attacker.dashDir * speed, p)
         attacker.dashMs = 0L
         events += DuelEvent.Hit(attacker.id, victim.id, speed, above, atMs)
     }
 
+    /** The JUMP stomp's landing: [victim] knocked straight away from where [stomper] stands now. */
+    private fun stomp(stomper: Work, victim: Work, p: DuelParams, atMs: Long, events: MutableList<DuelEvent>) {
+        val s = stomper.body.state
+        val away = (victim.body.state.pos - s.pos).normalized().takeIf { it != Vec2.ZERO }
+            ?: s.facing.normalized().takeIf { it != Vec2.ZERO }
+            ?: Vec2(1f, 0f)
+        val speed = p.knockSpeedMpsFor(stomper.stats, victim.stats) * p.stompScale
+        knockBack(victim, away * speed, p)
+        events += DuelEvent.Hit(stomper.id, victim.id, speed, fromAbove = true, atMs = atMs)
+    }
+
+    private fun knockScale(attacker: Work, p: DuelParams): Float = when (attacker.dashKind) {
+        DashKind.PLAIN -> 1f
+        DashKind.RAM -> p.ramKnockScale
+        DashKind.COUNTER -> p.counterKnockScale
+    }
+
+    /** A hit: the knockback, a stun, no walk target, and the victim's own dash (if any) ends. */
     private fun knockBack(victim: Work, knock: Vec2, p: DuelParams) {
         victim.knock = knock
         victim.stunMs = maxOf(victim.stunMs, p.hitStunMsFor(victim.stats))
         victim.body = stopWalking(victim.body)
+        victim.dashMs = 0L
     }
 
     private fun fromAbove(attackerH: Float, victimH: Float, p: DuelParams) = attackerH - victimH > p.fromAboveMinM
@@ -391,7 +624,8 @@ object DuelPhysics {
      * its centre inside the boundary and off any CLIFF, and the straight path to it crossing no blocking or CLIFF
      * footprint. If none of the 48 fits, both stay overlapped (the only way two grounded fighters end a sub-step so).
      * Centres on one point (closer than [Vec2.EPS]): the line is the u axis, the smaller id on the -u side.
-     * Only `pos` changes.
+     * Only `pos` changes. A dodging fighter (HIDE, this sub-step) stands firm: when only one of the two dodges, the other
+     * goes round it first (the same 16 directions); only if it fits nowhere does the search above run.
      */
     private fun separate(a: Work, b: Work, c: Consts) {
         val sa = a.body.state
@@ -405,6 +639,18 @@ object DuelPhysics {
             dist > Vec2.EPS -> d / dist
             a.id < b.id -> Vec2(1f, 0f)
             else -> Vec2(-1f, 0f)
+        }
+        if (a.immune != b.immune) {
+            for (k in TURN_COS.indices) {
+                val u = Vec2(dir.u * TURN_COS[k] - dir.v * TURN_SIN[k], dir.u * TURN_SIN[k] + dir.v * TURN_COS[k])
+                if (a.immune) {
+                    val q = sa.pos + u * reach
+                    if (canStand(c, sb, q)) return b.moveTo(q)
+                } else {
+                    val q = sb.pos - u * reach
+                    if (canStand(c, sa, q)) return a.moveTo(q)
+                }
+            }
         }
         val mid = (sa.pos + sb.pos) * 0.5f
         val half = reach * 0.5f
@@ -481,25 +727,34 @@ object DuelPhysics {
     private val TURN_COS = floatArrayOf(1f, C22, C22, C45, C45, S22, S22, 0f, 0f, -S22, -S22, -C45, -C45, -C22, -C22, -1f)
     private val TURN_SIN = floatArrayOf(0f, S22, -S22, C45, -C45, C22, -C22, 1f, -1f, C22, -C22, C45, -C45, S22, -S22, 0f)
 
-    /** Step 6. The walk target goes too, so nothing steers an out body back. */
-    private fun ringOut(w: Work, wasOut: Boolean, c: Consts, atMs: Long, events: MutableList<DuelEvent>) {
-        if (wasOut || !isOut(w.body, c.level)) return
+    /**
+     * Step 6. The walk target goes too, so nothing steers an out body back, and so do the lift-off (a FLY comes down),
+     * the dodge, the stomp and the counter. True when [w] rang out in this sub-step.
+     */
+    private fun ringOut(w: Work, wasOut: Boolean, c: Consts, atMs: Long, events: MutableList<DuelEvent>): Boolean {
+        if (wasOut || !isOut(w.body, c.level)) return false
         events += DuelEvent.RingOut(w.id, atMs)
         w.knock = Vec2.ZERO
         w.dashMs = 0L
         w.body = stopWalking(w.body)
+        w.specialMs = 0L
+        w.stomping = false
+        w.counterMs = 0L
+        return true
     }
 
     private fun kindRank(e: DuelEvent): Int = when (e) {
         is DuelEvent.DashStarted -> 0
-        is DuelEvent.WallSlam -> 1
-        is DuelEvent.Hit -> 2
-        is DuelEvent.Clash -> 3
-        is DuelEvent.RingOut -> 4
+        is DuelEvent.SpecialStarted -> 1
+        is DuelEvent.WallSlam -> 2
+        is DuelEvent.Hit -> 3
+        is DuelEvent.Clash -> 4
+        is DuelEvent.RingOut -> 5
     }
 
     private fun firstId(e: DuelEvent): String = when (e) {
         is DuelEvent.DashStarted -> e.id
+        is DuelEvent.SpecialStarted -> e.id
         is DuelEvent.WallSlam -> e.id
         is DuelEvent.Hit -> e.attacker
         is DuelEvent.Clash -> e.a

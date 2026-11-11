@@ -73,6 +73,32 @@ data class DuelParams(
      * time into frames runs exactly the same sub-steps (see [DuelPhysics.step]).
      */
     val subStepMs: Long = 8,
+
+    // Specials (T45): one per Ability, started by DuelInput.Special. Only times and dimensionless numbers (sizes in
+    // fighter radii), so they follow the surface and the character size without being in [scaled].
+
+    /**
+     * Base special cooldown, counted from the special's start and scaled by agility like the dash:
+     * [specialCooldownMs] * ([cooldownBase] - [cooldownPerAgility] * AGILITY) (7440 .. 4200 ms, 6000 at AGILITY 5).
+     */
+    val specialCooldownMs: Long = 6000,
+    /** JUMP stomp: an opponent whose centre is within this many of the stomper's radii of the landing point is hit. */
+    val stompRadiusRadii: Float = 3f,
+    /** JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it). */
+    val stompScale: Float = 1.2f,
+    /** FLY lift-off: how long the fighter hovers, cannot be hit and walks at [liftSpeedScale] x its walk speed. */
+    val liftMs: Long = 1200,
+    val liftSpeedScale: Float = 1.5f,
+    /** FLY lift-off: hover height of the feet above the ground under them, in fighter radii (0.5 = 1.5 cm on the table). */
+    val liftHeightRadii: Float = 0.5f,
+    /** ROLL ram: a dash [ramDashScale] x as long as [dashMs] (550 ms, 16.5 cm) hitting with [ramKnockScale] x the knockback. */
+    val ramDashScale: Float = 2.2f,
+    val ramKnockScale: Float = 1.5f,
+    /** HIDE dodge: for [dodgeMs] hits pass through the fighter. */
+    val dodgeMs: Long = 500,
+    /** HIDE counter: the first dash started within [counterMs] of the dodge's start hits with [counterKnockScale] x. */
+    val counterMs: Long = 1500,
+    val counterKnockScale: Float = 1.5f,
 ) {
     init {
         // T48 searches these numbers: refuse any set that could divide by zero, reverse a push or stun forever.
@@ -96,6 +122,19 @@ data class DuelParams(
         statFactor("guardBase + guardPerPoint * GUARD", guardBase, guardPerPoint)
         statFactor("cooldownBase - cooldownPerAgility * AGILITY", cooldownBase, -cooldownPerAgility)
         statFactor("stunBase - stunPerAgility * AGILITY", stunBase, -stunPerAgility)
+        require(specialCooldownMs >= 0L) { "specialCooldownMs must be >= 0, got $specialCooldownMs" }
+        require(liftMs >= 0L) { "liftMs must be >= 0, got $liftMs" }
+        require(dodgeMs >= 0L) { "dodgeMs must be >= 0, got $dodgeMs" }
+        require(counterMs >= 0L) { "counterMs must be >= 0, got $counterMs" }
+        nonNegative("stompRadiusRadii", stompRadiusRadii)
+        positive("stompScale", stompScale)
+        positive("liftSpeedScale", liftSpeedScale)
+        // 0 would put a hovering body on the ground with no vertical speed, which Physics launches as a full jump.
+        positive("liftHeightRadii", liftHeightRadii)
+        positive("ramDashScale", ramDashScale)
+        positive("ramKnockScale", ramKnockScale)
+        positive("counterKnockScale", counterKnockScale)
+        require((dashMs * ramDashScale).isFinite()) { "ramDashScale must be finite, got $ramDashScale" }
     }
 
     /** Walk speed of a fighter with [stats]: `physics.walkSpeedMps * duelSpeedScale * (speedBase + speedPerPoint * SPEED)`. */
@@ -105,6 +144,13 @@ data class DuelParams(
     /** Dash cooldown of a fighter with [stats], counted from the dash start (>= 0). */
     fun cooldownMsFor(stats: FighterStats): Long =
         (dashCooldownMs * (cooldownBase - cooldownPerAgility * clampStat(stats.agility))).roundToLong().coerceAtLeast(0L)
+
+    /** Special cooldown of a fighter with [stats], counted from the special's start (>= 0). */
+    fun specialCooldownMsFor(stats: FighterStats): Long =
+        (specialCooldownMs * (cooldownBase - cooldownPerAgility * clampStat(stats.agility))).roundToLong().coerceAtLeast(0L)
+
+    /** How long a ROLL ram lasts: [dashMs] * [ramDashScale]. */
+    val ramDashMs: Long get() = (dashMs * ramDashScale).roundToLong()
 
     /** Stun timer a hit gives a victim with [victim] stats (>= 0); it starts once the knockback is below [knockStunMps]. */
     fun hitStunMsFor(victim: FighterStats): Long =
