@@ -71,7 +71,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 0 | `:shared` iOS klib targets (done in wave 0: 2 lines of common code + `Platform.ios.kt`) | shared, Gradle (hand-review) | orchestrator | — |
 | 4 | T46 ios-entry (`MainViewController`, the `UIKitView` bridge for the AR slot) — moved next to T51: it cannot be run without the Mac | shared/iosMain | opus-high | T43 |
 | 2 | T47 thin-host S1: `GameLoop` to `core.session`, verbatim, pinned by tests — **merged, `review` until the Pixel check** ("hand over the lens") | core + androidApp (hand-review) | opus-high | T43 |
-| 3 | T52 thin-host S2: billboard maths to `BillboardPoser` -> `NodePose` | core + androidApp (hand-review) | opus-extra | T47 |
+| 3 | T52 thin-host S2: billboard maths to `BillboardPoser` -> `NodePose` — **merged, `review` until the Pixel check** ("walk, bow, jump") | core + androidApp (hand-review) | opus-extra | T47 |
 | 3 | T53 thin-host S3: `TableEngine` (commands, scenario start, cast sync, surface lock, then the frame step) | core + shared + androidApp (hand-review) | fable-high draft | T52 |
 | 3 | T54 thin-host S4: taps and finger grab behind `ArPort` | core + androidApp (hand-review) | fable-high draft | T53 |
 | 3 | T48 cli-duel-sim-balance | cli, core tuning | opus-extra | T55 |
