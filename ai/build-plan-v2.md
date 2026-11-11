@@ -76,7 +76,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 3 | T56 thin-host S3b: the frame step and the scenario feed behind `FrameInput` / `CameraFrame`; also puts the host's scan reads behind `engine.level` / `engine.standing()` so the duel stage (T50) does not wait for S5 | core + shared + androidApp (hand-review) | fable-high draft | T53 |
 | 3 | T54 thin-host S4: taps and finger grab behind `ArPort` | core + androidApp (hand-review) | fable-high draft | T56 |
 | 3 | T48 cli-duel-sim-balance | cli, core tuning | opus-extra | T55 |
-| 3 | T49 duel-ui (picker, VS, HUD, result): components and pure models only; no `ArSlot.kt` / `App.kt` edits (T53 moves types out of `ArSlot.kt`; the wiring is T50) | shared | sonnet-high | T44, T45 |
+| 3 | T49 duel-ui — **done** (not wired; the look is the user's check after T50) (picker, VS, HUD, result): components and pure models only; no `ArSlot.kt` / `App.kt` edits (T53 moves types out of `ArSlot.kt`; the wiring is T50) | shared | sonnet-high | T44, T45 |
 | 4 | T50 ar-host-views-duel (also builds the per-frame picture swap: T33 pose frames never reached the screen) | androidApp (hand-review) | fable-high draft | T41, T45, T49, T52–T54, T56 |
 | 4 | T51 ios-app-shell (Xcode, Swift RealityKit host) | iosApp | on the Mac | T46; a real AR host also needs S5 (scan) and S6 (capture) of the map |
 
