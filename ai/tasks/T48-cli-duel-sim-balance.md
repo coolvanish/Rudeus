@@ -1,6 +1,6 @@
 # T48 — cli-duel-sim-balance
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "The game": "tune with `cli duel`, not by feel")
 gate: G4 — no archetype wins more than 65 % against the field at equal budget; every match ends; 30 and 60 Hz agree
@@ -103,17 +103,146 @@ Keep the whole duel test package under about 90 s; say how long it takes.
   the before and after tables and the verdicts
 - No file outside "Owns" changed
 
-## Result (in progress: kept current after every candidate)
-- **Wobble**: not decided yet. The lever is written behind `wobblePerHit = 0` (exactly today's physics: every T42/T45
-  test passes with it) so a candidate can switch it on through `--params` without recompiling.
-- Baseline (today's defaults, `docs/duel-balance.md` "Before", n = 200, 232 s on 4 threads): A1 FAIL (4.0..93.3 %:
-  ROLL takes 82..93 % of the field, FLY 4..23 %), A2 FAIL (78 sides out), A3 FAIL (24 pairs; FLY v FLY and HIDE v HIDE
-  67..98 %), A4 FAIL (12.4..56.7 hits per ring-out), A5 PASS (43..98 s), A6 FAIL (89 of 128: SPEED 8 0.5..25 %, GUARD 8
-  up to 100 %), A7 FAIL (5: 45..64 % on cup-and-book and large), A8 PASS (57 600 replays identical). The new test
-  `aRingOutIsReachableOnLarge` fails on it: a victim that walks back to its mark takes 79 hits in 120 s and stays on
-  the 120 x 60 cm table.
+## Result (filled on acceptance)
+- **Wobble: YES, it is on by default. This is a rule change the user must see.** Every hit a fighter takes in a round
+  (a dash, a ram, a counter, a stomp; each side of a clash) adds 1 wobble; a hit on a fighter with wobble w knocks it
+  (1 + 0.7 w) x the plain knockback; wobble is capped at 4 and is 0 at the start of every round (`DuelMatch` rebuilds the
+  fighters on their marks). At 5 v 5 the hits of a round slide a fighter 4.5, 7.7, 10.8, 14.0, then 17.1 cm (the first is
+  today's 4.5 cm). No fade (`wobbleDecayPerS` 0). Nobody loses by wobble; it only brings the edge closer. The HUD gets
+  `SideModel.wobble` (0..1 of the cap).
+  **Why**: numbers alone could not end rounds on the 120 x 60 cm table without a one-hit ring-out on the 30 x 30 cm one.
+  Before: 12.4..56.7 hits per ring-out, up to 97.6 % of a pair's rounds to the clock. Numbers only (candidates 1..3): at
+  every knock speed up to 0.37 m/s (6.7 cm, the most an even hit may slide from the small mark, 7 cm from its edge) and
+  every dash cooldown from 0.7 to 1.5 s, two HARD bots on the large table still needed 12.4..33.9 hits per ring-out
+  (A4: <= 8). After (wobble + the numbers below): 3.5..6.8 hits per ring-out, 0..0.8 % to the clock, on every arena and
+  both levels. `aRingOutIsReachableOnLarge`: a standing victim goes off the large table after 4 hits (7 without wobble);
+  one that walks back to its mark after every hit, as a child might, after 11 (before T48: never, 79 hits in 120 s).
+- **Final defaults that changed (old -> new).** `DuelParams`: `dashCooldownMs` 1500 -> 2500; `cooldownBase` /
+  `cooldownPerAgility` 1.30 / 0.06 -> 1.15 / 0.03 (dash 2800..2125 ms, special 10 080..7650 ms); `speedBase` /
+  `speedPerPoint` 0.70 / 0.06 -> 0.50 / 0.10 (walk 0.60..1.50 x); `powerBase` / `powerPerPoint` and `guardBase` /
+  `guardPerPoint` 0.55 / 0.09 -> 0.60 / 0.08; `specialCooldownMs` 6000 -> 9000; `stompScale` 1.2 -> 0.85;
+  `ramDashScale` 2.2 -> 1.3 (325 ms, 9.75 cm); `ramKnockScale` 1.5 -> 1.1; `dodgeMs` 500 -> 900; `counterKnockScale`
+  1.5 -> 2.0; new `wobblePerHit` 1, `wobbleKnockScale` 0.7, `wobbleMax` 4, `wobbleDecayPerS` 0 (validated: >= 0 and
+  finite, by name). Unchanged: `knockSpeedMps` 0.25, `knockTauMs` 180, dash 250 ms at 0.30 m/s, stun, wall slam, lift,
+  counter window, stomp radius. `BotTuning`: `ramNearEdgeRadii` 5 -> 8; NORMAL `nearEdgeRadii` 4 -> 20 (it lifts off or
+  dodges whenever a dash or a stomp comes at it, not only near an edge); HARD `nearEdgeRadii` 4 -> 8 and
+  `thinkJitterTicks` 1 -> 3 (two HARD bots of one ability no longer dash together and clash in mid-table: JUMP v JUMP on
+  the large table was 52 % clock, 34 hits per ring-out). `DuelRules`: unchanged (60 s rounds).
+- **Acceptance** (`duel matrix --n 200`, NORMAL v NORMAL and HARD v HARD, four arenas; `docs/duel-balance.md`):
 
-### Candidate log
-| # | what changed | A1 | A2 | A3 | A4 | A5 | A6 | A7 | note |
-|---|---|---|---|---|---|---|---|---|---|
-| 0 | baseline | 4.0..93.3 | 78 out | 24 out | 12.4..56.7 | 43..98 s | 89 out | 5 out | |
+  | # | Threshold | Before | After | |
+  |---|---|---|---|---|
+  | A1 | 35..65 % | 4.0..93.3 % (16 out of 32) | 9.7..87.7 % (17 out) | FAIL |
+  | A2 | 25..75 % | 0..100 % (78 of 96 sides out) | 0..100 % (46 out) | FAIL |
+  | A3 | <= 25 % (large <= 40 %) | 0..97.6 % (24 of 80 pairs out) | 0..0.8 % | PASS |
+  | A4 | 2..8 | 12.4..56.7 | 3.5..6.8 | PASS |
+  | A5 | 30..120 s | 43.2..97.5 s | 23.7..44.6 s (small 23.7 / 25.8 s out) | FAIL |
+  | A6 | 40..65 % | 0..100 % (89 of 128 out) | 3.5..90 % (49 out) | FAIL |
+  | A7 | >= 65 % | 45..100 % (5 of 32 out) | 36.5..100 % (3 out, all on cup-and-book) | FAIL |
+  | A8 | identical | 57 600 / 57 600 | 57 600 / 57 600 replays at 16 ms identical | PASS |
+  | A9 | tests green | 90 duel tests | 100 duel tests green, 16 updated (below) | PASS |
+
+  What fails and by how much: A1 (17 of 32) ROLL 67..88 % on the empty, small and large tables (up to 23 points over)
+  but 30.7 % on cup-and-book at NORMAL, FLY 9.7..25.7 % on empty, small and large (up to 25 points under), JUMP 67.8 %
+  on cup-and-book and 33.0 / 34.7 % on small / large, HIDE 66.8..67.8 % on small; A5 the small table only, 6.3 and
+  4.2 s short; A6 SPEED 8 3.5..45.5 % on the three smaller tables (one cell 65.5 %; 43.5..90 % on the large one),
+  GUARD 8 36.5..77 %, AGILITY 8 22..77.5 %, POWER 8 35.5..68.5 %; A7 8/8/8/8 ROLL 36.5 %, HIDE 55.0 / 62.5 % on
+  cup-and-book (its other cells there 67.5..98 %, 88..100 % on the other tables). Measured with equal stats
+  (5/5/5/5, `duel series`, n 200, NORMAL, final defaults): JUMP v FLY 55 / 45 (empty) and 41.5 / 58.5 (large), HIDE v
+  JUMP 64 / 36 on both, FLY v HIDE 46 / 54 and 47 / 53, ROLL v JUMP 80.5 / 19.5 on empty and 47.5 / 52.5 on large;
+  FLY's 3/7/3/7 on a JUMP v 5/5/5/5 JUMP 23.5 % (empty), 36.5 % (large). So A1's gap is FLY's archetype, ROLL's ram on
+  the 60 cm table and ROLL's 7/6/5/2 line on the large one; the abilities themselves are within 36..64 % elsewhere.
+- **Candidate log** (partial matrices at n = 60, about 40 s each for the whole matrix without the 16 ms replay; NORMAL
+  and HARD; "-" = not measured in that run):
+
+  | # | what changed (from the previous unless said) | A1 | A2 | A3 | A4 | A5 | A6 | A7 | note |
+  |---|---|---|---|---|---|---|---|---|---|
+  | 0 | baseline (n 200) | 4.0..93.3 | 78 out | 24 out | 12.4..56.7 | 43..98 s | 89 out | 5 out | |
+  | 1 | numbers: knock 0.25 -> 0.34, dash cooldown 1500 -> 1000 | 8.3..92.8 | 48 | 13 | 3.6..43.5 | 21.6..86.1 | - | - | ability cells. NORMAL 3.6..7.5 hits, 0 % clock; large HARD 25.3 hits, HIDE v HIDE 89 % clock |
+  | 2 | numbers: + cooldown 800, hitStunMs 300 -> 700 | 7.2..91.1 | 50 | 17 | 3.7..121.7 | 22.7..114.9 | - | - | large HARD 18.4; cup HARD 121.7 (pinned at the cup) |
+  | 3 | numbers sweep: knock {0.28, 0.32, 0.37} x cooldown {700, 1000, 1500} | | | | | | | | small + large: large HARD 12.4..33.9 hits at every point; numbers alone cannot hold A4 there |
+  | 4 | wobble sweep: knock {0.25, 0.30} x cooldown {1000, 1500} x wobble scale {0.25, 0.5}, cap 4 | | | | | | | | small + large: large HARD 10.2..20.4 hits; small matches 18..25 s |
+  | 5 | wobble 1 / 0.5 / 4, cooldown 1500, HARD jitter 1 -> 3 | 3.3..97.2 | 22 | 0 out | 3.0..6.2 | 19.9..31.1 | - | - | small + large: the mirror stalemate gone (large HARD 6.2 hits, 1.7 % clock) |
+  | 6 | cooldown 2000 / 2500, knock 0.20 | 3.3..91.1 | 22..36 | 0 out | 3.4..9.4 | 22.5..51.7 | - | - | small + large: tempo buys small-table time slowly, large hits up |
+  | 7 | W1: cooldown 2000, SPEED 0.25 + 0.15, AGILITY 1.5 - 0.1, POWER / GUARD 0.65 + 0.07, ram 1.25, stomp 1.1 | 6.7..87.8 | 48 | 0 out | 3.4..7.6 | 22.3..40.3 | 79 | 4 | full matrix from here. SPEED 8 0..88 %, mostly under 30; AGILITY 8 30..90 %, mostly over 60 |
+  | 8 | W2 / W3: knock 0.18 .. 0.12 with steeper wobble (0.6 / 5 .. 1.0 / 6), SPEED 0 + 0.2 | 3.3..87.2 | 44..54 | 0 out | 4.5..10.1 | 25.8..50.8 | 77..87 | 1..2 | the large / small hit ratio stays about 2 |
+  | 9 | W4: walk scale 2.0 -> 1.4 / 1.0 | 10.0..98.9 | 48..52 | 0 out | 3.3..7.5 | 22.2..43.9 | 84..96 | 6..8 | small time barely moves; slow walking breaks A7 on cup-and-book |
+  | 10 | W5 / W6: flatter stats (POWER / GUARD 0.75 + 0.05, SPEED 0.5 + 0.1), cooldown 2500, wobble 0.6, lift 1500, dodge 600, counter 1.75; ram 1.0 / 1.8 x, ramNearEdge 10 | 5.0..93.9 | 42 | 0 out | 3.7..8.4 | 25.3..48.7 | 74..75 | 5 | ROLL 5/5/5/5 beats JUMP 93 %: the ram, not the stats |
+  | 11 | W7 / W8: AGILITY 1.15 - 0.03, POWER / GUARD 0.6 + 0.08, ram 1.3 x long; special cooldown 9000, ram 0.8, stomp 0.85, lift 2500, dodge 900, counter 2.0 | 1.1..92.2 | 60..62 | 0..1 out | 3.7..9.4 | 26.2..46.9 | 57..59 | 2..3 | A6 halves; FLY still 1..27 % |
+  | 12 | W9: NORMAL defends anywhere (nearEdge 20), HARD 8 | 9.4..83.3 | 48 | 0 out | 3.6..7.8 | 26.1..51.1 | 57 | 1 | HIDE now competitive |
+  | 13 | W10 / W11: lift back to 1200, ram 0.6; wobble 0.6 -> 0.7 | 10.6..82.2 | 40..42 | 0 out | 3.7..8.0 | 25.1..50.5 | 52..53 | 1..3 | wobble 0.7 gives A4 its margin |
+  | 14 | final (n 200): W11 with ram 1.1 (still harder than a dash), ramNearEdge 8 | 9.7..87.7 | 46 | 0 out | 3.5..6.8 | 23.7..44.6 | 49 | 3 | the committed defaults |
+- **How long.** `duel matrix --n 200 --bundle docs/bundled`: 288 cells (80 ability, 160 stat, 48 bundled), 57 600 matches
+  plus the same 57 600 replayed at 16 ms for A8: 78.6 s on 4 threads after (1465 matches/s; matches are short now),
+  232 s before (496 matches/s). Without the replay (`--check-n 0`) about half. The duel test package: 24.4 s for 100
+  tests (34..42 s for 90 before; `everyMatchFinishes` 1296 matches in 5.1 s, 0 of 2916 rounds by the clock).
+- **What a human must decide** (measured, code left alone; none of it is T48's to change):
+  1. **Wobble itself** (above): keep it as the rule that makes a big table playable, or say no and accept rounds that end
+     by the clock on large tables. `wobblePerHit = 0` turns it off (every T42 / T45 test passed with it at 0, commit
+     404017c); the HUD needs a way to show it (T50: `SideModel.wobble`).
+  2. **A child who walks back to the middle after every hit** needs 11 hits on the 120 x 60 cm table (the bots, who do
+     not, need 6.6..6.8). A stronger wobble (0.9 per hit) or a fade-free larger cap would bring it down at the cost of the
+     small table (already 3.5 hits).
+  3. **The specials that are hits** (JUMP stomp, ROLL ram) do not wait for the dash cooldown, so with wobble each is an
+     extra step to the edge; numbers alone had to make the stomp softer than a dash (0.85 x) and shorten the ram
+     (1.3 x long, 1.1 x knock), and ROLL still wins 80.5 / 19.5 at equal stats on the 60 x 40 table. A rule (a ram or
+     stomp spends the dash cooldown too, or adds no wobble) would let them stay strong.
+  4. **FLY's archetype 3/7/3/7** (`FighterStats.defaultFor`, domain): 23.5 % against 5/5/5/5 on the empty table with the
+     same ability. SPEED is worth little to a bot (both reach dash range at once); POWER and GUARD decide. A human picks:
+     a FLY line closer to 5/5/5/5 (4/6/4/6?), or SPEED doing more than walking (a longer or faster dash), or neither.
+  5. **The small table is short** (23.7 / 25.8 s against 30 s) because 3.5 hits from 7 cm do it. The match rules
+     (best of three, 3 s countdown, 1.5 s point pause) and the marks' 16 cm are not T48's; longer rounds there need one
+     of them, or accepting 25 s on a 30 cm table.
+  6. **HARD's ordering per ability**: HARD v NORMAL is 68 % overall (the test asks 55 %), but with JUMP on both sides 17 /
+     50 on empty and 25 / 50 on cup-and-book: a HARD JUMP loses to a NORMAL one (before: 49 and 43 of 50). Bot behaviour
+     (`DuelBot.kt`, not T48's).
+  7. **What the clock awards** and **height and hits**: untouched; with 0..0.8 % of rounds to the clock they hardly
+     matter now.
+- **Tests updated because they pinned an old default** (16, each with the old number in a comment):
+  `DuelPhysicsTest`: `flyKnockedPastTheEdgeIsOutEvenWhileAirborne` (0.566 m/s -> the formula, 0.515),
+  `dashHitsOncePerDash` (the re-dash time rounded to a 16 ms frame: 1600 was one, 2600 is not),
+  `dashOnCooldownIsIgnored` (1500 -> 2500, run length), `cooldownShortensWithAgility` (1860 / 1050 -> 2800 / 2125, run
+  length). `DuelSpecialsTest`: `stompKnocksEveryoneNearTheLandingAway` (0.3 -> 0.2125 m/s, slide > 4 -> > 3 cm),
+  `liftedFighterCannotBeHitAndTheDashCarriesOn` (second dash at 2000 -> after the 2500 ms cooldown),
+  `ramHitsHarderAndCanRollOffTheEdge` (0.375 -> 0.275 m/s, slide > 1.4 x -> > 1.05 x, 550 ms / 16.5 cm -> 325 ms /
+  9.75 cm, the roll-off start 12 -> 9 cm from the edge), `dodgeLetsTheHitThroughAndTheCounterHitsHarder` (0.375 ->
+  0.5 m/s; the after-the-dodge dash at 512 -> 912 ms), `dodgeThenDashIsNoBetterThanADash` (0.375 -> 0.5; 600 -> 912 ms),
+  `counterOnlyAfterADodgedHit` (0.375 -> 0.5), `specialOnCooldownOrWhileBusyIsIgnored` (6 -> 9 s, on the 16 ms frame
+  grid: 9008), `specialCooldownShortensWithAgility` (7440 / 6000 / 4200 -> 10 080 / 9000 / 7650, on the 8 ms grid),
+  `hudReadsCooldownsAsFractions` (1500 / 6000 -> 2500 / 9000, run length). `DuelBotTest`: `aDashComingAtItNearAnEdge`
+  (NORMAL now dodges in mid-table too; EASY still never), `theRamAndTheStomp` ("NORMAL waits for the edge" now on the
+  large table: on 60 x 40 every spot is within the new 8 radii). `DuelMatchTest`:
+  `theEarlierRingOutLosesAtAnyFrameRateAndInEitherSlot` (x's mark -0.04 -> -0.0414: the new POWER / GUARD factors had
+  moved the two ring-outs 40 ms apart, into different 33 ms calls; now 376 / 392 ms, one call, as the test intends).
+- **New tests** (core 675 -> 685, shared 40 -> 41): `DuelBalanceTest` `defaultsAreValid`,
+  `matrixArithmeticOnHandMadeResults`, `aSplitSeedRangePlaysTheSameMatches`, `aBalancedHitFromTheMarksIsNotARingOutOnSmall`
+  (32 directions, at most 4.5 of 7 cm), `aRingOutIsReachableOnLarge`, `acceptanceHoldsOnASample` (80 ability cells x
+  20, A1 within 5..95 % and A3 within 15 / 25 %, plus the strict A3 and A4; about 4 s); `DuelWobbleTest`
+  `wobbleZeroIsTodaysPhysics`, `wobbleGrowsKnockbackAndIsCapped`, `wobbleClearsWhenARoundStarts`,
+  `fuzzWithWobbleKeepsTheInvariants` (16 ability pairs x 1500 steps, wobble up to 7 x); shared `hudModelShowsWobble`.
+  `scripts/verify.sh`: OK (core 685, shared 41, android 3, iOS klibs, APK).
+- **Deviations.**
+  1. The matrix's arithmetic and cell playing (`DuelMatrix`, `MatrixCell`, `CellTally`, `CellResult`, `Acceptance`,
+     `Criterion`, `CellGroup`) live in `DuelArenas.kt` (the brief's "anything the matrix needs"), so the test can run it;
+     the CLI only threads, prints and writes. `DuelArenas.ALL` is unchanged (three arenas: T55's tests pin it);
+     `DuelArenas.MATRIX` adds "large".
+  2. `duel tune` is cut (the brief's cut-if-slips): tuned by hand with `--params` / `--tuning` / `--rules` JSON files.
+  3. Added beyond the brief: `--rules` and `--tuning` files, `--groups`, `--threads`, `--check-n` / `--check-step-ms`
+     (A8 replays every match by default), `--gate` (exit 1 on a FAIL; without it the command exits 0); arena name `cup`
+     is accepted for `cup-and-book`. The bundled round robin plays each distinct fighter once (16 characters, 4 distinct
+     archetype fighters: none has stats yet) and ranks every character by its fighter.
+  4. A4 is judged on each arena's ability cells together per level (T55's hits / ring-outs, every round's hits), A5
+     likewise; A3 per ability pair as the brief says. A2 checks both sides of a cell.
+  5. `aRingOutIsReachableOnLarge` asserts the standing victim (the brief's "scripted series of hits"); the walking-back
+     victim is printed (11 hits), not asserted.
+  6. `Hit.speedMps` now reports the knockback given, wobble included.
+- **Found in T42 / T45 / T55 while measuring** (nothing changed for them):
+  1. Two HARD bots of one ability, one tick of jitter, still mirrored each other on the 120 cm table: simultaneous
+     dashes, clashes in mid-table, 46..52 % of the rounds to the clock (fixed here by jitter 3, a number).
+  2. NORMAL's lift-off and dodge only near an edge meant FLY and HIDE had no special in mid-table (equal stats: JUMP
+     beat FLY 80 / 20); changed by a number here, but `nearEdgeRadii` also drives HARD's sidestep, so the two cannot be
+     tuned apart.
+  3. The ram never spends the dash cooldown (T45's note), and the stomp neither: the strongest balance lever in the
+     game, and a rule.
+  4. A SPEED stat that only sets the walk speed is nearly worthless to the bots on small and mid tables: both sides
+     reach dash range at the same moment.

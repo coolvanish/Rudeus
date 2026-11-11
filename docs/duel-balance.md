@@ -6,6 +6,449 @@ here with its headings one level down): seeded bot-vs-bot matches of `:core` (`D
 the same bot level, n = 200 per cell, every match replayed at 16 ms frames for A8. Same arguments, same table.
 Nothing calls a model or reads a key.
 
+**Rule change: wobble is on.** Every hit a fighter takes in a round makes the next one push it farther: + 1 wobble per
+hit taken (a clash counts for both), the knockback x (1 + 0.7 x wobble), wobble at most 4, back to 0 when a round
+starts. At 5 v 5 the hits of a round slide a fighter 4.5, 7.7, 10.8, 14.0, then 17.1 cm. Nobody loses by wobble; it only
+brings the edge closer. It was needed because numbers alone could not end rounds on the 120 x 60 cm table without a
+one-hit ring-out on the 30 x 30 cm one: with no wobble, at every knock speed up to 0.37 m/s (6.7 cm, the most an even
+hit may slide from the small table's mark, 7 cm from its edge) and every dash cooldown from 0.7 to 1.5 s, two HARD bots
+on the large table needed 12.4 to 33.9 hits per ring-out (A4 asks for at most 8).
+
+## Verdicts (n = 200, NORMAL v NORMAL and HARD v HARD)
+
+| # | Criterion | Threshold | Before | After | Verdict |
+|---|---|---|---|---|---|
+| A1 | each ability against the field | 35..65 % | 4.0..93.3 % (16 out) | 9.7..87.7 % (17 out) | FAIL |
+| A2 | every matchup, each side | 25..75 % | 0..100 % (78 out) | 0..100 % (46 out) | FAIL |
+| A3 | rounds ended by the clock, per pair | <= 25 % (large <= 40 %) | 0..97.6 % (24 out) | 0..0.8 % | PASS |
+| A4 | hits per ring-out | 2..8 | 12.4..56.7 (8 out) | 3.5..6.8 | PASS |
+| A5 | mean match length | 30..120 s | 43.2..97.5 s | 23.7..44.6 s (small: 23.7, 25.8) | FAIL |
+| A6 | specialist 8/4/4/4 v 5/5/5/5 | 40..65 % | 0..100 % (89 of 128 out) | 3.5..90 % (49 out) | FAIL |
+| A7 | 8/8/8/8 v 5/5/5/5 | >= 65 % | 45..100 % (5 out) | 36.5..100 % (3 out, all cup-and-book) | FAIL |
+| A8 | 16 ms and 33 ms frames | identical | 57 600 of 57 600 | 57 600 of 57 600 | PASS |
+| A9 | every core/duel test green | - | 90 | 100 (16 updated, see the brief) | PASS |
+
+What still fails, and why (the measurements behind it are in the brief's candidate log):
+- **A1 / A2: FLY's stat line and ROLL.** ROLL takes 67..88 % of the field on the empty, small and large tables (30.7 %
+  on cup-and-book at NORMAL), FLY 9.7..25.7 % on the empty, small and large ones. Separated with `duel series` (n = 200,
+  NORMAL, final defaults): at equal stats 5/5/5/5 the abilities are within 36..64 % of each other on the empty and the
+  large table (JUMP v FLY 55 / 45 and 41.5 / 58.5, HIDE v JUMP 64 / 36 on both, FLY v HIDE 46 / 54 and 47 / 53), except
+  ROLL v JUMP on the empty table, 80.5 / 19.5: there the ram (a hit that does not wait for the dash cooldown) wins it;
+  on the large table ROLL is even at equal stats (47.5 / 52.5), so its 71.5..84.7 % there come from its 7/6/5/2 line.
+  FLY's archetype 3/7/3/7 (domain `FighterStats.defaultFor`, not T48's) on a JUMP wins 23.5 % (empty) and 36.5 %
+  (large) against 5/5/5/5: SPEED and AGILITY buy a bot less than POWER and GUARD cost.
+- **A5: the small table.** Rounds there take 3.5 hits; matches are 23.7 s (NORMAL) and 25.8 s (HARD), against 30 s.
+  They were 43 s before because 12 hits were needed. The ROLL cells are the shortest (15.3..22.5 s), the FLY mirror the
+  longest (35..38 s).
+- **A6: SPEED.** A SPEED 8 specialist is 3.5..45.5 % on the empty, cup-and-book and small tables (one cell 65.5 %) and
+  43.5..90 % on the large one: walking fast barely decides who dashes first (both reach range at once) except on a big
+  table. GUARD 8 spans 36.5..77 %, AGILITY 8 22..77.5 %, POWER 8 35.5..68.5 %.
+- **A7: cup-and-book.** 8/8/8/8 loses or barely wins there with ROLL at NORMAL (36.5 %) and with HIDE (55.0 and
+  62.5 %); its other cells there are 67.5..98 %, and on the other three tables it wins 88..100 %. Not isolated; SPEED 8
+  alone is weak on that table too (18..65.5 %).
+
+## After: the T48 defaults (wobble on), 2026-11-11
+
+78.6 s on 4 threads (57 600 matches + the same 57 600 replayed at 16 ms, 1465 matches/s).
+
+`duel matrix --n 200 --seed 1 --level normal,hard --arenas empty,cup-and-book,small,large --groups ability,stat --bundle docs/bundled --step-ms 33 --check-n 200 --check-step-ms 16`
+
+Numbers: the defaults. 200 matches per cell (seeds 1..200, marks swapped on odd seeds), both sides bots of the same level, 33 ms frames; A8 replays 200 per cell at 16 ms. Clock = share of the rounds ended by the round clock; hits = Hit + Clash events per ring-out (all rounds' hits); s = mean match length.
+
+### Acceptance
+
+| # | Criterion | Threshold | Measured | Verdict |
+|---|---|---|---|---|
+| A1 | each ability against the field | 35.0 %..65.0 % | 9.7 %..87.7 % | FAIL (17 out) |
+| A2 | every matchup, each side | 25.0 %..75.0 % | 0.0 %..100.0 % | FAIL (46 out) |
+| A3 | rounds ended by the clock, per ability pair | <= 25.0 % (large: <= 40.0 %) | 0.0 %..0.8 % | PASS (0 out) |
+| A4 | hits per ring-out | 2.0..8.0 | 3.5..6.8 | PASS (0 out) |
+| A5 | mean match length | 30.0..120.0 s | 23.7 s..44.6 s | FAIL (2 out) |
+| A6 | a specialist (8/4/4/4) against 5/5/5/5 | 40.0 %..65.0 % | 3.5 %..90.0 % | FAIL (49 out) |
+| A7 | 8/8/8/8 against 5/5/5/5 | >= 65.0 % | 36.5 %..100.0 % | FAIL (3 out) |
+| A8 | the same matches at another frame length | identical | identical (57600 matches replayed at 16 ms, 0 different) | PASS (0 out) |
+| A9 | every core/duel test green | - | not measured here: `scripts/verify.sh` | - |
+
+- A1 out of 35.0 %..65.0 %: empty NORMAL FLY 14.5 %; empty NORMAL ROLL 87.7 %; empty HARD FLY 9.7 %; empty HARD ROLL 84.3 %; cup-and-book NORMAL JUMP 67.8 %; cup-and-book NORMAL ROLL 30.7 %; small NORMAL JUMP 33.0 %; small NORMAL FLY 12.2 %; small NORMAL ROLL 87.0 %; small NORMAL HIDE 67.8 %; small HARD FLY 25.7 %; small HARD ROLL 67.0 %; small HARD HIDE 66.8 %; large NORMAL ROLL 71.5 %; large HARD JUMP 34.7 %; large HARD FLY 25.3 %; and 1 more
+- A2 out of 25.0 %..75.0 %: empty NORMAL JUMP v ROLL 22.0 %; empty NORMAL ROLL v JUMP 78.0 %; empty NORMAL FLY v ROLL 2.0 %; empty NORMAL ROLL v FLY 98.0 %; empty NORMAL FLY v HIDE 14.5 %; empty NORMAL HIDE v FLY 85.5 %; empty NORMAL ROLL v HIDE 87.0 %; empty NORMAL HIDE v ROLL 13.0 %; empty HARD JUMP v FLY 81.0 %; empty HARD FLY v JUMP 19.0 %; empty HARD FLY v ROLL 0.0 %; empty HARD ROLL v FLY 100.0 %; empty HARD FLY v HIDE 10.0 %; empty HARD HIDE v FLY 90.0 %; empty HARD ROLL v HIDE 94.0 %; empty HARD HIDE v ROLL 6.0 %; and 30 more
+- A5 out of 30.0..120.0 s: small NORMAL 23.7 s; small HARD 25.8 s
+- A6 out of 40.0 %..65.0 %: empty NORMAL JUMP SPEED 26.5 %; empty NORMAL FLY SPEED 31.0 %; empty NORMAL FLY GUARD 77.0 %; empty NORMAL ROLL AGILITY 71.0 %; empty NORMAL HIDE SPEED 36.0 %; empty NORMAL HIDE GUARD 71.0 %; empty HARD JUMP SPEED 38.5 %; empty HARD JUMP AGILITY 68.0 %; empty HARD FLY SPEED 23.0 %; empty HARD FLY AGILITY 33.0 %; empty HARD ROLL SPEED 35.5 %; empty HARD HIDE SPEED 32.0 %; empty HARD HIDE AGILITY 36.0 %; cup-and-book NORMAL ROLL SPEED 18.0 %; cup-and-book NORMAL HIDE SPEED 26.5 %; cup-and-book NORMAL HIDE GUARD 37.0 %; and 33 more
+- A7 out of >= 65.0 %: cup-and-book NORMAL ROLL 8/8/8/8 36.5 %; cup-and-book NORMAL HIDE 8/8/8/8 55.0 %; cup-and-book HARD HIDE 8/8/8/8 62.5 %
+
+### Overview (ability cells)
+
+| arena | level | clock | worst pair clock | s | hits / ring-out | ring-outs / match | wall slams / match | specials / match |
+|---|---|---|---|---|---|---|---|---|
+| empty | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 32.8 | 4.9 | 2.4 | 0.0 | 3.6 |
+| empty | HARD | 0.0 % | JUMP v JUMP 0.0 % | 30.6 | 4.7 | 2.4 | 0.0 | 3.0 |
+| cup-and-book | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 35.9 | 6.2 | 2.5 | 5.2 | 4.3 |
+| cup-and-book | HARD | 0.1 % | JUMP v ROLL 0.8 % | 37.8 | 6.4 | 2.5 | 4.7 | 4.4 |
+| small | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 23.7 | 3.5 | 2.4 | 0.0 | 3.3 |
+| small | HARD | 0.0 % | JUMP v JUMP 0.0 % | 25.8 | 3.5 | 2.5 | 0.0 | 3.3 |
+| large | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 44.6 | 6.8 | 2.5 | 0.0 | 4.0 |
+| large | HARD | 0.0 % | HIDE v HIDE 0.2 % | 41.5 | 6.6 | 2.4 | 0.0 | 3.3 |
+
+### Abilities: empty, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 47.0 % / 0.0 % / 30.6 s / 5.1 | 73.0 % / 0.0 % / 41.4 s / 6.0 | 22.0 % / 0.0 % / 25.9 s / 4.0 | 37.5 % / 0.0 % / 34.7 s / 5.1 | 44.2 % / 0.0 % / 34.0 s / 5.0 |
+| **FLY** 3/7/3/7 | 27.0 % / 0.0 % / 41.4 s / 6.0 | 47.5 % / 0.0 % / 43.7 s / 6.4 | 2.0 % / 0.0 % / 25.8 s / 4.2 | 14.5 % / 0.0 % / 37.4 s / 5.6 | 14.5 % / 0.0 % / 34.9 s / 5.3 |
+| **ROLL** 7/6/5/2 | 78.0 % / 0.0 % / 25.9 s / 4.0 | 98.0 % / 0.0 % / 25.8 s / 4.2 | 52.0 % / 0.0 % / 27.7 s / 3.7 | 87.0 % / 0.0 % / 24.5 s / 3.6 | 87.7 % / 0.0 % / 25.4 s / 3.9 |
+| **HIDE** 4/5/4/7 | 62.5 % / 0.0 % / 34.7 s / 5.1 | 85.5 % / 0.0 % / 37.4 s / 5.6 | 13.0 % / 0.0 % / 24.5 s / 3.6 | 47.5 % / 0.0 % / 36.4 s / 5.2 | 53.7 % / 0.0 % / 32.2 s / 4.8 |
+
+### Abilities: empty, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 46.0 % / 0.0 % / 30.8 s / 4.5 | 81.0 % / 0.0 % / 35.5 s / 5.4 | 41.0 % / 0.0 % / 25.5 s / 3.6 | 28.5 % / 0.0 % / 33.4 s / 5.3 | 50.2 % / 0.0 % / 31.4 s / 4.8 |
+| **FLY** 3/7/3/7 | 19.0 % / 0.0 % / 35.5 s / 5.4 | 48.5 % / 0.0 % / 44.6 s / 7.0 | 0.0 % / 0.0 % / 22.2 s / 4.0 | 10.0 % / 0.0 % / 33.9 s / 5.3 | 9.7 % / 0.0 % / 30.5 s / 4.9 |
+| **ROLL** 7/6/5/2 | 59.0 % / 0.0 % / 25.5 s / 3.6 | 100.0 % / 0.0 % / 22.2 s / 4.0 | 48.0 % / 0.0 % / 26.3 s / 3.6 | 94.0 % / 0.0 % / 22.4 s / 3.6 | 84.3 % / 0.0 % / 23.4 s / 3.7 |
+| **HIDE** 4/5/4/7 | 71.5 % / 0.0 % / 33.4 s / 5.3 | 90.0 % / 0.0 % / 33.9 s / 5.3 | 6.0 % / 0.0 % / 22.4 s / 3.6 | 50.0 % / 0.0 % / 31.2 s / 4.4 | 55.8 % / 0.0 % / 29.9 s / 4.7 |
+
+### Abilities: cup-and-book, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 50.0 % / 0.0 % / 35.8 s / 7.0 | 47.5 % / 0.0 % / 46.5 s / 6.8 | 95.5 % / 0.0 % / 31.1 s / 7.0 | 60.5 % / 0.0 % / 36.2 s / 6.4 | 67.8 % / 0.0 % / 37.9 s / 6.7 |
+| **FLY** 3/7/3/7 | 52.5 % / 0.0 % / 46.5 s / 6.8 | 48.0 % / 0.0 % / 41.1 s / 6.3 | 37.5 % / 0.0 % / 32.8 s / 5.7 | 41.5 % / 0.0 % / 41.1 s / 6.4 | 43.8 % / 0.0 % / 40.1 s / 6.3 |
+| **ROLL** 7/6/5/2 | 4.5 % / 0.0 % / 31.1 s / 7.0 | 62.5 % / 0.0 % / 32.8 s / 5.7 | 51.0 % / 0.0 % / 25.8 s / 4.1 | 25.0 % / 0.0 % / 31.3 s / 5.7 | 30.7 % / 0.0 % / 31.7 s / 6.1 |
+| **HIDE** 4/5/4/7 | 39.5 % / 0.0 % / 36.2 s / 6.4 | 58.5 % / 0.0 % / 41.1 s / 6.4 | 75.0 % / 0.0 % / 31.3 s / 5.7 | 50.5 % / 0.0 % / 37.8 s / 6.3 | 57.7 % / 0.0 % / 36.2 s / 6.2 |
+
+### Abilities: cup-and-book, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 52.0 % / 0.0 % / 35.2 s / 6.2 | 58.0 % / 0.0 % / 45.5 s / 7.4 | 80.5 % / 0.8 % / 34.1 s / 6.9 | 53.0 % / 0.0 % / 36.2 s / 6.7 | 63.8 % / 0.3 % / 38.6 s / 7.0 |
+| **FLY** 3/7/3/7 | 42.0 % / 0.0 % / 45.5 s / 7.4 | 51.5 % / 0.0 % / 45.2 s / 6.6 | 36.5 % / 0.0 % / 39.0 s / 6.8 | 51.5 % / 0.0 % / 40.9 s / 6.4 | 43.3 % / 0.0 % / 41.8 s / 6.8 |
+| **ROLL** 7/6/5/2 | 19.5 % / 0.8 % / 34.1 s / 6.9 | 63.5 % / 0.0 % / 39.0 s / 6.8 | 49.0 % / 0.0 % / 30.4 s / 4.8 | 31.0 % / 0.0 % / 33.6 s / 5.8 | 38.0 % / 0.3 % / 35.6 s / 6.5 |
+| **HIDE** 4/5/4/7 | 47.0 % / 0.0 % / 36.2 s / 6.7 | 48.5 % / 0.0 % / 40.9 s / 6.4 | 69.0 % / 0.0 % / 33.6 s / 5.8 | 51.5 % / 0.0 % / 37.7 s / 6.1 | 54.8 % / 0.0 % / 36.9 s / 6.3 |
+
+### Abilities: small, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 47.5 % / 0.0 % / 23.3 s / 3.7 | 78.0 % / 0.0 % / 29.0 s / 4.1 | 0.5 % / 0.0 % / 15.3 s / 2.7 | 20.5 % / 0.0 % / 24.4 s / 3.4 | 33.0 % / 0.0 % / 22.9 s / 3.4 |
+| **FLY** 3/7/3/7 | 22.0 % / 0.0 % / 29.0 s / 4.1 | 52.5 % / 0.0 % / 35.1 s / 5.0 | 5.5 % / 0.0 % / 18.3 s / 2.8 | 9.0 % / 0.0 % / 26.7 s / 3.9 | 12.2 % / 0.0 % / 24.7 s / 3.7 |
+| **ROLL** 7/6/5/2 | 99.5 % / 0.0 % / 15.3 s / 2.7 | 94.5 % / 0.0 % / 18.3 s / 2.8 | 57.0 % / 0.0 % / 18.5 s / 2.7 | 67.0 % / 0.0 % / 19.1 s / 2.5 | 87.0 % / 0.0 % / 17.6 s / 2.7 |
+| **HIDE** 4/5/4/7 | 79.5 % / 0.0 % / 24.4 s / 3.4 | 91.0 % / 0.0 % / 26.7 s / 3.9 | 33.0 % / 0.0 % / 19.1 s / 2.5 | 52.0 % / 0.0 % / 27.4 s / 3.7 | 67.8 % / 0.0 % / 23.4 s / 3.3 |
+
+### Abilities: small, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 51.5 % / 0.0 % / 25.3 s / 3.3 | 60.0 % / 0.0 % / 31.1 s / 4.3 | 34.0 % / 0.0 % / 19.5 s / 2.6 | 27.5 % / 0.0 % / 24.1 s / 3.0 | 40.5 % / 0.0 % / 24.9 s / 3.3 |
+| **FLY** 3/7/3/7 | 40.0 % / 0.0 % / 31.1 s / 4.3 | 49.5 % / 0.0 % / 38.0 s / 5.5 | 7.0 % / 0.0 % / 22.5 s / 3.4 | 30.0 % / 0.0 % / 29.7 s / 4.0 | 25.7 % / 0.0 % / 27.8 s / 3.9 |
+| **ROLL** 7/6/5/2 | 66.0 % / 0.0 % / 19.5 s / 2.6 | 93.0 % / 0.0 % / 22.5 s / 3.4 | 50.0 % / 0.0 % / 20.3 s / 2.5 | 42.0 % / 0.0 % / 20.9 s / 2.7 | 67.0 % / 0.0 % / 20.9 s / 2.9 |
+| **HIDE** 4/5/4/7 | 72.5 % / 0.0 % / 24.1 s / 3.0 | 70.0 % / 0.0 % / 29.7 s / 4.0 | 58.0 % / 0.0 % / 20.9 s / 2.7 | 56.0 % / 0.0 % / 27.0 s / 3.5 | 66.8 % / 0.0 % / 24.9 s / 3.2 |
+
+### Abilities: large, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 49.0 % / 0.0 % / 40.4 s / 6.6 | 16.5 % / 0.0 % / 61.0 s / 9.4 | 46.5 % / 0.0 % / 35.7 s / 5.5 | 44.0 % / 0.0 % / 45.0 s / 6.8 | 35.7 % / 0.0 % / 47.2 s / 7.2 |
+| **FLY** 3/7/3/7 | 83.5 % / 0.0 % / 61.0 s / 9.4 | 49.0 % / 0.0 % / 53.0 s / 8.5 | 15.5 % / 0.0 % / 41.7 s / 6.3 | 58.0 % / 0.0 % / 59.6 s / 8.5 | 52.3 % / 0.0 % / 54.1 s / 8.0 |
+| **ROLL** 7/6/5/2 | 53.5 % / 0.0 % / 35.7 s / 5.5 | 84.5 % / 0.0 % / 41.7 s / 6.3 | 48.5 % / 0.0 % / 28.7 s / 4.2 | 76.5 % / 0.0 % / 35.3 s / 5.4 | 71.5 % / 0.0 % / 37.6 s / 5.7 |
+| **HIDE** 4/5/4/7 | 56.0 % / 0.0 % / 45.0 s / 6.8 | 42.0 % / 0.0 % / 59.6 s / 8.5 | 23.5 % / 0.0 % / 35.3 s / 5.4 | 49.0 % / 0.0 % / 45.8 s / 6.9 | 40.5 % / 0.0 % / 46.6 s / 6.9 |
+
+### Abilities: large, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 57.5 % / 0.0 % / 38.6 s / 6.5 | 46.5 % / 0.0 % / 58.5 s / 8.7 | 36.0 % / 0.0 % / 33.0 s / 4.9 | 21.5 % / 0.0 % / 42.1 s / 6.9 | 34.7 % / 0.0 % / 44.5 s / 6.8 |
+| **FLY** 3/7/3/7 | 53.5 % / 0.0 % / 58.5 s / 8.7 | 48.0 % / 0.0 % / 49.9 s / 8.3 | 1.5 % / 0.0 % / 29.5 s / 5.4 | 21.0 % / 0.0 % / 54.2 s / 8.5 | 25.3 % / 0.0 % / 47.4 s / 7.6 |
+| **ROLL** 7/6/5/2 | 64.0 % / 0.0 % / 33.0 s / 4.9 | 98.5 % / 0.0 % / 29.5 s / 5.4 | 47.0 % / 0.0 % / 38.8 s / 5.5 | 91.5 % / 0.0 % / 29.7 s / 4.8 | 84.7 % / 0.0 % / 30.8 s / 5.0 |
+| **HIDE** 4/5/4/7 | 78.5 % / 0.0 % / 42.1 s / 6.9 | 79.0 % / 0.0 % / 54.2 s / 8.5 | 8.5 % / 0.0 % / 29.7 s / 4.8 | 50.0 % / 0.2 % / 40.7 s / 5.9 | 55.3 % / 0.0 % / 42.0 s / 6.7 |
+
+### Stats: empty, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 58.0 % / 0.0 % | 26.5 % / 0.0 % | 59.0 % / 0.0 % | 45.0 % / 0.0 % | 90.5 % / 0.0 % |
+| FLY | 58.5 % / 0.0 % | 31.0 % / 0.0 % | 77.0 % / 0.0 % | 43.0 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 47.0 % / 0.0 % | 41.5 % / 0.0 % | 41.0 % / 0.0 % | 71.0 % / 0.0 % | 97.0 % / 0.0 % |
+| HIDE | 62.0 % / 0.0 % | 36.0 % / 0.0 % | 71.0 % / 0.0 % | 47.5 % / 0.0 % | 98.5 % / 0.0 % |
+
+### Stats: empty, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 52.5 % / 0.0 % | 38.5 % / 0.0 % | 50.0 % / 0.0 % | 68.0 % / 0.0 % | 97.5 % / 0.0 % |
+| FLY | 58.0 % / 0.0 % | 23.0 % / 0.0 % | 60.5 % / 0.0 % | 33.0 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 40.0 % / 0.0 % | 35.5 % / 0.0 % | 57.5 % / 0.0 % | 59.0 % / 0.0 % | 94.5 % / 0.0 % |
+| HIDE | 45.5 % / 0.0 % | 32.0 % / 0.0 % | 48.0 % / 0.0 % | 36.0 % / 0.0 % | 98.5 % / 0.0 % |
+
+### Stats: cup-and-book, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 47.0 % / 0.0 % | 44.0 % / 0.0 % | 45.0 % / 0.0 % | 44.5 % / 0.0 % | 70.0 % / 0.0 % |
+| FLY | 60.5 % / 0.0 % | 45.5 % / 0.0 % | 51.5 % / 0.0 % | 43.5 % / 0.0 % | 84.0 % / 0.0 % |
+| ROLL | 42.5 % / 0.0 % | 18.0 % / 0.0 % | 40.5 % / 0.0 % | 40.0 % / 0.0 % | 36.5 % / 0.0 % |
+| HIDE | 46.5 % / 0.0 % | 26.5 % / 0.0 % | 37.0 % / 0.0 % | 40.5 % / 0.0 % | 55.0 % / 0.0 % |
+
+### Stats: cup-and-book, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 44.5 % / 0.0 % | 65.5 % / 0.0 % | 44.5 % / 0.0 % | 35.0 % / 0.0 % | 98.0 % / 0.0 % |
+| FLY | 58.5 % / 0.0 % | 42.5 % / 0.0 % | 68.5 % / 0.0 % | 38.0 % / 0.0 % | 93.5 % / 0.0 % |
+| ROLL | 68.5 % / 0.0 % | 36.5 % / 0.0 % | 63.0 % / 0.0 % | 58.5 % / 0.0 % | 67.5 % / 0.0 % |
+| HIDE | 57.0 % / 0.0 % | 31.0 % / 0.0 % | 61.0 % / 0.0 % | 64.0 % / 0.0 % | 62.5 % / 0.0 % |
+
+### Stats: small, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 66.0 % / 0.0 % | 35.0 % / 0.0 % | 55.0 % / 0.0 % | 50.0 % / 0.0 % | 88.0 % / 0.0 % |
+| FLY | 61.0 % / 0.0 % | 9.5 % / 0.0 % | 75.5 % / 0.0 % | 50.0 % / 0.0 % | 95.0 % / 0.0 % |
+| ROLL | 61.5 % / 0.0 % | 29.5 % / 0.0 % | 49.0 % / 0.0 % | 22.0 % / 0.0 % | 95.5 % / 0.0 % |
+| HIDE | 54.5 % / 0.0 % | 29.0 % / 0.0 % | 68.0 % / 0.0 % | 58.5 % / 0.0 % | 93.5 % / 0.0 % |
+
+### Stats: small, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 35.5 % / 0.0 % | 34.0 % / 0.0 % | 44.0 % / 0.0 % | 77.5 % / 0.0 % | 94.5 % / 0.0 % |
+| FLY | 52.5 % / 0.0 % | 3.5 % / 0.0 % | 61.5 % / 0.0 % | 53.5 % / 0.0 % | 99.0 % / 0.0 % |
+| ROLL | 53.5 % / 0.0 % | 28.0 % / 0.0 % | 49.0 % / 0.0 % | 71.0 % / 0.0 % | 99.5 % / 0.0 % |
+| HIDE | 38.5 % / 0.0 % | 32.0 % / 0.0 % | 54.0 % / 0.0 % | 62.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+### Stats: large, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 55.5 % / 0.0 % | 43.5 % / 0.0 % | 67.0 % / 0.0 % | 41.0 % / 0.0 % | 99.0 % / 0.0 % |
+| FLY | 60.5 % / 0.0 % | 90.0 % / 0.0 % | 58.0 % / 0.0 % | 39.0 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 55.5 % / 0.0 % | 51.5 % / 0.0 % | 59.0 % / 0.0 % | 73.5 % / 0.0 % | 100.0 % / 0.0 % |
+| HIDE | 53.5 % / 0.0 % | 79.0 % / 0.0 % | 49.0 % / 0.0 % | 40.0 % / 0.0 % | 100.0 % / 0.0 % |
+
+### Stats: large, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 54.0 % / 0.0 % | 44.5 % / 0.0 % | 54.0 % / 0.0 % | 50.0 % / 0.0 % | 95.5 % / 0.0 % |
+| FLY | 54.0 % / 0.2 % | 79.0 % / 0.0 % | 48.0 % / 0.0 % | 48.5 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 42.0 % / 0.4 % | 83.5 % / 0.4 % | 57.0 % / 0.0 % | 59.0 % / 0.0 % | 99.5 % / 0.0 % |
+| HIDE | 43.5 % / 0.0 % | 78.0 % / 0.2 % | 36.5 % / 0.0 % | 39.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+### Bundled round robin: empty, NORMAL v NORMAL
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_car | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 87.3 % | 0.0 % |
+| toy_fox | HIDE 4/5/4/7 | 53.7 % | 0.0 % |
+| drawing_cowcow | JUMP 5/5/5/5 | 45.0 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 45.0 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 45.0 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 45.0 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 45.0 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 45.0 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 14.0 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 14.0 % | 0.0 % |
+
+### Bundled round robin: empty, HARD v HARD
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_car | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 83.2 % | 0.0 % |
+| toy_fox | HIDE 4/5/4/7 | 55.8 % | 0.0 % |
+| drawing_cowcow | JUMP 5/5/5/5 | 50.7 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 50.7 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 50.7 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 50.7 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 50.7 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 50.7 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 10.3 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 10.3 % | 0.0 % |
+
+### Bundled round robin: cup-and-book, NORMAL v NORMAL
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_cowcow | JUMP 5/5/5/5 | 66.8 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 66.8 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 66.8 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 66.8 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 66.8 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 66.8 % | 0.0 % |
+| toy_fox | HIDE 4/5/4/7 | 57.7 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 43.2 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 43.2 % | 0.0 % |
+| drawing_car | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 32.3 % | 0.0 % |
+
+### Bundled round robin: cup-and-book, HARD v HARD
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_cowcow | JUMP 5/5/5/5 | 62.2 % | 0.4 % |
+| drawing_penguini | JUMP 5/5/5/5 | 62.2 % | 0.4 % |
+| horse | JUMP 5/5/5/5 | 62.2 % | 0.4 % |
+| toy_dino | JUMP 5/5/5/5 | 62.2 % | 0.4 % |
+| toy_edinorog | JUMP 5/5/5/5 | 62.2 % | 0.4 % |
+| toy_one_dino | JUMP 5/5/5/5 | 62.2 % | 0.4 % |
+| toy_fox | HIDE 4/5/4/7 | 54.8 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 42.8 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 42.8 % | 0.0 % |
+| drawing_car | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+| toy-car-01 | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+| toy-car-02 | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+| toy_car2 | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+| toy_duck | ROLL 7/6/5/2 | 40.2 % | 0.4 % |
+
+### Bundled round robin: small, NORMAL v NORMAL
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_car | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 86.0 % | 0.0 % |
+| toy_fox | HIDE 4/5/4/7 | 67.8 % | 0.0 % |
+| drawing_cowcow | JUMP 5/5/5/5 | 32.8 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 32.8 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 32.8 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 32.8 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 32.8 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 32.8 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 13.3 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 13.3 % | 0.0 % |
+
+### Bundled round robin: small, HARD v HARD
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| toy_fox | HIDE 4/5/4/7 | 66.8 % | 0.0 % |
+| drawing_car | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 66.5 % | 0.0 % |
+| drawing_cowcow | JUMP 5/5/5/5 | 41.5 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 41.5 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 41.5 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 41.5 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 41.5 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 41.5 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 25.2 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 25.2 % | 0.0 % |
+
+### Bundled round robin: large, NORMAL v NORMAL
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_car | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 71.3 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 51.7 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 51.7 % | 0.0 % |
+| toy_fox | HIDE 4/5/4/7 | 40.5 % | 0.0 % |
+| drawing_cowcow | JUMP 5/5/5/5 | 36.5 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 36.5 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 36.5 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 36.5 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 36.5 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 36.5 % | 0.0 % |
+
+### Bundled round robin: large, HARD v HARD
+
+16 characters, 4 distinct fighters; each one's win share against the others.
+
+| character | fighter | v the others | clock |
+|---|---|---|---|
+| drawing_car | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| drawing_car_2 | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| drawing_watermelon | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| toy-car-01 | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| toy-car-02 | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| toy_car2 | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| toy_duck | ROLL 7/6/5/2 | 83.0 % | 0.0 % |
+| toy_fox | HIDE 4/5/4/7 | 55.3 % | 0.0 % |
+| drawing_cowcow | JUMP 5/5/5/5 | 36.3 % | 0.0 % |
+| drawing_penguini | JUMP 5/5/5/5 | 36.3 % | 0.0 % |
+| horse | JUMP 5/5/5/5 | 36.3 % | 0.0 % |
+| toy_dino | JUMP 5/5/5/5 | 36.3 % | 0.0 % |
+| toy_edinorog | JUMP 5/5/5/5 | 36.3 % | 0.0 % |
+| toy_one_dino | JUMP 5/5/5/5 | 36.3 % | 0.0 % |
+| drawing_god_cow | FLY 3/7/3/7 | 25.3 % | 0.0 % |
+| drawing_pink | FLY 3/7/3/7 | 25.3 % | 0.0 % |
+
+
 ## Before: the defaults of T42, T45 and T55 (baseline, 2026-11-11)
 
 232 s on 4 threads (57 600 matches + the same 57 600 replayed at 16 ms, 496 matches/s).
