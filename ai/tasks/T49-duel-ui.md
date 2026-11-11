@@ -1,6 +1,6 @@
 # T49 — duel-ui
 
-status: todo
+status: review
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "The game")
 gate: G5 — three matches in a row on the Pixel (this brief is the UI half; the wiring is T50)
@@ -106,5 +106,15 @@ Tests not required: the composables, layout, screenshots.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- cut/deferred: how it looks and plays on the Pixel is the user's check, after T50 wires it
+- measured (2026-11-11, cloud container): `scripts/verify.sh` exit 0: core 650, shared 40 (30 + 10 new `DuelHudModelTest`),
+  android 3, debug APK built; `:shared:compileKotlinIosSimulatorArm64` green. Nothing outside "Owns" changed.
+- built: `ui/duel/DuelHudModel.kt` (pure `duelHud`, `specialLabel`, `GO_MS`), `DuelHud.kt`, `VersusCard.kt`,
+  `OpponentPicker.kt`, `DuelResult.kt`; 23 new `StringId`s (kk/ru/en) and their rows + a "Duel" section in DESIGN.md.
+- decisions: Jump is also disabled in the air (`Physics.jump` ignores it there, like ROLL); the Jump label is always
+  `play_jump` (FLY's lift is the Special, "Float"); "Fight" is worded "Play" (no word that reads as hurting); Watch needs a
+  pick like Play; the banner sits near the top of the band between the top row and the buttons, not the exact middle
+  (DESIGN principle 1: the middle is where the fighters stand); Dash glyph is the right chevron, Stomp's the down chevron
+  (no new glyphs: `Glyph.kt` is not in Owns).
+- cut/deferred: how it looks and plays on the Pixel is the user's check, after T50 wires it. No composable was rendered or
+  screenshotted here. Kazakh copy least certain: `special_stomp` "Дүрс ет", `special_ram` "Зымыра", `duel_dash` "Ұмтыл",
+  `duel_go` "Кеттік", `duel_title` "Сайыс".

@@ -301,6 +301,32 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
 - *Fell off the cliff*: bubble "Oops! Fell" then "Back up" on respawn.
 - *Scanning from Play*: the same `ScanOverlay`; the character keeps walking underneath.
 
+### Duel — `OpponentPicker`, `VersusCard`, `DuelHud`, `DuelResult` (T49)
+Two fighters a child drew push each other on the table; nobody is hurt, so no copy says hitting ("Play", "Dash",
+"Stomp", "Float", "Rush", "Dodge"; the loser hears "Good try"). The composables are stateless over `duelHud(state,
+myId, …)`, a pure `DuelHudModel`; the host (T50) only feeds it. Nothing here is wired yet; the visual check is the user's.
+- *Picker*: Paper screen. Display "Duel", headline "Pick an opponent", the shelf's character cards (124 dp, Cream, selected =
+  Ink ring + Sun check) without the player's own, three chips Easy · Normal · Hard (the chip rule above), then secondary
+  **Watch** (eye glyph) and the Sun primary **Play**. Both buttons wait for a pick.
+- *VS card*: two Cream cards, the sprites on Paper wells facing each other (the left looks right, the right looks left;
+  a side view drawn the other way is mirrored, a front or back view is not), name in `headline`, ability tag, "VS" in
+  `display` between them; under them two `FighterStatsCard(compact)` side by side.
+- *HUD* (over the AR view, inside the safe-drawing insets, 16 dp in): top row = my name card, the clock pill with a quiet
+  "Round N" pill under it, the other's name card. A name card is Paper with a 1 dp Line edge, radius `tile`, the name
+  (`label`, InkMuted while that fighter is out) and one pip per point to win (14 dp, filled Ink = scored, CreamDeep =
+  open). A hovering or dodging fighter has a SkyTint card, a Sky edge and a shield glyph. The banner is one Paper card
+  (hero radius, 1 dp Line) with `display` text, 36 sp, or the countdown digit at 72 sp; Point has a Leaf (mine) or Sky dot.
+  It sits in the band between the top row and the buttons, near the top, so it never covers the buttons or the middle
+  where the fighters stand (principle 1); it fades and pops in (reduced motion: fade only).
+- *Buttons*: bottom row, Special · Jump · Dash, all 64 dp, glyph + one word, press = the button press scale. Dash is the
+  Sun primary at the bottom-right (1.25x wide); Jump and Special are Paper with a 2 dp Ink stroke; no ability = no
+  Special (an empty slot). Not ready = SunTint / Paper with InkMuted stroke and text. While a button recharges, its ready
+  colour grows from the left in step with the cooldown (Sun for Dash, CreamDeep for the others), text stays Ink: a fill,
+  not a number, so a child sees when it is back. Enabled only in FIGHT and only when the physics would take the input.
+- *Result*: `Scrim` that takes the touches, one Paper card (hero radius): the verdict in `display` (You won · Good try ·
+  A draw), both names with the score `2 : 1` between them, primary **Again**, secondary **Done**.
+- Copy: `special_*` follows the fighter's ability (stomp = JUMP, float = FLY, rush = ROLL, dodge = HIDE); Jump keeps `play_jump`.
+
 ### Metrics — `MetricsScreen`
 Paper, dev density. Opened from the Settings sheet (or from Play with Footprints on). Shows this phone's run
 (`CaptureHost.latestRun()`, core's `MetricsRun`, read when the screen opens). Back (ghost) top-left, title "Metrics",
@@ -428,6 +454,29 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | kind_platform | Алаң | Площадка | Platform |
 | kind_dynamic | Қол | Рука | Hand |
 | kind_cliff | Жар | Обрыв | Cliff |
+| duel_title | Сайыс | Дуэль | Duel |
+| duel_pick_opponent | Қарсыласыңды таңда | Выбери соперника | Pick an opponent |
+| duel_fight | Ойнау | Играть | Play |
+| duel_watch | Қарау | Смотреть | Watch |
+| duel_vs | VS | VS | VS |
+| duel_round | Раунд | Раунд | Round |
+| duel_go | Кеттік | Вперёд | Go |
+| duel_point_mine | Ұпай саған | Очко тебе | Point for you |
+| duel_point_foe | Ұпай қарсыласқа | Очко сопернику | Point for them |
+| duel_replay | Ұпай жоқ. Қайта | Без очка. Заново | No point. Replay |
+| duel_won | Жеңіс | Победа | You won |
+| duel_lost | Жақсы әрекет | Хорошая попытка | Good try |
+| duel_draw | Тең | Ничья | A draw |
+| duel_again | Тағы | Ещё | Again |
+| duel_done | Болды | Готово | Done |
+| duel_dash | Ұмтыл | Рывок | Dash |
+| special_stomp | Дүрс ет | Топни | Stomp |
+| special_lift | Қалықта | Парь | Float |
+| special_ram | Зымыра | Разгон | Rush |
+| special_dodge | Жалтар | Уклонись | Dodge |
+| difficulty_easy | Оңай | Легко | Easy |
+| difficulty_normal | Орташа | Средне | Normal |
+| difficulty_hard | Қиын | Трудно | Hard |
 | metrics_title | Метрика | Метрика | Metrics |
 | metrics_empty | Әзірге жоқ | Пока пусто | Nothing yet |
 | metrics_empty_hint | Алдымен кейіпкер жаса | Сначала сделай героя | Make a character first |
