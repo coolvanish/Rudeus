@@ -184,10 +184,10 @@ data class Acceptance(
     /** A3 on [largeArena]. */
     val clockMaxLarge: Float = 0.40f,
     val largeArena: String = "large",
-    /** A4: hits per ring-out over an arena's ability cells, per level. */
+    /** A4: hits per ring-out of every ability pair (an arena's average is shown, not judged). */
     val hitsMin: Float = 2f,
     val hitsMax: Float = 8f,
-    /** A5: mean match length over an arena's ability cells, per level, seconds of match time. */
+    /** A5: mean match length of every ability pair, seconds of match time (an arena's average is shown, not judged). */
     val matchMinS: Float = 30f,
     val matchMaxS: Float = 120f,
     /** A6: a specialist's win share against 5/5/5/5 with the same ability. */
@@ -278,9 +278,10 @@ object DuelMatrix {
     }
 
     /**
-     * The matches of [cell] with seeds [from] until [until] on [arena] (the level named by `cell.arena`), as
-     * [DuelSim.series] plays them: both sides at `cell.level`, `a` on the first mark for an even seed and on the second
-     * for an odd one (so any split of a seed range gives the same matches). [stepMs] is the frame length.
+     * The matches of [cell] with seeds [from] until [until] on [arena] (the level named by `cell.arena`), exactly as
+     * [DuelSim.series] from seed [first] plays them: both sides at `cell.level`, `a` on the first mark for an even offset
+     * from [first] and on the second for an odd one. So a cell played in pieces (same [first]) is the same matches, and
+     * `duel series --seed <first>` replays it. [stepMs] is the frame length.
      */
     fun play(
         cell: MatrixCell,
@@ -293,12 +294,13 @@ object DuelMatrix {
         params: DuelParams = DuelParams.DEFAULT,
         physics: PhysicsParams = PhysicsParams.DEFAULT,
         tuning: BotTuning = BotTuning(),
+        first: Long = from,
     ): List<SimResult> {
         val marks = DuelArenas.marks(arena, physics = physics)
         val swapped = marks.second to marks.first
         val out = ArrayList<SimResult>((until - from).coerceAtLeast(0L).toInt())
         for (seed in from until until) {
-            val m = if (seed.mod(2L) == 0L) marks else swapped
+            val m = if ((seed - first).mod(2L) == 0L) marks else swapped
             out += DuelSim.match(cell.a, cell.b, arena, cell.level, cell.level, seed, stepMs, maxMatchMs, rules, params, physics, tuning, m).result
         }
         return out
@@ -381,20 +383,38 @@ object DuelMatrix {
             range(clock, ::pct), badClock.isEmpty() && clock.isNotEmpty(), badClock,
         )
 
-        // A4, A5: over each arena's ability cells, per level.
+        // A4, A5: judged per ability pair (same-ability pairs too), so a failing pair cannot hide in an arena's
+        // average; the average over each arena's ability cells, per level, is shown next to it.
         val hits = ArrayList<Float>()
         val length = ArrayList<Float>()
         val badHits = ArrayList<String>()
         val badLength = ArrayList<String>()
+        for (r in results) {
+            val c = r.cell
+            if (c.group != CellGroup.ABILITY) continue
+            val h = r.tally.hitsPerRingOut
+            val s = r.tally.meanMatchS
+            hits += h
+            length += s
+            if (!(h >= t.hitsMin && h <= t.hitsMax)) badHits += "${c.arena} ${c.level} ${c.labelA} v ${c.labelB} ${one(h)}"
+            if (s < t.matchMinS || s > t.matchMaxS) badLength += "${c.arena} ${c.level} ${c.labelA} v ${c.labelB} ${one(s)} s"
+        }
+        val arenaHits = ArrayList<Float>()
+        val arenaLength = ArrayList<Float>()
         for ((arena, level) in keys) {
             val sum = arenaTotal(results, arena, level) ?: continue
-            hits += sum.hitsPerRingOut
-            length += sum.meanMatchS
-            if (!(sum.hitsPerRingOut >= t.hitsMin && sum.hitsPerRingOut <= t.hitsMax)) badHits += "$arena $level ${one(sum.hitsPerRingOut)}"
-            if (sum.meanMatchS < t.matchMinS || sum.meanMatchS > t.matchMaxS) badLength += "$arena $level ${one(sum.meanMatchS)} s"
+            arenaHits += sum.hitsPerRingOut
+            arenaLength += sum.meanMatchS
         }
-        out += Criterion("A4", "hits per ring-out", "${one(t.hitsMin)}..${one(t.hitsMax)}", range(hits, ::one), badHits.isEmpty() && hits.isNotEmpty(), badHits)
-        out += Criterion("A5", "mean match length", "${one(t.matchMinS)}..${one(t.matchMaxS)} s", range(length) { "${one(it)} s" }, badLength.isEmpty() && length.isNotEmpty(), badLength)
+        out += Criterion(
+            "A4", "hits per ring-out, per ability pair", "${one(t.hitsMin)}..${one(t.hitsMax)}",
+            "per pair ${range(hits, ::one)} (per arena ${range(arenaHits, ::one)})", badHits.isEmpty() && hits.isNotEmpty(), badHits,
+        )
+        out += Criterion(
+            "A5", "mean match length, per ability pair", "${one(t.matchMinS)}..${one(t.matchMaxS)} s",
+            "per pair ${range(length) { "${one(it)} s" }} (per arena ${range(arenaLength) { "${one(it)} s" }})",
+            badLength.isEmpty() && length.isNotEmpty(), badLength,
+        )
 
         // A6, A7: the stat cells.
         val spec = ArrayList<Float>()

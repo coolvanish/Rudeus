@@ -257,8 +257,9 @@ class DuelMatchTest {
 
     @Test
     fun theWinnerCannotFallDuringPoint() {
-        // The case above: at the point x is still sliding toward its edge, 16 ms from falling off. In POINT it is frozen
-        // where it stands (no motion, no fall, no event), and stands on its mark when the phase ends.
+        // The case above with x on its old mark (-0.04): at the point x is still sliding toward its edge, 40 ms from
+        // falling off (16 ms before T48's stat factors). In POINT it is frozen where it stands (no motion, no fall, no
+        // event), and stands on its mark when the phase ends.
         val tiny = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
         val x = Contestant("x", FighterStats(10, 1, 1, 8), Ability.JUMP)
         val y = Contestant("y", FighterStats(8, 1, 2, 9), Ability.JUMP)

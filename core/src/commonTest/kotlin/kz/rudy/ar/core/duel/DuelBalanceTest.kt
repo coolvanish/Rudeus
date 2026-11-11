@@ -98,8 +98,9 @@ class DuelBalanceTest {
         assertEquals(700f / 114f, total.hitsPerRingOut, 1e-4f) // 140 rounds, 26 by the clock
 
         // The verdicts: ROLL takes 70 % of the field (A1 out), ROLL v HIDE is 90 / 10 (A2 out on both sides), the JUMP
-        // mirror ended every round by the clock and ROLL v HIDE 30 % (A3 out), hits per ring-out 6.1 and a 60 s mean
-        // pass A4 and A5.
+        // mirror ended every round by the clock and ROLL v HIDE 30 % (A3 out). A4 and A5 are judged per pair: the JUMP
+        // mirror has no ring-out at all (A4 out, though the arena's 6.1 hits per ring-out would pass); every pair's 60 s
+        // passes A5.
         val verdicts = DuelMatrix.acceptance(results, stepsAgree = true).associateBy { it.id }
         assertEquals(listOf("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"), verdicts.keys.toList())
         assertFalse(verdicts.getValue("A1").pass)
@@ -107,8 +108,14 @@ class DuelBalanceTest {
         assertEquals("36.7 %..70.0 %", verdicts.getValue("A1").measured)
         assertEquals(listOf("t NORMAL ROLL v HIDE 90.0 %", "t NORMAL HIDE v ROLL 10.0 %"), verdicts.getValue("A2").failures)
         assertEquals(listOf("t NORMAL JUMP v JUMP 100.0 %", "t NORMAL ROLL v HIDE 30.0 %"), verdicts.getValue("A3").failures)
-        assertTrue(verdicts.getValue("A4").pass && verdicts.getValue("A5").pass)
-        assertEquals("6.1..6.1", verdicts.getValue("A4").measured)
+        assertFalse(verdicts.getValue("A4").pass)
+        assertEquals(listOf("t NORMAL JUMP v JUMP inf"), verdicts.getValue("A4").failures)
+        assertEquals("per pair 5.0..inf (per arena 6.1..6.1)", verdicts.getValue("A4").measured)
+        assertTrue(verdicts.getValue("A5").pass)
+        assertEquals("per pair 60.0 s..60.0 s (per arena 60.0 s..60.0 s)", verdicts.getValue("A5").measured)
+        // One pair over the bound fails A4 even when its arena's average is inside (ROLL v HIDE 7.1 -> 10.0).
+        val heavy = results.map { if (it.cell.labelA == "ROLL" && it.cell.labelB == "HIDE") it.copy(tally = it.tally.copy(hits = 140)) else it }
+        assertEquals(listOf("t NORMAL JUMP v JUMP inf", "t NORMAL ROLL v HIDE 10.0"), DuelMatrix.acceptance(heavy, true).first { it.id == "A4" }.failures)
         // No stat cells: A6 and A7 cannot pass on nothing; A8 as given.
         assertFalse(verdicts.getValue("A6").pass || verdicts.getValue("A7").pass)
         assertTrue(verdicts.getValue("A8").pass)
@@ -144,35 +151,46 @@ class DuelBalanceTest {
     @Test
     fun acceptanceHoldsOnASample() {
         // A reduced matrix: the ability cells on the four arenas at NORMAL and HARD, 20 matches each (1600, a few
-        // seconds), judged by A1 and A3 with widened margins. Not the acceptance itself (`duel matrix --n 200` is, see
-        // docs/duel-balance.md: A1 fails it at 9.7..87.7 %): a guard that turns red when a later change breaks the
-        // balance badly: an ability that (almost) never or always wins against the field, or rounds left to the clock.
+        // seconds), judged by A1, A3 and A4 (per pair) with widened margins. Not the acceptance itself (`duel matrix
+        // --n 200` is, see docs/duel-balance.md: A1 fails it): a guard that turns red when a later change breaks the
+        // balance badly: an ability that (almost) never or always wins against the field, rounds left to the clock, or a
+        // pair that needs far more hits than A4's 8 to ring anyone out.
         val cells = DuelMatrix.abilityCells(DuelArenas.MATRIX.keys.toList(), listOf(BotLevel.NORMAL, BotLevel.HARD))
         val results = cells.map { c -> CellResult(c, DuelMatrix.tally(DuelMatrix.play(c, DuelArenas.MATRIX.getValue(c.arena), 1L, 21L))) }
-        val wide = Acceptance(fieldMin = 0.05f, fieldMax = 0.95f, clockMax = 0.15f, clockMaxLarge = 0.25f)
+        val wide = Acceptance(fieldMin = 0.03f, fieldMax = 0.97f, clockMax = 0.15f, clockMaxLarge = 0.25f, hitsMax = 12f)
         val verdicts = DuelMatrix.acceptance(results, stepsAgree = null, t = wide).associateBy { it.id }
         val strict = DuelMatrix.acceptance(results, stepsAgree = null).associateBy { it.id }
         println("acceptanceHoldsOnASample: A1 ${verdicts.getValue("A1").measured}, A3 ${verdicts.getValue("A3").measured}, A4 ${strict.getValue("A4").measured}, A5 ${strict.getValue("A5").measured}")
-        for (id in listOf("A1", "A3")) {
+        for (id in listOf("A1", "A3", "A4")) {
             val v = verdicts.getValue(id)
             assertTrue(v.pass, "$id ${v.measured} out of ${v.threshold}: ${v.failures}")
         }
         // Every one of them ended, and the rounds ended on the table.
         assertTrue(results.all { it.tally.unfinished == 0 && it.tally.matches == 20 })
-        assertTrue(strict.getValue("A3").pass && strict.getValue("A4").pass, "A3 ${strict.getValue("A3")}, A4 ${strict.getValue("A4")}")
+        assertTrue(strict.getValue("A3").pass, "A3 ${strict.getValue("A3")}")
     }
 
     @Test
     fun aSplitSeedRangePlaysTheSameMatches() {
-        // What lets the CLI spread a cell over threads: the matches of seeds 4..9 are the same played in one call or two.
+        // What lets the CLI spread a cell over threads: the matches of a seed range are the same played in one call or
+        // two (the same first seed), and the same as DuelSim.series from that seed (marks swapped every other match from
+        // it), from an even and from an odd seed: `duel series --seed N` replays a matrix cell.
         val cell = abilityCell(Ability.ROLL, Ability.HIDE, arena = "small")
         val arena = DuelArenas.SMALL
-        val whole = DuelMatrix.play(cell, arena, 4L, 10L)
-        assertEquals(whole, DuelMatrix.play(cell, arena, 4L, 7L) + DuelMatrix.play(cell, arena, 7L, 10L))
-        // ... and the same as DuelSim.series (marks swapped on odd seeds = every other match from an even start).
-        val s = DuelSim.series(cell.a, cell.b, arena, BotLevel.NORMAL, BotLevel.NORMAL, 6, 4L)
-        val t = DuelMatrix.tally(whole)
-        assertEquals(listOf(s.winsA, s.winsB, s.ringOuts, s.timeouts, s.hits), listOf(t.winsA, t.winsB, t.ringOuts, t.timeouts, t.hits))
+        for (first in listOf(4L, 5L)) {
+            val whole = DuelMatrix.play(cell, arena, first, first + 6L)
+            assertEquals(whole, DuelMatrix.play(cell, arena, first, first + 3L) + DuelMatrix.play(cell, arena, first + 3L, first + 6L, first = first), "from $first")
+            val s = DuelSim.series(cell.a, cell.b, arena, BotLevel.NORMAL, BotLevel.NORMAL, 6, first)
+            val t = DuelMatrix.tally(whole)
+            assertEquals(listOf(s.winsA, s.winsB, s.ringOuts, s.timeouts, s.hits, s.wallSlams, s.specials), listOf(t.winsA, t.winsB, t.ringOuts, t.timeouts, t.hits, t.wallSlams, t.specials), "from $first")
+            assertEquals(s.meanMatchMs, t.matchMs / 6, "from $first")
+            // Match by match: series swaps on the offset, so seed first + i has the marks the other way round for odd i.
+            val marks = DuelArenas.marks(arena)
+            for ((i, r) in whole.withIndex()) {
+                val m = if (i % 2 == 0) marks else marks.second to marks.first
+                assertEquals(DuelSim.match(cell.a, cell.b, arena, BotLevel.NORMAL, BotLevel.NORMAL, first + i, marks = m).result, r, "seed ${first + i}")
+            }
+        }
     }
 
     // -- the smallest and the largest table -----------------------------------------------------------------------

@@ -237,7 +237,7 @@ private fun duelMatrix(flags: Flags): Int {
     val bundleDir = flags.get("bundle")?.let(::File)
     val groups = (flags.get("groups") ?: "ability,stat").split(',').map { it.trim().lowercase() }.toSet()
     val outDir = File(flags.get("out") ?: DUEL_DEFAULT_OUT)
-    if (outDir.absoluteFile.normalize().name == "runs") throw CliError("--out $outDir: runs/ belongs to MetricsLog; write to build/duel")
+    refuseRunsDir(outDir)
 
     val cells = ArrayList<MatrixCell>()
     if ("ability" in groups) cells += DuelMatrix.abilityCells(arenas, levels)
@@ -264,7 +264,8 @@ private fun duelMatrix(flags: Flags): Int {
     fun submit(cell: MatrixCell, from: Long, until: Long, step: Long): Future<List<SimResult>> = pool.submit(
         Callable {
             val arena = DuelArenas.MATRIX.getValue(cell.arena)
-            DuelMatrix.play(cell, arena, from, until, step, rules = s.rules, params = s.params, tuning = s.tuning).also {
+            // first = the cell's first seed: the marks swap exactly as `duel series --seed $seed` swaps them.
+            DuelMatrix.play(cell, arena, from, until, step, rules = s.rules, params = s.params, tuning = s.tuning, first = seed).also {
                 val before = done.getAndAdd(it.size).toLong()
                 val after = before + it.size
                 if (after / tick != before / tick) {
@@ -311,6 +312,19 @@ private fun duelMatrix(flags: Flags): Int {
     )
     // A FAIL is a finding, not an error; --gate makes it the exit code (1).
     return if (!flags.has("gate") || acceptance.all { it.pass }) 0 else 1
+}
+
+/**
+ * runs/ belongs to MetricsLog: refuse any --out inside it (its first path component, relative to the working directory,
+ * the repo root under `:cli:run`, is `runs`: `runs`, `runs/duel`, `./runs/x`, or the same as an absolute path).
+ */
+private fun refuseRunsDir(outDir: File) {
+    val cwd = File("").absoluteFile.toPath().normalize()
+    val out = outDir.absoluteFile.toPath().normalize()
+    val rel = if (out.startsWith(cwd)) cwd.relativize(out) else null
+    if (rel != null && rel.nameCount > 0 && rel.getName(0).toString() == "runs") {
+        throw CliError("--out $outDir: runs/ belongs to MetricsLog; write to build/duel")
+    }
 }
 
 private fun bundleFighters(dir: File): List<Pair<String, Contestant>> {
@@ -370,14 +384,19 @@ private fun matrixMarkdown(
 
     appendLine("## Overview (ability cells)")
     appendLine()
-    appendLine("| arena | level | clock | worst pair clock | s | hits / ring-out | ring-outs / match | wall slams / match | specials / match |")
-    appendLine("|---|---|---|---|---|---|---|---|---|")
+    appendLine("| arena | level | clock | worst pair clock | s | shortest / longest pair s | hits / ring-out | most hits, pair | ring-outs / match | wall slams / match | specials / match |")
+    appendLine("|---|---|---|---|---|---|---|---|---|---|---|")
     for (arena in arenas) for (level in levels) {
         val sum = DuelMatrix.arenaTotal(results, arena, level) ?: continue
-        val worst = results.filter { it.cell.group == CellGroup.ABILITY && it.cell.arena == arena && it.cell.level == level }.maxByOrNull { it.tally.clockShare }
+        val pairs = results.filter { it.cell.group == CellGroup.ABILITY && it.cell.arena == arena && it.cell.level == level }
+        val worst = pairs.maxByOrNull { it.tally.clockShare }
+        val most = pairs.maxByOrNull { it.tally.hitsPerRingOut }
+        val shortest = pairs.minOf { it.tally.meanMatchS }
+        val longest = pairs.maxOf { it.tally.meanMatchS }
         appendLine(
             "| $arena | $level | ${pct(sum.clockShare)} | ${worst?.let { "${it.cell.labelA} v ${it.cell.labelB} ${pct(it.tally.clockShare)}" } ?: "-"} | " +
-                "${one(sum.meanMatchS)} | ${one(sum.hitsPerRingOut)} | ${one(sum.ringOuts.toFloat() / sum.matches)} | " +
+                "${one(sum.meanMatchS)} | ${one(shortest)} / ${one(longest)} | ${one(sum.hitsPerRingOut)} | " +
+                "${most?.let { "${it.cell.labelA} v ${it.cell.labelB} ${one(it.tally.hitsPerRingOut)}" } ?: "-"} | ${one(sum.ringOuts.toFloat() / sum.matches)} | " +
                 "${one(sum.wallSlams.toFloat() / sum.matches)} | ${one(sum.specials.toFloat() / sum.matches)} |",
         )
     }

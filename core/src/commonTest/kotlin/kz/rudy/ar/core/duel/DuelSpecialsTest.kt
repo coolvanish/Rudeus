@@ -275,8 +275,9 @@ class DuelSpecialsTest {
         // b first: it dodges at 0 and dashes at 8 (ending the dodge), a dashes at 40. They meet both dashing: a clash.
         val bFirst = play(mapOf(0L to inputs("b" to Special), 8L to inputs("b" to Dash()), 40L to inputs("a" to Dash())))
         assertEquals(listOf("Clash"), bFirst.all.filter { it is Clash || it is Hit }.map { it::class.simpleName }, "${bFirst.all}")
-        // a first: a dashes at 8 into b's dodge (it passes), b waits and dashes at 600, after its dodge: a counter, a
-        // takes it. This is what the dodge is for: a read of the other's dash.
+        // a first: a dashes at 8 into b's dodge (it passes), b waits and dashes at 600, still inside its 900 ms dodge
+        // (its dash ends the dodge; before T48 the 500 ms dodge was over by then): a counter, a takes it. This is what
+        // the dodge is for: a read of the other's dash.
         val aFirst = play(mapOf(0L to inputs("b" to Special), 8L to inputs("a" to Dash()), 600L to inputs("b" to Dash())))
         val hit = aFirst.all.filterIsInstance<Hit>().single()
         assertEquals(Hit("b", "a", 0.25f * P.counterKnockScale, fromAbove = false, atMs = hit.atMs), hit) // 0.5 (T48; 0.375 before)
