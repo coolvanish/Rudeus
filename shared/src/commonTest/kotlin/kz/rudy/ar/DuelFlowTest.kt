@@ -338,4 +338,21 @@ class DuelFlowTest {
         assertFalse(DuelFlow.autoScanFor(fighting.ui, userSwitch = true))
         assertFalse(DuelFlow.autoScanFor(fighting.ui, userSwitch = false))
     }
+
+    @Test
+    fun aPhotoOnTheTableHidesItsSavedCardWhoeverIsActive() {
+        // Photo P plays as "photo-r1", saved as "saved-P"; a friend joined and is active: P must not be offered again.
+        val saved = listOf(card("saved-P"), card("saved-1"))
+        val bundled = listOf(card("murat"))
+        val cast = listOf(member("photo-r1"), member("murat"))
+        assertEquals(listOf("saved-1"), DuelFlow.opponents(saved, bundled, "murat", cast, photoSavedId = "saved-P").map { it.id })
+        // The photo itself active: the same.
+        assertEquals(listOf("saved-1", "murat"), DuelFlow.opponents(saved, bundled, "photo-r1", cast, "saved-P").map { it.id })
+        // No photo on the table (it left with the session end): its saved card is an opponent like any other.
+        assertEquals(
+            listOf("saved-P", "saved-1"),
+            DuelFlow.opponents(saved, bundled, "murat", listOf(member("murat")), "saved-P").map { it.id },
+        )
+        assertEquals(listOf("saved-P", "saved-1"), DuelFlow.opponents(saved, bundled, "murat", cast, photoSavedId = null).map { it.id })
+    }
 }

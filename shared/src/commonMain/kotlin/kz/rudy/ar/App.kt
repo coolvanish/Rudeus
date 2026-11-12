@@ -98,7 +98,7 @@ private const val SCAN_ARC_HOLD = 0.95f
 private const val SCAN_ARC_TICK_MS = 100L
 
 /** T31: the cast id of a fresh pipeline result is this + its ref (ArCharacter.id). */
-private const val PHOTO_PREFIX = "photo-"
+internal const val PHOTO_PREFIX = "photo-"
 
 /** T24: a voice transcript bubble stays this long (shorter than a character line: it only confirms what was heard). */
 private const val VOICE_BUBBLE_MS = 2000L
@@ -922,10 +922,7 @@ fun App(
                         val ui = duelUi
                         if (ui != null && active != null) {
                             val mine = DuelFlow.card(active, playSheet)
-                            val opponents = DuelFlow.opponents(
-                                saved, bundled, mine.id,
-                                alsoMine = if (mine.id.startsWith(PHOTO_PREFIX)) setOfNotNull(photoSavedId) else emptySet(),
-                            )
+                            val opponents = DuelFlow.opponents(saved, bundled, mine.id, cast, photoSavedId)
                             val foe = opponents.firstOrNull { it.id == ui.foeId }
                             DuelScreen(
                                 ui = ui,

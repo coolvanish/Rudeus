@@ -1,6 +1,7 @@
 package kz.rudy.ar.ui.duel
 
 import kz.rudy.ar.ArCharacter
+import kz.rudy.ar.PHOTO_PREFIX
 import kz.rudy.ar.core.domain.CharacterSheet
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.duel.BotLevel
@@ -62,6 +63,22 @@ object DuelFlow {
         mineId: String,
         alsoMine: Set<String> = emptySet(),
     ): List<BundledCharacter> = (saved + bundled).distinctBy { it.id }.filter { it.id != mineId && it.id !in alsoMine }
+
+    /**
+     * The picker's cards for [mineId] with [cast] on the table: the Add sheet's rule (T31 review) for the photo being
+     * played. While a "photo-<ref>" member stands on the table its saved card ([photoSavedId]) is not offered, whoever is
+     * active: picking it would put the same drawing on the table twice.
+     */
+    fun opponents(
+        saved: List<BundledCharacter>,
+        bundled: List<BundledCharacter>,
+        mineId: String,
+        cast: List<ArCharacter>,
+        photoSavedId: String?,
+    ): List<BundledCharacter> = opponents(
+        saved, bundled, mineId,
+        alsoMine = if (cast.any { it.id.startsWith(PHOTO_PREFIX) }) setOfNotNull(photoSavedId) else emptySet(),
+    )
 
     /**
      * A cast member as a shelf card, for the VS card: its id, [sheet], sprite, emotes, frames. A photo member has no
