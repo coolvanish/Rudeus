@@ -143,9 +143,11 @@ class DuelHudModelTest {
             assertEquals(Triple(false, false, false), enabled(hud(ready.copy(phase = phase))), "$phase")
         }
 
-        // On cooldown: that button only.
+        // On cooldown: that button only (red is a JUMP: since T57 its stomp shares the dash cooldown, so the dash
+        // recharging greys the Special too; without the rule, the dash button only).
         val dashed = ready.withA { it.copy(dashCooldownMs = 900L) }
-        assertEquals(Triple(false, true, true), enabled(hud(dashed)))
+        assertEquals(Triple(false, true, false), enabled(hud(dashed)))
+        assertEquals(Triple(false, true, true), enabled(hud(dashed, params = DuelParams.DEFAULT.copy(specialsShareDashCooldown = false))))
         val specialUsed = ready.withA { it.copy(specialCooldownMs = 900L) }
         assertEquals(Triple(true, true, false), enabled(hud(specialUsed)))
 
@@ -175,7 +177,7 @@ class DuelHudModelTest {
     fun cooldownFractionsFollowTheFighter() {
         val params = DuelParams.DEFAULT
         val dashTotal = params.cooldownMsFor(RED.stats)
-        val specialTotal = params.specialCooldownMsFor(RED.stats)
+        val specialTotal = params.specialCooldownMsFor(RED.stats, RED.ability)
         val s = start().inFight()
         assertEquals(0f, hud(s).dash.cooldown)
         assertEquals(0f, hud(s).special!!.cooldown)
@@ -183,19 +185,64 @@ class DuelHudModelTest {
 
         val used = s.withA { it.copy(dashCooldownMs = dashTotal, specialCooldownMs = specialTotal / 4) }
         assertEquals(1f, hud(used).dash.cooldown)
-        assertEquals(0.25f, hud(used).special!!.cooldown, 0.001f)
+        // T57: red's stomp waits for the dash too, so its ring shows the longer wait (the dash's 1); a quarter without
+        // the rule.
+        assertEquals(1f, hud(used).special!!.cooldown, 0.001f)
+        assertEquals(0.25f, hud(used, params = params.copy(specialsShareDashCooldown = false)).special!!.cooldown, 0.001f)
+        assertEquals(0.25f, hud(s.withA { it.copy(specialCooldownMs = specialTotal / 4) }).special!!.cooldown, 0.001f)
         val half = s.withA { it.copy(dashCooldownMs = dashTotal / 2) }
         assertEquals(0.5f, hud(half).dash.cooldown, 0.01f)
 
         // Each side reads its own fighter: red's cooldown is blue's 0.
         assertEquals(0f, hud(used, me = "blue").dash.cooldown)
         assertEquals(1f, hud(used, me = "red").dash.cooldown)
+        // ... and its own special's length (the T57 review: blue's dodge cools 1.6 x as long as red's stomp).
+        val dodgeTotal = params.specialCooldownMsFor(BLUE.stats, BLUE.ability)
+        assertEquals(12_672L, dodgeTotal) // 9000 x 1.6 x (1.15 - 0.03 x AGILITY 9)
+        val dodged = s.copy(duel = s.duel.copy(b = s.duel.b.copy(specialCooldownMs = dodgeTotal / 4)))
+        assertEquals(0.25f, hud(dodged, me = "blue").special!!.cooldown, 0.001f)
 
         // The params in use set the length: the same time left is a bigger fraction of a shorter cooldown.
         val shorter = params.copy(dashCooldownMs = params.dashCooldownMs / 2)
         val left = dashTotal / 4
         val quarter = s.withA { it.copy(dashCooldownMs = left) }
         assertTrue(hud(quarter, params = shorter).dash.cooldown > hud(quarter, params = params).dash.cooldown * 1.5f)
+    }
+
+    @Test
+    fun hudDisablesTheSpecialWhileTheSharedDashRecharges() {
+        // T57: the JUMP stomp and the ROLL ram share the dash cooldown. Red (JUMP) dashes: its Special stays grey, its
+        // ring showing the dash's wait, until the dash is ready again; then both light up together. The same for a ROLL.
+        // Blue's dodge (HIDE) never waits for the dash.
+        val params = DuelParams.DEFAULT
+        for (ability in listOf(Ability.JUMP, Ability.ROLL)) {
+            val s = fightOf(start(a = Contestant("red", RED.stats, ability)))
+            assertTrue(hud(s).special!!.enabled)
+            val dashed = advance(s, 16L, mapOf("red" to DuelInput.Dash(Vec2(0f, 1f))))
+            val total = params.cooldownMsFor(RED.stats)
+            var t = dashed
+            var greyed = 0
+            while (t.duel.a.dashCooldownMs > 0L) {
+                val m = hud(t)
+                assertFalse(m.special!!.enabled, "$ability at ${t.duel.timeMs} ms")
+                assertEquals(m.dash.cooldown, m.special!!.cooldown, 1e-6f, "$ability: the ring shows the dash's wait")
+                greyed++
+                t = advance(t, 48L)
+            }
+            assertTrue(greyed * 48L >= total - 100L, "$ability greyed for ${greyed * 48L} ms of the $total ms dash cooldown")
+            assertTrue(hud(t).special!!.enabled && hud(t).dash.enabled, "$ability: both ready together")
+            assertEquals(0f, hud(t).special!!.cooldown)
+        }
+        // The stomp spends the dash: once it has landed, the Dash button waits too.
+        val stomped = advance(fightOf(start()), 900L, mapOf("red" to DuelInput.Special))
+        assertTrue(stomped.duel.a.body.state.mode == Mode.IDLE || stomped.duel.a.body.state.mode == Mode.WALKING, "landed")
+        assertFalse(hud(stomped).dash.enabled)
+        assertTrue(hud(stomped).dash.cooldown > 0f)
+        // Blue's dodge does not wait for its dash (once the dash itself is over).
+        val blueDashed = advance(fightOf(start()), 320L, mapOf("blue" to DuelInput.Dash(Vec2(0f, 1f))))
+        assertTrue(blueDashed.duel.b.dashMs == 0L && blueDashed.duel.b.dashCooldownMs > 0L)
+        assertTrue(hud(blueDashed, me = "blue").special!!.enabled)
+        assertFalse(hud(blueDashed, me = "blue").dash.enabled)
     }
 
     @Test

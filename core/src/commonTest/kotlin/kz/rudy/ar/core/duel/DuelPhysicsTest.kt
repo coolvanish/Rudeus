@@ -182,12 +182,15 @@ class DuelPhysicsTest {
         assertEquals(flatHit.speedMps * P.fromAboveScale, highHit.speedMps, 1e-6f)
         assertTrue(high > 1.2f * flat, "from above $high vs flat $flat")
 
-        // The other way round (victim on the book) is not from above.
+        // The other way round (victim on the book) is not from above: with the height reach unlimited (before T57) a plain
+        // hit; since T57 3 cm up is out of the dash's 2.8 cm reach (DuelParams.hitReachUpM), no hit at all (DuelNewRulesTest has the rule).
         val raised = Level(listOf(book("book-1", Vec2(0.09f, 0f))))
         val up = DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(NEAR, 0f), h = 0.03f))
-        val upHit = runDuel(up, raised, 400L, script = atStart("a" to Dash())).all.filterIsInstance<Hit>().single()
+        val unlimited = P.copy(hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT, stompReachUpM = DuelParams.NO_REACH_LIMIT)
+        val upHit = runDuel(up, raised, 400L, params = unlimited, script = atStart("a" to Dash())).all.filterIsInstance<Hit>().single()
         assertFalse(upHit.fromAbove)
         assertEquals(flatHit.speedMps, upHit.speedMps)
+        assertTrue(runDuel(up, raised, 400L, script = atStart("a" to Dash())).all.none { it is Hit })
     }
 
     @Test
@@ -321,8 +324,10 @@ class DuelPhysicsTest {
 
     @Test
     fun flyKnockedPastTheEdgeIsOutEvenWhileAirborne() {
-        // The review's case: edge at u = 0.15; FLY b jumps at t = 0, a's POWER 10 dash (t = 96) hits it in the air at
-        // 0.51 m/s (0.566 before T48's stat factors), b floats past the edge and later tries to MoveTo back onto the table.
+        // The review's case: edge at u = 0.15; a's POWER 10 dash (t = 96) hits FLY b in the air at 0.51 m/s (0.566 before
+        // T48's stat factors), b floats past the edge and later tries to MoveTo back onto the table. (b jumped at t = 0
+        // before T57; since T57 a jump that early is 4 cm up when the dash arrives, out of its 2.8 cm reach: b jumps at
+        // 128 ms, so the hit at 144 ms meets its feet 8 mm up, still in the air.)
         val spawn = Vec2(-0.1f, 0f)
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.3f), spawn = spawn)
         fun play(ability: Ability): Trace {
@@ -332,7 +337,7 @@ class DuelPhysicsTest {
             )
             return runDuel(start, level, 4000L) { s ->
                 when {
-                    s.timeMs == 0L -> inputs("b" to Jump)
+                    s.timeMs == 128L -> inputs("b" to Jump)
                     s.timeMs == 96L -> inputs("a" to Dash())
                     s.timeMs >= 600L -> inputs("b" to MoveTo(Vec2(0.1f, 0f)))
                     else -> emptyMap()
@@ -500,10 +505,13 @@ class DuelPhysicsTest {
         }
         assertEquals(PhysicsParams.DEFAULT.walkSpeedMps * 2f, speeds[4], 1e-6f, "SPEED 5 walks twice the walking game")
         for (i in 1 until speeds.size) assertTrue(speeds[i] > speeds[i - 1])
-        // Every ability walks at its stats' speed (the walking game's ROLL x 2 does not stack on top).
+        // Every ability walks at its stats' speed (the walking game's ROLL x 2 does not stack on top); a ROLL x the duel's
+        // own `rollSpeedScale` (T57: 1.1; 1 before, then it walked exactly as the others).
         val roller = DuelState(fighter("a", Vec2.ZERO, ability = Ability.ROLL), fighter("b", Vec2(0f, 0.5f)))
         val rolled = runDuel(roller, OPEN, 1000L, script = atStart("a" to MoveTo(Vec2(5f, 0f))))
-        assertEquals(speeds[4], rolled.last.a.pos.u, 1e-4f)
+        assertEquals(speeds[4] * P.rollSpeedScale, rolled.last.a.pos.u, 1e-4f)
+        val even = runDuel(roller, OPEN, 1000L, params = P.copy(rollSpeedScale = 1f), script = atStart("a" to MoveTo(Vec2(5f, 0f))))
+        assertEquals(speeds[4], even.last.a.pos.u, 1e-4f)
         assertNotNull(rolled.last.a.body.state.target)
     }
 }

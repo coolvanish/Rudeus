@@ -34,6 +34,7 @@ private fun swapIds(e: DuelEvent, x: String = "a", y: String = "b"): DuelEvent {
         is DashStarted -> e.copy(id = s(e.id))
         is DuelEvent.SpecialStarted -> e.copy(id = s(e.id))
         is Hit -> e.copy(attacker = s(e.attacker), victim = s(e.victim))
+        is DuelEvent.Missed -> e.copy(attacker = s(e.attacker), victim = s(e.victim))
         is Clash -> e.copy(a = s(e.a), b = s(e.b))
         is WallSlam -> e.copy(id = s(e.id))
         is RingOut -> e.copy(id = s(e.id))

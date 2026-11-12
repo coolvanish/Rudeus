@@ -1,4 +1,504 @@
-# Duel balance (T48)
+# Duel balance (T48, T57)
+
+## T57: the rules of 2026-11-12 (ai/tasks/T57-duel-balance-2.md)
+
+Three rule changes, each in `DuelParams` with an off position that reproduces the T48 game bit for bit (B9's second
+half, the test `theNewRulesSwitchedOffAreThePreviousPhysics`): the JUMP stomp and the ROLL ram share the dash cooldown
+(`specialsShareDashCooldown`); SPEED lengthens every dash (`dashReachBase + dashReachPerSpeed * SPEED` x the dash speed,
+its duration unchanged); a dash or a stomp hits only a victim whose feet are at most `hitReachUpM` (a stomp:
+`stompReachUpM`) above and `hitReachDownM` below the attacker's (a jump over a dash is a dodge, a fighter on a book is
+safe from a dash from the table, not from a stomp landing beside it: see below), and the fighter a missed dash presses
+into stands firm. And rule 4: FLY's archetype is 4/6/4/6
+(was 3/7/3/7). The acceptance table is T57's B1..B11; B1, the abilities at equal stats 5/5/5/5, is the row new drawings
+meet; B11 (added by the review) checks that the bots use every ability's special, so that B1 measures the abilities and
+not only their bodies. Priority when rows conflict: B9, B10 > B11 > B4 > B1 > B5, B6 > B3 > B2 > B7.
+
+**The review (pass 2).** Pass 1's bots used no special at all in the 19 200 matrix matches without a ROLL (FLY and
+HIDE lifted off and dodged only within 2 radii of an edge, a JUMP stomped only a fighter that could not jump: a ROLL);
+the 12 800 with a ROLL had 1.5 a match (its rams, and stomps at it). So its B1 measured JUMP, FLY and HIDE with their
+specials unused. Since the review the bots use them as a player would: a FLY lifts off and a
+HIDE dodges a hit that would land, wherever they stand (NORMAL notices a hit coming between its thoughts 30 % of the
+time); a JUMP whose stomp is ready jumps a dash as a stomp, and stomps a fighter on the ground that no jump gets out of
+(the stomp now reaches 9 cm up, above a plain jump's 8.1 cm apex: only a FLY's float clears it); a ROLL turns to face the
+other and rams anywhere on the table; a HARD ROLL also rams an opponent in its path that cannot get out of it. The
+numbers were retuned so that each special is worth using: stomp 2.0 x, ram 2.0 x, counter 1.2 x, lift-off 200 ms at
+walking pace, dodge 300 ms, and each special its own cooldown (lift-off 2.2 x, dodge 1.6 x the 9 s: a lift-off or a
+dodge that works is a free hit back).
+
+**The stomp's reach is a change to rule 3 as the user decided it** (there a stomp reaches as high as a dash, 2.8 cm).
+With `stompReachUpM` 0.09 a JUMP on the table stomps a fighter standing on a 3 or 4 cm platform beside it off the
+platform (a dash from the same spot misses it: `aStompReachesAFighterOnABookADashDoesNot`), and a plain jump (apex 8.1
+cm on 8 ms steps) no longer clears a stomp; only a FLY's float does (above 9 cm from 0.2 to 2.0 s after its jump, apex
+27.6 cm: `aPlainJumpDoesNotClearAStompAFloatDoes`). At the dash's 2.8 cm, the rest the final defaults (n 100), a JUMP
+took 6.0..44.7 % against the field at equal stats and started 0.36..0.81 specials a match (B1 10 cells out, B11 6).
+Kept as the measured default; the user decides (the brief's Result, "What a human must decide").
+
+### Verdicts (n = 200, NORMAL v NORMAL and HARD v HARD, four arenas)
+
+"T48" is T48's committed table under its own criteria (A1..A8: no equal-stats group, archetype field 35..65 %, no small
+/ large exceptions in hits and length); "before" is step 2 (the rules on with the brief's starting numbers, the bots
+taught, everything else as T48 left it); "pass 1" is the defaults T57 first committed (specials unused between bots);
+"final" is the defaults after the review.
+
+| # | Criterion | Threshold | T48 | Before (step 2) | Pass 1 | Final | Verdict |
+|---|---|---|---|---|---|---|---|
+| B1 | each ability against the field, all at 5/5/5/5 | 35..65 % | not in the matrix | 7.7..85.2 % (27 of 32 out) | 28.0..60.8 % (1 out) | 20.3..83.5 % (4 out, all HARD: JUMP 24.7 empty, 20.3 large; FLY 65.3 empty, 83.5 small) | FAIL (4 out) |
+| B2 | each ability against the field, archetype stats | 30..70 % | 7.2..87.7 % | 17.0..91.7 % (10 out) | 16.2..75.3 % (9 out) | 19.5..84.3 % (6 out) | FAIL |
+| B3 | every matchup, each side | 25..75 % | 0..100 % (46 out) | 0..100 % (110 out) | 5.5..94.5 % (38 out) | 1.0..99.0 % (54 out) | FAIL |
+| B4 | rounds ended by the clock, per pair | <= 25 % (large <= 40 %) | 0..1.9 % | 0..5.6 % | 0..0.2 % | 0..0.2 % | PASS |
+| B5 | hits per ring-out, per pair | 2..8 (large ..10) | 2.5..9.4 | 3.4..12.7 (19 out) | 2.8..8.2 | 2.5..8.7 (3 out: JUMP v HIDE on cup-and-book, 8.0..8.7) | FAIL (3 out) |
+| B6 | match length, per pair | 30..120 s (small 20..) | 15.3..62.4 s | 25.4..64.7 s | 24.6..55.2 s | 23.7..54.7 s | PASS |
+| B7 | a specialist (8/4/4/4) against 5/5/5/5 | 40..65 % | 6.0..86.0 % (45 out) | 8.5..95.5 % (56 out) | 5.5..90.5 % (77 out) | 7.0..83.5 % (61 out) | FAIL |
+| B8 | 8/8/8/8 against 5/5/5/5 | >= 65 % | 32..100 % (3 out) | 83.5..100 % | 95.5..100 % | 80.0..100 % | PASS |
+| B9 | the same matches at 16 ms and 33 ms; the rules off = the T48 game | identical | identical | identical | identical | identical (64 000 replays); off switches: 24 bot matches + 16 fights recorded on 207acc6, bit for bit | PASS |
+| B10 | every core/duel test green | - | - | - | green | green (`scripts/verify.sh`; the Result lists every test touched) | PASS |
+| B11 | specials per fighter per match, equal stats, per ability, arena and level; no twin pairs | >= 1.0 NORMAL, >= 0.5 HARD | - | - | not measured: 0 specials in the 19 200 matches without a ROLL (JUMP, FLY and HIDE never used theirs there) | NORMAL 1.15..3.78, HARD 0.88..3.87; no twins | PASS |
+
+Each ability against the field at equal stats (B1, win share %), JUMP / FLY / ROLL / HIDE, and the specials each starts
+per fighter per match (B11):
+
+| arena | level | B1: JUMP / FLY / ROLL / HIDE | B11: JUMP / FLY / ROLL / HIDE | dashes and stomps missed by height / match |
+|---|---|---|---|---|
+| empty | NORMAL | 45.2 / 63.7 / 40.3 / 50.8 | 1.81 / 1.33 / 3.01 / 1.46 | 0.30 |
+| empty | HARD | **24.7** / **65.3** / 48.0 / 62.0 | 1.37 / 2.09 / 3.29 / 2.17 | 0.31 |
+| cup-and-book | NORMAL | 53.2 / 51.3 / 42.2 / 53.3 | 2.52 / 1.55 / 3.71 / 1.78 | 0.60 |
+| cup-and-book | HARD | 43.3 / 60.5 / 37.5 / 58.7 | 2.48 / 2.08 / 3.77 / 2.23 | 0.87 |
+| small | NORMAL | 42.8 / 64.8 / 53.0 / 39.3 | 1.41 / 1.15 / 2.41 / 1.45 | 0.32 |
+| small | HARD | 38.8 / **83.5** / 37.5 / 40.2 | 0.88 / 1.67 / 1.96 / 1.72 | 0.18 |
+| large | NORMAL | 41.2 / 58.5 / 53.5 / 46.8 | 2.28 / 1.33 / 3.78 / 1.54 | 0.36 |
+| large | HARD | **20.3** / 59.2 / 61.8 / 58.7 | 1.67 / 2.15 / 3.87 / 2.29 | 0.33 |
+
+What still fails, and why (the counts):
+- **B1, four cells, all at HARD: JUMP 20.3..24.7 % on the empty and large tables, FLY 65.3 % (empty) and 83.5 %
+  (small).** At NORMAL every ability is in (39.3..64.8 %). The pair behind it is JUMP v FLY: 17.0 / 83.0 % at NORMAL and
+  5.5 / 94.5 % at HARD on the empty table (11.5 and 3.5 % on the small one, 21.0 and 1.0 % on the large one). A FLY's
+  float (the walking game's 0.3 x gravity) clears the stomp's 9 cm reach, so the JUMP bot does not stomp a FLY (one that
+  jumps floats clear of it, and a HARD one always jumps), while the FLY's lift-off takes one of the JUMP's dashes and
+  hits back; at HARD every FLY reaction comes in time. JUMP against ROLL and HIDE on the empty table at NORMAL: 46.5 and
+  72.0 %. With the specials unused (pass 1) B1 had one cell out (small HARD ROLL 28 %), but that measured bodies, not
+  abilities.
+- **B3, 54 cells**: at equal stats JUMP v FLY (1.0..39.5 %; 1.0 on the large table at HARD) and, at HARD, ROLL v HIDE
+  (14.5 % empty, 19.5 % cup-and-book: the dodge takes a ram and the counter answers it) and ROLL v FLY on the small
+  table (11 %); the rest are archetype cells.
+- **B5, three pairs on cup-and-book (8.0..8.7 hits per ring-out, JUMP v HIDE)**: the pair with the most hits on that
+  table at both levels; a dodged dash and its counter are hits that ring nobody out.
+- **B2, six cells**: HARD JUMP (19.5..29.7 %) and HARD FLY on the small table (84 %), as B1; ROLL's 7/6/5/2 on the large
+  table (84 %: its pace).
+- **B7, 61 of 128**: the stats are not worth the same (POWER 7.0..71.0 %, SPEED 9.0..83.5 %, GUARD 9.5..72.5 %, AGILITY
+  23.5..79.5 %); fewer out than pass 1 (77), not fixed by numbers.
+- **A jump between bots clears almost no dash.** In whole matches (`botsUseTheirSpecialsInWholeMatches`: every ability
+  pair at equal stats, 64 matches per level, 32 on the empty table, where only the air puts a fighter out of reach) the
+  bots decided a plain Jump once at NORMAL and 4 times at HARD, and a FLY's or a HIDE's jump got clear of 0 dashes; the
+  dashes that missed by height on the empty table (0.25 a match at NORMAL, 0.34 at HARD) all had a JUMP for victim, its
+  stomp-jump. Bots dash from 1 to 2 cm, once aligned behind the other, too close to clear. The jump over a dash is a
+  tool for the child, who dashes from afar; the bots' `botsJumpOverDashesByLevel` shows they would take it.
+- The bot strength ordering holds. HARD's edge over NORMAL in the mirror match is smaller now that NORMAL uses its
+  specials: `normalIsBetweenEasyAndHard` measures 59.5..89.5 % per ability on 400 matches each (cup-and-book ROLL the
+  lowest; `duel series --n 400` gives that cell 66.5 % from seed 1, 65.8 % from seed 70001, 59.5 % from seed 33000), and
+  its floor is 0.55 since the second review (0.60 on 50 or 200 matches before).
+
+### Step 2: the rules on with the starting numbers, the bots taught (the T57 "before"), 2026-11-12
+
+Starting numbers: shared cooldown on; dash reach 0.75 + 0.05 SPEED (SPEED 5 = 1, as before); reach 2 cm up, 4 cm down.
+Everything else as T48 left it. `duel matrix --n 200` (320 cells: 80 equal, 80 archetype, 160 stat; 64 000 matches and
+the same 64 000 at 16 ms): 144.7 s on 4 threads.
+
+| # | Criterion | Threshold | Measured | Verdict |
+|---|---|---|---|---|
+| B1 | each ability against the field, all at 5/5/5/5 | 35.0 %..65.0 % | 7.7 %..85.2 % | FAIL (27 out) |
+| B2 | each ability against the field, archetype stats | 30.0 %..70.0 % | 17.0 %..91.7 % | FAIL (10 out) |
+| B3 | every matchup, each side, equal stats and archetypes | 25.0 %..75.0 % | 0.0 %..100.0 % | FAIL (110 out) |
+| B4 | rounds ended by the clock, per ability pair | <= 25.0 % (large: <= 40.0 %) | 0.0 %..5.6 % | PASS (0 out) |
+| B5 | hits per ring-out, per ability pair | 2.0..8.0 (large: ..10.0) | per pair 3.4..12.7 (per arena 4.2..9.1) | FAIL (19 out) |
+| B6 | mean match length, per ability pair | 30.0..120.0 s (small: 20.0..) | per pair 25.4 s..64.7 s (per arena 30.7 s..53.9 s) | PASS (0 out) |
+| B7 | a specialist (8/4/4/4) against 5/5/5/5 | 40.0 %..65.0 % | 8.5 %..95.5 % | FAIL (56 out) |
+| B8 | 8/8/8/8 against 5/5/5/5 | >= 65.0 % | 83.5 %..100.0 % | PASS (0 out) |
+| B9 | the same matches at another frame length | identical | identical (64 000 matches replayed at 16 ms, 0 different) | PASS |
+
+Each ability against the field (win share, %), JUMP / FLY / ROLL / HIDE:
+
+| arena | level | equal stats 5/5/5/5 (B1) | archetype stats (B2) |
+|---|---|---|---|
+| empty | NORMAL | 21.2 / 76.5 / 31.5 / 70.8 | 34.8 / 40.0 / 49.7 / 75.5 |
+| empty | HARD | 22.7 / 74.5 / 23.2 / 79.7 | 24.5 / 41.3 / 56.3 / 77.8 |
+| cup-and-book | NORMAL | 30.2 / 65.0 / 37.8 / 67.0 | 35.5 / 53.0 / 50.5 / 61.0 |
+| cup-and-book | HARD | 27.2 / 68.5 / 36.3 / 68.0 | 27.7 / 55.5 / 59.5 / 57.3 |
+| small | NORMAL | 16.5 / 74.0 / 31.5 / 78.0 | 33.0 / 39.7 / 35.7 / 91.7 |
+| small | HARD | 32.8 / 76.7 / 7.7 / 82.8 | 33.7 / 57.0 / 19.5 / 89.8 |
+| large | NORMAL | 15.7 / 75.7 / 36.3 / 72.3 | 17.0 / 57.7 / 65.8 / 59.5 |
+| large | HARD | 24.5 / 59.2 / 31.2 / 85.2 | 22.7 / 44.2 / 55.7 / 77.5 |
+
+What it said: the rules end the T48 problem the other way round. ROLL no longer runs the table (its ram now costs a
+dash), but the stomp and the ram, still at T48's weakened 0.85 x / 1.1 x, are now worse than the dash they cost; FLY
+(a plain jump floats 2.2 s, far out of reach) and HIDE (the dodge, the x2 counter, and a jump too) take 59..85 % at
+equal stats. Rounds still end on the table (clock 0..5.6 %).
+
+### T57 pass 1 (specials unused between bots), 2026-11-12
+
+The defaults T57 first committed (0d8042b, candidate 17), before the review: FLY and HIDE lifted off and dodged only within 2 radii of an edge and a JUMP stomped only a fighter that could not jump, so between bots the specials were used only in the cells with a ROLL: 0 in the 19 200 equal-stats and archetype
+matches without one, 1.5 a match in the 12 800 with one (the overview's 0.3..1.3 a match is that, averaged over all
+pairs). Its acceptance table, as committed; the full pass-1 matrix is docs/duel-balance.md at 7d1a247.
+
+#### Acceptance (pass 1)
+
+| # | Criterion | Threshold | Measured | Verdict |
+|---|---|---|---|---|
+| B1 | each ability against the field, all at 5/5/5/5 | 35.0 %..65.0 % | 28.0 %..60.8 % | FAIL (1 out) |
+| B2 | each ability against the field, archetype stats | 30.0 %..70.0 % | 16.2 %..75.3 % | FAIL (9 out) |
+| B3 | every matchup, each side, equal stats and archetypes | 25.0 %..75.0 % | 5.5 %..94.5 % | FAIL (38 out) |
+| B4 | rounds ended by the clock, per ability pair | <= 25.0 % (large: <= 40.0 %) | 0.0 %..0.2 % | PASS (0 out) |
+| B5 | hits per ring-out, per ability pair | 2.0..8.0 (large: ..10.0) | per pair 2.8..8.2 (per arena 3.5..7.8) | PASS (0 out) |
+| B6 | mean match length, per ability pair | 30.0..120.0 s (small: 20.0..) | per pair 24.6 s..55.2 s (per arena 27.1 s..49.7 s) | PASS (0 out) |
+| B7 | a specialist (8/4/4/4) against 5/5/5/5 | 40.0 %..65.0 % | 5.5 %..90.5 % | FAIL (77 out) |
+| B8 | 8/8/8/8 against 5/5/5/5 | >= 65.0 % | 95.5 %..100.0 % | PASS (0 out) |
+| B9 | the same matches at another frame length | identical | identical (64000 matches replayed at 16 ms, 0 different) | PASS (0 out) |
+| B10 | every core/duel test green | - | not measured here: `scripts/verify.sh` (B9's other half, the rules switched off, is the test `theNewRulesSwitchedOffAreThePreviousPhysics`) | - |
+
+- B1 out of 35.0 %..65.0 %: small HARD ROLL 28.0 %
+- B2 out of 30.0 %..70.0 %: empty NORMAL FLY 29.2 %; empty NORMAL HIDE 71.8 %; empty HARD FLY 24.8 %; small HARD FLY 75.3 %; small HARD ROLL 16.2 %; small HARD HIDE 72.8 %; large NORMAL FLY 23.2 %; large HARD FLY 29.0 %; large HARD ROLL 70.8 %
+- B3 out of 25.0 %..75.0 %: small HARD equal ROLL v HIDE 23.5 %; small HARD equal HIDE v ROLL 76.5 %; empty NORMAL archetype JUMP v ROLL 85.5 %; empty NORMAL archetype ROLL v JUMP 14.5 %; empty NORMAL archetype FLY v HIDE 11.0 %; empty NORMAL archetype HIDE v FLY 89.0 %; empty HARD archetype FLY v HIDE 12.5 %; empty HARD archetype HIDE v FLY 87.5 %; cup-and-book HARD archetype FLY v ROLL 19.0 %; cup-and-book HARD archetype ROLL v FLY 81.0 %; cup-and-book HARD archetype ROLL v HIDE 76.0 %; cup-and-book HARD archetype HIDE v ROLL 24.0 %; small NORMAL archetype JUMP v HIDE 11.5 %; small NORMAL archetype HIDE v JUMP 88.5 %; small NORMAL archetype FLY v ROLL 22.0 %; small NORMAL archetype ROLL v FLY 78.0 %; and 22 more
+- B7 out of 40.0 %..65.0 %: empty NORMAL JUMP POWER 39.5 %; empty NORMAL JUMP SPEED 17.5 %; empty NORMAL JUMP GUARD 67.0 %; empty NORMAL JUMP AGILITY 82.5 %; empty NORMAL FLY POWER 39.5 %; empty NORMAL FLY SPEED 17.5 %; empty NORMAL FLY GUARD 67.0 %; empty NORMAL FLY AGILITY 82.5 %; empty NORMAL ROLL SPEED 22.0 %; empty NORMAL ROLL AGILITY 79.5 %; empty NORMAL HIDE POWER 39.5 %; empty NORMAL HIDE SPEED 17.5 %; empty NORMAL HIDE GUARD 67.0 %; empty NORMAL HIDE AGILITY 82.5 %; empty HARD JUMP POWER 38.5 %; empty HARD JUMP SPEED 5.5 %; and 61 more
+
+### The T57 defaults (final, after the review), 2026-11-12
+
+Generated by `./gradlew :cli:run --args="duel matrix --n 200 --out build/duel"` (`build/duel/matrix.md`, headings two
+levels down): 320 cells (80 equal-stats, 80 archetype, 160 stat), 64 000 matches and the same 64 000 replayed at 16 ms,
+126.4 s on 4 threads (1012 matches/s). The candidate log that led here is in the brief's Result.
+
+`duel matrix --n 200 --seed 1 --level normal,hard --arenas empty,cup-and-book,small,large --groups ability,equal,stat --step-ms 33 --check-n 200 --check-step-ms 16`
+
+Numbers: the defaults. 200 matches per cell (seeds 1..200, marks swapped every other match from the first, as duel series does), both sides bots of the same level, 33 ms frames; B9 replays 200 per cell at 16 ms. Clock = share of the rounds ended by the round clock; hits = Hit + Clash events per ring-out (all rounds' hits); s = mean match length. "equal": both sides 5/5/5/5 (B1); "archetype": each ability's stats for a character without stats (B2).
+
+#### Acceptance
+
+| # | Criterion | Threshold | Measured | Verdict |
+|---|---|---|---|---|
+| B1 | each ability against the field, all at 5/5/5/5 | 35.0 %..65.0 % | 20.3 %..83.5 % | FAIL (4 out) |
+| B2 | each ability against the field, archetype stats | 30.0 %..70.0 % | 19.5 %..84.3 % | FAIL (6 out) |
+| B3 | every matchup, each side, equal stats and archetypes | 25.0 %..75.0 % | 1.0 %..99.0 % | FAIL (54 out) |
+| B4 | rounds ended by the clock, per ability pair | <= 25.0 % (large: <= 40.0 %) | 0.0 %..0.2 % | PASS (0 out) |
+| B5 | hits per ring-out, per ability pair | 2.0..8.0 (large: ..10.0) | per pair 2.5..8.7 (per arena 3.6..7.2) | FAIL (3 out) |
+| B6 | mean match length, per ability pair | 30.0..120.0 s (small: 20.0..) | per pair 23.7 s..54.7 s (per arena 27.6 s..47.3 s) | PASS (0 out) |
+| B7 | a specialist (8/4/4/4) against 5/5/5/5 | 40.0 %..65.0 % | 7.0 %..83.5 % | FAIL (61 out) |
+| B8 | 8/8/8/8 against 5/5/5/5 | >= 65.0 % | 80.0 %..100.0 % | PASS (0 out) |
+| B9 | the same matches at another frame length | identical | identical (64000 matches replayed at 16 ms, 0 different) | PASS (0 out) |
+| B10 | every core/duel test green | - | not measured here: `scripts/verify.sh` (B9's other half, the rules switched off, is the test `theNewRulesSwitchedOffAreThePreviousPhysics`) | - |
+| B11 | abilities in play (equal stats): specials per fighter and match; no twin pairs | >= 1.0 NORMAL, >= 0.5 HARD; 0 twins | 0.9..3.9 a match; 0 twin pairs | PASS (0 out) |
+
+Priority when rows conflict (the T57 review): B9, B10 > B11 > B4 > B1 > B5, B6 > B3 > B2 > B7 (B8 always held).
+
+- B1 out of 35.0 %..65.0 %: empty HARD JUMP 24.7 %; empty HARD FLY 65.3 %; small HARD FLY 83.5 %; large HARD JUMP 20.3 %
+- B2 out of 30.0 %..70.0 %: empty HARD JUMP 25.3 %; small HARD JUMP 29.7 %; small HARD FLY 84.0 %; large NORMAL ROLL 84.0 %; large HARD JUMP 19.5 %; large HARD ROLL 84.3 %
+- B3 out of 25.0 %..75.0 %: empty NORMAL equal JUMP v FLY 17.0 %; empty NORMAL equal FLY v JUMP 83.0 %; empty HARD equal JUMP v FLY 5.5 %; empty HARD equal FLY v JUMP 94.5 %; empty HARD equal JUMP v ROLL 13.5 %; empty HARD equal ROLL v JUMP 86.5 %; empty HARD equal ROLL v HIDE 14.5 %; empty HARD equal HIDE v ROLL 85.5 %; cup-and-book HARD equal ROLL v HIDE 19.5 %; cup-and-book HARD equal HIDE v ROLL 80.5 %; small NORMAL equal JUMP v FLY 11.5 %; small NORMAL equal FLY v JUMP 88.5 %; small HARD equal JUMP v FLY 3.5 %; small HARD equal FLY v JUMP 96.5 %; small HARD equal FLY v ROLL 89.0 %; small HARD equal ROLL v FLY 11.0 %; and 38 more
+- B5 out of 2.0..8.0 (large: ..10.0): cup-and-book HARD equal JUMP v HIDE 8.1; cup-and-book NORMAL archetype JUMP v HIDE 8.0; cup-and-book HARD archetype JUMP v HIDE 8.7
+- B7 out of 40.0 %..65.0 %: empty NORMAL JUMP POWER 29.0 %; empty NORMAL FLY SPEED 22.5 %; empty NORMAL FLY GUARD 72.5 %; empty NORMAL ROLL SPEED 20.5 %; empty NORMAL HIDE SPEED 33.0 %; empty NORMAL HIDE AGILITY 70.5 %; empty HARD JUMP POWER 35.5 %; empty HARD FLY SPEED 9.0 %; empty HARD FLY AGILITY 34.0 %; empty HARD ROLL SPEED 15.0 %; empty HARD ROLL AGILITY 26.5 %; empty HARD HIDE POWER 19.5 %; empty HARD HIDE SPEED 9.0 %; cup-and-book NORMAL JUMP AGILITY 35.5 %; cup-and-book NORMAL FLY SPEED 35.0 %; cup-and-book NORMAL FLY AGILITY 32.0 %; and 45 more
+
+#### Overview (equal stats, 5/5/5/5)
+
+| arena | level | clock | worst pair clock | s | shortest / longest pair s | hits / ring-out | most hits, pair | ring-outs / match | wall slams / match | specials / match |
+|---|---|---|---|---|---|---|---|---|---|---|
+| empty | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 38.1 | 35.0 / 40.3 | 5.4 | FLY v ROLL 5.9 | 2.5 | 0.0 | 3.8 |
+| empty | HARD | 0.0 % | JUMP v JUMP 0.0 % | 38.1 | 33.5 / 42.7 | 5.7 | ROLL v ROLL 6.4 | 2.4 | 0.0 | 4.5 |
+| cup-and-book | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 44.1 | 39.2 / 48.8 | 7.1 | JUMP v HIDE 7.9 | 2.5 | 4.8 | 4.8 |
+| cup-and-book | HARD | 0.0 % | JUMP v JUMP 0.0 % | 43.7 | 39.2 / 48.2 | 7.1 | JUMP v HIDE 8.1 | 2.5 | 5.1 | 5.3 |
+| small | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 29.2 | 25.9 / 33.1 | 3.8 | FLY v FLY 4.4 | 2.5 | 0.0 | 3.2 |
+| small | HARD | 0.0 % | JUMP v JUMP 0.0 % | 29.4 | 26.2 / 33.8 | 3.7 | JUMP v FLY 4.4 | 2.5 | 0.0 | 3.1 |
+| large | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 47.3 | 42.5 / 52.5 | 6.9 | FLY v ROLL 7.7 | 2.5 | 0.0 | 4.5 |
+| large | HARD | 0.0 % | JUMP v JUMP 0.0 % | 47.1 | 39.9 / 54.4 | 7.2 | FLY v FLY 8.0 | 2.4 | 0.0 | 5.0 |
+
+#### Overview (archetype stats)
+
+| arena | level | clock | worst pair clock | s | shortest / longest pair s | hits / ring-out | most hits, pair | ring-outs / match | wall slams / match | specials / match |
+|---|---|---|---|---|---|---|---|---|---|---|
+| empty | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 37.0 | 32.6 / 41.0 | 5.1 | JUMP v FLY 5.8 | 2.5 | 0.0 | 3.6 |
+| empty | HARD | 0.0 % | JUMP v JUMP 0.0 % | 38.5 | 33.7 / 43.7 | 5.7 | FLY v FLY 6.5 | 2.5 | 0.0 | 4.4 |
+| cup-and-book | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 43.0 | 39.1 / 47.1 | 7.0 | JUMP v HIDE 8.0 | 2.5 | 4.4 | 4.6 |
+| cup-and-book | HARD | 0.0 % | JUMP v JUMP 0.0 % | 43.8 | 39.7 / 48.8 | 7.1 | JUMP v HIDE 8.7 | 2.5 | 5.1 | 5.1 |
+| small | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 27.6 | 25.0 / 30.7 | 3.6 | JUMP v FLY 4.1 | 2.5 | 0.0 | 3.1 |
+| small | HARD | 0.0 % | JUMP v JUMP 0.0 % | 27.7 | 23.7 / 32.5 | 3.6 | FLY v FLY 4.3 | 2.4 | 0.0 | 2.8 |
+| large | NORMAL | 0.0 % | JUMP v JUMP 0.0 % | 45.3 | 40.9 / 53.4 | 6.6 | JUMP v FLY 7.8 | 2.4 | 0.0 | 4.2 |
+| large | HARD | 0.0 % | HIDE v HIDE 0.2 % | 47.2 | 39.3 / 54.7 | 7.2 | FLY v FLY 8.4 | 2.4 | 0.0 | 4.9 |
+
+#### Abilities in play (equal stats, B11)
+
+Specials started per fighter and match, by ability (a same-ability cell counts both fighters); misses = dashes and stomps that met their victim out of height reach, per match (information).
+
+| arena | level | JUMP | FLY | ROLL | HIDE | misses / match |
+|---|---|---|---|---|---|---|
+| empty | NORMAL | 1.8 | 1.3 | 3.0 | 1.5 | 0.3 |
+| empty | HARD | 1.4 | 2.1 | 3.3 | 2.2 | 0.3 |
+| cup-and-book | NORMAL | 2.5 | 1.6 | 3.7 | 1.8 | 0.6 |
+| cup-and-book | HARD | 2.5 | 2.1 | 3.8 | 2.2 | 0.9 |
+| small | NORMAL | 1.4 | 1.1 | 2.4 | 1.4 | 0.3 |
+| small | HARD | 0.9 | 1.7 | 2.0 | 1.7 | 0.2 |
+| large | NORMAL | 2.3 | 1.3 | 3.8 | 1.5 | 0.4 |
+| large | HARD | 1.7 | 2.2 | 3.9 | 2.3 | 0.3 |
+
+#### Abilities (equal stats, 5/5/5/5): empty, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 47.5 % / 0.0 % / 35.1 s / 5.4 | 17.0 % / 0.0 % / 37.8 s / 5.4 | 46.5 % / 0.0 % / 37.2 s / 5.5 | 72.0 % / 0.0 % / 35.0 s / 5.0 | 45.2 % / 0.0 % / 36.7 s / 5.3 |
+| **FLY** 5/5/5/5 | 83.0 % / 0.0 % / 37.8 s / 5.4 | 54.5 % / 0.0 % / 40.3 s / 5.7 | 64.5 % / 0.0 % / 40.1 s / 5.9 | 43.5 % / 0.0 % / 39.0 s / 5.2 | 63.7 % / 0.0 % / 39.0 s / 5.5 |
+| **ROLL** 5/5/5/5 | 53.5 % / 0.0 % / 37.2 s / 5.5 | 35.5 % / 0.0 % / 40.1 s / 5.9 | 52.5 % / 0.0 % / 40.0 s / 5.7 | 32.0 % / 0.0 % / 39.8 s / 5.7 | 40.3 % / 0.0 % / 39.0 s / 5.7 |
+| **HIDE** 5/5/5/5 | 28.0 % / 0.0 % / 35.0 s / 5.0 | 56.5 % / 0.0 % / 39.0 s / 5.2 | 68.0 % / 0.0 % / 39.8 s / 5.7 | 48.5 % / 0.0 % / 36.6 s / 4.8 | 50.8 % / 0.0 % / 37.9 s / 5.3 |
+
+#### Abilities (equal stats, 5/5/5/5): empty, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 47.5 % / 0.0 % / 36.7 s / 5.9 | 5.5 % / 0.0 % / 34.9 s / 5.4 | 13.5 % / 0.0 % / 35.5 s / 5.7 | 55.0 % / 0.0 % / 33.5 s / 4.9 | 24.7 % / 0.0 % / 34.7 s / 5.3 |
+| **FLY** 5/5/5/5 | 94.5 % / 0.0 % / 34.9 s / 5.4 | 54.5 % / 0.0 % / 42.7 s / 6.2 | 57.0 % / 0.0 % / 39.8 s / 6.0 | 44.5 % / 0.0 % / 42.2 s / 5.7 | 65.3 % / 0.0 % / 39.0 s / 5.7 |
+| **ROLL** 5/5/5/5 | 86.5 % / 0.0 % / 35.5 s / 5.7 | 43.0 % / 0.0 % / 39.8 s / 6.0 | 52.5 % / 0.0 % / 39.2 s / 6.4 | 14.5 % / 0.0 % / 35.2 s / 5.2 | 48.0 % / 0.0 % / 36.8 s / 5.6 |
+| **HIDE** 5/5/5/5 | 45.0 % / 0.0 % / 33.5 s / 4.9 | 55.5 % / 0.0 % / 42.2 s / 5.7 | 85.5 % / 0.0 % / 35.2 s / 5.2 | 46.5 % / 0.0 % / 41.2 s / 5.4 | 62.0 % / 0.0 % / 37.0 s / 5.2 |
+
+#### Abilities (equal stats, 5/5/5/5): cup-and-book, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 49.5 % / 0.0 % / 39.2 s / 7.0 | 39.5 % / 0.0 % / 46.3 s / 7.2 | 59.0 % / 0.0 % / 40.2 s / 7.1 | 61.0 % / 0.0 % / 43.2 s / 7.9 | 53.2 % / 0.0 % / 43.3 s / 7.4 |
+| **FLY** 5/5/5/5 | 60.5 % / 0.0 % / 46.3 s / 7.2 | 51.0 % / 0.0 % / 48.7 s / 7.3 | 50.5 % / 0.0 % / 43.7 s / 6.9 | 43.0 % / 0.0 % / 47.5 s / 7.2 | 51.3 % / 0.0 % / 45.9 s / 7.1 |
+| **ROLL** 5/5/5/5 | 41.0 % / 0.0 % / 40.2 s / 7.1 | 49.5 % / 0.0 % / 43.7 s / 6.9 | 54.0 % / 0.0 % / 41.7 s / 6.6 | 36.0 % / 0.0 % / 41.9 s / 6.6 | 42.2 % / 0.0 % / 41.9 s / 6.9 |
+| **HIDE** 5/5/5/5 | 39.0 % / 0.0 % / 43.2 s / 7.9 | 57.0 % / 0.0 % / 47.5 s / 7.2 | 64.0 % / 0.0 % / 41.9 s / 6.6 | 56.5 % / 0.0 % / 48.8 s / 7.2 | 53.3 % / 0.0 % / 44.2 s / 7.3 |
+
+#### Abilities (equal stats, 5/5/5/5): cup-and-book, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 46.5 % / 0.0 % / 39.7 s / 7.0 | 30.0 % / 0.0 % / 45.6 s / 7.3 | 45.5 % / 0.0 % / 39.2 s / 7.3 | 54.5 % / 0.0 % / 42.6 s / 8.1 | 43.3 % / 0.0 % / 42.4 s / 7.6 |
+| **FLY** 5/5/5/5 | 70.0 % / 0.0 % / 45.6 s / 7.3 | 56.0 % / 0.0 % / 47.8 s / 7.3 | 61.5 % / 0.0 % / 43.7 s / 6.8 | 50.0 % / 0.0 % / 47.8 s / 7.3 | 60.5 % / 0.0 % / 45.7 s / 7.1 |
+| **ROLL** 5/5/5/5 | 54.5 % / 0.0 % / 39.2 s / 7.3 | 38.5 % / 0.0 % / 43.7 s / 6.8 | 53.5 % / 0.0 % / 42.0 s / 6.8 | 19.5 % / 0.0 % / 40.8 s / 6.1 | 37.5 % / 0.0 % / 41.2 s / 6.7 |
+| **HIDE** 5/5/5/5 | 45.5 % / 0.0 % / 42.6 s / 8.1 | 50.0 % / 0.0 % / 47.8 s / 7.3 | 80.5 % / 0.0 % / 40.8 s / 6.1 | 52.5 % / 0.0 % / 48.2 s / 7.1 | 58.7 % / 0.0 % / 43.7 s / 7.2 |
+
+#### Abilities (equal stats, 5/5/5/5): small, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 50.0 % / 0.0 % / 28.1 s / 4.0 | 11.5 % / 0.0 % / 29.0 s / 4.1 | 58.0 % / 0.0 % / 26.5 s / 3.4 | 59.0 % / 0.0 % / 29.2 s / 4.0 | 42.8 % / 0.0 % / 28.2 s / 3.8 |
+| **FLY** 5/5/5/5 | 88.5 % / 0.0 % / 29.0 s / 4.1 | 49.0 % / 0.0 % / 33.1 s / 4.4 | 49.5 % / 0.0 % / 29.0 s / 3.5 | 56.5 % / 0.0 % / 31.9 s / 4.1 | 64.8 % / 0.0 % / 30.0 s / 3.9 |
+| **ROLL** 5/5/5/5 | 42.0 % / 0.0 % / 26.5 s / 3.4 | 50.5 % / 0.0 % / 29.0 s / 3.5 | 44.0 % / 0.0 % / 25.9 s / 3.0 | 66.5 % / 0.0 % / 28.1 s / 3.5 | 53.0 % / 0.0 % / 27.9 s / 3.5 |
+| **HIDE** 5/5/5/5 | 41.0 % / 0.0 % / 29.2 s / 4.0 | 43.5 % / 0.0 % / 31.9 s / 4.1 | 33.5 % / 0.0 % / 28.1 s / 3.5 | 49.0 % / 0.0 % / 30.9 s / 3.9 | 39.3 % / 0.0 % / 29.7 s / 3.9 |
+
+#### Abilities (equal stats, 5/5/5/5): small, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 42.0 % / 0.0 % / 30.2 s / 3.8 | 3.5 % / 0.0 % / 28.5 s / 4.4 | 68.5 % / 0.0 % / 27.9 s / 3.3 | 44.5 % / 0.0 % / 28.0 s / 3.3 | 38.8 % / 0.0 % / 28.1 s / 3.7 |
+| **FLY** 5/5/5/5 | 96.5 % / 0.0 % / 28.5 s / 4.4 | 53.5 % / 0.0 % / 33.8 s / 4.4 | 89.0 % / 0.0 % / 31.0 s / 3.9 | 65.0 % / 0.0 % / 30.9 s / 3.7 | 83.5 % / 0.0 % / 30.1 s / 4.0 |
+| **ROLL** 5/5/5/5 | 31.5 % / 0.0 % / 27.9 s / 3.3 | 11.0 % / 0.0 % / 31.0 s / 3.9 | 56.0 % / 0.0 % / 29.3 s / 3.5 | 70.0 % / 0.0 % / 26.2 s / 3.2 | 37.5 % / 0.0 % / 28.4 s / 3.4 |
+| **HIDE** 5/5/5/5 | 55.5 % / 0.0 % / 28.0 s / 3.3 | 35.0 % / 0.0 % / 30.9 s / 3.7 | 30.0 % / 0.0 % / 26.2 s / 3.2 | 53.0 % / 0.0 % / 28.4 s / 3.3 | 40.2 % / 0.0 % / 28.4 s / 3.4 |
+
+#### Abilities (equal stats, 5/5/5/5): large, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 50.0 % / 0.0 % / 44.0 s / 6.8 | 21.0 % / 0.0 % / 47.5 s / 7.1 | 37.5 % / 0.0 % / 44.4 s / 6.5 | 65.0 % / 0.0 % / 44.6 s / 6.4 | 41.2 % / 0.0 % / 45.5 s / 6.7 |
+| **FLY** 5/5/5/5 | 79.0 % / 0.0 % / 47.5 s / 7.1 | 48.0 % / 0.0 % / 50.8 s / 7.4 | 47.5 % / 0.0 % / 52.5 s / 7.7 | 49.0 % / 0.0 % / 48.7 s / 6.8 | 58.5 % / 0.0 % / 49.6 s / 7.2 |
+| **ROLL** 5/5/5/5 | 62.5 % / 0.0 % / 44.4 s / 6.5 | 52.5 % / 0.0 % / 52.5 s / 7.7 | 49.5 % / 0.0 % / 42.5 s / 6.6 | 45.5 % / 0.0 % / 51.2 s / 7.5 | 53.5 % / 0.0 % / 49.3 s / 7.2 |
+| **HIDE** 5/5/5/5 | 35.0 % / 0.0 % / 44.6 s / 6.4 | 51.0 % / 0.0 % / 48.7 s / 6.8 | 54.5 % / 0.0 % / 51.2 s / 7.5 | 47.5 % / 0.0 % / 46.7 s / 6.4 | 46.8 % / 0.0 % / 48.2 s / 6.9 |
+
+#### Abilities (equal stats, 5/5/5/5): large, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 44.5 % / 0.0 % / 49.8 s / 7.8 | 1.0 % / 0.0 % / 41.3 s / 7.2 | 9.0 % / 0.0 % / 39.9 s / 6.6 | 51.0 % / 0.0 % / 44.1 s / 6.5 | 20.3 % / 0.0 % / 41.8 s / 6.7 |
+| **FLY** 5/5/5/5 | 99.0 % / 0.0 % / 41.3 s / 7.2 | 45.5 % / 0.0 % / 54.4 s / 8.0 | 36.0 % / 0.0 % / 50.6 s / 7.9 | 42.5 % / 0.0 % / 50.7 s / 7.2 | 59.2 % / 0.0 % / 47.5 s / 7.5 |
+| **ROLL** 5/5/5/5 | 91.0 % / 0.0 % / 39.9 s / 6.6 | 64.0 % / 0.0 % / 50.6 s / 7.9 | 55.5 % / 0.0 % / 41.4 s / 6.7 | 30.5 % / 0.0 % / 47.3 s / 6.9 | 61.8 % / 0.0 % / 45.9 s / 7.1 |
+| **HIDE** 5/5/5/5 | 49.0 % / 0.0 % / 44.1 s / 6.5 | 57.5 % / 0.0 % / 50.7 s / 7.2 | 69.5 % / 0.0 % / 47.3 s / 6.9 | 44.5 % / 0.0 % / 51.0 s / 7.1 | 58.7 % / 0.0 % / 47.4 s / 6.9 |
+
+#### Abilities (archetype stats): empty, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 47.5 % / 0.0 % / 35.1 s / 5.4 | 42.5 % / 0.0 % / 40.8 s / 5.8 | 47.5 % / 0.0 % / 38.0 s / 5.5 | 65.5 % / 0.0 % / 32.6 s / 4.9 | 51.8 % / 0.0 % / 37.1 s / 5.4 |
+| **FLY** 4/6/4/6 | 57.5 % / 0.0 % / 40.8 s / 5.8 | 52.5 % / 0.0 % / 41.0 s / 5.4 | 15.0 % / 0.0 % / 34.9 s / 4.6 | 30.0 % / 0.0 % / 37.0 s / 5.2 | 34.2 % / 0.0 % / 37.5 s / 5.2 |
+| **ROLL** 7/6/5/2 | 52.5 % / 0.0 % / 38.0 s / 5.5 | 85.0 % / 0.0 % / 34.9 s / 4.6 | 49.0 % / 0.0 % / 39.6 s / 5.1 | 67.0 % / 0.0 % / 35.9 s / 4.8 | 68.2 % / 0.0 % / 36.2 s / 5.0 |
+| **HIDE** 4/5/4/7 | 34.5 % / 0.0 % / 32.6 s / 4.9 | 70.0 % / 0.0 % / 37.0 s / 5.2 | 33.0 % / 0.0 % / 35.9 s / 4.8 | 57.0 % / 0.0 % / 35.1 s / 4.7 | 45.8 % / 0.0 % / 35.2 s / 4.9 |
+
+#### Abilities (archetype stats): empty, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 47.5 % / 0.0 % / 36.7 s / 5.9 | 19.5 % / 0.0 % / 37.8 s / 5.6 | 13.5 % / 0.0 % / 37.8 s / 6.0 | 43.0 % / 0.0 % / 33.7 s / 4.9 | 25.3 % / 0.0 % / 36.5 s / 5.5 |
+| **FLY** 4/6/4/6 | 80.5 % / 0.0 % / 37.8 s / 5.6 | 55.0 % / 0.0 % / 43.7 s / 6.5 | 49.0 % / 0.0 % / 40.3 s / 5.7 | 31.5 % / 0.0 % / 39.2 s / 5.7 | 53.7 % / 0.0 % / 39.1 s / 5.7 |
+| **ROLL** 7/6/5/2 | 86.5 % / 0.0 % / 37.8 s / 6.0 | 51.0 % / 0.0 % / 40.3 s / 5.7 | 49.5 % / 0.0 % / 40.8 s / 6.0 | 18.0 % / 0.0 % / 38.2 s / 5.3 | 51.8 % / 0.0 % / 38.8 s / 5.7 |
+| **HIDE** 4/5/4/7 | 57.0 % / 0.0 % / 33.7 s / 4.9 | 68.5 % / 0.0 % / 39.2 s / 5.7 | 82.0 % / 0.0 % / 38.2 s / 5.3 | 47.0 % / 0.0 % / 36.9 s / 5.1 | 69.2 % / 0.0 % / 37.0 s / 5.3 |
+
+#### Abilities (archetype stats): cup-and-book, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 49.5 % / 0.0 % / 39.2 s / 7.0 | 48.0 % / 0.0 % / 45.9 s / 7.3 | 47.5 % / 0.0 % / 39.1 s / 6.7 | 59.0 % / 0.0 % / 42.8 s / 8.0 | 51.5 % / 0.0 % / 42.6 s / 7.4 |
+| **FLY** 4/6/4/6 | 52.0 % / 0.0 % / 45.9 s / 7.3 | 48.0 % / 0.0 % / 46.3 s / 7.3 | 23.0 % / 0.0 % / 40.9 s / 6.4 | 44.0 % / 0.0 % / 47.1 s / 7.3 | 39.7 % / 0.0 % / 44.6 s / 7.0 |
+| **ROLL** 7/6/5/2 | 52.5 % / 0.0 % / 39.1 s / 6.7 | 77.0 % / 0.0 % / 40.9 s / 6.4 | 60.0 % / 0.0 % / 42.0 s / 6.3 | 70.5 % / 0.0 % / 40.8 s / 6.2 | 66.7 % / 0.0 % / 40.3 s / 6.4 |
+| **HIDE** 4/5/4/7 | 41.0 % / 0.0 % / 42.8 s / 8.0 | 56.0 % / 0.0 % / 47.1 s / 7.3 | 29.5 % / 0.0 % / 40.8 s / 6.2 | 52.5 % / 0.0 % / 46.2 s / 7.0 | 42.2 % / 0.0 % / 43.6 s / 7.2 |
+
+#### Abilities (archetype stats): cup-and-book, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 46.5 % / 0.0 % / 39.7 s / 7.0 | 46.0 % / 0.0 % / 45.9 s / 7.7 | 38.5 % / 0.0 % / 41.9 s / 7.2 | 56.5 % / 0.0 % / 44.7 s / 8.7 | 47.0 % / 0.0 % / 44.1 s / 7.9 |
+| **FLY** 4/6/4/6 | 54.0 % / 0.0 % / 45.9 s / 7.7 | 48.0 % / 0.0 % / 48.8 s / 7.4 | 33.0 % / 0.0 % / 43.5 s / 6.7 | 52.5 % / 0.0 % / 47.1 s / 7.1 | 46.5 % / 0.0 % / 45.5 s / 7.2 |
+| **ROLL** 7/6/5/2 | 61.5 % / 0.0 % / 41.9 s / 7.2 | 67.0 % / 0.0 % / 43.5 s / 6.7 | 51.5 % / 0.0 % / 40.4 s / 6.2 | 47.5 % / 0.0 % / 40.7 s / 6.3 | 58.7 % / 0.0 % / 42.0 s / 6.7 |
+| **HIDE** 4/5/4/7 | 43.5 % / 0.0 % / 44.7 s / 8.7 | 47.5 % / 0.0 % / 47.1 s / 7.1 | 52.5 % / 0.0 % / 40.7 s / 6.3 | 49.5 % / 0.0 % / 45.0 s / 6.9 | 47.8 % / 0.0 % / 44.2 s / 7.4 |
+
+#### Abilities (archetype stats): small, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 50.0 % / 0.0 % / 28.1 s / 4.0 | 26.5 % / 0.0 % / 30.1 s / 4.1 | 54.5 % / 0.0 % / 25.0 s / 3.1 | 40.0 % / 0.0 % / 27.8 s / 4.0 | 40.3 % / 0.0 % / 27.6 s / 3.7 |
+| **FLY** 4/6/4/6 | 73.5 % / 0.0 % / 30.1 s / 4.1 | 47.0 % / 0.0 % / 30.7 s / 4.0 | 24.0 % / 0.0 % / 25.6 s / 3.1 | 43.0 % / 0.0 % / 30.2 s / 3.9 | 46.8 % / 0.0 % / 28.7 s / 3.7 |
+| **ROLL** 7/6/5/2 | 45.5 % / 0.0 % / 25.0 s / 3.1 | 76.0 % / 0.0 % / 25.6 s / 3.1 | 54.0 % / 0.0 % / 25.1 s / 2.8 | 73.0 % / 0.0 % / 25.1 s / 3.0 | 64.8 % / 0.0 % / 25.3 s / 3.1 |
+| **HIDE** 4/5/4/7 | 60.0 % / 0.0 % / 27.8 s / 4.0 | 57.0 % / 0.0 % / 30.2 s / 3.9 | 27.0 % / 0.0 % / 25.1 s / 3.0 | 43.0 % / 0.0 % / 28.3 s / 3.7 | 48.0 % / 0.0 % / 27.7 s / 3.6 |
+
+#### Abilities (archetype stats): small, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 42.0 % / 0.0 % / 30.2 s / 3.8 | 1.5 % / 0.0 % / 25.7 s / 4.1 | 86.0 % / 0.0 % / 28.9 s / 3.7 | 1.5 % / 0.0 % / 24.2 s / 3.4 | 29.7 % / 0.0 % / 26.3 s / 3.7 |
+| **FLY** 4/6/4/6 | 98.5 % / 0.0 % / 25.7 s / 4.1 | 53.0 % / 0.0 % / 32.5 s / 4.3 | 73.0 % / 0.0 % / 30.9 s / 3.9 | 80.5 % / 0.0 % / 29.0 s / 3.9 | 84.0 % / 0.0 % / 28.5 s / 3.9 |
+| **ROLL** 7/6/5/2 | 14.0 % / 0.0 % / 28.9 s / 3.7 | 27.0 % / 0.0 % / 30.9 s / 3.9 | 50.5 % / 0.0 % / 25.2 s / 2.5 | 50.5 % / 0.0 % / 23.7 s / 2.9 | 30.5 % / 0.0 % / 27.8 s / 3.5 |
+| **HIDE** 4/5/4/7 | 98.5 % / 0.0 % / 24.2 s / 3.4 | 19.5 % / 0.0 % / 29.0 s / 3.9 | 49.5 % / 0.0 % / 23.7 s / 2.9 | 48.5 % / 0.0 % / 26.4 s / 3.3 | 55.8 % / 0.0 % / 25.6 s / 3.4 |
+
+#### Abilities (archetype stats): large, NORMAL v NORMAL
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 50.0 % / 0.0 % / 44.0 s / 6.8 | 36.0 % / 0.0 % / 53.4 s / 7.8 | 25.5 % / 0.0 % / 43.6 s / 6.5 | 65.5 % / 0.0 % / 42.6 s / 6.5 | 42.3 % / 0.0 % / 46.5 s / 6.9 |
+| **FLY** 4/6/4/6 | 64.0 % / 0.0 % / 53.4 s / 7.8 | 51.0 % / 0.0 % / 48.5 s / 7.1 | 11.0 % / 0.0 % / 40.9 s / 5.9 | 29.5 % / 0.0 % / 48.0 s / 6.9 | 34.8 % / 0.0 % / 47.4 s / 6.9 |
+| **ROLL** 7/6/5/2 | 74.5 % / 0.0 % / 43.6 s / 6.5 | 89.0 % / 0.0 % / 40.9 s / 5.9 | 46.5 % / 0.0 % / 43.7 s / 6.2 | 88.5 % / 0.0 % / 46.2 s / 6.5 | 84.0 % / 0.0 % / 43.6 s / 6.3 |
+| **HIDE** 4/5/4/7 | 34.5 % / 0.0 % / 42.6 s / 6.5 | 70.5 % / 0.0 % / 48.0 s / 6.9 | 11.5 % / 0.0 % / 46.2 s / 6.5 | 48.0 % / 0.0 % / 42.0 s / 6.0 | 38.8 % / 0.0 % / 45.6 s / 6.6 |
+
+#### Abilities (archetype stats): large, HARD v HARD
+
+Row's win share against the column, then clock / s / hits per ring-out of the pair.
+
+| row v col | JUMP | FLY | ROLL | HIDE | v field |
+|---|---|---|---|---|---|
+| **JUMP** 5/5/5/5 | 44.5 % / 0.0 % / 49.8 s / 7.8 | 11.0 % / 0.0 % / 45.3 s / 7.2 | 3.5 % / 0.0 % / 39.3 s / 6.7 | 44.0 % / 0.0 % / 42.3 s / 6.4 | 19.5 % / 0.0 % / 42.3 s / 6.8 |
+| **FLY** 4/6/4/6 | 89.0 % / 0.0 % / 45.3 s / 7.2 | 45.0 % / 0.0 % / 54.7 s / 8.4 | 20.5 % / 0.0 % / 45.7 s / 7.1 | 35.0 % / 0.0 % / 49.6 s / 7.5 | 48.2 % / 0.0 % / 46.9 s / 7.3 |
+| **ROLL** 7/6/5/2 | 96.5 % / 0.0 % / 39.3 s / 6.7 | 79.5 % / 0.0 % / 45.7 s / 7.1 | 50.0 % / 0.0 % / 44.2 s / 6.7 | 77.0 % / 0.0 % / 54.1 s / 7.7 | 84.3 % / 0.0 % / 46.4 s / 7.2 |
+| **HIDE** 4/5/4/7 | 56.0 % / 0.0 % / 42.3 s / 6.4 | 65.0 % / 0.0 % / 49.6 s / 7.5 | 23.0 % / 0.0 % / 54.1 s / 7.7 | 45.5 % / 0.2 % / 47.3 s / 6.8 | 48.0 % / 0.0 % / 48.7 s / 7.2 |
+
+#### Stats: empty, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 29.0 % / 0.0 % | 46.0 % / 0.0 % | 49.5 % / 0.0 % | 46.0 % / 0.0 % | 100.0 % / 0.0 % |
+| FLY | 61.0 % / 0.0 % | 22.5 % / 0.0 % | 72.5 % / 0.0 % | 51.5 % / 0.0 % | 99.5 % / 0.0 % |
+| ROLL | 64.0 % / 0.0 % | 20.5 % / 0.0 % | 63.0 % / 0.0 % | 59.0 % / 0.0 % | 100.0 % / 0.0 % |
+| HIDE | 45.5 % / 0.0 % | 33.0 % / 0.0 % | 57.5 % / 0.0 % | 70.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+#### Stats: empty, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 35.5 % / 0.0 % | 51.0 % / 0.0 % | 40.0 % / 0.0 % | 43.5 % / 0.0 % | 100.0 % / 0.0 % |
+| FLY | 55.0 % / 0.0 % | 9.0 % / 0.0 % | 57.5 % / 0.0 % | 34.0 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 61.0 % / 0.0 % | 15.0 % / 0.0 % | 43.5 % / 0.0 % | 26.5 % / 0.0 % | 100.0 % / 0.0 % |
+| HIDE | 19.5 % / 0.0 % | 9.0 % / 0.0 % | 47.0 % / 0.0 % | 45.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+#### Stats: cup-and-book, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 45.0 % / 0.0 % | 53.5 % / 0.0 % | 53.5 % / 0.0 % | 35.5 % / 0.0 % | 98.0 % / 0.0 % |
+| FLY | 56.0 % / 0.0 % | 35.0 % / 0.0 % | 62.0 % / 0.0 % | 32.0 % / 0.0 % | 95.5 % / 0.0 % |
+| ROLL | 36.0 % / 0.0 % | 44.0 % / 0.0 % | 49.5 % / 0.0 % | 30.0 % / 0.0 % | 96.5 % / 0.0 % |
+| HIDE | 49.0 % / 0.0 % | 49.0 % / 0.0 % | 55.5 % / 0.0 % | 33.0 % / 0.0 % | 96.5 % / 0.0 % |
+
+#### Stats: cup-and-book, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 50.5 % / 0.0 % | 57.0 % / 0.0 % | 48.0 % / 0.0 % | 38.5 % / 0.0 % | 98.0 % / 0.0 % |
+| FLY | 65.5 % / 0.0 % | 48.0 % / 0.0 % | 67.0 % / 0.0 % | 34.0 % / 0.0 % | 96.0 % / 0.7 % |
+| ROLL | 41.5 % / 0.0 % | 41.0 % / 0.0 % | 53.0 % / 0.0 % | 23.5 % / 0.0 % | 98.0 % / 0.0 % |
+| HIDE | 50.5 % / 0.0 % | 41.5 % / 0.0 % | 55.5 % / 0.0 % | 34.0 % / 0.0 % | 92.5 % / 0.0 % |
+
+#### Stats: small, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 43.0 % / 0.0 % | 24.5 % / 0.0 % | 51.5 % / 0.0 % | 58.5 % / 0.0 % | 99.5 % / 0.0 % |
+| FLY | 67.0 % / 0.0 % | 17.0 % / 0.0 % | 67.5 % / 0.0 % | 59.5 % / 0.0 % | 92.0 % / 0.0 % |
+| ROLL | 13.5 % / 0.0 % | 48.5 % / 0.0 % | 21.5 % / 0.0 % | 71.0 % / 0.0 % | 100.0 % / 0.0 % |
+| HIDE | 52.0 % / 0.0 % | 40.5 % / 0.0 % | 62.0 % / 0.0 % | 75.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+#### Stats: small, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 18.0 % / 0.0 % | 37.5 % / 0.0 % | 22.0 % / 0.0 % | 56.0 % / 0.0 % | 100.0 % / 0.0 % |
+| FLY | 41.5 % / 0.0 % | 19.5 % / 0.0 % | 57.0 % / 0.0 % | 33.0 % / 0.0 % | 80.0 % / 0.0 % |
+| ROLL | 30.5 % / 0.0 % | 27.0 % / 0.0 % | 41.0 % / 0.0 % | 77.0 % / 0.0 % | 99.5 % / 0.0 % |
+| HIDE | 7.0 % / 0.0 % | 27.0 % / 0.0 % | 9.5 % / 0.0 % | 79.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+#### Stats: large, NORMAL v NORMAL
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 36.5 % / 0.0 % | 69.5 % / 0.0 % | 43.0 % / 0.0 % | 50.0 % / 0.0 % | 100.0 % / 0.0 % |
+| FLY | 54.5 % / 0.0 % | 77.0 % / 0.0 % | 61.5 % / 0.0 % | 40.0 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 70.0 % / 0.0 % | 63.0 % / 0.0 % | 52.0 % / 0.0 % | 39.0 % / 0.0 % | 100.0 % / 0.0 % |
+| HIDE | 34.5 % / 0.0 % | 83.5 % / 0.6 % | 46.0 % / 0.0 % | 59.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+#### Stats: large, HARD v HARD
+
+The specialist's (or 8/8/8/8's) win share against 5/5/5/5 with the same ability, then the clock.
+
+| ability | POWER 8 | SPEED 8 | GUARD 8 | AGILITY 8 | 8/8/8/8 |
+|---|---|---|---|---|---|
+| JUMP | 29.5 % / 0.0 % | 57.5 % / 0.0 % | 34.0 % / 0.0 % | 37.0 % / 0.0 % | 100.0 % / 0.0 % |
+| FLY | 47.0 % / 0.0 % | 68.0 % / 0.0 % | 57.0 % / 0.0 % | 33.0 % / 0.0 % | 100.0 % / 0.0 % |
+| ROLL | 71.0 % / 0.0 % | 41.5 % / 0.0 % | 41.5 % / 0.0 % | 37.0 % / 0.0 % | 100.0 % / 0.0 % |
+| HIDE | 27.0 % / 0.2 % | 68.5 % / 0.6 % | 42.0 % / 0.0 % | 46.5 % / 0.0 % | 100.0 % / 0.0 % |
+
+## T48
 
 The duel's balance by measurement (ai/tasks/T48-cli-duel-sim-balance.md, gate G4). Every table below is generated by
 `./gradlew :cli:run --args="duel matrix --n 200 --bundle docs/bundled --out build/duel"` (`build/duel/matrix.md`, copied

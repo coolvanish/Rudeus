@@ -34,7 +34,8 @@ import kotlin.math.min
  *    count down; the stun timer counts down only while `|knock| <= knockStunMps`. A fighter whose lift-off or dodge
  *    time was > 0 at the start of the sub-step is lifted / dodging for the whole sub-step (it cannot be hit). A PAUSED
  *    fighter is frozen whole (timers, knockback, body) and takes no part in anything below.
- * 2. Duel motion: the dash (`dashSpeedMps` along `dashDir`, a ram too) and the knockback (exact exponential decay over
+ * 2. Duel motion: the dash (the fighter's [DuelParams.dashSpeedMpsFor] along `dashDir`, a ram too; T57 rule 2: SPEED
+ *    lengthens it) and the knockback (exact exponential decay over
  *    the sub-step) move the body through the obstacle rules walking uses: push-out from every object that
  *    [Physics.blocks] at the feet height, and an obstacle never pushes anyone over a cliff. The move is swept, in pieces
  *    of at most half a radius each resolved so ([sweepPieces]): no speed carries a fighter through a thin object (a
@@ -50,15 +51,19 @@ import kotlin.math.min
  *    walker on the ground under it would and is held [DuelParams.liftHeightRadii] radii above that ground (JUMPING, no
  *    vertical speed), and on the lift's last sub-step is that walker again, standing on the ground, see [liftStep]; a
  *    stomping JUMP that was airborne and now stands has landed.
- * 4. Hits, every one judged from the positions after step 3, none of them by height (an airborne fighter is hit too),
- *    never on a lifted or dodging victim, never by or on a PAUSED or out fighter:
+ * 4. Hits, every one judged from the positions and feet heights after step 3 (the same instant for both), never on a
+ *    lifted or dodging victim, never by or on a PAUSED or out fighter, and (T57 rule 3) only on a victim within the
+ *    height reach of the attacker's feet ([DuelParams.inReach]: at most `hitReachUpM` above, `hitReachDownM` below; with
+ *    [DuelParams.NO_REACH_LIMIT], as before T57, an airborne fighter is hit too). A hit out of reach is a miss: no
+ *    event, no knockback, no wobble, no counter window, and a dash carries on:
  *    - a dash: circles overlapping while one of them dashed in this sub-step. The victim gets
  *      [DuelParams.knockSpeedMpsFor] along the attacker's `dashDir` (x `fromAboveScale` when the attacker's feet are
  *      more than `fromAboveMinM` higher; x `ramKnockScale` for a ram, x `counterKnockScale` for a counter), its walk
  *      target is dropped, its own dash ends and its stun timer is set to at least [DuelParams.hitStunMsFor]; the
  *      attacker's dash ends, so a dash hits at most once. Both dashing and both hittable: [DuelEvent.Clash], each takes
- *      the other's knockback and both dashes end. A dash that meets a lifted or dodging fighter carries on; a dodging
- *      one gets a counter window for it (so does a dodged stomp).
+ *      the other's knockback and both dashes end (each side needs the other in reach; else it is one plain hit). A
+ *      dash that meets a lifted, dodging or out-of-reach fighter carries on; a dodging one (in reach) gets a counter
+ *      window for it (so does a dodged stomp).
  *    - a stomp's landing: an opponent whose centre is within `stompRadiusRadii` stomper radii of the landing point gets
  *      `stompScale` x the plain knockback straight away from it, the same stun, and a [DuelEvent.Hit] with
  *      `fromAbove = true`.
@@ -76,11 +81,13 @@ import kotlin.math.min
  * walk target and turns `facing` to the dash direction (a null or zero direction = along `facing`); inside a HIDE's
  * counter window it is a counter. `Special` starts the special of [DuelFighter.ability] when [canSpecial]
  * ([DuelEvent.SpecialStarted], the special cooldown starts):
- * - JUMP stomp: [Physics.jump] (the walk target stays); the landing is a hit (step 4).
+ * - JUMP stomp: [Physics.jump] (the walk target stays); the landing is a hit (step 4). T57 rule 1
+ *   ([DuelParams.sharesDashCooldown]): it needs the dash ready and starts the dash cooldown too; so does the ram.
  * - FLY lift-off: the body rises to the hover height at once and hovers for `liftMs`, walking as it would on the ground
  *   under it (same obstacles, same step-up) at `liftSpeedScale` x; it cannot dash while lifted (it is airborne) but can
  *   walk off the edge.
- * - ROLL ram: a dash along `facing`, `ramDashMs` long, `ramKnockScale` x the knockback; the dash cooldown is untouched.
+ * - ROLL ram: a dash along `facing`, `ramDashMs` long, `ramKnockScale` x the knockback; the dash cooldown is untouched
+ *   unless rule 1 is on.
  * - HIDE dodge: for `dodgeMs` hits pass through, until the fighter starts a dash (a dash ends the dodge at once). Each
  *   hit the dodge lets through (a dash or a stomp that would have hit) opens a counter window of `counterMs` from that
  *   sub-step: the next dash started in it is a counter. A dodge that dodged nothing gives no counter.
@@ -165,12 +172,14 @@ object DuelPhysics {
     /**
      * A Special input would start [f]'s special now: it has an [DuelFighter.ability], the special is off cooldown and
      * not running, [f] is on the ground (IDLE / WALKING) and [acceptsInput] (not stunned, dashing, PAUSED or out). A
-     * JUMP stomp also needs a body that can jump (not a ROLL body), a ROLL ram a facing.
+     * JUMP stomp also needs a body that can jump (not a ROLL body), a ROLL ram a facing. T57: a special that shares the
+     * dash cooldown ([DuelParams.sharesDashCooldown]: the stomp and the ram) also needs the dash off cooldown.
      */
     fun canSpecial(f: DuelFighter, level: Level, params: DuelParams = DuelParams.DEFAULT): Boolean {
         val ability = f.ability ?: return false
         val s = f.body.state
         if (f.specialCooldownMs > 0L || f.specialMs > 0L || !grounded(s.mode) || !acceptsInput(f, level, params)) return false
+        if (f.dashCooldownMs > 0L && params.sharesDashCooldown(ability)) return false
         return when (ability) {
             Ability.JUMP -> s.ability != Ability.ROLL
             Ability.ROLL -> s.facing.normalized() != Vec2.ZERO
@@ -196,7 +205,17 @@ object DuelPhysics {
 
     /** The HUD's special cooldown: the fraction of it still to run, 1 = just used, 0 = ready. Pass the params in use. */
     fun specialCooldownLeft(f: DuelFighter, params: DuelParams = DuelParams.DEFAULT): Float =
-        fraction(f.specialCooldownMs, params.specialCooldownMsFor(f.stats))
+        fraction(f.specialCooldownMs, params.specialCooldownMsFor(f.stats, f.ability))
+
+    /**
+     * T57: what the special's button waits for, as a fraction (1 = just used, 0 = ready): [specialCooldownLeft], or the
+     * larger of it and [dashCooldownLeft] for a special that shares the dash cooldown ([DuelParams.sharesDashCooldown]).
+     * The same as [specialCooldownLeft] with the rule off.
+     */
+    fun specialWaitLeft(f: DuelFighter, params: DuelParams = DuelParams.DEFAULT): Float {
+        val own = specialCooldownLeft(f, params)
+        return if (params.sharesDashCooldown(f.ability)) maxOf(own, dashCooldownLeft(f, params)) else own
+    }
 
     private fun fraction(left: Long, total: Long): Float =
         if (left <= 0L || total <= 0L) 0f else (left.toFloat() / total.toFloat()).coerceIn(0f, 1f)
@@ -285,6 +304,7 @@ object DuelPhysics {
             dashDir = d,
             dashCooldownMs = params.cooldownMsFor(f.stats),
             dashKind = if (counter) DashKind.COUNTER else DashKind.PLAIN,
+            dashMissed = false,
             counterMs = if (counter) 0L else f.counterMs,
             // Starting a dash ends a dodge at once: nobody dashes while it cannot be hit.
             specialMs = if (isDodging(f)) 0L else f.specialMs,
@@ -314,12 +334,14 @@ object DuelPhysics {
             Ability.ROLL -> {
                 val d = f.body.state.facing.normalized().takeIf { it != Vec2.ZERO } ?: return f
                 val body = stopWalking(f.body)
-                f.copy(body = body.copy(state = body.state.copy(facing = d)), dashMs = params.ramDashMs, dashDir = d, dashKind = DashKind.RAM)
+                f.copy(body = body.copy(state = body.state.copy(facing = d)), dashMs = params.ramDashMs, dashDir = d, dashKind = DashKind.RAM, dashMissed = false)
             }
             Ability.HIDE -> f.copy(specialMs = params.dodgeMs)
         }
         events += DuelEvent.SpecialStarted(f.id, ability, atMs)
-        return started.copy(specialCooldownMs = params.specialCooldownMsFor(f.stats))
+        // T57 rule 1: the stomp and the ram are hits, they start the dash cooldown too.
+        val dashCooldown = if (params.sharesDashCooldown(ability)) params.cooldownMsFor(f.stats) else started.dashCooldownMs
+        return started.copy(specialCooldownMs = params.specialCooldownMsFor(f.stats, ability), dashCooldownMs = dashCooldown)
     }
 
     /** Drops the walk target; a WALKING body stands (IDLE). Airborne bodies keep their mode. */
@@ -360,6 +382,7 @@ object DuelPhysics {
         var counterMs = original.counterMs
         var dashKind = original.dashKind
         var wobble = original.wobble
+        var dashMissed = original.dashMissed
 
         /** This sub-step only (set by [advance]): hovering on a FLY lift-off. */
         var lifted = false
@@ -369,6 +392,21 @@ object DuelPhysics {
 
         /** Lifted or dodging this sub-step: it cannot be hit. */
         val immune: Boolean get() = lifted || dodging
+
+        /**
+         * This sub-step only (set by [hits]): T57 rule 3, the other one's dash pressed into it from out of height reach
+         * (a fighter on a book above a dash from the table): the miss leaves it where it stands, as a dodge does.
+         */
+        var shielded = false
+
+        /**
+         * Stands firm in separation this sub-step: immune (dodging; or a FLY on the lift's last sub-step, standing again),
+         * or out of reach of the dash pressing into it.
+         */
+        val firm: Boolean get() = immune || shielded
+
+        /** T57 rule 2: this fighter's dash speed (every dash kind), [DuelParams.dashSpeedMpsFor]. */
+        val dashSpeedMps: Float = params.dashSpeedMpsFor(stats)
 
         /** The walking-game parameters with this fighter's duel walk speed. */
         val walkPhysics: PhysicsParams =
@@ -387,7 +425,7 @@ object DuelPhysics {
         fun done(): DuelFighter = original.copy(
             body = body, knock = knock, stunMs = stunMs, dashMs = dashMs, dashCooldownMs = dashCooldownMs,
             specialMs = specialMs, specialCooldownMs = specialCooldownMs, stomping = stomping, counterMs = counterMs,
-            dashKind = dashKind, wobble = wobble,
+            dashKind = dashKind, wobble = wobble, dashMissed = dashMissed,
         )
     }
 
@@ -412,6 +450,7 @@ object DuelPhysics {
     private fun advance(w: Work, wasOut: Boolean, c: Consts, atMs: Long, events: MutableList<DuelEvent>): Boolean {
         w.lifted = false
         w.dodging = false
+        w.shielded = false
         if (w.paused) return false
         val p = c.params
         w.dashCooldownMs = (w.dashCooldownMs - c.sub).coerceAtLeast(0L)
@@ -437,7 +476,7 @@ object DuelPhysics {
         }
         val knock0 = w.knock
         var disp = Vec2.ZERO
-        if (dashActiveMs > 0L) disp += w.dashDir * (p.dashSpeedMps * dashActiveMs / 1000f)
+        if (dashActiveMs > 0L) disp += w.dashDir * (w.dashSpeedMps * dashActiveMs / 1000f)
         if (knock0 != Vec2.ZERO) {
             disp += knock0 * c.gainS
             val k = knock0 * c.decay
@@ -625,16 +664,39 @@ object DuelPhysics {
         val p = c.params
         val dist = sa.pos.distanceTo(sb.pos)
         val contact = dist < sa.radiusM + sb.radiusM
+        // T57 rule 3: each one's hit reaches the other only within the height reach, both feet read now (after step 3,
+        // the same instant for both). Out of reach is a miss: nothing happens, a dash carries on.
+        val heightAB = p.inReach(sa.h, sb.h)
+        val heightBA = p.inReach(sb.h, sa.h)
+        // A stomp's landing reaches up by its own `stompReachUpM` (the same as a dash's by default).
+        val stompAB = p.inReach(sa.h, sb.h, p.stompReachUpM)
+        val stompBA = p.inReach(sb.h, sa.h, p.stompReachUpM)
+        val inStompA = landA && dist <= p.stompRadiusRadii * sa.radiusM
+        val inStompB = landB && dist <= p.stompRadiusRadii * sb.radiusM
         // What would hit each one, were it not immune.
-        val reachesB = (dashA && contact) || (landA && dist <= p.stompRadiusRadii * sa.radiusM)
-        val reachesA = (dashB && contact) || (landB && dist <= p.stompRadiusRadii * sb.radiusM)
+        val reachesB = (heightAB && dashA && contact) || (stompAB && inStompA)
+        val reachesA = (heightBA && dashB && contact) || (stompBA && inStompB)
+        // A miss by height (not by a lift or a dodge): told once per dash, and at a stomp's landing.
+        if (dashA && contact && !heightAB && !b.immune && !a.dashMissed) {
+            a.dashMissed = true
+            events += DuelEvent.Missed(a.id, b.id, stomp = false, atMs = atMs)
+        }
+        if (dashB && contact && !heightBA && !a.immune && !b.dashMissed) {
+            b.dashMissed = true
+            events += DuelEvent.Missed(b.id, a.id, stomp = false, atMs = atMs)
+        }
+        if (inStompA && !stompAB && !b.immune) events += DuelEvent.Missed(a.id, b.id, stomp = true, atMs = atMs)
+        if (inStompB && !stompBA && !a.immune) events += DuelEvent.Missed(b.id, a.id, stomp = true, atMs = atMs)
         // A dodge that lets a hit through opens the counter window, from this sub-step, for counterMs.
         if (b.dodging && reachesB) b.counterMs = p.counterMs
         if (a.dodging && reachesA) a.counterMs = p.counterMs
-        val dashHitsB = dashA && contact && !b.immune
-        val dashHitsA = dashB && contact && !a.immune
-        val stompHitsB = landA && !b.immune && dist <= p.stompRadiusRadii * sa.radiusM
-        val stompHitsA = landB && !a.immune && dist <= p.stompRadiusRadii * sb.radiusM
+        val dashHitsB = dashA && contact && heightAB && !b.immune
+        val dashHitsA = dashB && contact && heightBA && !a.immune
+        // A dash pressing in from out of reach does not bulldoze the one it missed through separation either.
+        b.shielded = dashA && contact && !heightAB
+        a.shielded = dashB && contact && !heightBA
+        val stompHitsB = inStompA && stompAB && !b.immune
+        val stompHitsA = inStompB && stompBA && !a.immune
         if (dashHitsA && dashHitsB) {
             val toA = p.knockSpeedMpsFor(b.stats, a.stats, fromAbove(sb.h, sa.h, p)) * knockScale(b, p)
             val toB = p.knockSpeedMpsFor(a.stats, b.stats, fromAbove(sa.h, sb.h, p)) * knockScale(a, p)
@@ -708,7 +770,9 @@ object DuelPhysics {
      * footprint. If none of the 48 fits, both stay overlapped (the only way two grounded fighters end a sub-step so).
      * Centres on one point (closer than [Vec2.EPS]): the line is the u axis, the smaller id on the -u side.
      * Only `pos` changes. A dodging fighter (HIDE, this sub-step) stands firm: when only one of the two dodges, the other
-     * goes round it first (the same 16 directions); only if it fits nowhere does the search above run.
+     * goes round it first (the same 16 directions); only if it fits nowhere does the search above run. So does (T57 rule
+     * 3) a fighter the other's dash pressed into from out of height reach this sub-step ([Work.shielded]): a dash from the
+     * table stops against the legs of a fighter on a book instead of shoving it across the book.
      */
     private fun separate(a: Work, b: Work, c: Consts) {
         val sa = a.body.state
@@ -723,10 +787,10 @@ object DuelPhysics {
             a.id < b.id -> Vec2(1f, 0f)
             else -> Vec2(-1f, 0f)
         }
-        if (a.immune != b.immune) {
+        if (a.firm != b.firm) {
             for (k in TURN_COS.indices) {
                 val u = Vec2(dir.u * TURN_COS[k] - dir.v * TURN_SIN[k], dir.u * TURN_SIN[k] + dir.v * TURN_COS[k])
-                if (a.immune) {
+                if (a.firm) {
                     val q = sa.pos + u * reach
                     if (canStand(c, sb, q)) return b.moveTo(q)
                 } else {
@@ -831,8 +895,9 @@ object DuelPhysics {
         is DuelEvent.SpecialStarted -> 1
         is DuelEvent.WallSlam -> 2
         is DuelEvent.Hit -> 3
-        is DuelEvent.Clash -> 4
-        is DuelEvent.RingOut -> 5
+        is DuelEvent.Missed -> 4
+        is DuelEvent.Clash -> 5
+        is DuelEvent.RingOut -> 6
     }
 
     private fun firstId(e: DuelEvent): String = when (e) {
@@ -840,6 +905,7 @@ object DuelPhysics {
         is DuelEvent.SpecialStarted -> e.id
         is DuelEvent.WallSlam -> e.id
         is DuelEvent.Hit -> e.attacker
+        is DuelEvent.Missed -> e.attacker
         is DuelEvent.Clash -> e.a
         is DuelEvent.RingOut -> e.id
     }
@@ -847,6 +913,7 @@ object DuelPhysics {
     private fun secondId(e: DuelEvent): String = when (e) {
         is DuelEvent.WallSlam -> e.objectId
         is DuelEvent.Hit -> e.victim
+        is DuelEvent.Missed -> e.victim
         is DuelEvent.Clash -> e.b
         else -> ""
     }

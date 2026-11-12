@@ -72,7 +72,9 @@ fun specialLabel(ability: Ability): StringId = when (ability) {
  *
  * Buttons are enabled only in FIGHT and only when the physics would take the input: Dash and Special by
  * [DuelPhysics.canDash] / [DuelPhysics.canSpecial]; Jump when the fighter accepts input, stands on the ground and its
- * body can jump (a ROLL body cannot, `Physics.jump` ignores it).
+ * body can jump (a ROLL body cannot, `Physics.jump` ignores it). T57: the stomp and the ram share the dash cooldown
+ * ([DuelParams.sharesDashCooldown]), so their Special waits for the dash too, and its ring shows the longer of the two
+ * waits ([DuelPhysics.specialWaitLeft]).
  */
 fun duelHud(
     state: DuelMatchState,
@@ -110,7 +112,7 @@ fun duelHud(
         dash = ActionButton(StringId.duel_dash, fight && DuelPhysics.canDash(mine, arena, params), DuelPhysics.dashCooldownLeft(mine, params)),
         jump = ActionButton(StringId.play_jump, canJump, 0f),
         special = mine.ability?.let {
-            ActionButton(specialLabel(it), fight && DuelPhysics.canSpecial(mine, arena, params), DuelPhysics.specialCooldownLeft(mine, params))
+            ActionButton(specialLabel(it), fight && DuelPhysics.canSpecial(mine, arena, params), DuelPhysics.specialWaitLeft(mine, params))
         },
     )
 }

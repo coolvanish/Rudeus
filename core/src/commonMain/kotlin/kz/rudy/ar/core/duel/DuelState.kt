@@ -29,6 +29,8 @@ import kz.rudy.ar.core.physics.PhysicsBody
  *   it takes (a clash too) is knocked [DuelParams.wobbleKnockScale] x [wobble] harder than the plain knockback, then
  *   adds [DuelParams.wobblePerHit]; it fades by [DuelParams.wobbleDecayPerS]. Not hit points: nobody loses by wobble,
  *   it only brings the edge closer. 0 at the start of every round ([DuelMatch] rebuilds the fighters on their marks).
+ * @property dashMissed T57: the current (or last) dash has already met the other out of height reach
+ *   ([DuelEvent.Missed] is emitted once per dash); cleared when a dash starts.
  */
 @Serializable
 data class DuelFighter(
@@ -47,6 +49,7 @@ data class DuelFighter(
     val counterMs: Long = 0,
     val dashKind: DashKind = DashKind.PLAIN,
     val wobble: Float = 0f,
+    val dashMissed: Boolean = false,
 )
 
 /** What kind of dash a fighter is in ([DuelFighter.dashMs] > 0). */
@@ -108,7 +111,7 @@ sealed interface DuelInput {
 
 /**
  * Something that happened during a [DuelPhysics.step]. A step's list is in canonical order, the same whichever fighter
- * sits in slot `a`: by [atMs], then by kind (DashStarted, SpecialStarted, WallSlam, Hit, Clash, RingOut), then by
+ * sits in slot `a`: by [atMs], then by kind (DashStarted, SpecialStarted, WallSlam, Hit, Missed, Clash, RingOut), then by
  * fighter id.
  */
 @Serializable
@@ -132,6 +135,14 @@ sealed interface DuelEvent {
      */
     @Serializable
     data class Hit(val attacker: String, val victim: String, val speedMps: Float, val fromAbove: Boolean, override val atMs: Long) : DuelEvent
+
+    /**
+     * T57 (height matters for hits): [attacker]'s dash met [victim] (circles touching), or its stomp landed by it, with
+     * the victim's feet out of the hit's height reach: no hit. Once per dash; [stomp] for a stomp's landing. Not for a
+     * lifted or dodging victim (those pass for another reason). Never emitted with the reach unlimited.
+     */
+    @Serializable
+    data class Missed(val attacker: String, val victim: String, val stomp: Boolean, override val atMs: Long) : DuelEvent
 
     /** Both dashing when they met: each took the other's knockback. `a < b` (the two ids in sorted order). */
     @Serializable
