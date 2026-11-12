@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kz.rudy.ar.core.duel.MatchPhase
 import kz.rudy.ar.core.session.DuelReport
 import kz.rudy.ar.ui.StringId
+import kz.rudy.ar.ui.components.GhostButton
 import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.PausedOverlay
 import kz.rudy.ar.ui.components.ScanOverlay
@@ -36,6 +37,8 @@ import kz.rudy.ar.ui.theme.RudeusSpacing
  *   centred just above the HUD's buttons while no scan runs; App holds the countdown while the scan runs.
  * PICK and VERSUS take every touch, so nothing reaches the AR view under them; the HUD's empty areas let a tap through
  * to the table. [report] is read here only: a report (up to ten a second) recomposes this screen, never App.
+ * A way out on screen (an iOS host has no system Back): "Back" at the picker's top-right and, over the camera, at the
+ * fight's top-left until the first report draws the HUD; both call [onBack], App's one Back rule.
  */
 @Composable
 fun DuelScreen(
@@ -60,24 +63,34 @@ fun DuelScreen(
     onRescan: (() -> Unit)?,
     onRematch: () -> Unit,
     onDone: () -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (ui.step) {
-        DuelStep.PICK -> OpponentPicker(
-            characters = opponents,
-            mineId = mineId,
-            selectedId = ui.foeId,
-            difficulty = ui.difficulty,
-            onPick = onPick,
-            onDifficulty = onDifficulty,
-            onStart = { onStart(false) },
-            onWatch = { onStart(true) },
-            modifier = modifier.takeAllTouches(),
-        )
+        DuelStep.PICK -> Box(modifier.fillMaxSize()) {
+            OpponentPicker(
+                characters = opponents,
+                mineId = mineId,
+                selectedId = ui.foeId,
+                difficulty = ui.difficulty,
+                onPick = onPick,
+                onDifficulty = onDifficulty,
+                onStart = { onStart(false) },
+                onWatch = { onStart(true) },
+                modifier = Modifier.takeAllTouches(),
+            )
+            // On Paper, level with the picker's title ("Duel" is short, so they never meet). Only the button takes touches.
+            Box(
+                Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = RudeusSpacing.sm, vertical = RudeusSpacing.sm),
+                contentAlignment = Alignment.TopEnd,
+            ) {
+                GhostButton(t(StringId.back), onClick = onBack, glyph = Glyph.BACK)
+            }
+        }
         DuelStep.VERSUS -> Versus(mine, foe, onVersusDone, modifier)
         DuelStep.FIGHT -> Fight(
             report, mineId, ui.watch, nameOf, paused, pausedHint, scanning, scanProgress,
-            onDash, onJump, onSpecial, onRescan, onRematch, onDone, modifier,
+            onDash, onJump, onSpecial, onRescan, onRematch, onDone, onBack, modifier,
         )
     }
 }
@@ -120,11 +133,22 @@ private fun Fight(
     onRescan: (() -> Unit)?,
     onRematch: () -> Unit,
     onDone: () -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier,
 ) {
     val model = DuelFlow.hud(report.value, mineId, watch, nameOf)
     Box(modifier.fillMaxSize()) {
         if (model != null) DuelHud(model, onDash = onDash, onJump = onJump, onSpecial = onSpecial)
+        if (model == null) {
+            // No report yet (or T58 not there): without this the child would face the bare camera with no way out but
+            // the system Back. Paper over the feed, where the HUD's own name card will stand.
+            Box(
+                Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = RudeusSpacing.md, vertical = RudeusSpacing.smd),
+                contentAlignment = Alignment.TopStart,
+            ) {
+                SecondaryButton(t(StringId.back), onBack, glyph = Glyph.BACK)
+            }
+        }
         ScanOverlay(active = scanning, progress = scanProgress)
         val betweenRounds = model != null && (model.phase == MatchPhase.COUNTDOWN || model.phase == MatchPhase.POINT)
         if (onRescan != null && betweenRounds && !scanning) {

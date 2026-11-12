@@ -305,7 +305,10 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
 Two fighters a child drew push each other on the table; nobody is hurt, so no copy says hitting ("Play", "Dash",
 "Stomp", "Float", "Rush", "Dodge"; the loser hears "Good try"). The composables are stateless over `duelHud(state,
 myId, …)`, a pure `DuelHudModel`, fed from the match the table engine reports (`DuelFlow.hud`). The duel is a state over
-Play, not a screen: the AR session, the anchor and the cast stay; Back at any step returns to free play at once.
+Play, not a screen: the AR session, the anchor and the cast stay; Back at any step returns to free play at once. On
+screen too (an iOS host has no system Back): a ghost **Back** (`back`, back glyph) at the picker's top-right, and a
+secondary **Back** at the top-left over the camera while a fight has no report yet (before the HUD appears); both do
+what the system Back does.
 - *Entry*: secondary **Duel** (`duel_title`) on Play, right above Scan / Rescan at the bottom-left (beside it there is no
   room next to the 156 dp Jump in kk / ru); for ROLL in line after the Scan primary. Disabled (InkMuted) until the table
   has a scanned edge, the character is placed and tracking holds: no floor duel yet. The child's fighter is the active one.

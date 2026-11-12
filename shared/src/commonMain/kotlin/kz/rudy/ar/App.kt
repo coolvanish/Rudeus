@@ -959,6 +959,7 @@ fun App(
                                 onRescan = { hud = hud.copy(scanning = true, scanProgress = 0f); scanRequest++ },
                                 onRematch = { moveDuel(DuelFlow.again(duelFlow, nowMs())) },
                                 onDone = { moveDuel(DuelFlow.done(duelFlow)) },
+                                onBack = ::back,
                             )
                         }
                     }
