@@ -1,9 +1,9 @@
 package kz.rudy.ar.ui.components
 
 import kz.rudy.ar.ArCharacter
-import kz.rudy.ar.CharacterAction
-import kz.rudy.ar.CharacterCommand
 import kz.rudy.ar.core.physics.Cast
+import kz.rudy.ar.core.session.CharacterAction
+import kz.rudy.ar.core.session.CharacterCommand
 import kz.rudy.ar.ui.Lang
 import kz.rudy.ar.ui.screens.BundledCharacter
 

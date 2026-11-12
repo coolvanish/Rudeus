@@ -50,7 +50,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kz.rudy.ar.ArCharacter
 import kz.rudy.ar.ArSlot
-import kz.rudy.ar.CharacterAction
 import kz.rudy.ar.ScanAnswer
 import kz.rudy.ar.audio.Sounds
 import kz.rudy.ar.core.domain.CharacterEvent
@@ -68,7 +67,8 @@ import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
 import kz.rudy.ar.core.scenario.Scenarios
-import kz.rudy.ar.core.session.GameLoop
+import kz.rudy.ar.core.session.TableEngine
+import kz.rudy.ar.rememberTableEngine
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -172,6 +172,9 @@ import kotlin.math.abs
 // HAND-REVIEW: T47 — GameLoop (the physics driver) comes from :core (core.session), moved as it was and pinned by
 // JVM tests. PAUSED still freezes every member and never resets; one anchor per session; nothing else changed here.
 // HAND-REVIEW: T52 — the poser's maths is a pure BillboardPoser returning a NodePose; nothing else changed here.
+// HAND-REVIEW: T53 — the surface lock, the cast sync, the active member and the commands are a pure
+// TableEngine fed by rememberTableEngine (now `core.session.TableEngine` and `:shared` `rememberTableEngine`, pinned by
+// JVM tests); one anchor per session and PAUSED never resets are untouched.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
@@ -230,14 +233,13 @@ private const val WALK_DEPTH_SAMPLES = 6
 
 /**
  * Plain holders for the slot-facing state written by the frame callback and the tap handler (main thread only).
- * `surface` is the one the sprite and physics are built for; `anchored` freezes it.
+ * `surface` is the one the sprite and physics are built for: the engine's, locked at the anchor (T53).
  */
-private class SlotState(var surface: Surface) {
-    var anchored = false
-    var ignoredSurface: Surface? = null // logged once per requested value after the anchor
+private class SlotState(private val game: TableEngine) {
     var surfaceReady = false
     var tracking: Boolean? = null // null until the anchor exists
-    val profile: SurfaceProfile get() = SurfaceProfile.of(surface)
+    val surface: Surface get() = game.surface
+    val profile: SurfaceProfile get() = game.profile
 }
 
 /** T32: one member's render side. `node` is written by the PlaneNode's `apply` and read by the frame callback. */
@@ -310,7 +312,9 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val grabMarginPx = remember { floatArrayOf(0f) }
     grabMarginPx[0] = GRAB_MARGIN_DP * LocalDensity.current.density
     val projector = remember { ScreenProjector() }
-    val loop = remember { GameLoop(separate = SEPARATION_ENABLED) }
+    val members = slot.members()
+    val game = rememberTableEngine(slot, members, playEmoteSound = { sounds?.play(it) }, onMemberRemoved = touch::unbindMember, log = { Log.i(GATE_TAG, it) }, separate = SEPARATION_ENABLED)
+    val loop = game.loop
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
     val scanQuiet = remember { booleanArrayOf(false) } // T37: the pending scan is a quiet one (no onScanned); cleared with scanPending
     val policy = remember { AutoScanPolicy() } // T37: fed from the frame callback only; reset with the anchor
@@ -327,25 +331,14 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
     val castStateAtMs = remember { longArrayOf(0L) } // last ArSlot.onCastState report (footprints mini-map)
     val settle = remember { PlaneSettle() }
-    val slotState = remember { SlotState(slot.surface) }
-    if (!slotState.anchored) {
-        slotState.surface = slot.surface
-    } else if (slotState.surface != slot.surface && slotState.ignoredSurface != slot.surface) {
-        slotState.ignoredSurface = slot.surface
-        Log.i(GATE_TAG, "surface_change_ignored anchored=${slotState.surface} requested=${slot.surface}")
-    }
+    val slotState = remember { SlotState(game) }
     val surface = slotState.surface
     val profile = slotState.profile
     // HAND-REVIEW: T25 — the size re-sizes physics mid-game; the surface stays locked at anchor time (T14). Main thread,
-    // same as the frame callback. The Day 5 scenario beats are timed for size 1×: replay it at 1×.
-    LaunchedEffect(surface, slot.characterSize) {
-        loop.configure(profile, slot.characterSize)
-        Log.i(GATE_TAG, "character_size size=${slot.characterSize} radius=${loop.radiusM}")
-    }
+    // same as the frame callback (the effect is now rememberTableEngine's). The Day 5 scenario beats are timed for size 1×: replay it at 1×.
     // T32: one rig per member, keyed by id; a new spritePng identity (or surface) rebuilds it. The map is written in
     // the remember block so the AnchorNode content, composed later in the same pass, finds the rig. Never destroys a
     // sprite in use: the effect runs only after the node keyed on the rig has been detached (see the T14 header comment).
-    val members = slot.members()
     for (c in members) key(c.id) {
         val rig = remember(engine, materialLoader, c.spritePng, surface) {
             val png = c.spritePng
@@ -410,45 +403,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         }
         scanQuiet[0] = false // T37: a button press is never quiet; a quiet scan still pending becomes this button's scan
     }
-    /** T32: whose taps and buttons: the slot's active member when it is on the table, else the first. */
-    fun activeId(): String? = currentSlot.activeId?.takeIf(loop::has) ?: loop.firstId
-    LaunchedEffect(slot.activeId) { slot.activeId?.let { Log.i(GATE_TAG, "active id=$it") } }
-    // T32: abilities are per member (set again at add time; before the anchor the id is not in the loop yet).
-    LaunchedEffect(members) { for (c in members) loop.setAbility(c.id, c.ability) }
-    // T32: one command per serial (T31 edge trigger). Jump keeps T21's `jump_ignored` (before the anchor the body is
-    // IDLE, so a jump would fire on the frame the anchor appears: rejected); WalkForward is T24's 10 cm x scale step
-    // along that member's facing; Emote starts the member's choreography on the simulated clock and plays its sound.
-    LaunchedEffect(slot.command?.serial) {
-        val c = slot.command ?: return@LaunchedEffect
-        if (anchorRef[0] == null || !loop.has(c.id)) {
-            Log.i(GATE_TAG, "command_ignored serial=${c.serial} id=${c.id} anchored=${anchorRef[0] != null}")
-            return@LaunchedEffect
-        }
-        when (val action = c.action) {
-            CharacterAction.Jump -> {
-                val s = loop.state(c.id) ?: return@LaunchedEffect
-                if (!loop.jump(c.id)) Log.i(GATE_TAG, "jump_ignored id=${c.id} mode=${s.mode} ability=${s.ability}")
-                else Log.i(GATE_TAG, "jump id=${c.id} ability=${s.ability} u=${s.pos.u} v=${s.pos.v}") // Pixel evidence
-            }
-            CharacterAction.WalkForward -> {
-                val s = loop.state(c.id) ?: return@LaunchedEffect
-                val target = s.pos + s.facing * (0.10f * slotState.profile.scale)
-                val boundary = loop.level.boundary
-                if (boundary != null && !boundary.contains(target)) {
-                    Log.i(GATE_TAG, "voice_walk_outside_boundary id=${c.id} u=${target.u} v=${target.v}")
-                } else {
-                    loop.walkTo(c.id, target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
-                }
-            }
-            is CharacterAction.Emote -> {
-                val member = members.firstOrNull { it.id == c.id } ?: return@LaunchedEffect
-                val choreo = member.emotes[action.emote]
-                loop.emote(c.id, choreo)
-                if (slot.soundsOn) sounds?.play(choreo.sound)
-                Log.i(GATE_TAG, "emote id=${c.id} emote=${action.emote} source=${member.emotes.source} ms=${choreo.durationMs}")
-            }
-        }
-    }
+    fun activeId(): String? = game.activeId()
     // T21 (c): one increment = one replay from spawn (restartAtSpawn); a replay in progress is restarted.
     LaunchedEffect(slot.scenarioRequest) {
         if (slot.scenarioRequest == 0) return@LaunchedEffect
@@ -571,21 +526,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
      * T32: the physics cast follows the slot's members. Main thread, from the tap that creates the anchor and from every
      * anchored frame (a list of at most Cast.MAX ids compared by id; no allocation when nothing changed).
      */
-    fun syncCast(a: Anchor, frame: Frame) {
-        val wanted = currentSlot.members()
-        for (id in loop.ids) if (wanted.none { it.id == id }) {
-            loop.remove(id)
-            touch.unbindMember(id)
-            Log.i(GATE_TAG, "cast_remove id=$id")
-        }
-        for (c in wanted) if (!loop.has(c.id)) {
-            val near = activeId()?.let(loop::state)?.pos ?: Vec2.ZERO
-            val pos = loop.spawnFor(near, cameraRight(a, frame))
-            loop.add(c.id, pos, c.ability)
-            Log.i(GATE_TAG, "cast_add id=${c.id} n=${loop.ids.size} u=${pos.u} v=${pos.v}")
-            currentSlot.onCastEvent(c.id, CharacterEvent.PLACED)
-        }
-    }
+    fun syncCast(a: Anchor, frame: Frame) = game.syncCast { cameraRight(a, frame) }
     /** The session's one anchor, on [hit]: from a tap on a settled plane, or from the frame that lands a held tap. Main thread. */
     fun placeAnchor(hit: HitResult, plane: Plane, frame: Frame, ageMs: Long?) {
         heldTap[0] = null
@@ -596,13 +537,11 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         anchor = created
         policy.reset() // T37: a new level frame; no sector is visited yet
         firstLevelScanned[0] = false // T37 review fix: the first level of this anchor comes from the button again
-        slotState.anchored = true // the surface is now locked (sprite, physics, tolerance)
         slotState.tracking = true
         probe.onAnchorPlaced(created)
         Log.i(GATE_TAG, "anchor_plane_age_ms=$ageMs surface=${slotState.surface}")
         val s = currentSlot
-        s.onAnchorPlaced()
-        syncCast(created, frame) // T32: every waiting member is placed now, each with onCastEvent(id, PLACED)
+        game.anchorPlaced { cameraRight(created, frame) }
         s.onTracking(true)
     }
     // T32: what CastTouch needs; the hit test is the tap's, the grab a screen-space quad test (review fix (a)), the lead a
