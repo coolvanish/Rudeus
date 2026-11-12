@@ -334,7 +334,9 @@ Play, not a screen: the AR session, the anchor and the cast stay; Back at any st
   A draw), both names with the score `2 : 1` between them, primary **Again**, secondary **Done**. Again starts a new match
   against the same opponent at the same difficulty, straight to the countdown (no VS card); Done returns to free play.
 - *During the fight* Play's chrome is gone (chips, `+`, emotes, voice, size, Footprints, Metrics), no speech bubble
-  shows and no background scan runs; tracking lost shows the same Paused scrim as Play. *Watch* is the same match with
+  shows and no background scan runs; tracking lost shows the same Paused scrim as Play. Between rounds (3, 2, 1 and the
+  point banner) a secondary **Rescan** (eye glyph) sits centred just above the buttons: one scan with the usual arc, and
+  the countdown waits until it answers, so a moved cup is where the fighters see it. *Watch* is the same match with
   both sides played by the bot; the three buttons stay disabled. A duel the table has no room for closes with the
   bubble "Not enough room" (`duel_no_room`).
 - Copy: `special_*` follows the fighter's ability (stomp = JUMP, float = FLY, rush = ROLL, dodge = HIDE); Jump keeps `play_jump`.

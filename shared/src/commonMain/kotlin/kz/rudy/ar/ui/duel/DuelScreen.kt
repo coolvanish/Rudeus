@@ -18,9 +18,12 @@ import kotlinx.coroutines.delay
 import kz.rudy.ar.core.duel.MatchPhase
 import kz.rudy.ar.core.session.DuelReport
 import kz.rudy.ar.ui.StringId
+import kz.rudy.ar.ui.components.Glyph
 import kz.rudy.ar.ui.components.PausedOverlay
 import kz.rudy.ar.ui.components.ScanOverlay
+import kz.rudy.ar.ui.components.SecondaryButton
 import kz.rudy.ar.ui.screens.BundledCharacter
+import kz.rudy.ar.ui.t
 import kz.rudy.ar.ui.theme.RudeusColors
 import kz.rudy.ar.ui.theme.RudeusSpacing
 
@@ -29,7 +32,8 @@ import kz.rudy.ar.ui.theme.RudeusSpacing
  * - PICK: [OpponentPicker] (its own Paper screen) over [opponents]; Play and Watch call [onStart].
  * - VERSUS: a Paper screen with [VersusCard] of [mine] and [foe]; [onVersusDone] after [DuelFlow.VERSUS_MS] or a tap.
  * - FIGHT: [DuelHud] of the engine's [report] (nothing until the first one arrives), the scan arc, the Paused scrim, and
- *   [DuelResult] once the match is over.
+ *   [DuelResult] once the match is over. Between rounds (COUNTDOWN, POINT) [onRescan], when given, backs a Rescan button
+ *   centred just above the HUD's buttons while no scan runs; App holds the countdown while the scan runs.
  * PICK and VERSUS take every touch, so nothing reaches the AR view under them; the HUD's empty areas let a tap through
  * to the table. [report] is read here only: a report (up to ten a second) recomposes this screen, never App.
  */
@@ -53,6 +57,7 @@ fun DuelScreen(
     onDash: () -> Unit,
     onJump: () -> Unit,
     onSpecial: () -> Unit,
+    onRescan: (() -> Unit)?,
     onRematch: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
@@ -72,7 +77,7 @@ fun DuelScreen(
         DuelStep.VERSUS -> Versus(mine, foe, onVersusDone, modifier)
         DuelStep.FIGHT -> Fight(
             report, mineId, ui.watch, nameOf, paused, pausedHint, scanning, scanProgress,
-            onDash, onJump, onSpecial, onRematch, onDone, modifier,
+            onDash, onJump, onSpecial, onRescan, onRematch, onDone, modifier,
         )
     }
 }
@@ -112,6 +117,7 @@ private fun Fight(
     onDash: () -> Unit,
     onJump: () -> Unit,
     onSpecial: () -> Unit,
+    onRescan: (() -> Unit)?,
     onRematch: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier,
@@ -120,6 +126,20 @@ private fun Fight(
     Box(modifier.fillMaxSize()) {
         if (model != null) DuelHud(model, onDash = onDash, onJump = onJump, onSpecial = onSpecial)
         ScanOverlay(active = scanning, progress = scanProgress)
+        val betweenRounds = model != null && (model.phase == MatchPhase.COUNTDOWN || model.phase == MatchPhase.POINT)
+        if (onRescan != null && betweenRounds && !scanning) {
+            // The HUD's insets and padding, lifted by its 64 dp button row: just above the buttons, below the banner's band.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .safeDrawingPadding()
+                    .padding(horizontal = RudeusSpacing.md, vertical = RudeusSpacing.smd)
+                    .padding(bottom = RudeusSpacing.primaryButton + RudeusSpacing.smd),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                SecondaryButton(t(StringId.rescan), onRescan, glyph = Glyph.EYE)
+            }
+        }
         PausedOverlay(visible = paused, hint = pausedHint)
         if (model != null && model.phase == MatchPhase.RESULT) DuelResult(model, onRematch = onRematch, onDone = onDone)
     }

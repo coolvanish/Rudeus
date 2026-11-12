@@ -968,6 +968,9 @@ fun App(
                                 onDash = { act(CharacterAction.Dash) },
                                 onJump = { act(CharacterAction.Jump) },
                                 onSpecial = { act(CharacterAction.Special) },
+                                // Between rounds: one scan through the usual request; its arc effect and onScanned end it,
+                                // and while it runs the setup's hold keeps the countdown waiting for the new table.
+                                onRescan = { hud = hud.copy(scanning = true, scanProgress = 0f); scanRequest++ },
                                 onRematch = {
                                     duelSerial++
                                     duelSeed = nowMs()
