@@ -1,6 +1,6 @@
 # T58 — duel-stage
 
-status: todo
+status: review
 created: 2026-11-12
 phase: v2 wave 4 (ai/build-plan-v2.md, "The game" and "iOS readiness"). Takes the duel half of the plan's T50 row; 2.5D
   views and the per-frame picture swap stay in T50 (a host brief, later)
@@ -330,8 +330,169 @@ Every Gradle call: `flock /tmp/rudeus-gradle.lock env ANDROID_HOME=/opt/android-
 - Dash goes along `facing`, where the fighter last walked; aiming it at the opponent is `DuelInput.Dash(dir)`, one
   line here, a rule decision for the user.
 
-## Result (filled on acceptance)
-- commits, measured counts, the step-3 diffs, the mutations: ...
-- deviations from the letter of the brief, and what the re-check after T54 found: ...
-- Pixel check ("free play is what it was"): ...
-- cut/deferred: ...
+## Result (filled 2026-11-12, cloud container with /opt/android-sdk, no device)
+- commits (on the branch `stage-duel` at K `847d116`, made by the orchestrator after the T54 merge `b99c9e0`; this
+  brief's step 2 was skipped): S `de5b875` (the seam), D `7a5c2a0` (the duel), then this Result. Revert points as
+  decided: D alone, then S; K can stay.
+- K against the contract block: the same shapes, word for word (`CharacterAction.Dash` / `Special` with their KDoc;
+  `DuelSetup`, `DuelReport.Running` / `Refused`, `DuelRefusal`; `Member.stats = FighterStats.defaultFor(ability)`;
+  `TableSlot.duel` / `onDuel` appended after `onLevel`; the `command` branch logging
+  `duel_command_ignored serial= id= duel=false`). Nothing differs; K was not touched.
+- re-check after T54 (against K's `TableEngine.kt`): all six hold as written. (1) `onTap` 406-431: anchor guard,
+  `table.grabbable`, `activeId()`, `from`, `depthGapM()`, `port.depthGapsOnWay(from, uv, walkDepthSamples) +
+  depthGap`, `tap_depth_gap=`, `crossesEdge`, BLOCKED or `confirmSurface` + `loop.walkTo`; (2) `onTouch` 438-441;
+  (3) `CastTouch.unbindMember(id)` (`CastTouch.kt:58`); (4) `internal val loop` (117); (5) `TableSlot` ends
+  `onActiveChanged`, `onLevel` (79, 81), then K's two fields; (6) the constructor 94-115 as listed. No rule needed
+  adapting.
+- measured (test XML; every Gradle call under `flock /tmp/rudeus-gradle.lock`):
+  - baseline at K: `scripts/verify.sh` exit 0: core 814, shared 43, android 4.
+  - S: `:core:jvmTest :core:compileKotlinIosSimulatorArm64 :core:compileTestKotlinIosSimulatorArm64` green; core 814
+    (`TableEngineTest` 27, `TableFrameTest` 28, `TableTouchTest` 47, `ScreenViewTest` and `GameLoopTest` as before),
+    0 failed; `git diff --stat HEAD -- core/src/commonTest` empty; no compiler warning in a session file.
+  - D: the same tasks green; core 853 = 814 + 39 `DuelStageTest`, 0 failed; `scripts/verify.sh` exit 0: core 853,
+    shared 43, android 4, apk built. Up by 39 in core, shared and android unchanged.
+  - `DuelStageTest` runs in about 0.6 s on the JVM (39 tests, several full matches at 16 ms frames). Its printed
+    `marks_ms=` for LARGE (120 x 60 cm) at size 1.5 is 2 ms (warm JVM); a full idle-vs-HARD match on SMALL is
+    0:2 at 15 528 ms of match time with 16 log lines.
+  - `grep -rn "HAND-REVIEW" core/src`: empty. `grep -rnE "import (android|androidx|com\.google\.ar|io\.github\.sceneview)"
+    core/src/commonMain`: empty. `git diff --stat 847d116..HEAD`: `Stage.kt`, `DuelStage.kt`, `TableEngine.kt`,
+    `DuelStageTest.kt` and this file; nothing under `androidApp/`, `shared/`, no Gradle file.
+- step-3 diffs (S; the engine at K saved with `git show HEAD:...` before editing; old lines on the left, the moved
+  body on the right, line numbers of `TableEngine.kt` at S; `diff -w`):
+  ```
+  ### onTap after its guard: old 408,430 vs Walk.tap 371,393
+  (no difference)
+  ### the `when` of command: old 207,232 vs Walk.command 397,422
+  (no difference)
+  ### the scenario feed with loop.onFrame: old 345-346 + 348,368 vs Walk.step 429,451
+  (no difference)
+  ### the pose loop: old 381,391 vs onFrame 343,353
+  4,6c4,6
+  <                 m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
+  <                 verticalVelocity = m.body.verticalVelocity,
+  <                 sinceLandedMs = now - loop.landedAtMs(m.id),
+  ---
+  >                 stage.body(m.id).state, cameraLocal, cameraHeightM, stage.walkPhaseMs(m.id),
+  >                 verticalVelocity = stage.body(m.id).verticalVelocity,
+  >                 sinceLandedMs = now - stage.landedAtMs(m.id),
+  8c8
+  <                 emotePose = loop.emotePose(m.id),
+  ---
+  >                 emotePose = stage.emotePose(m.id),
+  10c10
+  <             poses += if (visible) p else p.copy(visible = false)
+  ---
+  >             poses += if (visible && stage.shows(m.id)) p else p.copy(visible = false)
+  ### standing(): old 242 vs Walk.standing 454
+  1c1
+  <     fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+  ---
+  >         override fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+  ```
+  The new wrapper lines around the moved bodies: `Walk.step` opens with `val now = input.nowMs` and `val tracking =
+  input.tracking` (onFrame keeps its own two); `onFrame` reads `val cast = loop.cast` after `stage.step(input)` (the
+  instance `loop.onFrame` returned). No moved body looked like it needed a change; none was changed.
+- mutation check (one at a time, the file restored byte for byte after each, `cmp` true every time;
+  `kz.rudy.ar.core.session.*` run; the script and its log are scratch files outside the repo): **19 of 19 caught**.
+  1. the pose loop reads the loop (`loop.body(m.id)!!`, `loop.walkPhaseMs`, `loop.landedAtMs`) -> `benchMembersAreHiddenAndFrozenAndComeBack`,
+     `fightersArePosedFromTheirDuelBodies`, `fightersTransitionsReachOnCastEvent`
+  2. `onTouch` without the `fingers` check -> `fingersGrabNobodyInADuel`
+  3. `dt` unclamped (`coerceAtLeast(0)`) -> `dtIsClampedToFiftyMs`
+  4. the frame clock kept across a loss -> `aLossFreezesTheMatchAndNothingResets`, `theFirstFrameAndTheFrameBackStepNothing`,
+     `theSameSeedAndInputsGiveTheSameMatchAt16And33MsFrames`
+  5. a kept input surviving a loss -> `inputsGivenDuringALossAreDropped`
+  6. `2 * seed` for the opponent -> `aHumanMatchIsTheRunnersMatch`, `aWatchedMatchIsTheSimulatorsMatch`, `matchEventsAreLoggedOnceEach`
+  7. mine on the far mark -> `myFighterTakesTheMarkNearerTheCamera`, `aLevelThatArrivesBetweenRoundsMovesTheMarksAndKeepsTheSides`
+  8. a tap that calls `confirmSurface` (in `onTap` after `stage.tap`, duel only) -> `aTapOutsideTheArenaIsClampedInside`
+  9. a tap that is not clamped -> `aTapOutsideTheArenaIsClampedInside`
+  10. the tap's depth read outside FIGHT (the phase check moved below the readings) -> `tapsOutsideAFightAskNothingAndDoNothing`
+  11. a level applied in FIGHT (no phase condition; `rearrange` refuses, the level is used up as kept) ->
+      `aLevelThatArrivesInAFightWaitsForTheRoundsEnd`
+  12. `rearrange` that swaps the sides -> `aLevelThatArrivesBetweenRoundsMovesTheMarksAndKeepsTheSides`
+  13. `hold` that also stops FIGHT (and POINT) -> `aHeldCountdownWaitsAndGoesOnWhereItStopped`
+  14. a report on every frame -> `reportsComeEvery100MsAndAtOnceOnAChange`
+  15. no report on a phase change -> `reportsComeEvery100MsAndAtOnceOnAChange`, `aFullMatchRunsToResultThroughTheEngine`
+  16. the loop stepped during a duel -> `benchMembersAreHiddenAndFrozenAndComeBack`, `fightersTransitionsReachOnCastEvent`,
+      `leavingTheDuelGivesTheWalkingGameBackWhereItStood`
+  17. a bench member shown -> `benchMembersAreHiddenAndFrozenAndComeBack`
+  18. `Walk` not restored when the setup goes -> `benchMembersAreHiddenAndFrozenAndComeBack`, `leavingTheDuelGivesTheWalkingGameBackWhereItStood`,
+      `noCastStateReportDuringADuel`, `otherCommandsAreIgnoredInADuelAndDuelCommandsOutsideOne`
+  19. a refusal retried on the next frame (`duelSerial = setup.serial` removed) -> 34 of the 39, among them
+      `withoutABoundaryTheDuelIsRefusedOnceAndWalkingGoesOn`, `withoutRoomForTwoTheDuelIsRefused`,
+      `aFighterThatIsNotOnTheTableRefusesTheDuel` (the same line also stops a started serial from being remembered, so
+      every match restarts on every frame; that run took about 25 minutes, a marks search per frame)
+- deviations from the letter of the brief (none changes a contract shape or a host line):
+  1. `DuelStage`'s constructor is private; `DuelStage.open(setup, loop, current, profile, port, log, walkDepthSamples,
+     camera)`, the brief's eight arguments, builds it and answers null for NO_ROOM (no marks, or `forProfile`, `marks`
+     or `DuelMatch.start` threw `IllegalArgumentException`, all caught). A constructor cannot refuse without throwing.
+     NO_FIGHTER and NO_BOUNDARY are decided by `syncDuel` before it; NO_FIGHTER also needs the id in the slot's members
+     (the stats come from there).
+  2. Step 1's "Return" skips steps 2-4 and 6; step 5's transitions and step 7's report still run on an untracked frame.
+     So the loss frame reports PAUSED for both fighters and the frame back RESUMED (mine first), as `GameLoop` reports
+     them in free play, and decision 10's "a paused match reports once" has a report to make. Pinned by
+     `fightersTransitionsReachOnCastEvent` and `reportsComeEvery100MsAndAtOnceOnAChange`.
+  3. The pose loop's diff has one token more than "`stage.` for `loop.` / `m.body`": `visible && stage.shows(m.id)`,
+     where the Stage contract's `shows` is read (true for every member in `Walk`).
+  4. `Walk.step` carries `@Suppress("UNUSED_VARIABLE")`: its moved last line keeps `val cast = loop.onFrame(...)`
+     unedited. `Walk.body` is an index loop over `loop.cast.members` (no iterator per call; the pose loop asks twice per
+     member per frame where it read `m.body`).
+  5. `standing()`'s moved line differs by `override`; the old comment above `syncCast` (old 345-346, about the scripted
+     taps) moved with the scenario feed into `Walk.step`.
+  6. "Each fighter taking the new mark nearer its old one" is the pairing with the smaller sum of distances (a tie keeps
+     the search's order): the per-fighter rule can give both the same mark (on the test's moved table both old marks are
+     nearer (0.02, 0.05)).
+  7. Log lines the brief left open: `duel_arena marks=<u,v,u,v> phase=<phase> marks_ms=<n>` (mine's mark first),
+     `duel_arena_kept reason=NO_BOUNDARY` and `reason=NO_ROOM marks_ms=<n>`, `duel_point .. winner=null` for a replay,
+     `duel_start .. level=<the foe's BotLevel>`. A duel tap logs no `tap_depth_gap=` line, only its refusal.
+  8. `DuelParams.forProfile(profile, size)` and the separation use the slot's `characterSize` at the start; the radius
+     and physics are the loop's (`loop.radiusM`, `loop.params`), as the brief says.
+- found, not fixed (nothing under `core/duel` was touched):
+  1. Balance, `DuelBot`: on `DuelArenas.CUP_AND_BOOK` a NORMAL or HARD bot of any ability never scores against a
+     fighter that never moves (JUMP, archetype stats): the child wins 2:0 on two 60 s timeouts, 3 of 3 seeds, from
+     either mark; an EASY bot wins 3 of 3. On EMPTY and SMALL every level wins 3 of 3 (0:2 in about 22 s and 15 s). A
+     temporary probe (DuelRunner at 16 ms, deleted before commit) measured it; nothing pins it. A scanned table with
+     a cup and a book is the duel's normal case, so a child who stands still beats Normal and Hard there: for the
+     balance brief (`docs/duel-balance.md`), and worth one Pixel match before T59's flow is judged.
+  2. Frame cost on a phone: `DuelArena.marks` runs inside one AR frame at the start and at every rearrange (2 ms warm
+     on the JVM for LARGE; its KDoc says tens of ms cold for up to 1.3 million pairs; an ARCore hull with many vertices
+     adds a segment test per vertex per grid point). Expect one or a few dropped frames at a duel's start and after a
+     rescan; `marks_ms=` measures it on the Pixel. Per frame the match is immutable data: every 8 ms sub-step copies
+     `DuelState`, both `DuelFighter`s, their `PhysicsBody` and `CharacterState`; `DuelRunner` adds a `RunnerState`, the
+     `MatchStep` lists and a `HashMap` per bot input; the stage adds one input map per input and one `Running` per
+     report. Tens of short-lived objects per frame, nothing retained.
+  3. Nothing catches an exception from `DuelRunner.step` inside `onFrame`: one would reach the host's frame callback
+     (Android: a crash). None was found on valid input, but every arena the duel was tuned on is a rectangle from
+     `DuelArenas`; a real ARCore hull has not been through `DuelBot`.
+  4. Starting a duel releases every binding (`release pointer= id=` lines) but `CastTouch`'s `captured` flag stays
+     until the next DOWN: a finger held through the start and the end of a duel gets its later MOVE / UP consumed
+     (T54's finding 3 in a new place). Harmless, not pinned.
+  5. A duel never steps the walking loop, so its scenario clock, emotes and walks stand still and the first walking
+     frame after a duel steps the clamped 50 ms (decision 3, as designed).
+- for T59, what the contract does not say:
+  1. `state.duel.a` is always `mineId`, `b` the opponent; `scoreA` is mine.
+  2. Reports: `Running` on the start frame, then on the first frame at least 100 ms after the last (112 ms at 16 ms
+     frames), and at once on a new phase, round or score, an applied input, the first frame back from a loss, a
+     rearranged arena. One paused report per loss, one RESULT report, then silence: keep the last `Running`.
+  3. A serial is taken once, on the first tracked frame it is seen: a refused one is never retried, so a retry (after a
+     rescan for NO_BOUNDARY / NO_ROOM) needs a new serial. A new serial while a match runs, RESULT included, is a
+     rematch at once. `duel = null` ends any phase at once; the fighters jump back to where they stood.
+  4. `Refused(NO_FIGHTER)` mid-match means the duel is over and the table is the walking game's; the setup may stay in
+     the slot (it is not restarted) until T59 drops it.
+  5. Taps outside FIGHT are dropped, not kept; commands outside FIGHT are sent and ignored by `DuelMatch`. In a watched
+     match both do nothing (commands log `duel_command_ignored`).
+  6. `onCastEvent` gets the fighters' body transitions in a duel (JUMPED, LANDED, FELL, RESPAWNED, PAUSED, RESUMED,
+     STARTED_WALKING, ARRIVED, BLOCKED, STEPPED_UP), so `HudSpeech`'s bubble reacts as in free play unless T59 mutes it.
+  7. No `onCastState` (the mini-map freezes) and no `onLevel` during a duel; `onTracking` as always. A Scenario request
+     during a duel is rejected and not retried: hide the button. A size change reaches the loop only.
+  8. `hold` stops only a COUNTDOWN. A level written by the scan becomes the arena on the next tracked frame that starts
+     in COUNTDOWN or POINT; written during FIGHT it waits for the point. `Running.arena` is then the new level.
+  9. A member that joins the slot during a duel is placed (PLACED) and stays hidden on the bench.
+- Pixel check ("free play is what it was"): **needs the user's run** (no device in the cloud container). No host file
+  changed; nothing to see on the phone until T59. The five steps and the log lines under "Done when" as written: two
+  characters on a table with a cup, scanned once, footprints on; tap right and left, tap just outside the loop; tap the
+  other character and drag it 20 cm; Jump then Hello; cover the lens 3 s while one walks; Scenario. In
+  `scripts/device.sh log`: `tap_depth_gap=`, `boundary_grown n=`, `grab pointer=`, `release pointer=`, `jump id=`,
+  `emote id=`, `scenario_done ms=` just over 15000, no line starting `duel_`, one `anchor t_ms=0`, no `anchor_refused`.
+  If anything is off: revert D and look again; if still wrong, revert S and report which step failed.
+- cut/deferred: nothing cut (the "level" group is in). Not built, as the brief lists: the floor duel, sounds for a
+  dash / hit / slam, keeping a 3-2-1 tap, aiming the dash.
