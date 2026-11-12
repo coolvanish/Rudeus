@@ -66,6 +66,17 @@ data class BotMind(
  * and countering after it, and ramming only where a miss still ends on the table (never toward an edge it would roll
  * off). Measured on the tuning arenas with equal stats and ability ([DuelSim]): HARD beats EASY and NORMAL, NORMAL
  * beats EASY, in every ability (`DuelBotTest`).
+ *
+ * **T57's rules** (each part inert with its rule off, so the bot plays the pre-T57 game bit for bit there). Height
+ * matters for hits: it jumps over a dash or a stomp coming at it when a jump gets its feet out of reach in time and keeps
+ * them there until the hit has passed ([BotSkill.jumpChance]: EASY never, NORMAL half the time, HARD always, watching
+ * on every tick, [BotSkill.reflexes]; a ROLL cannot jump); it never dashes, counters, rams or stomps at a fighter out of
+ * height reach (feet predicted along a jump's arc); when the spot behind the other is out of reach (a fighter on a book)
+ * it pushes from the first spot round it that is not, else walks up at it; a HARD bot dashes at a fighter that could jump
+ * only from close enough that it cannot ([BotSkill.closesInOnJumpers]). The stomp and the ram share the dash: with both
+ * ready and its situation there, the special goes first; a stomp only at a fighter that cannot get out of its way (no
+ * lift-off or dodge ready, and no jump in time: a ROLL, or stunned through the landing). SPEED lengthens the dash: every
+ * reach is the bot's own. Its walk is planned at the ground it will come down on.
  */
 object DuelBot {
 

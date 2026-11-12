@@ -55,7 +55,7 @@ class DuelSpecialsTest {
         val hit = side.all.filterIsInstance<Hit>().single()
         val stompSpeed = P.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED) * P.stompScale
         assertEquals(Hit("a", "b", stompSpeed, fromAbove = true, atMs = hit.atMs), hit)
-        assertEquals(0.5f, hit.speedMps, 1e-6f) // T57: 0.25 x 2.0 (T48: 0.25 x 0.85; 0.3 = 0.25 x 1.2 before)
+        assertEquals(0.375f, hit.speedMps, 1e-6f) // T57: 0.25 x 1.5 (T48: 0.25 x 0.85; 0.3 = 0.25 x 1.2 before)
         val k = side.indexOf { it is Hit }
         assertEquals(Mode.JUMPING, side.states[k - 1].a.body.state.mode, "still in the air the step before")
         assertTrue(grounded(side.states[k].a), "the hit is the landing")
@@ -65,7 +65,7 @@ class DuelSpecialsTest {
         val pushed = side.states[k].b
         assertTrue(pushed.knock.normalized().distanceTo(Vec2(1f, 0f)) < 1e-5f, "straight away: ${pushed.knock}")
         assertTrue(DuelPhysics.isStunned(pushed))
-        assertTrue(side.last.b.pos.u - 2 * R > 0.03f, "slid ${side.last.b.pos.u - 2 * R} m (0.21 m/s x 0.18 s)")
+        assertTrue(side.last.b.pos.u - 2 * R > 0.03f, "slid ${side.last.b.pos.u - 2 * R} m (0.375 m/s x 0.18 s)")
 
         // Any side: on a diagonal 7.1 cm away, along the diagonal; behind it, backwards. The stomp has no facing.
         val diagonal = stomp(fighter("b", Vec2(0.05f, 0.05f)))

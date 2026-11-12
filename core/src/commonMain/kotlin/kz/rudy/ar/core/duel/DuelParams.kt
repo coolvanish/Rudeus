@@ -95,10 +95,11 @@ data class DuelParams(
     /** JUMP stomp: an opponent whose centre is within this many of the stomper's radii of the landing point is hit. */
     val stompRadiusRadii: Float = 3f,
     /**
-     * JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it). T57: 2.0
-     * (T48: 0.85, before 1.2): since T57 it spends the dash too, and a jump gets out of its way.
+     * JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it). T57: 1.5
+     * (T48: 0.85, before 1.2): since T57 it spends the dash too and a jump gets out of its way, so a bot stomps only a
+     * fighter that cannot (a ROLL, or one stunned through the landing); at 2.0 x that made JUMP v ROLL up to 92 / 8.
      */
-    val stompScale: Float = 2.0f,
+    val stompScale: Float = 1.5f,
     /**
      * FLY lift-off: how long the fighter hovers, cannot be hit and walks at [liftSpeedScale] x its walk speed. T57: 600
      * (was 1200; a lift is a dodge of one dash either way, and a FLY's own jump now floats out of reach for 2 s).

@@ -182,7 +182,7 @@ class DuelBalanceTest {
         // at equal stats, rounds left to the clock, or a pair that needs far more hits than B5's 8 to ring anyone out.
         val cells = DuelMatrix.equalCells(DuelArenas.MATRIX.keys.toList(), listOf(BotLevel.NORMAL, BotLevel.HARD))
         val results = cells.map { c -> CellResult(c, DuelMatrix.tally(DuelMatrix.play(c, DuelArenas.MATRIX.getValue(c.arena), 1L, 21L))) }
-        val wide = Acceptance(equalMin = 0.10f, equalMax = 0.90f, hitsMax = 16f, hitsMaxLarge = 16f)
+        val wide = Acceptance(equalMin = 0.12f, equalMax = 0.88f, hitsMax = 12f, hitsMaxLarge = 14f)
         val verdicts = DuelMatrix.acceptance(results, stepsAgree = null, t = wide).associateBy { it.id }
         val strict = DuelMatrix.acceptance(results, stepsAgree = null).associateBy { it.id }
         println(
@@ -300,7 +300,7 @@ class DuelBalanceTest {
 
     @Test
     fun aRingOutIsReachableOnLarge() {
-        // A scripted series of hits (the victim stands) pushes it from its mark off the 120 cm table within A4's 8 hits.
+        // A scripted series of hits (the victim stands) pushes it from its mark off the 120 cm table within 8 hits (T48's A4).
         val (hits, out, ms) = pushOffLarge(recovers = false)
         assertEquals(listOf("b"), out, "the victim (only) went off; $hits hits in $ms ms")
         assertTrue(hits in 1..8, "$hits hits")
