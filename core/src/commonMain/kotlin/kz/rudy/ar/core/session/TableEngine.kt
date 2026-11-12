@@ -11,6 +11,7 @@ import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.domain.defaultFor
+import kz.rudy.ar.core.duel.DuelMatchState
 import kz.rudy.ar.core.emote.EmotePose
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.EmoteSound
@@ -42,6 +43,10 @@ import kotlin.math.abs
 // pick); it names no member, no level and no loop, and `loop` is internal. New and silent: onTap and onTouch do nothing
 // before the anchor, and spriteGone forgets a picture's size, poser and drawn facing. Nothing here looks at tracking,
 // as before: a walk set during a loss waits for it, and PAUSED still freezes and never resets.
+// T58 — what differs between games is a Stage (Stage.kt): the walking game is `Walk` below, its code moved as it was
+// and pinned by the three files above, untouched; a duel is DuelStage, chosen per frame from `TableSlot.duel` and pinned
+// by DuelStageTest. The anchor, the tracking edge, the cast sync, the reappear timer, the posers and the cast-state
+// report stay here. A duel does not step the walking loop: every member gets its body back when it ends.
 
 /** Footprints mini-map: how often the host reports every member's physics state (`ArSlot.onCastState`) while debug chrome is on. */
 internal const val CAST_STATE_PERIOD_MS = 100L
@@ -121,8 +126,14 @@ class TableEngine(
     /** T58: the walking game, the first stage ([Walk]). */
     private val walk = Walk()
 
-    /** T58: what a tap, a command and a frame mean now ([Stage]). */
+    /** T58: what a tap, a command and a frame mean now ([Stage]): [walk], or the duel the slot asked for. */
     private var stage: Stage = walk
+
+    /** T58: the serial of the last `TableSlot.duel` taken on a tracked frame (started or refused); null before any. */
+    private var duelSerial: Int? = null
+
+    /** T58: the running duel's match, null in the walking game. No host reads it; the tests read the duel through it. */
+    internal val duelMatch: DuelMatchState? get() = (stage as? DuelStage)?.match
 
     /** The one the sprite and physics are built for: follows the slot until the anchor, then locked. */
     var surface: Surface = surface
@@ -137,12 +148,14 @@ class TableEngine(
     /**
      * The level physics steps against: the scan reads it, and swaps a new one in between frames (the next step stands
      * on it; nobody moves, nothing resets). A plain get / set of `loop.level`; a tap that grows the boundary writes it
-     * too ([onTap], then `TableSlot.onLevel`).
+     * too ([onTap], then `TableSlot.onLevel`). T58: in a duel the write is kept here at once, and the duel's arena
+     * follows it between rounds ([DuelStage.levelArrived]).
      */
     var level: Level
         get() = loop.level
         set(v) {
             loop.level = v
+            (stage as? DuelStage)?.levelArrived(v)
         }
 
     private var ignoredSurface: Surface? = null // logged once per requested value after the anchor
@@ -247,6 +260,54 @@ class TableEngine(
     }
 
     /**
+     * T58: the stage follows `TableSlot.duel`, compared by its serial on every anchored frame right after [syncCast]:
+     * no setup ends a running duel (the walking game goes on where it stood); a fighter gone from the cast ends it
+     * (NO_FIGHTER); a serial not taken yet starts a match on a tracked frame (the camera decides the sides), or is
+     * refused once and never retried. Starting releases every finger. Without a setup and a duel: one null check.
+     */
+    private fun syncDuel(input: FrameInput) {
+        val setup = current().duel
+        val duel = stage as? DuelStage
+        if (setup == null) {
+            if (duel != null) {
+                val m = duel.match
+                log("duel_end serial=${duel.serial} phase=${m.phase} score=${m.scoreA}:${m.scoreB}")
+                stage = walk
+            }
+            return
+        }
+        if (duel != null && !(loop.has(duel.mineId) && loop.has(duel.foeId))) refuseDuel(duel.serial, DuelRefusal.NO_FIGHTER)
+        if (!input.tracking || setup.serial == duelSerial) return
+        duelSerial = setup.serial
+        val reason = when {
+            setup.mineId == setup.foeId || !isFighter(setup.mineId) || !isFighter(setup.foeId) -> DuelRefusal.NO_FIGHTER
+            loop.level.boundary == null -> DuelRefusal.NO_BOUNDARY
+            else -> null
+        }
+        val started = if (reason != null) null else DuelStage.open(setup, loop, current, profile, port, log, walkDepthSamples, input.camera.pos)
+        if (started == null) {
+            refuseDuel(setup.serial, reason ?: DuelRefusal.NO_ROOM)
+            return
+        }
+        for (id in loop.ids) touch.unbindMember(id) // a finger held when the duel starts leads nobody any more
+        log(
+            "duel_start serial=${setup.serial} mine=${setup.mineId} foe=${setup.foeId} level=${setup.foeLevel} " +
+                "seed=${setup.seed} marks_ms=${started.marksMs}",
+        )
+        stage = started // its first step (this frame) reports the start
+    }
+
+    /** T58: member [id] can fight: on the table and in the slot (its stats and ability come from the slot). */
+    private fun isFighter(id: String): Boolean = loop.has(id) && current().members.any { it.id == id }
+
+    /** T58: the duel with [serial] did not start or ended before RESULT: the slot hears why, the walking game goes on. */
+    private fun refuseDuel(serial: Int, reason: DuelRefusal) {
+        log("duel_refused serial=$serial reason=$reason")
+        current().onDuel(DuelReport.Refused(serial, reason))
+        stage = walk
+    }
+
+    /**
      * The session's ONE anchor exists: the surface locks, the slot hears it, every waiting member is placed, and then
      * the slot hears that it is tracking (the order the HUD always saw).
      */
@@ -298,6 +359,10 @@ class TableEngine(
             log("scenario_rejected anchored=false")
             return
         }
+        if (stage !== walk) { // T58: no replay during a duel; not retried, as before the anchor
+            log("scenario_rejected duel=true")
+            return
+        }
         val script = Scenarios.DAY5.scaled(profile.scale)
         loop.restartAtSpawn() // every run starts at spawn (FIRST member only, T32): a FLY run ends past the gap and would skip the cup beat
         val startMs = loop.simMs // simulated time, see the T21 header
@@ -326,11 +391,13 @@ class TableEngine(
         val now = input.nowMs
         val tracking = input.tracking
         syncCast { input.camera.right } // T32: members added or removed since the last frame
+        syncDuel(input) // T58: the slot's duel starts, ends or is refused here (after the opponent may have joined)
         stage.step(input) // T58: the scenario's due taps and physics (the walking game's steps 4-5, moved into Walk)
         val cast = loop.cast
         // footprints mini-map — the HUD never saw physics positions, so its dot stood still while the sprite
         // walked. Report every member's state about 10x a second while debug chrome is on; a small map, never per frame.
-        if (current().debug && now - castStateAtMs >= CAST_STATE_PERIOD_MS) {
+        // T58: not during a duel (the walking loop stands still; the duel reports through onDuel).
+        if (stage === walk && current().debug && now - castStateAtMs >= CAST_STATE_PERIOD_MS) {
             castStateAtMs = now
             current().onCastState(cast.members.associate { it.id to it.body.state })
         }
