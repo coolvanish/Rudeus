@@ -169,7 +169,7 @@ If I1 can be met only by making a row of the matrix worse, keep the best candida
     2:0). Duel package 130 tests (125 + 5), all green, 55 s summed on a cold daemon (39 s warm; `DuelIdleTest` 3.7 to
     4.9 s). The goldens (`theNewRulesSwitchedOffAreThePreviousPhysics`) green with their constants untouched.
     `scripts/verify.sh` (under the Gradle lock): OK in 136 s, core 819, shared 65, android 4 tests, 0 failed; iOS
-    klibs compiled; debug APK built.
+    klibs compiled; debug APK built. Again after candidate 7 (c1b0926): OK in 84 s, the same counts.
 - **candidate log** (I1 = CUP_AND_BOOK 2:0 wins of 42 at NORMAL / HARD; ROLL = cup-and-book HARD ROLL v NORMAL ROLL,
   400 matches from seed 33000 as in `normalIsBetweenEasyAndHard`, floor 220, and over five seed bases of 2000; B1 / B11
   measured on the full matrix for the kept candidate only, the others failed the strength floor first):
