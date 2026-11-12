@@ -4,11 +4,14 @@ import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
+import kz.rudy.ar.core.domain.FighterStats
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
 import kz.rudy.ar.core.session.CharacterCommand
+import kz.rudy.ar.core.session.DuelReport
+import kz.rudy.ar.core.session.DuelSetup
 
 /** How one scan request ended. */
 sealed interface ScanAnswer {
@@ -29,6 +32,7 @@ sealed interface ScanAnswer {
  * T31: one character the host puts on the table. [id] is the saved id, the bundled ref, or "photo-<ref>" for a fresh
  * pipeline result. [name] is already in the player's language. [frames] (T33): the drawn pose frames its [emotes]
  * are keyed for; the host shows them on the quad while an emote key holds one, and the base sprite otherwise.
+ * [stats] (T59): what a duel reads (`CharacterSheet.fighter`); null = the archetype of [ability].
  */
 data class ArCharacter(
     val id: String,
@@ -37,6 +41,7 @@ data class ArCharacter(
     val ability: Ability,
     val emotes: EmoteSet,
     val frames: PoseFrames = PoseFrames.EMPTY,
+    val stats: FighterStats? = null,
 ) {
     // ByteArray is compared by identity; like the slot, a plain carrier. `super.hashCode()` is Any's identity hash on
     // every target (what System.identityHashCode gave on the JVM), so this compiles for iOS too.
@@ -133,6 +138,13 @@ data class ArSlot(
      * Empty when nobody stands on the table yet.
      */
     val onCastState: (Map<String, CharacterState>) -> Unit = {},
+    /**
+     * T59: the duel wanted on the table (the engine reads it on every frame); null = free play. One match per new
+     * `DuelSetup.serial`; the same serial never restarts one.
+     */
+    val duel: DuelSetup? = null,
+    /** T59: the duel's report for [duel]'s serial. Main thread, from the AR frame loop: a state write, nothing else. */
+    val onDuel: (DuelReport) -> Unit = {},
 ) {
     // ByteArray is compared by identity; the slot is a plain carrier, so structural equality is not needed.
     override fun equals(other: Any?): Boolean = this === other

@@ -120,6 +120,10 @@ data class HudState(
  *
  * [castStates]: every member's physics state from the host (id -> state); the footprints mini-map draws the active one
  * as the bright dot and the rest dimmer. Empty before the first placement, so the map shows no dot instead of a stale one.
+ *
+ * T59: [onDuel], when given, adds the secondary "Duel" after Scan / Rescan: right above it at the bottom-left (beside it
+ * there is no room next to the 156 dp Jump in kk / ru), in line after it for ROLL. [duelEnabled] greys it until a duel can
+ * start (a scanned edge, the anchor, tracking).
  */
 @Composable
 fun PlayScreen(
@@ -151,6 +155,8 @@ fun PlayScreen(
     onAddDismiss: () -> Unit = {},
     onEmote: ((Emote) -> Unit)? = null,
     castStates: Map<String, CharacterState> = emptyMap(),
+    onDuel: (() -> Unit)? = null,
+    duelEnabled: Boolean = false,
 ) {
     val paused = hud.trackingLost || character.mode == Mode.PAUSED
     Box(modifier.fillMaxSize()) {
@@ -239,6 +245,12 @@ fun PlayScreen(
                 Spacer(Modifier.height(RudeusSpacing.smd))
             }
             val scanLabel = t(if (hud.scanned) StringId.rescan else StringId.scan_button)
+            // T59: beside Scan there is no room left for Duel next to the 156 dp Jump in kk / ru on a 412 dp phone, so it
+            // stands right above Scan; ROLL's row (Scan is the primary, no Jump) has the room and keeps it in line.
+            if (onDuel != null && character.ability != Ability.ROLL) {
+                SecondaryButton(text = t(StringId.duel_title), enabled = duelEnabled, onClick = onDuel)
+                Spacer(Modifier.height(RudeusSpacing.sm))
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -246,6 +258,7 @@ fun PlayScreen(
             ) {
                 if (character.ability == Ability.ROLL) {
                     PrimaryButton(text = scanLabel, glyph = Glyph.EYE, enabled = !hud.scanning, onClick = onScan, modifier = Modifier.widthIn(min = 156.dp))
+                    if (onDuel != null) SecondaryButton(text = t(StringId.duel_title), enabled = duelEnabled, onClick = onDuel)
                 } else {
                     SecondaryButton(text = scanLabel, glyph = Glyph.EYE, enabled = !hud.scanning, onClick = onScan)
                     Spacer(Modifier.weight(1f))

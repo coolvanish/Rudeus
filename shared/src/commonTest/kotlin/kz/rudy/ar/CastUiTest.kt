@@ -2,6 +2,8 @@ package kz.rudy.ar
 
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterSheet
+import kz.rudy.ar.core.domain.FighterStats
+import kz.rudy.ar.core.domain.defaultFor
 import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.physics.Cast
 import kz.rudy.ar.core.session.CharacterAction
@@ -73,5 +75,16 @@ class CastUiTest {
         assertEquals(actions, commands.map { it.id to it.action })
         // After a session end App keeps the serial: the first command of the next session is still higher.
         assertEquals(6, CastUi.next(serial, "murat", CharacterAction.Jump).serial)
+    }
+
+    @Test
+    fun memberCarriesTheSheetsFighterStats() {
+        // T59: a sheet with stats gives them to the member (what a duel reads); a v1.0 sheet has none: its archetype.
+        val stats = FighterStats(power = 8, speed = 4, guard = 5, agility = 3)
+        val drawn = card("drawn").let { it.copy(sheet = it.sheet.copy(ability = Ability.ROLL, stats = stats)) }
+        assertEquals(stats, CastUi.member(drawn, Lang.KK).stats)
+        val old = card("old").let { it.copy(sheet = it.sheet.copy(ability = Ability.FLY)) }
+        assertNull(old.sheet.stats)
+        assertEquals(FighterStats.defaultFor(Ability.FLY), CastUi.member(old, Lang.KK).stats)
     }
 }

@@ -1,6 +1,6 @@
 # T59 — duel-app-flow
 
-status: todo
+status: review
 created: 2026-11-12
 phase: v2 wave 4 (ai/build-plan-v2.md, "The game"). With T58 it takes the duel half of the plan's T50 row
 gate: G5 duel on the Pixel: three matches in a row on a real table, ring-outs at the real edge within 2 cm, no
@@ -258,8 +258,72 @@ Every Gradle call: `flock /tmp/rudeus-gradle.lock env ANDROID_HOME=/opt/android-
   | HUD | one hand on the phone | the fill jerky or fine; the banner in the way; a thumb reaches all three buttons |
 
 ## Result (filled on acceptance)
-- commits, measured counts: ...
-- deviations from the letter of the brief; copy the implementer is least sure of: ...
-- Pixel check ("the first duel"), G5's three matches, the gap at the edge, `marks_ms`: ...
-- the feel answers: ...
-- cut/deferred: ...
+- commits, measured counts (2026-11-12, cloud container, base 847d116 = commit K): 75bfa47 (stats + setup reach the
+  engine), 00dd5a5 (`DuelFlow`), 4baa847 (the duel on the play screen), 7efb4a7 (rescan between rounds, the cut line).
+  `scripts/verify.sh` exit 0: core 814 (unchanged), shared 56 (was 43: +12 `DuelFlowTest`, +1
+  `CastUiTest.memberCarriesTheSheetsFighterStats`; `TableSlotTest`'s one test extended), android 4 (unchanged), debug
+  APK built; `:shared:compileKotlinIosSimulatorArm64` and `compileTestKotlinIosSimulatorArm64` green. `git diff --stat
+  847d116..HEAD`: only files under "Owns" (nothing in `androidApp/`, `core/`, Gradle, or T49's five files). No host
+  file changed: the host's `slot.copy(...)` compiles as it is. No new `com.google.ar` / `sceneview` / `android.` import.
+- deviations from the letter of the brief:
+  1. **The Duel entry is not in the bottom row beside Scan for JUMP / FLY / HIDE**: it stands right above Scan /
+     Rescan at the bottom-left. Measured on paper (Nunito ExtraBold 16 sp, 20 dp side padding, 12 dp gaps): "Скан
+     снова" with its glyph is about 160 dp, "Дуэль" about 90 dp, Jump at least 156 dp, three gaps 36 dp: about 440 dp
+     against 380 dp inside a 412 dp phone's 16 dp margins. In one row the Row would squeeze Jump, free play's primary,
+     to about 90 dp. Stacked, free play's bottom row is exactly what it was. For ROLL (the Scan primary and no Jump) the
+     button is in line after Scan as the brief says. Not rendered here: the look is the user's to check.
+  2. `hold = hud.scanning` came in commit 3 with the setup, not in commit 4. Reverting commit 4 only removes the button;
+     the hold that stays is harmless (it only waits for a scan started before the duel).
+  3. `onDuel` also drops a report unless the step is FIGHT (the brief only says "that serial"): a report that arrives
+     after Done with the old serial would otherwise sit in `duelReport` and show the old RESULT card for a moment at
+     the next duel. `onVersusDone` clears the report too, for the same reason.
+  4. `DuelFlow.setup` also returns null when `mineId == foeId` (not reachable from the picker, which leaves mine out).
+  5. The VS step's tap uses `detectTapGestures` on its full-screen Paper box (taking every touch the way
+     `DuelResult`'s scrim does: the top sibling that is hit stops the hit test); the picker gets the scrim's
+     `awaitPointerEvent` loop through its `modifier`. T49's files are untouched.
+  6. (Fixed in review, 9699fc6.) Opponents first left out `photoSavedId` only when *mine* was the photo member; they now
+     use the Add sheet's rule (any photo member on the table), so the same drawing never stands on the table twice.
+  7. `PausedOverlay` is drawn under `DuelResult`, as the brief lists them, so Done works on a paused result card.
+- review follow-ups (2026-11-12, verdict "merge" with three follow-ups): a05cf0e (the flow's transitions are pure
+  `DuelFlow` functions over `DuelFlowState(ui, serial, seed)`: `open`, `pick`, `difficulty`, `play`, `versusDone`,
+  `report` -> `ReportStep(flow, keep, say)`, `again`, `done`, `back`, `sessionEnd`, `autoScanFor`, `keepsReport`; App
+  only holds the state and calls them through one `moveDuel`, which clears the report on every move that leaves the
+  current fight; behaviour unchanged, the stricter report filter included), 9699fc6 (the picker's photo rule), 390d170
+  (an on-screen Back: a ghost Back at the picker's top-right, a secondary Back over the camera at the fight's top-left
+  until the first report; both call `back()`; existing `back` string and `BACK` glyph, no new copy). `scripts/verify.sh`
+  exit 0: core 814, shared 65 (+9 `DuelFlowTest`), android 4. Mutants re-made in `DuelFlow`, each run against
+  `DuelFlowTest` (every one red):
+
+  | Mutant (the reviewer's App mutant, in its new place) | Red test |
+  |---|---|
+  | Again reuses the serial (`again` keeps `serial`) | `againStartsANewMatchWithTheSameOpponentStraightToTheFight` |
+  | Back keeps the setup (`back` returns the flow unchanged) | `backAtAnyStepIsFreePlayAndKeepsTheSerial` |
+  | Again shows the VS card (`again` sets VERSUS) | `againStartsANewMatchWithTheSameOpponentStraightToTheFight` |
+  | A report for an old serial is accepted (serial check dropped) | `onlyTheCurrentFightsReportIsKept`, `aRefusalClosesTheDuelAndSaysNoRoom` |
+  | Refused goes to the fight (refusal kept, flow unchanged) | `aRefusalClosesTheDuelAndSaysNoRoom` |
+  | The Watch flag is never set (`play` ignores `watch`) | `playAndWatchShowTheVersusCard` |
+  | Auto-scan stays on during the fight (`autoScanFor` = the switch) | `noBackgroundScanDuringTheFight` |
+  | (follow-up 2) the photo rule only when mine is the photo | `aPhotoOnTheTableHidesItsSavedCardWhoeverIsActive` |
+
+  The two other new tests (`openPickAndDifficultyStayInThePicker`, `versusDoneStartsANewMatchOnce`) pin the remaining
+  events. What App still does by hand and no test reaches: calling these functions, the cast change at Play
+  (`castFor`, tested), the rescan request, and the commands.
+- what a human must look at:
+  - **The Duel button sits above the Scan row** for JUMP / FLY / HIDE, not in it as decision 2 says (the reason and the
+    numbers are deviation 1). It adds one button and 8 dp to every free-play screen: the emote row, the hint pill,
+    the bubble and the mini-map all sit 56 dp higher than before. For ROLL it is in the row after Scan.
+  - **On a full table (4) the opponent takes a friend's seat at Play without a word**, and the cast is not restored
+    after the duel: the friend is gone until it is added again from `+`.
+  - The two Back controls (picker top-right, a fight before its first report top-left) and the Rescan button between
+    rounds: placement never rendered here.
+- what K does not give: nothing was missing. Note for T58: `TableSlotTest` builds an engine with a `DuelSetup` in its
+  slot (mine "b", foe "a") but only calls `anchorPlaced`, no frame; if T58 starts a match there, that test needs a look.
+- copy the implementer is least sure of: `duel_no_room` "Орын аз" (kk) is the user's to check; "Мало места" / "Not
+  enough room".
+- Pixel check ("the first duel"), G5's three matches, the gap at the edge, `marks_ms`: not run (no Pixel, and T58 is
+  not merged: until it is, the fight shows nothing because no report arrives; App fakes none). The user's, after T58.
+- the feel answers: the user's, from the same session (the table above).
+- cut/deferred: nothing cut. Untested by design (CLAUDE.md): `DuelScreen`, the Play entry, App's wiring. A scan
+  answer during a fight writes its "Table is empty" line into the bubble state; it shows only if free play returns
+  before the bubble times out.
+  During PICK and VERSUS Play stays composed under the Paper screens (its bubble may still change under them).
