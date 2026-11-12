@@ -67,6 +67,8 @@ import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
 import kz.rudy.ar.core.scenario.Scenarios
+import kz.rudy.ar.core.session.TableEngine
+import kz.rudy.ar.rememberTableEngine
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -171,7 +173,8 @@ import kotlin.math.abs
 // JVM tests. PAUSED still freezes every member and never resets; one anchor per session; nothing else changed here.
 // HAND-REVIEW: T52 — the poser's maths is a pure BillboardPoser returning a NodePose; nothing else changed here.
 // HAND-REVIEW: T53 — the surface lock, the cast sync, the active member and the commands are a pure
-// TableEngine fed by rememberTableEngine; one anchor per session and PAUSED never resets are untouched.
+// TableEngine fed by rememberTableEngine (now `core.session.TableEngine` and `:shared` `rememberTableEngine`, pinned by
+// JVM tests); one anchor per session and PAUSED never resets are untouched.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
