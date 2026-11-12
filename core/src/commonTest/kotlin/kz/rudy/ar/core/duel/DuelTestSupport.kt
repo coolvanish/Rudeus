@@ -84,6 +84,7 @@ internal fun DuelEvent.at(at: Long = 0L): DuelEvent = when (this) {
     is DuelEvent.DashStarted -> copy(atMs = at)
     is DuelEvent.SpecialStarted -> copy(atMs = at)
     is DuelEvent.Hit -> copy(atMs = at)
+    is DuelEvent.Missed -> copy(atMs = at)
     is DuelEvent.Clash -> copy(atMs = at)
     is DuelEvent.WallSlam -> copy(atMs = at)
     is DuelEvent.RingOut -> copy(atMs = at)
@@ -104,6 +105,7 @@ internal inline fun <reified T : DuelEvent> List<DuelEvent>.of(id: String): List
         is DuelEvent.WallSlam -> it.id == id
         is DuelEvent.RingOut -> it.id == id
         is DuelEvent.Hit -> it.attacker == id
+        is DuelEvent.Missed -> it.attacker == id
         is DuelEvent.Clash -> it.a == id || it.b == id
         else -> false
     }

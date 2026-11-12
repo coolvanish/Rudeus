@@ -378,8 +378,12 @@ private fun matrixMarkdown(
     appendLine()
     appendLine("| # | Criterion | Threshold | Measured | Verdict |")
     appendLine("|---|---|---|---|---|")
-    for (c in acceptance) appendLine("| ${c.id} | ${c.title} | ${c.threshold} | ${c.measured} | ${if (c.pass) "PASS" else "FAIL"} (${c.failures.size} out) |")
+    fun row(c: Criterion) = appendLine("| ${c.id} | ${c.title} | ${c.threshold} | ${c.measured} | ${if (c.pass) "PASS" else "FAIL"} (${c.failures.size} out) |")
+    for (c in acceptance.filter { it.id != "B11" }) row(c)
     appendLine("| B10 | every core/duel test green | - | not measured here: `scripts/verify.sh` (B9's other half, the rules switched off, is the test `theNewRulesSwitchedOffAreThePreviousPhysics`) | - |")
+    acceptance.filter { it.id == "B11" }.forEach(::row)
+    appendLine()
+    appendLine("Priority when rows conflict (the T57 review): B9, B10 > B11 > B4 > B1 > B5, B6 > B3 > B2 > B7 (B8 always held).")
     appendLine()
     for (c in acceptance.filter { it.failures.isNotEmpty() }) {
         val shown = c.failures.take(16)
@@ -411,6 +415,20 @@ private fun matrixMarkdown(
     }
 
     val abilities = Ability.entries
+    if (results.any { it.cell.group == CellGroup.EQUAL }) {
+        appendLine("## Abilities in play (equal stats, B11)")
+        appendLine()
+        appendLine("Specials started per fighter and match, by ability (a same-ability cell counts both fighters); misses = dashes and stomps that met their victim out of height reach, per match (information).")
+        appendLine()
+        appendLine("| arena | level | ${abilities.joinToString(" | ")} | misses / match |")
+        appendLine("|---|---|${abilities.joinToString("") { "---|" }}---|")
+        for (arena in arenas) for (level in levels) {
+            val sum = DuelMatrix.arenaTotal(results, arena, level, CellGroup.EQUAL) ?: continue
+            val per = abilities.map { x -> DuelMatrix.specialsPerMatch(results, arena, level, x)?.let(::one) ?: "-" }
+            appendLine("| $arena | $level | ${per.joinToString(" | ")} | ${one(sum.misses.toFloat() / sum.matches)} |")
+        }
+        appendLine()
+    }
     for (group in DuelMatrix.PAIR_GROUPS) for (arena in arenas) for (level in levels) {
         val cells = results.filter { it.cell.group == group && it.cell.arena == arena && it.cell.level == level }
         if (cells.isEmpty()) continue

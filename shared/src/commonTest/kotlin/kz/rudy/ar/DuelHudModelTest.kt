@@ -177,7 +177,7 @@ class DuelHudModelTest {
     fun cooldownFractionsFollowTheFighter() {
         val params = DuelParams.DEFAULT
         val dashTotal = params.cooldownMsFor(RED.stats)
-        val specialTotal = params.specialCooldownMsFor(RED.stats)
+        val specialTotal = params.specialCooldownMsFor(RED.stats, RED.ability)
         val s = start().inFight()
         assertEquals(0f, hud(s).dash.cooldown)
         assertEquals(0f, hud(s).special!!.cooldown)
@@ -196,6 +196,11 @@ class DuelHudModelTest {
         // Each side reads its own fighter: red's cooldown is blue's 0.
         assertEquals(0f, hud(used, me = "blue").dash.cooldown)
         assertEquals(1f, hud(used, me = "red").dash.cooldown)
+        // ... and its own special's length (the T57 review: blue's dodge cools 1.6 x as long as red's stomp).
+        val dodgeTotal = params.specialCooldownMsFor(BLUE.stats, BLUE.ability)
+        assertEquals(12_672L, dodgeTotal) // 9000 x 1.6 x (1.15 - 0.03 x AGILITY 9)
+        val dodged = s.copy(duel = s.duel.copy(b = s.duel.b.copy(specialCooldownMs = dodgeTotal / 4)))
+        assertEquals(0.25f, hud(dodged, me = "blue").special!!.cooldown, 0.001f)
 
         // The params in use set the length: the same time left is a bigger fraction of a shorter cooldown.
         val shorter = params.copy(dashCooldownMs = params.dashCooldownMs / 2)

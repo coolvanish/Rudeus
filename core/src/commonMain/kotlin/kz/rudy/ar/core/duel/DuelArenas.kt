@@ -108,6 +108,8 @@ data class MatrixCell(
  * @property matchMs total match time (countdowns and pauses included).
  * @property timeouts rounds ended by the round clock, [ringOuts] by a ring-out (replays included in both).
  * @property hits Hit and Clash events, a clash once (as [SimResult.hits]).
+ * @property specialsA T57: specials started by [DuelMatrix.A], [specialsB] by [DuelMatrix.B] ([SimResult.specialsA]).
+ * @property misses T57: dashes and stomps that missed by height ([SimResult.misses]).
  */
 @Serializable
 data class CellTally(
@@ -124,15 +126,19 @@ data class CellTally(
     val hits: Int = 0,
     val wallSlams: Int = 0,
     val specials: Int = 0,
+    val specialsA: Int = 0,
+    val specialsB: Int = 0,
+    val misses: Int = 0,
 ) {
     operator fun plus(o: CellTally) = CellTally(
         matches + o.matches, winsA + o.winsA, winsB + o.winsB, draws + o.draws, unfinished + o.unfinished,
         matchMs + o.matchMs, rounds + o.rounds, ringOuts + o.ringOuts, timeouts + o.timeouts, replays + o.replays,
-        hits + o.hits, wallSlams + o.wallSlams, specials + o.specials,
+        hits + o.hits, wallSlams + o.wallSlams, specials + o.specials, specialsA + o.specialsA, specialsB + o.specialsB,
+        misses + o.misses,
     )
 
     /** The other side's view: a and b swapped. */
-    fun swapped(): CellTally = copy(winsA = winsB, winsB = winsA)
+    fun swapped(): CellTally = copy(winsA = winsB, winsB = winsA, specialsA = specialsB, specialsB = specialsA)
 
     /** Share of the matches [DuelMatrix.A] won (draws and unfinished count as not won); 0 without matches. */
     val shareA: Float get() = if (matches == 0) 0f else winsA.toFloat() / matches
@@ -165,6 +171,9 @@ data class CellTally(
             hits = r.hits,
             wallSlams = r.wallSlams,
             specials = r.specials,
+            specialsA = r.specialsA,
+            specialsB = r.specialsB,
+            misses = r.misses,
         )
     }
 }
@@ -208,6 +217,13 @@ data class Acceptance(
     val specialistMax: Float = 0.65f,
     /** B8: 8/8/8/8's win share against 5/5/5/5 with the same ability. */
     val boostedMin: Float = 0.65f,
+    /**
+     * B11 (the review of T57): the abilities are in play. In the equal-stats group, per arena, a fighter of each ability
+     * starts its special at least this often per match at NORMAL ([specialsMinNormal]) and at HARD ([specialsMinHard]);
+     * and no two different ability pairs of an arena and level come out with identical tallies.
+     */
+    val specialsMinNormal: Float = 1.0f,
+    val specialsMinHard: Float = 0.5f,
 )
 
 /**
@@ -347,6 +363,27 @@ object DuelMatrix {
         return sum
     }
 
+    /**
+     * B11: how often a fighter of ability [x] starts its special per match, in the cells of [group] on [arena] at
+     * [level] (both sides of a same-ability cell count, each as one fighter). Null without such a cell.
+     */
+    fun specialsPerMatch(results: List<CellResult>, arena: String, level: BotLevel, x: Ability, group: CellGroup = CellGroup.EQUAL): Float? {
+        var specials = 0L
+        var fighters = 0L
+        for (r in abilityOf(results, arena, level, group)) {
+            val c = r.cell
+            if (c.a.ability == x) {
+                specials += r.tally.specialsA
+                fighters += r.tally.matches
+            }
+            if (c.b.ability == x) {
+                specials += r.tally.specialsB
+                fighters += r.tally.matches
+            }
+        }
+        return if (fighters == 0L) null else specials.toFloat() / fighters
+    }
+
     /** All cells of [group] (an ability-pair group) of [arena] at [level], summed (B5, B6 averages). Null without any. */
     fun arenaTotal(results: List<CellResult>, arena: String, level: BotLevel, group: CellGroup = CellGroup.ABILITY): CellTally? =
         abilityOf(results, arena, level, group).map { it.tally }.reduceOrNull { x, y -> x + y }
@@ -478,6 +515,37 @@ object DuelMatrix {
             },
             stepsAgree == true,
         )
+        // B11: the abilities are in play, at equal stats: every ability's special used often enough, and no two different
+        // pairs of an arena and level coming out the same (which is what abilities that never act look like).
+        val used = ArrayList<Float>()
+        val badUse = ArrayList<String>()
+        var twins = 0
+        val equalKeys = results.filter { it.cell.group == CellGroup.EQUAL }.map { it.cell.arena to it.cell.level }.distinct()
+        for ((arena, level) in equalKeys) {
+            val min = when (level) {
+                BotLevel.NORMAL -> t.specialsMinNormal
+                BotLevel.HARD -> t.specialsMinHard
+                BotLevel.EASY -> 0f
+            }
+            for (x in Ability.entries) {
+                val s = specialsPerMatch(results, arena, level, x) ?: continue
+                used += s
+                if (s < min) badUse += "$arena $level $x ${one(s)} a match"
+            }
+            val cells = abilityOf(results, arena, level, CellGroup.EQUAL)
+            for (i in cells.indices) for (j in i + 1 until cells.size) {
+                if (cells[i].tally == cells[j].tally) {
+                    twins++
+                    badUse += "$arena $level ${cells[i].cell.labelA} v ${cells[i].cell.labelB} = ${cells[j].cell.labelA} v ${cells[j].cell.labelB}"
+                }
+            }
+        }
+        out += Criterion(
+            "B11", "abilities in play (equal stats): specials per fighter and match; no twin pairs",
+            ">= ${one(t.specialsMinNormal)} NORMAL, >= ${one(t.specialsMinHard)} HARD; 0 twins",
+            "${range(used, ::one)} a match; $twins twin pairs", badUse.isEmpty() && used.isNotEmpty(), badUse,
+        )
+
         return out
     }
 

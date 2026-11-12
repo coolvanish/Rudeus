@@ -129,10 +129,15 @@ class DuelBotTest {
             val overEasy = share(BotLevel.NORMAL, BotLevel.EASY, arena, name, 50)
             assertTrue(overEasy >= 0.60f, "$name: NORMAL won $overEasy against EASY")
             val perAbility = HashMap<Ability, Float>()
-            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 50, perAbility)
+            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 200, perAbility)
             assertTrue(hardOver >= 0.55f, "$name: HARD won $hardOver against NORMAL")
             // And with every ability on its own (T48 review: a HARD JUMP losing to a NORMAL one hid in the aggregate).
-            // Measured 66..90 % per ability on these seeds; the floor keeps a 5-point margin under the lowest.
+            // T57 pass 1 measured 66..90 % per ability (50 matches each) and set the floor 5 points under the lowest. Since
+            // the T57 review NORMAL uses its specials too (B11) and HARD's edge is smaller: 200 matches per ability (50
+            // before; the floor is the same) measure 60.5..91 % on these seeds (empty JUMP 182, FLY 131, ROLL 127, HIDE
+            // 180 of 200; cup-and-book JUMP 132, FLY 137, ROLL 121, HIDE 141), and 400 matches from seed 1 (`duel
+            // series`) 62..87 %. Cup-and-book ROLL is one win over the floor (at 50 a match it read 29 of 50, under it):
+            // the Result's "What a human must decide".
             for ((ab, s) in perAbility) assertTrue(s >= 0.60f, "$name: HARD $ab won only $s against NORMAL $ab ($perAbility)")
         }
     }
@@ -216,9 +221,14 @@ class DuelBotTest {
             a to b.copy(dashMs = 200L, dashDir = Vec2(0f, -1f), dashCooldownMs = 1_000L)
         }
         // HARD gets out of the way. Since T57 a body that can jump jumps over it (the dash meets it in 100 ms, a jump has its
-        // feet out of the 2 cm reach in 50); a ROLL, which cannot jump, dashes across it, a dash that ends on the table (what
-        // HARD's JUMP did before T57).
-        assertEquals(DuelInput.Jump, answer(BotLevel.HARD, coming(Ability.JUMP), arena))
+        // feet out of the 2.8 cm reach in about 50); a JUMP whose stomp is ready jumps as a stomp (the T57 review: the same
+        // jump with a hit on landing; a plain jump with the stomp cooling down); a ROLL, which cannot jump, dashes across
+        // it, a dash that ends on the table (what HARD's JUMP did before T57).
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, coming(Ability.JUMP), arena))
+        val stompCooling = fight(arena, Ability.JUMP, Vec2(0f, -0.16f), Vec2(0f, -0.07f)) { a, b ->
+            a.copy(specialCooldownMs = 5_000L) to b.copy(dashMs = 200L, dashDir = Vec2(0f, -1f), dashCooldownMs = 1_000L)
+        }
+        assertEquals(DuelInput.Jump, answer(BotLevel.HARD, stompCooling, arena))
         val side = answer(BotLevel.HARD, coming(Ability.ROLL), arena)
         assertTrue(side is DuelInput.Dash && abs(side.dir!!.v) < 0.5f, "$side")
         assertTrue(DuelArena.insideDistance(arena.boundary!!, Vec2(0f, -0.16f) + side.dir!! * 0.075f) > 0.02f)
@@ -228,17 +238,18 @@ class DuelBotTest {
         assertTrue(answer(BotLevel.NORMAL, coming(Ability.FLY), arena) in listOf(DuelInput.Special, DuelInput.Jump))
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, coming(Ability.HIDE), arena))
         assertTrue(answer(BotLevel.EASY, coming(Ability.HIDE), arena).let { it != DuelInput.Special && it != DuelInput.Jump })
-        // In the middle of the table: since T57 neither NORMAL nor HARD dodges there (`nearEdgeRadii` 2, HARD's
-        // `dodgesAnywhere` false; from T48 to T57 both did, and HARD always had): HARD jumps over it instead, NORMAL jumps
-        // or takes it; EASY never does anything about it. With the T48 numbers the dodge is back.
+        // In the middle of the table: since the T57 review NORMAL and HARD dodge there too (`nearEdgeRadii` 20, HARD's
+        // `dodgesAnywhere`; as from T48 to T57): a dodge opens the counter, and a dodge that works is a free hit back.
+        // EASY never does anything about it. With T57 pass 1's numbers (`nearEdgeRadii` 2, `dodgesAnywhere` false) neither
+        // dodged there: HARD jumped over it, NORMAL jumped or took it.
         val middle = coming(Ability.HIDE, at = Vec2(0f, 0.05f))
-        assertTrue(answer(BotLevel.NORMAL, middle, arena) != DuelInput.Special)
-        assertEquals(DuelInput.Jump, answer(BotLevel.HARD, middle, arena))
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) assertEquals(DuelInput.Special, answer(level, middle, arena), "$level")
         assertTrue(answer(BotLevel.EASY, middle, arena).let { it != DuelInput.Special && it != DuelInput.Jump })
-        val t48 = BotTuning().let { it.copy(normal = it.normal.copy(nearEdgeRadii = 20f), hard = it.hard.copy(nearEdgeRadii = 8f, dodgesAnywhere = true)) }
-        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
-            assertEquals(DuelInput.Special, DuelBot.decide(DuelBot.mind(level, 1L), "me", middle, arena, tuning = t48).second, "$level")
+        val pass1 = BotTuning().let {
+            it.copy(normal = it.normal.copy(nearEdgeRadii = 2f, reflexChance = 0f), hard = it.hard.copy(nearEdgeRadii = 2f, dodgesAnywhere = false))
         }
+        assertTrue(DuelBot.decide(DuelBot.mind(BotLevel.NORMAL, 1L), "me", middle, arena, tuning = pass1).second != DuelInput.Special)
+        assertEquals(DuelInput.Jump, DuelBot.decide(DuelBot.mind(BotLevel.HARD, 1L), "me", middle, arena, tuning = pass1).second)
     }
 
     @Test
@@ -258,31 +269,45 @@ class DuelBotTest {
         // down, so that the bot would not dash instead); with it ready the bot tries them before a plain dash, and with
         // the dash recharging not at all.
         // A ROLL facing the opponent, which stands 5 cm from the bottom edge right in front of it: NORMAL rams (the
-        // opponent is in the path first); HARD does not, since a miss would roll it off the table.
+        // opponent is in the path first). HARD rams only where a miss stays on the table, and since the T57 review also
+        // at an opponent in its path that cannot get out of it: this JUMP is too close to jump over it in time. A FLY with
+        // its lift-off ready can: HARD does not ram it (nor did it ram either before the review, nor with the rules off).
         val nearEdge = fight(arena, Ability.ROLL, Vec2(0f, -0.08f), Vec2(0f, -0.15f)) { a, b -> a.facing(Vec2(0f, -1f)) to b }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, nearEdge, arena))
-        assertTrue(answer(BotLevel.HARD, nearEdge, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, nearEdge, arena))
+        val flyer = fight(arena, Ability.ROLL, Vec2(0f, -0.08f), Vec2(0f, -0.15f), foe = Ability.FLY) { a, b -> a.facing(Vec2(0f, -1f)) to b }
+        assertTrue(answer(BotLevel.HARD, flyer, arena) != DuelInput.Special)
+        assertTrue(DuelBot.decide(DuelBot.mind(BotLevel.HARD, 1L), "me", nearEdge, arena, PRE_T57_PARAMS).second != DuelInput.Special)
         val recharging = fight(arena, Ability.ROLL, Vec2(0f, -0.08f), Vec2(0f, -0.15f)) { a, b -> a.cooling().facing(Vec2(0f, -1f)) to b }
         assertTrue(answer(BotLevel.NORMAL, recharging, arena) != DuelInput.Special)
-        // In the middle, where a miss ends on the table, HARD rams; NORMAL waits for the edge. Since T48 "near an edge"
-        // for a ram is 8 radii (24 cm; 5 before), which is every spot of the 60 x 40 cm table: the middle of the
-        // 120 x 60 cm one, 28 cm from its nearest edge, is where NORMAL still waits.
+        // In the middle, where a miss ends on the table, HARD rams. Since the T57 review so does NORMAL: "near an edge"
+        // for a ram is 20 radii (60 cm), every spot of every table (a ram spends the dash, so waiting for the edge left it
+        // unused). With T48's 8 radii (24 cm; 5 before) NORMAL waited in the middle of the 120 x 60 cm table, 28 cm from
+        // its nearest edge.
         val large = DuelArenas.LARGE
         val middle = fight(large, Ability.ROLL, Vec2(0f, 0.05f), Vec2(0f, -0.02f)) { a, b -> a.facing(Vec2(0f, -1f)) to b }
         assertEquals(DuelInput.Special, answer(BotLevel.HARD, middle, large))
-        assertTrue(answer(BotLevel.NORMAL, middle, large) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, middle, large))
+        val t48 = BotTuning(ramNearEdgeRadii = 8f)
+        assertTrue(DuelBot.decide(DuelBot.mind(BotLevel.NORMAL, 1L), "me", middle, large, tuning = t48).second != DuelInput.Special)
         // A JUMP with the opponent within the stomp's reach, on the side of its edge. Since T57 a stomp the opponent can
-        // jump out of (or lift off or dodge) only wastes the dash, so NORMAL stomps a ROLL (which cannot jump) and not a
-        // JUMP (it dashes instead); before T57 it stomped either. EASY never stomps.
+        // jump out of only wastes the dash. Since the T57 review the stomp reaches 9 cm up, above a jump's 8.3 cm apex, so
+        // no jump gets out of it and NORMAL stomps a ROLL and a JUMP alike (in pass 1, with a dash's 2.8 cm, it stomped the
+        // ROLL only); a FLY's float (gravity 0.3 x) clears it, so not a FLY (it dashes instead). A lift-off or a dodge may
+        // still get out of its way: that is the stomp's risk, not a reason not to try. EASY never stomps.
         val stomp = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f), foe = Ability.ROLL)
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, stomp, arena))
         assertTrue(answer(BotLevel.EASY, stomp, arena) != DuelInput.Special)
         val jumper = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f))
-        assertTrue(answer(BotLevel.NORMAL, jumper, arena) != DuelInput.Special)
+        assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, jumper, arena))
+        val floater = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f), foe = Ability.FLY)
+        assertTrue(answer(BotLevel.NORMAL, floater, arena) != DuelInput.Special)
+        val pass1 = DuelParams.DEFAULT.copy(stompReachUpM = DuelParams.DEFAULT.hitReachUpM)
+        assertTrue(DuelBot.decide(DuelBot.mind(BotLevel.NORMAL, 1L), "me", jumper, arena, pass1).second != DuelInput.Special)
         val jumperCooling = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f)) { a, b -> a.cooling() to b }
         assertEquals(DuelInput.Special, DuelBot.decide(DuelBot.mind(BotLevel.NORMAL, 1L), "me", jumperCooling, arena, PRE_T57_PARAMS).second)
-        // Stunned past the landing (a wall slam's 0.7 s) even a jumper cannot get out of the way: stomp.
-        val slammed = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f)) { a, b -> a to b.copy(stunMs = 700L) }
+        // Stunned past the landing (a wall slam's 0.7 s) even a floater cannot get out of the way: stomp.
+        val slammed = fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f), foe = Ability.FLY) { a, b -> a to b.copy(stunMs = 700L) }
         assertEquals(DuelInput.Special, answer(BotLevel.NORMAL, slammed, arena))
         assertTrue(answer(BotLevel.NORMAL, fight(arena, Ability.JUMP, Vec2.ZERO, Vec2(0f, -0.065f), foe = Ability.ROLL) { a, b -> a.cooling() to b }, arena) != DuelInput.Special)
     }
@@ -296,22 +321,31 @@ class DuelBotTest {
     @Test
     fun botsJumpOverDashesByLevel() {
         // In the middle of the empty table, a dash coming down at the bot from 10 cm (it meets it in 133 ms; a jump has
-        // the feet out of its 2 cm reach in 43): EASY never jumps, NORMAL sometimes, HARD always.
+        // the feet out of its 2.8 cm reach in about 50): EASY never jumps, NORMAL sometimes, HARD always. (A JUMP here has
+        // its stomp cooling down; with it ready the jump is a stomp, below.)
         val arena = DuelArenas.EMPTY
-        fun coming(me: Ability, from: Float = 0.1f, dashMs: Long = 250L) = fight(arena, me, Vec2(0f, 0f), Vec2(0f, from)) { a, b ->
-            a to b.copy(dashMs = dashMs, dashDir = Vec2(0f, -1f), dashCooldownMs = 2_000L)
+        fun coming(me: Ability, from: Float = 0.1f, dashMs: Long = 250L, stompReady: Boolean = false) = fight(arena, me, Vec2(0f, 0f), Vec2(0f, from)) { a, b ->
+            (if (me == Ability.JUMP && !stompReady) a.copy(specialCooldownMs = 5_000L) else a) to
+                b.copy(dashMs = dashMs, dashDir = Vec2(0f, -1f), dashCooldownMs = 2_000L)
         }
         val jump = { i: DuelInput -> i == DuelInput.Jump }
+        val special = { i: DuelInput -> i == DuelInput.Special }
         assertEquals(0, count(BotLevel.EASY, coming(Ability.JUMP), arena, jump))
         val normal = count(BotLevel.NORMAL, coming(Ability.JUMP), arena, jump)
         assertTrue(normal in 8..32, "NORMAL jumped $normal of 40")
         assertEquals(40, count(BotLevel.HARD, coming(Ability.JUMP), arena, jump))
-        // HARD, when the jump is the better answer: near an edge a HIDE dodges instead (the dodge opens its counter), a
-        // FLY jumps there too (keeping its lift); in mid-table both jump; a ROLL cannot jump and never tries.
+        // The T57 review: with its stomp ready a JUMP jumps as a stomp (the same dodge, and a hit on landing), as often as
+        // it would jump.
+        val ready = coming(Ability.JUMP, stompReady = true)
+        assertEquals(0, count(BotLevel.EASY, ready, arena, { it == DuelInput.Jump || it == DuelInput.Special }))
+        assertEquals(normal, count(BotLevel.NORMAL, ready, arena, special))
+        assertEquals(40, count(BotLevel.HARD, ready, arena, special))
+        // HARD, when the jump is the better answer: a HIDE dodges instead, near an edge or (since the T57 review) not (the
+        // dodge opens its counter); a FLY jumps (keeping its lift); a ROLL cannot jump and never tries.
         val edge = { me: Ability -> fight(arena, me, Vec2(0f, -0.17f), Vec2(0f, -0.07f)) { a, b -> a to b.copy(dashMs = 250L, dashDir = Vec2(0f, -1f), dashCooldownMs = 2_000L) } }
         assertEquals(DuelInput.Special, answer(BotLevel.HARD, edge(Ability.HIDE), arena))
         assertEquals(DuelInput.Jump, answer(BotLevel.HARD, edge(Ability.FLY), arena))
-        assertEquals(DuelInput.Jump, answer(BotLevel.HARD, coming(Ability.HIDE), arena))
+        assertEquals(DuelInput.Special, answer(BotLevel.HARD, coming(Ability.HIDE), arena))
         assertEquals(DuelInput.Jump, answer(BotLevel.HARD, coming(Ability.FLY), arena))
         assertEquals(0, count(BotLevel.HARD, coming(Ability.ROLL), arena, jump))
         assertEquals(0, count(BotLevel.NORMAL, coming(Ability.ROLL), arena, jump))
@@ -319,24 +353,31 @@ class DuelBotTest {
         for (level in BotLevel.entries) assertEquals(0, count(level, coming(Ability.JUMP, from = 0.07f), arena, jump), "$level")
         // A dash that ends before it arrives is no threat: no jump.
         assertEquals(0, count(BotLevel.HARD, coming(Ability.JUMP, dashMs = 40L), arena, jump))
-        // HARD watches on every tick (reflexes): with its next thought a second away it still jumps; NORMAL waits.
-        val later = { level: BotLevel -> DuelBot.mind(level, 1L).copy(nextThinkMs = 11_000L) }
-        assertEquals(DuelInput.Jump, DuelBot.decide(later(BotLevel.HARD), "me", coming(Ability.JUMP), arena).second)
-        assertEquals(DuelInput.None, DuelBot.decide(later(BotLevel.NORMAL), "me", coming(Ability.JUMP), arena).second)
-        // A stomp coming down beside it lands in 0.26 s: HARD jumps over its landing too.
-        val stomp = fight(arena, Ability.JUMP, Vec2(0f, 0f), Vec2(0.06f, 0f)) { a, b ->
+        // HARD watches on every tick (reflexes): with its next thought a second away it still jumps. NORMAL notices it on
+        // such a tick with `reflexChance` (0.3, the T57 review; 0 in pass 1, when it always waited) and then jumps with
+        // `jumpChance` (0.5): about 6 of 40.
+        val later = { level: BotLevel, seed: Long -> DuelBot.mind(level, seed).copy(nextThinkMs = 11_000L) }
+        assertEquals(DuelInput.Jump, DuelBot.decide(later(BotLevel.HARD, 1L), "me", coming(Ability.JUMP), arena).second)
+        val noticed = (1L..40L).count { DuelBot.decide(later(BotLevel.NORMAL, it), "me", coming(Ability.JUMP), arena).second == DuelInput.Jump }
+        assertTrue(noticed in 1..14, "NORMAL jumped on $noticed of 40 ticks it did not think on")
+        assertTrue((1L..40L).all { DuelBot.decide(later(BotLevel.NORMAL, it), "me", coming(Ability.JUMP), arena).second.let { i -> i == DuelInput.Jump || i == DuelInput.None } })
+        // A stomp coming down beside it lands in about 0.1 s. Since the T57 review a stomp reaches 9 cm up, above a jump's
+        // 8.3 cm apex: no jump clears its landing and HARD does not try (in pass 1 it jumped); a FLY's float does.
+        fun stompAt(me: Ability) = fight(arena, me, Vec2(0f, 0f), Vec2(0.06f, 0f)) { a, b ->
             a to b.copy(stomping = true, body = b.body.copy(state = b.body.state.copy(mode = kz.rudy.ar.core.domain.Mode.JUMPING, h = 0.05f), verticalVelocity = 0f))
         }
-        assertEquals(DuelInput.Jump, answer(BotLevel.HARD, stomp, arena))
+        for (me in listOf(Ability.JUMP, Ability.HIDE)) assertTrue(answer(BotLevel.HARD, stompAt(me), arena) != DuelInput.Jump, "$me")
+        assertEquals(DuelInput.Jump, answer(BotLevel.HARD, stompAt(Ability.FLY), arena))
         // With the reach unlimited (before T57) a jump dodges nothing, and nobody jumps.
-        val unlimited = DuelParams.DEFAULT.copy(hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT)
+        val unlimited = DuelParams.DEFAULT.copy(hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT, stompReachUpM = DuelParams.NO_REACH_LIMIT)
         for (level in BotLevel.entries) {
             assertTrue((1L..20L).none { DuelBot.decide(DuelBot.mind(level, it), "me", coming(Ability.JUMP), arena, unlimited).second == DuelInput.Jump }, "$level")
         }
         // In whole matches (JUMP against JUMP, 6 matches each against a NORMAL bot): EASY sends no Jump. How many the
         // others send depends on how many dashes come at them from far enough to clear, and between bots almost none do
-        // (they dash once they are behind the other, from a gap of 1 to 2 cm, and a stomp at a fighter that can jump is
-        // not tried): printed, not asserted; the levels are told apart by the single decisions above.
+        // (they dash once they are behind the other, from a gap of 1 to 2 cm): printed, not asserted; the levels are told
+        // apart by the single decisions above. (How often a jump clears a dash in whole matches:
+        // [botsUseTheirSpecialsInWholeMatches].)
         val jumps = BotLevel.entries.associateWith { level ->
             (0L until 6L).sumOf { seed ->
                 val c = Contestant("a", FighterStats.BALANCED, Ability.JUMP)
@@ -349,9 +390,66 @@ class DuelBotTest {
     }
 
     @Test
+    fun botsUseTheirSpecialsInWholeMatches() {
+        // The T57 review: between bots every special is in play, used as a player would (B11 measures it over the
+        // matrix). Equal stats (5/5/5/5), every ability against every ability, both bots at one level, on the empty
+        // table and cup-and-book, 2 seeds each: 32 fighter-matches per ability and level. The floors sit about a third
+        // under what these seeds measure (printed).
+        val floors = mapOf(
+            BotLevel.NORMAL to listOf(SPECIALS_FLOOR_NORMAL_JUMP, SPECIALS_FLOOR_NORMAL_FLY, SPECIALS_FLOOR_NORMAL_ROLL, SPECIALS_FLOOR_NORMAL_HIDE),
+            BotLevel.HARD to listOf(SPECIALS_FLOOR_HARD_JUMP, SPECIALS_FLOOR_HARD_FLY, SPECIALS_FLOOR_HARD_ROLL, SPECIALS_FLOOR_HARD_HIDE),
+        )
+        fun r3(x: Float) = (kotlin.math.round(x * 1000f) / 1000f).toString()
+        val lines = ArrayList<String>()
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
+            val specials = IntArray(4)
+            val fighterMatches = IntArray(4)
+            var matches = 0
+            var emptyMatches = 0
+            var cleared = 0
+            val clearedBy = IntArray(4)
+            var missedOnCup = 0
+            var jumps = 0
+            for (x in Ability.entries) for (y in Ability.entries) for (name in listOf("empty", "cup-and-book")) for (seed in 0L until 2L) {
+                val arena = DuelArenas.ALL.getValue(name)
+                val t = runRunner(botMatch(Contestant("a", FighterStats.BALANCED, x), Contestant("b", FighterStats.BALANCED, y), arena, level, level, 300L + seed), arena)
+                assertEquals(MatchPhase.RESULT, t.last.match.phase)
+                val fights = t.events.filterIsInstance<MatchEvent.Fight>().map { it.event }
+                for ((id, ab) in listOf("a" to x, "b" to y)) {
+                    specials[ab.ordinal] += fights.count { it is DuelEvent.SpecialStarted && it.id == id }
+                    fighterMatches[ab.ordinal]++
+                }
+                matches++
+                // On the empty table nothing but the air puts a fighter out of a dash's height reach: every dash Missed
+                // there is a dash a jump (or a FLY's float) got clear of.
+                val dashMisses = fights.count { it is DuelEvent.Missed && !it.stomp }
+                if (name == "empty") {
+                    cleared += dashMisses
+                    for (e in fights) if (e is DuelEvent.Missed && !e.stomp) clearedBy[(if (e.victim == "a") x else y).ordinal]++
+                    emptyMatches++
+                } else {
+                    missedOnCup += dashMisses
+                }
+                jumps += t.decisions.count { it.input == DuelInput.Jump }
+            }
+            for (ab in Ability.entries) {
+                val perMatch = specials[ab.ordinal].toFloat() / fighterMatches[ab.ordinal]
+                lines += "$level $ab ${r3(perMatch)}"
+                val floor = floors.getValue(level)[ab.ordinal]
+                assertTrue(perMatch >= floor, "$level $ab: $perMatch specials per fighter per match, under $floor")
+            }
+            lines += "$level: Jump decisions ${r3(jumps.toFloat() / matches)} a match; dashes a jump cleared " +
+                "${r3(cleared.toFloat() / emptyMatches)} a match (empty table; by the victim's ability " +
+                "${Ability.entries.joinToString(" ") { "$it ${r3(clearedBy[it.ordinal].toFloat() / emptyMatches)}" }}); dashes missed by height on cup-and-book " +
+                "${r3(missedOnCup.toFloat() / (matches - emptyMatches))} a match"
+        }
+        println("botsUseTheirSpecialsInWholeMatches: ${lines.joinToString("; ")}")
+    }
+
+    @Test
     fun botsDoNotDashAtAVictimOutOfReach() {
         // The opponent on the book of CUP_AND_BOOK (3 cm up), 2 cm in from its top edge; the bot on the table 7 cm above
-        // it, aligned to push it toward its nearest edge: out of the dash's 2 cm reach. No level dashes (nor stomps); on
+        // it, aligned to push it toward its nearest edge: out of the dash's 2.8 cm reach. No level dashes (nor stomps); on
         // the empty table, the same spots, every level attacks (NORMAL and HARD with the stomp, which goes before a dash
         // when both are ready). Instead it walks up onto the book.
         val dash = { i: DuelInput -> i is DuelInput.Dash }
@@ -455,3 +553,14 @@ class DuelBotTest {
 }
 
 private val TUNING_DEFAULT = BotTuning()
+
+// botsUseTheirSpecialsInWholeMatches' floors (specials per fighter per match), set under what its seeds measure.
+// Measured on its seeds: NORMAL JUMP 2.09, FLY 1.22, ROLL 3.13, HIDE 1.50; HARD JUMP 1.97, FLY 2.31, ROLL 3.22, HIDE 2.38.
+private const val SPECIALS_FLOOR_NORMAL_JUMP = 1.4f
+private const val SPECIALS_FLOOR_NORMAL_FLY = 0.8f
+private const val SPECIALS_FLOOR_NORMAL_ROLL = 2.0f
+private const val SPECIALS_FLOOR_NORMAL_HIDE = 1.0f
+private const val SPECIALS_FLOOR_HARD_JUMP = 1.3f
+private const val SPECIALS_FLOOR_HARD_FLY = 1.5f
+private const val SPECIALS_FLOOR_HARD_ROLL = 2.1f
+private const val SPECIALS_FLOOR_HARD_HIDE = 1.5f

@@ -183,10 +183,10 @@ class DuelPhysicsTest {
         assertTrue(high > 1.2f * flat, "from above $high vs flat $flat")
 
         // The other way round (victim on the book) is not from above: with the height reach unlimited (before T57) a plain
-        // hit; since T57 3 cm up is out of the dash's 2 cm reach, no hit at all (DuelNewRulesTest has the rule).
+        // hit; since T57 3 cm up is out of the dash's 2.8 cm reach (DuelParams.hitReachUpM), no hit at all (DuelNewRulesTest has the rule).
         val raised = Level(listOf(book("book-1", Vec2(0.09f, 0f))))
         val up = DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(NEAR, 0f), h = 0.03f))
-        val unlimited = P.copy(hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT)
+        val unlimited = P.copy(hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT, stompReachUpM = DuelParams.NO_REACH_LIMIT)
         val upHit = runDuel(up, raised, 400L, params = unlimited, script = atStart("a" to Dash())).all.filterIsInstance<Hit>().single()
         assertFalse(upHit.fromAbove)
         assertEquals(flatHit.speedMps, upHit.speedMps)
@@ -326,7 +326,7 @@ class DuelPhysicsTest {
     fun flyKnockedPastTheEdgeIsOutEvenWhileAirborne() {
         // The review's case: edge at u = 0.15; a's POWER 10 dash (t = 96) hits FLY b in the air at 0.51 m/s (0.566 before
         // T48's stat factors), b floats past the edge and later tries to MoveTo back onto the table. (b jumped at t = 0
-        // before T57; since T57 a jump that early is 4 cm up when the dash arrives, out of its 2 cm reach: b jumps at
+        // before T57; since T57 a jump that early is 4 cm up when the dash arrives, out of its 2.8 cm reach: b jumps at
         // 128 ms, so the hit at 144 ms meets its feet 8 mm up, still in the air.)
         val spawn = Vec2(-0.1f, 0f)
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.3f), spawn = spawn)

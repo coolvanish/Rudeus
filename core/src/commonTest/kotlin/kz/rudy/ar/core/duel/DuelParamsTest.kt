@@ -41,11 +41,12 @@ class DuelParamsTest {
         // T57: the hit's height reach is a height too.
         assertEquals(table.hitReachUpM * k, floor.hitReachUpM, 1e-6f)
         assertEquals(table.hitReachDownM * k, floor.hitReachDownM, 1e-6f)
+        assertEquals(table.stompReachUpM * k, floor.stompReachUpM, 1e-6f) // the T57 review's stomp reach
         // Times and dimensionless factors stay: put the scaled numbers back and nothing else differs.
         val unscaled = floor.copy(
             dashSpeedMps = table.dashSpeedMps, knockSpeedMps = table.knockSpeedMps, knockStunMps = table.knockStunMps,
             knockStopMps = table.knockStopMps, wallSlamMinMps = table.wallSlamMinMps, fromAboveMinM = table.fromAboveMinM,
-            hitReachUpM = table.hitReachUpM, hitReachDownM = table.hitReachDownM,
+            hitReachUpM = table.hitReachUpM, hitReachDownM = table.hitReachDownM, stompReachUpM = table.stompReachUpM,
         )
         assertEquals(table, unscaled)
         for (p in 1..10) for (g in 1..10) {
@@ -68,6 +69,7 @@ class DuelParamsTest {
         assertEquals(table.knockSpeedMps * 2f, big.knockSpeedMps, 1e-6f)
         assertEquals(table.fromAboveMinM, big.fromAboveMinM)
         assertEquals(table.hitReachUpM to table.hitReachDownM, big.hitReachUpM to big.hitReachDownM)
+        assertEquals(table.stompReachUpM, big.stompReachUpM)
 
         // Behaviour: the same exchange on the floor slides and dashes 4x as far and stuns exactly as long.
         val (tSlide, tStun, tDash) = exchange(table, PhysicsParams.DEFAULT, R)

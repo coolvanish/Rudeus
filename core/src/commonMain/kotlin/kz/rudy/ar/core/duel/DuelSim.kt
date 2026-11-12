@@ -19,6 +19,8 @@ import kz.rudy.ar.core.physics.PhysicsParams
  * @property hits [DuelEvent.Hit]s (dashes, rams, counters, stomps) plus [DuelEvent.Clash]es, each clash once.
  * @property wallSlams [DuelEvent.WallSlam]s.
  * @property specials [DuelEvent.SpecialStarted]s.
+ * @property specialsA T57: the first contestant's [DuelEvent.SpecialStarted]s, [specialsB] the second's.
+ * @property misses T57: [DuelEvent.Missed]s, dashes and stomps that met their victim out of height reach.
  */
 @Serializable
 data class SimResult(
@@ -34,6 +36,9 @@ data class SimResult(
     val hits: Int,
     val wallSlams: Int,
     val specials: Int,
+    val specialsA: Int = 0,
+    val specialsB: Int = 0,
+    val misses: Int = 0,
 )
 
 /**
@@ -123,7 +128,7 @@ object DuelSim {
         require(maxMatchMs >= 0L) { "maxMatchMs must be >= 0, got $maxMatchMs" }
         val start = DuelMatch.start(a, b, arena, marks, rules, params, physics)
         var state = RunnerState(start, DuelBot.mind(levelA, 2L * seed), DuelBot.mind(levelB, 2L * seed + 1L))
-        val tally = Tally()
+        val tally = Tally(a.id)
         while (state.match.phase != MatchPhase.RESULT && state.match.duel.timeMs < maxMatchMs) {
             val dt = minOf(stepMs, maxMatchMs - state.match.duel.timeMs)
             val out = DuelRunner.step(state, arena, dt, rules = rules, params = params, physics = physics, tuning = tuning)
@@ -144,6 +149,9 @@ object DuelSim {
             hits = tally.hits,
             wallSlams = tally.wallSlams,
             specials = tally.specials,
+            specialsA = tally.specialsA,
+            specialsB = tally.specials - tally.specialsA,
+            misses = tally.misses,
         )
         return SimMatch(result, state)
     }
@@ -215,14 +223,16 @@ object DuelSim {
         )
     }
 
-    /** Counts a match's events. */
-    private class Tally {
+    /** Counts a match's events; [aId] is the first contestant's id. */
+    private class Tally(private val aId: String) {
         var ringOuts = 0
         var timeouts = 0
         var replays = 0
         var hits = 0
         var wallSlams = 0
         var specials = 0
+        var specialsA = 0
+        var misses = 0
 
         fun add(e: MatchEvent) {
             when (e) {
@@ -233,7 +243,11 @@ object DuelSim {
                 is MatchEvent.Fight -> when (e.event) {
                     is DuelEvent.Hit, is DuelEvent.Clash -> hits++
                     is DuelEvent.WallSlam -> wallSlams++
-                    is DuelEvent.SpecialStarted -> specials++
+                    is DuelEvent.SpecialStarted -> {
+                        specials++
+                        if ((e.event as DuelEvent.SpecialStarted).id == aId) specialsA++
+                    }
+                    is DuelEvent.Missed -> misses++
                     else -> Unit
                 }
                 else -> Unit

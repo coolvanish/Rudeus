@@ -59,13 +59,15 @@ data class BotMind(
  * strip.)
  *
  * **Levels** ([BotSkill]): EASY is slow to react, wanders, dashes when close whatever the alignment, sometimes the wrong
- * way, never uses the special. NORMAL plays the plan and uses its special in the obvious situation: stomp with the
- * opponent in reach, ram when aligned with the opponent near an edge and room behind itself, lift-off or dodge when a
- * dash or a stomp is coming at it near an edge. HARD is NORMAL deciding every tick or two, leading its aim, preferring
- * the high ground of a PLATFORM, getting out of the way of a dash coming at it near an edge, dodging (HIDE) anywhere
- * and countering after it, and ramming only where a miss still ends on the table (never toward an edge it would roll
- * off). Measured on the tuning arenas with equal stats and ability ([DuelSim]): HARD beats EASY and NORMAL, NORMAL
- * beats EASY, in every ability (`DuelBotTest`).
+ * way, never uses the special. NORMAL plays the plan and uses its special as a player would (the T57 review): stomp an
+ * opponent in reach that stands and cannot get out of the way by a jump, ram when its facing lines up with the opponent
+ * and the push (a step at the opponent turns it first) with room behind itself, lift-off or dodge when a dash or a stomp
+ * coming at it would land, wherever it stands, noticing it on a tick it does not think on with
+ * [BotSkill.reflexChance]. HARD is NORMAL deciding every tick or a few, leading its aim, preferring the high ground of
+ * a PLATFORM, getting out of the way of a dash coming at it near an edge, dodging (HIDE) anywhere and countering after
+ * it, and ramming only where a miss still ends on the table or at an opponent that cannot get out of its path. Measured
+ * on the tuning arenas with equal stats and ability ([DuelSim]): HARD beats EASY and NORMAL, NORMAL beats EASY, in every
+ * ability (`DuelBotTest`).
  *
  * **T57's rules** (each part inert with its rule off, so the bot plays the pre-T57 game bit for bit there). Height
  * matters for hits: it jumps over a dash or a stomp coming at it when a jump gets its feet out of reach in time and keeps
@@ -74,9 +76,13 @@ data class BotMind(
  * height reach (feet predicted along a jump's arc); when the spot behind the other is out of reach (a fighter on a book)
  * it pushes from the first spot round it that is not, else walks up at it; a HARD bot dashes at a fighter that could jump
  * only from close enough that it cannot ([BotSkill.closesInOnJumpers]). The stomp and the ram share the dash: with both
- * ready and its situation there, the special goes first; a stomp only at a fighter that cannot get out of its way (no
- * lift-off or dodge ready, and no jump in time: a ROLL, or stunned through the landing). SPEED lengthens the dash: every
- * reach is the bot's own. Its walk is planned at the ground it will come down on.
+ * ready and its situation there, the special goes first; a stomp only at a fighter on the ground that no jump gets out
+ * of in time ([DuelParams.stompReachUpM] is above a jump's apex, so only a FLY's float, unless it is stunned or dashing
+ * through the landing; a lift-off or a dodge is the stomp's risk, not a reason not to try); a JUMP whose stomp is ready
+ * jumps a dash as a stomp. A lift-off or a dodge only against a hit that would land. SPEED lengthens the dash: every
+ * reach is the bot's own. Its walk is planned at the ground it will come down on, with the rules off too (the pre-T57
+ * code planned a bot in the air at its feet: the one part not behind a switch; the recorded pre-T57 matches of
+ * `theNewRulesSwitchedOffAreThePreviousPhysics` do not tell the two apart).
  */
 object DuelBot {
 
@@ -106,10 +112,12 @@ object DuelBot {
         if (now < mind.nextThinkMs) {
             // T57: a bot with reflexes watches for a dash or a stomp it can jump over on every tick, thinking or not.
             val skill = tuning.skill(mind.level)
-            if (!skill.reflexes || !params.reachLimited || (foe.dashMs <= 0L && !foe.stomping)) return mind to DuelInput.None
+            if ((!skill.reflexes && skill.reflexChance <= 0f) || !params.reachLimited || (foe.dashMs <= 0L && !foe.stomping)) {
+                return mind to DuelInput.None
+            }
             val rng = Rng(mind.rng)
-            val jump = Brain(self, foe, arena, boundary, params, physics, tuning, skill, rng, mind, now).reflex() ?: return mind to DuelInput.None
-            return mind.copy(rng = rng.state) to jump
+            val answer = Brain(self, foe, arena, boundary, params, physics, tuning, skill, rng, mind, now).reflex() ?: return mind to DuelInput.None
+            return mind.copy(rng = rng.state) to answer
         }
         val skill = tuning.skill(mind.level)
         val rng = Rng(mind.rng)
@@ -322,12 +330,14 @@ private class Brain(
         incoming()?.let { threat ->
             val (dir, stomp) = threat
             val nearEdge = board.inside(me) <= skill.nearEdgeRadii * r
-            val defend = canSpecial && (ability == Ability.FLY || ability == Ability.HIDE) &&
+            // T57: a lift-off or a dodge only against a hit that would land (not one out of height reach).
+            val defend = canSpecial && (ability == Ability.FLY || ability == Ability.HIDE) && threatLands() &&
                 (nearEdge || (skill.dodgesAnywhere && ability == Ability.HIDE))
             // A HIDE's dodge comes first (it opens the counter); then a jump that clears it (T57: it costs nothing, a
-            // FLY keeps its lift for later); then the lift-off.
+            // FLY keeps its lift for later; a JUMP whose stomp is ready jumps as a stomp, the same dodge with a hit on
+            // landing); then the lift-off.
             if (defend && ability == Ability.HIDE) return DuelInput.Special
-            jumpOver()?.let { return it }
+            jumpOver()?.let { jump -> return if (ability == Ability.JUMP && canSpecial) DuelInput.Special else jump }
             if (defend) return DuelInput.Special
             // Away from the edge a hit costs a few centimetres and leaves the attacker on cooldown: take it.
             if (skill.sidesteps && board.inside(me) <= skill.sidestepEdgeRadii * r) evade(dir, stomp, canDash)?.let { return it }
@@ -377,11 +387,19 @@ private class Brain(
         when (self.ability) {
             Ability.JUMP -> {
                 val reach = params.stompRadiusRadii * r * t.stompReachShare
-                if (dist <= reach && (dist < Vec2.EPS || (toFoe / dist).dot(push) >= 0f) && stompReaches() && stompUnavoidable()) {
+                if (dist <= reach && (dist < Vec2.EPS || (toFoe / dist).dot(push) >= 0f) && stompReaches() && stompHasAChance()) {
                     return DuelInput.Special
                 }
             }
-            Ability.ROLL -> if (ramReady(push)) return DuelInput.Special
+            Ability.ROLL -> {
+                if (ramReady(push)) return DuelInput.Special
+                // T57: the ram goes along the facing the last walk left, and a ram spends the dash too: when it would be
+                // ready facing the opponent, a short step at it turns the roller first, and it rams on its next thought.
+                if (params.sharesDashCooldown(Ability.ROLL) && params.reachLimited && dist > Vec2.EPS) {
+                    val at = toFoe / dist
+                    if (ramReady(push, at)) return DuelInput.MoveTo(me + at * (t.turnStepRadii * r))
+                }
+            }
             else -> Unit
         }
         return null
@@ -394,7 +412,16 @@ private class Brain(
     fun reflex(): DuelInput? {
         if (!DuelPhysics.acceptsInput(self, arena, params) || DuelPhysics.isOut(foe, arena)) return null
         if (incoming() == null) return null
-        return jumpOver()
+        // A bot without full reflexes (NORMAL) notices it on this tick only with [BotSkill.reflexChance].
+        if (!skill.reflexes && !rng.chance(skill.reflexChance)) return null
+        val ability = self.ability
+        val canSpecial = skill.usesSpecial && DuelPhysics.canSpecial(self, arena, params)
+        val defend = canSpecial && (ability == Ability.FLY || ability == Ability.HIDE) && threatLands() &&
+            (board.inside(me) <= skill.nearEdgeRadii * r || (skill.dodgesAnywhere && ability == Ability.HIDE))
+        // The order of [think]'s step 1: a HIDE's dodge, a jump (a JUMP's as a stomp), a FLY's lift-off.
+        if (defend && ability == Ability.HIDE) return DuelInput.Special
+        jumpOver()?.let { jump -> return if (ability == Ability.JUMP && canSpecial) DuelInput.Special else jump }
+        return if (defend) DuelInput.Special else null
     }
 
     /**
@@ -508,11 +535,13 @@ private class Brain(
     // -- the special ----------------------------------------------------------------------------------------------
 
     /** ROLL: aligned along its facing with the opponent near an edge ahead, and room behind itself. */
-    private fun ramReady(push: Vec2): Boolean {
-        val facing = self.body.state.facing.normalized()
+    private fun ramReady(push: Vec2, facing: Vec2 = self.body.state.facing.normalized()): Boolean {
         if (facing == Vec2.ZERO || dist < Vec2.EPS) return false
         val ahead = toFoe / dist
-        if (facing.dot(ahead) < skill.alignCos || facing.dot(push) < skill.alignCos) return false
+        // T57: a ram spends the dash too, and goes along the facing a walk left it with: with the rules on it may start
+        // within [BotTuning.ramAlignCos] of the opponent (the in-path checks below still decide whether it can hit).
+        val align = if (params.sharesDashCooldown(Ability.ROLL) && params.reachLimited) minOf(skill.alignCos, t.ramAlignCos) else skill.alignCos
+        if (facing.dot(ahead) < align || facing.dot(push) < align) return false
         // A bot that only rams when a miss would still end on the table rams wherever that holds; the others wait for the
         // opponent near an edge (where a ram that misses carries them off, unless the opponent is in its path).
         if (!skill.safeRamsOnly && board.inside(them) > t.ramNearEdgeRadii * r) return false
@@ -520,8 +549,17 @@ private class Brain(
         if (gap > ramReach * skill.dashRangeShare || abs(toFoe.dot(facing.perp())) > t.inPathLateralRadii * r) return false
         if (!clearLine(me, them) || !reachable(dashSpeed, params.ramDashMs)) return false
         // The checks of a plain dash, holes included: a miss runs the whole ram.
-        return if (skill.safeRamsOnly) runsOnTable(facing, ramReach) else dashSafe(facing, ramReach)
+        if (!skill.safeRamsOnly) return dashSafe(facing, ramReach)
+        // T57: a bot that rams only where a miss stays on the table also rams a fighter in its path that cannot get out of
+        // it (too close to jump over it, no lift-off or dodge ready): that ram cannot miss. (With the rules off: as before.)
+        return runsOnTable(facing, ramReach) || (params.reachLimited && params.sharesDashCooldown(Ability.ROLL) &&
+            inPath(facing, ramReach) && !jumpable(always = true) && !foeCanDodge())
     }
+
+    /** The opponent has its lift-off or dodge ready (FLY, HIDE): a hit at it may pass. */
+    private fun foeCanDodge(): Boolean =
+        (foe.ability == Ability.FLY || foe.ability == Ability.HIDE) && foe.specialCooldownMs <= 0L && foe.specialMs <= 0L
+
 
     // -- getting out of the way -----------------------------------------------------------------------------------
 
@@ -599,11 +637,14 @@ private class Brain(
         return (v0 - root) / g to (v0 + root) / g
     }
 
+    /** When a hit coming at this bot could land ([from] .. [until], seconds from now), the attacker's feet then, its up-reach. */
+    private class Threat(val from: Float, val until: Float, val attackerH: Float, val upM: Float)
+
     /**
-     * When the hit coming at this bot could land: (from, until, the attacker's feet then), seconds from now. A dash: from
-     * its first contact to where its circle has passed or the dash ends; a stomp: its landing. Null when nothing comes.
+     * When the hit coming at this bot could land: a dash from its first contact to where its circle has passed or the
+     * dash ends, a stomp at its landing; with the attacker's feet then and the hit's up-reach. Null when nothing comes.
      */
-    private fun threatWindow(): Triple<Float, Float, Float>? {
+    private fun threatWindow(): Threat? {
         if (foe.dashMs > 0L) {
             val d = foe.dashDir
             val rel = me - them
@@ -615,7 +656,7 @@ private class Brain(
             val end = foe.dashMs / 1000f
             val from = (along - half) / speed
             if (from > end) return null
-            return Triple(from, minOf((along + half) / speed, end), foe.body.state.h)
+            return Threat(from, minOf((along + half) / speed, end), foe.body.state.h, params.hitReachUpM)
         }
         if (foe.stomping) {
             if (dist > params.stompRadiusRadii * foe.body.state.radiusM + t.threatSlackRadii * r) return null
@@ -626,7 +667,7 @@ private class Brain(
             val disc = vz * vz + 2f * g * (s.h - ground)
             if (!(g > 0f) || disc < 0f) return null
             val land = (vz + sqrt(disc)) / g
-            return Triple(land, land, ground)
+            return Threat(land, land, ground, params.stompReachUpM)
         }
         return null
     }
@@ -641,8 +682,10 @@ private class Brain(
         if (!params.reachLimited || skill.jumpChance <= 0f) return null
         val s = self.body.state
         if (s.ability == Ability.ROLL || (s.mode != Mode.IDLE && s.mode != Mode.WALKING)) return null
-        val (from, until, attackerH) = threatWindow() ?: return null
-        val (up, down) = jumpWindow(self, attackerH + params.hitReachUpM - myH) ?: return null
+        val w = threatWindow() ?: return null
+        val from = w.from
+        val until = w.until
+        val (up, down) = jumpWindow(self, w.attackerH + w.upM - myH) ?: return null
         val margin = t.jumpMarginMs / 1000f
         if (from < up + margin || until > down - margin) return null
         return if (rng.chance(skill.jumpChance)) DuelInput.Jump else null
@@ -653,8 +696,8 @@ private class Brain(
      * takes input, and reacting on the next tick its feet would be out of reach before the dash meets it. Always false
      * with the reach unlimited, or for a bot that does not know.
      */
-    private fun jumpable(): Boolean {
-        if (!skill.closesInOnJumpers || !params.reachLimited) return false
+    private fun jumpable(always: Boolean = false): Boolean {
+        if ((!always && !skill.closesInOnJumpers) || !params.reachLimited) return false
         val s = foe.body.state
         if (s.ability == Ability.ROLL || (s.mode != Mode.IDLE && s.mode != Mode.WALKING) || !DuelPhysics.acceptsInput(foe, arena, params)) return false
         val (up, _) = jumpWindow(foe, myH + params.hitReachUpM - s.h) ?: return false
@@ -666,28 +709,34 @@ private class Brain(
     private fun stompReaches(): Boolean {
         if (!params.reachLimited) return true
         val air = 2f * physics.jumpVelocityMps / maxOf(gravity(self), 1e-3f)
-        return params.inReach(myH, feetIn(foe, air))
+        return params.inReach(myH, feetIn(foe, air), params.stompReachUpM)
     }
 
     /**
-     * JUMP, T57: a stomp spends the dash too (rule 1) and a jump gets out of its way (rule 3), so it is worth it only when
-     * the opponent cannot get out of the way: no lift-off or dodge ready, and no jump that clears the landing in time (a
-     * ROLL body cannot jump; a fighter stunned or dashing until too close to the landing cannot either). Always true with
-     * either rule off (the stomp as before T57).
+     * JUMP, T57: the stomp (it spends the dash too) has a real chance to land: the opponent stands on the ground and its
+     * body cannot jump clear of the stomp's reach in time (`stompReachUpM` above a jump's apex leaves that to a FLY's float,
+     * and to nobody stunned or dashing until too close to the landing). A lift-off or a dodge may still get out of its way:
+     * that is the stomp's risk (and costs the other its special), not a reason not to try. Always true with either rule off
+     * (the stomp as before T57).
      */
-    private fun stompUnavoidable(): Boolean {
+    private fun stompHasAChance(): Boolean {
         if (!params.reachLimited || !params.sharesDashCooldown(Ability.JUMP)) return true
-        val ability = foe.ability
-        if ((ability == Ability.FLY || ability == Ability.HIDE) && foe.specialCooldownMs <= 0L && foe.specialMs <= 0L) return false
+        val s = foe.body.state
+        if (s.mode != Mode.IDLE && s.mode != Mode.WALKING) return false
         val air = 2f * physics.jumpVelocityMps / maxOf(gravity(self), 1e-3f)
-        val (up, down) = jumpWindow(foe, myH + params.hitReachUpM - foeFeet) ?: return true
-        // The soonest it can act: its stun (that timer only starts once the knockback has run down: at least this) or dash.
+        val (up, down) = jumpWindow(foe, myH + params.stompReachUpM - foeFeet) ?: return true
+        // A jump started from when it can act (its stun or dash over) clears the landing if high by then and not yet down.
         val busy = maxOf(foe.stunMs, foe.dashMs) / 1000f
         val margin = t.jumpMarginMs / 1000f
-        // A jump started at any moment from `busy` on clears the landing if it is high by then and not down yet.
         val latest = air - up - margin
         val earliest = air - down + margin
         return busy > latest || latest < earliest
+    }
+
+    /** T57: the hit coming at this bot would reach its feet (always with the reach unlimited, or when unknown). */
+    private fun threatLands(): Boolean {
+        val w = threatWindow() ?: return true
+        return params.inReach(w.attackerH, myH, w.upM)
     }
 
     /** The opponent's feet where it stands, or the ground it will come down on. */

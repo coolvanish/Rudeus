@@ -12,6 +12,7 @@ import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.duel.DuelEvent.Clash
 import kz.rudy.ar.core.duel.DuelEvent.DashStarted
 import kz.rudy.ar.core.duel.DuelEvent.Hit
+import kz.rudy.ar.core.duel.DuelEvent.Missed
 import kz.rudy.ar.core.duel.DuelEvent.RingOut
 import kz.rudy.ar.core.duel.DuelEvent.SpecialStarted
 import kz.rudy.ar.core.duel.DuelInput.Dash
@@ -30,12 +31,13 @@ import kotlin.test.assertTrue
 /** The rules on with the brief's starting numbers, on top of whatever the other defaults are. */
 private val ON = DuelParams.DEFAULT.copy(
     specialsShareDashCooldown = true, dashReachBase = 0.75f, dashReachPerSpeed = 0.05f, hitReachUpM = 0.02f, hitReachDownM = 0.04f,
+    stompReachUpM = 0.02f,
 )
 
 /** The same numbers with T57's rules switched off. */
 private val OFF = DuelParams.DEFAULT.copy(
     specialsShareDashCooldown = false, dashReachBase = 1f, dashReachPerSpeed = 0f,
-    hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT,
+    hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT, stompReachUpM = DuelParams.NO_REACH_LIMIT,
 )
 
 /** A 3 cm book (PLATFORM) [w] x 10 cm centred at u = [cu], v = 0. */
@@ -67,6 +69,8 @@ class DuelNewRulesTest {
         assertTrue(t.states.all { it.b.knock == Vec2.ZERO && it.b.wobble == 0f && it.b.stunMs == 0L })
         assertEquals(Mode.IDLE, t.last.b.body.state.mode, "b came down")
         assertTrue(t.last.a.pos.distanceTo(t.last.b.pos) >= 2 * R - 1e-4f, "and stands beside a")
+        // The miss is told once (the T57 review: Missed, for the matrix's misses by height), at the first contact.
+        assertEquals(listOf<DuelEvent>(Missed("a", "b", stomp = false, atMs = 136L)), t.all.filterIsInstance<Missed>())
         // Before T57 (reach unlimited) the jump did not help.
         val before = runDuel(start, OPEN, 1500L, dtMs = 8L, params = OFF, script = script)
         assertEquals(listOf("a" to "b"), before.all.filterIsInstance<Hit>().map { it.attacker to it.victim })
@@ -113,6 +117,76 @@ class DuelNewRulesTest {
     }
 
     @Test
+    fun aDashFromTheTableDoesNotShoveAFighterOnABook() {
+        // The T57 review's case, with the defaults (2.8 cm up): b on a 3 cm book (u 0.08..0.18), 2 cm in from its edge; a
+        // dashes at it from the table, straight and 10 degrees either side. b stays where it stood to the bit; a never
+        // gets inside b nor onto the book, and ends its dash touching b. One Missed, no hit.
+        val level = Level(listOf(ledge(0.13f)))
+        val book = level.objects.single().footprint
+        val start = DuelState(fighter("a", Vec2.ZERO), fighter("b", Vec2(0.1f, 0f), facing = Vec2(-1f, 0f)).at(0.03f))
+        val p = DuelParams.DEFAULT
+        assertFalse(p.inReach(0f, 0.03f), "3 cm up is out of the default reach")
+        for (deg in listOf(0f, 10f, -10f)) {
+            val rad = deg * kotlin.math.PI.toFloat() / 180f
+            val dir = Vec2(kotlin.math.cos(rad), kotlin.math.sin(rad))
+            val t = runDuel(start, level, 1500L, dtMs = 8L, script = atStart("a" to Dash(dir)))
+            assertTrue(t.all.none { it is Hit || it is Clash }, "$deg: ${t.all}")
+            assertEquals(listOf(Missed("a", "b", stomp = false, atMs = 0L)), t.all.filterIsInstance<Missed>().map { it.copy(atMs = 0L) }, "$deg")
+            for (st in t.states) {
+                assertEquals(start.b.pos, st.b.pos, "$deg: b stands firm at ${st.timeMs} ms")
+                assertEquals(0.03f, st.b.body.state.h)
+                assertEquals(0f, st.a.body.state.h, "$deg: a stays on the table at ${st.timeMs} ms")
+                assertFalse(book.contains(st.a.pos), "$deg: a over the book at ${st.timeMs} ms")
+                assertTrue(st.a.pos.distanceTo(st.b.pos) >= 2 * R - 1e-4f, "$deg: a inside b at ${st.timeMs} ms")
+            }
+            val ended = t.states.first { it.timeMs > 0L && it.a.dashMs == 0L }
+            assertEquals(2 * R, ended.a.pos.distanceTo(ended.b.pos), 1e-4f, "$deg: the dash ends touching b")
+        }
+    }
+
+    @Test
+    fun theDasherStepsUpAndThenHits() {
+        // b 2 cm in from the book's far edge (u 0.16, the book 0.08..0.18): a's dash from the table crosses the book's near
+        // edge (a 3 cm step, under the 4 cm step-up) before it meets b, so it meets b on the book: a plain hit, no miss.
+        val level = Level(listOf(ledge(0.13f)))
+        val start = DuelState(fighter("a", Vec2(0.04f, 0f)), fighter("b", Vec2(0.16f, 0f), facing = Vec2(-1f, 0f)).at(0.03f))
+        val t = runDuel(start, level, 1500L, dtMs = 8L, script = atStart("a" to Dash()))
+        val hit = t.all.filterIsInstance<Hit>().single()
+        assertEquals(Hit("a", "b", DuelParams.DEFAULT.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED), fromAbove = false, atMs = hit.atMs), hit)
+        assertTrue(t.all.none { it is Missed }, "${t.all}")
+        val k = t.indexOf { it is Hit }
+        assertEquals(0.03f, t.states[k].a.body.state.h, "a on the book when it hit")
+        val up = t.states.indexOfFirst { it.a.body.state.h == 0.03f }
+        assertTrue(up in 1 until k, "a stepped up (step $up) before the hit (step $k)")
+        assertTrue(t.states.take(up).all { it.a.body.state.h == 0f })
+    }
+
+    @Test
+    fun aDashFromABookDoesNotShoveAFighterOutOfTheDownReach() {
+        // The reverse: a on a 3 cm book, b on the table right beside it, with 2 cm of down reach (the default's 4 cm reaches
+        // it: the control). a's dash meets b 3 cm down, out of reach: b stays where it stood to the bit, a stays on the book
+        // touching b (it goes round b, back where it came from) and never inside it. One Missed, no hit.
+        val level = Level(listOf(ledge(-0.06f)))
+        val start = DuelState(fighter("a", Vec2(-0.03f, 0f)).at(0.03f), fighter("b", Vec2(-0.03f + NEAR, 0f)))
+        val short = DuelParams.DEFAULT.copy(hitReachDownM = 0.02f)
+        val t = runDuel(start, level, 1500L, dtMs = 8L, params = short, script = atStart("a" to Dash()))
+        assertTrue(t.all.none { it is Hit || it is Clash }, "${t.all}")
+        assertEquals(1, t.all.count { it is Missed && !it.stomp }, "${t.all}")
+        for (st in t.states) {
+            assertEquals(start.b.pos, st.b.pos, "b stands firm at ${st.timeMs} ms")
+            assertEquals(0f, st.b.body.state.h)
+            assertTrue(st.b.knock == Vec2.ZERO && st.b.wobble == 0f && !DuelPhysics.isStunned(st.b, short))
+            assertEquals(0.03f, st.a.body.state.h, "a stays on the book at ${st.timeMs} ms")
+            assertTrue(st.a.pos.distanceTo(st.b.pos) >= 2 * R - 1e-4f, "a inside b at ${st.timeMs} ms")
+        }
+        val ended = t.states.first { it.timeMs > 0L && it.a.dashMs == 0L }
+        assertEquals(2 * R, ended.a.pos.distanceTo(ended.b.pos), 1e-4f, "the dash ends touching b")
+        // With the default 4 cm down reach the same dash hits, from above.
+        val control = runDuel(start, level, 1500L, dtMs = 8L, script = atStart("a" to Dash()))
+        assertEquals(listOf(true), control.all.filterIsInstance<Hit>().map { it.fromAbove })
+    }
+
+    @Test
     fun anAttackerOnTheSameBookHits() {
         // Once the attacker has climbed (both on one book) the hit is a plain one.
         val level = Level(listOf(ledge(0.03f, w = 0.3f)))
@@ -145,15 +219,10 @@ class DuelNewRulesTest {
         assertTrue(hit.fromAbove)
         assertEquals(ON.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED, fromAbove = true), hit.speedMps, 1e-6f)
         assertEquals(8L, hit.atMs, "at once")
-        // With only 2 cm of reach downwards the first contact (3 cm down) is a miss; the dash carries a off the book and
-        // it can hit only once its feet are within 2 cm of b's, on the way down.
-        val short = ON.copy(hitReachDownM = 0.02f)
-        val s = runDuel(start, level, 1500L, dtMs = 8L, params = short, script = atStart("a" to Dash()))
-        for ((i, e) in s.events.withIndex()) for (h in e.filterIsInstance<Hit>()) {
-            val at = s.states[i]
-            assertTrue(at.a.body.state.h - at.b.body.state.h <= 0.02f, "hit from ${at.a.body.state.h} m")
-            assertTrue(h.atMs > 8L)
-        }
+        // With only 2 cm of reach downwards the first contact (3 cm down) is a miss, and b stands firm:
+        // [aDashFromABookDoesNotShoveAFighterOutOfTheDownReach]. (T57 pass 1 said here that the dash carried a off the
+        // book to hit on the way down; it does not: a goes round b and stays on the book, and the check it had never ran.)
+        assertEquals(1, runDuel(start, level, 1500L, dtMs = 8L, params = ON.copy(hitReachDownM = 0.02f), script = atStart("a" to Dash())).all.count { it is Missed })
     }
 
     @Test
@@ -178,6 +247,23 @@ class DuelNewRulesTest {
         // On a 3 cm book beside a landing on the table: out of reach. The stomper on the book, the victim below: a hit.
         val onBook = stomp(fighter("b", Vec2(0.07f, 0f)).at(0.03f), level = Level(listOf(ledge(0.1f))))
         assertTrue(onBook.all.none { it is Hit }, "${onBook.all}")
+        assertEquals(listOf(Missed("a", "b", stomp = true, atMs = 0L)), onBook.all.filterIsInstance<Missed>().map { it.copy(atMs = 0L) })
+        assertEquals(listOf(Missed("a", "b", stomp = true, atMs = 0L)), fly.all.filterIsInstance<Missed>().map { it.copy(atMs = 0L) })
+        // With the defaults the stomp reaches 9 cm up (above a jump's 8.3 cm apex): the HIDE that jumped is hit after all,
+        // the floating FLY is not.
+        val p = DuelParams.DEFAULT
+        val hideDefault = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.JUMP), fighter("b", Vec2(2 * R, 0f), ability = Ability.HIDE)), OPEN, 2500L) { st ->
+            when (st.timeMs) {
+                0L -> inputs("a" to Special)
+                400L -> inputs("b" to Jump)
+                else -> emptyMap()
+            }
+        }
+        assertEquals(1, hideDefault.all.count { it is Hit }, "${hideDefault.all}")
+        assertTrue(hideDefault.states[hideDefault.indexOf { it is Hit }].b.body.state.h <= p.stompReachUpM)
+        val flyDefault = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.JUMP), fighter("b", Vec2(2 * R, 0f), ability = Ability.FLY)), OPEN, 2500L,
+            script = atStart("a" to Special, "b" to Jump))
+        assertTrue(flyDefault.all.none { it is Hit }, "${flyDefault.all}")
         val fromBook = stomp(fighter("b", Vec2(0.07f, 0f)), level = Level(listOf(ledge(-0.04f))), attackerH = 0.03f)
         assertEquals(1, fromBook.all.count { it is Hit })
     }
@@ -295,6 +381,62 @@ class DuelNewRulesTest {
         }
     }
 
+    // -- the numbers' bounds ------------------------------------------------------------------------------------------
+
+    @Test
+    fun theNewNumbersRefuseNegativeNaNAndInfinite() {
+        // Every number T57 and its review added: negative, NaN and infinite values are refused, by name (an infinite
+        // reach is NO_REACH_LIMIT, the one finite "no limit" JSON can write); the edge values are taken.
+        fun refused(name: String, make: () -> Any) {
+            val e = assertFailsWith<IllegalArgumentException>(name) { make() }
+            assertTrue(name in (e.message ?: ""), "$name: ${e.message}")
+        }
+        val p = DuelParams.DEFAULT
+        val t = BotTuning()
+        val k = BotSkill.NORMAL
+        val inf = Float.POSITIVE_INFINITY
+        for (v in listOf(-0.001f, Float.NaN, inf, Float.NEGATIVE_INFINITY)) {
+            refused("hitReachUpM") { p.copy(hitReachUpM = v) }
+            refused("hitReachDownM") { p.copy(hitReachDownM = v) }
+            refused("stompReachUpM") { p.copy(stompReachUpM = v) }
+            refused("stompCooldownScale") { p.copy(stompCooldownScale = v) }
+            refused("liftCooldownScale") { p.copy(liftCooldownScale = v) }
+            refused("ramCooldownScale") { p.copy(ramCooldownScale = v) }
+            refused("dodgeCooldownScale") { p.copy(dodgeCooldownScale = v) }
+            refused("wobblePerHit") { p.copy(wobblePerHit = v) }
+            refused("wobbleKnockScale") { p.copy(wobbleKnockScale = v) }
+            refused("wobbleMax") { p.copy(wobbleMax = v) }
+            refused("wobbleDecayPerS") { p.copy(wobbleDecayPerS = v) }
+            refused("stompScale") { p.copy(stompScale = v) }
+            refused("counterKnockScale") { p.copy(counterKnockScale = v) }
+            refused("turnStepRadii") { t.copy(turnStepRadii = v) }
+            refused("threatSlackRadii") { t.copy(threatSlackRadii = v) }
+            refused("ramNearEdgeRadii") { t.copy(ramNearEdgeRadii = v) }
+        }
+        // Rule 2's factor is judged as a whole (a negative per-SPEED step is fine while the factor stays positive), so
+        // only NaN and infinities here; the sign is [speedLengthensTheDashNotItsDuration]'s.
+        for (v in listOf(Float.NaN, inf, Float.NEGATIVE_INFINITY)) {
+            refused("dashReachBase") { p.copy(dashReachBase = v) }
+            refused("dashReachBase") { p.copy(dashReachPerSpeed = v) }
+        }
+        for (v in listOf(-1.001f, 1.001f, Float.NaN, inf)) refused("ramAlignCos") { t.copy(ramAlignCos = v) }
+        for (v in listOf(-0.001f, 1.001f, Float.NaN, inf)) {
+            refused("jumpChance") { k.copy(jumpChance = v) }
+            refused("reflexChance") { k.copy(reflexChance = v) }
+        }
+        refused("jumpMarginMs") { t.copy(jumpMarginMs = -1L) }
+        // A cooldown scale of 0 would make that special free: refused too.
+        refused("liftCooldownScale") { p.copy(liftCooldownScale = 0f) }
+        // The edges are taken.
+        p.copy(hitReachUpM = 0f, hitReachDownM = 0f, stompReachUpM = 0f)
+        p.copy(hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT, stompReachUpM = DuelParams.NO_REACH_LIMIT)
+        p.copy(wobblePerHit = 0f, wobbleKnockScale = 0f, wobbleMax = 0f, wobbleDecayPerS = 0f)
+        t.copy(ramAlignCos = -1f, turnStepRadii = 0f, jumpMarginMs = 0L)
+        t.copy(ramAlignCos = 1f)
+        k.copy(jumpChance = 0f, reflexChance = 0f)
+        k.copy(jumpChance = 1f, reflexChance = 1f)
+    }
+
     // -- the off switches, and the invariants with everything on -----------------------------------------------------
 
     @Test
@@ -328,10 +470,14 @@ class DuelNewRulesTest {
         // specials waiting for the shared dash).
         val counts = HashMap<String, Int>()
         fun count(k: String) { counts[k] = (counts[k] ?: 0) + 1 }
-        for (params in listOf(ON, DuelParams.DEFAULT)) for (i in 0 until GOLDEN_FUZZ) {
-            goldenFuzz(i, params, steps = 1500, level = RULES_TABLE) { prev, out ->
+        // On T42's fuzz table and (the T57 review) on CUP_AND_BOOK.
+        for (level in listOf(RULES_TABLE, DuelArenas.CUP_AND_BOOK)) for (params in listOf(ON, DuelParams.DEFAULT)) for (i in 0 until GOLDEN_FUZZ) {
+            goldenFuzz(i, params, steps = 1500, level = level) { prev, out ->
                 val s = out.state
-                for (e in out.events) count(e::class.simpleName!!)
+                for (e in out.events) {
+                    count(e::class.simpleName!!)
+                    if (level !== RULES_TABLE) count("cup-and-book ${e::class.simpleName}")
+                }
                 val (a, b) = s.a to s.b
                 val overlap = a.pos.distanceTo(b.pos) < 2 * R
                 if (overlap && a.dashMs > 0L && !params.inReach(a.body.state.h, b.body.state.h)) count("miss by height")
@@ -341,11 +487,11 @@ class DuelNewRulesTest {
                     val before = prev[f.id]!!
                     assertTrue(listOf(st.pos.u, st.pos.v, st.h, f.knock.u, f.knock.v, f.wobble, f.body.verticalVelocity).all { it.isFinite() }, "non-finite $f")
                     assertTrue(listOf(f.stunMs, f.dashMs, f.dashCooldownMs, f.specialMs, f.specialCooldownMs, f.counterMs).all { it >= 0L }, "negative timer: $f")
-                    val inside = RULES_TABLE.objects.firstOrNull {
+                    val inside = level.objects.firstOrNull {
                         Physics.blocks(it, st.h) && (it.footprint.contains(st.pos) || distanceToPolygon(st.pos, it.footprint) < st.radiusM - 0.001f)
                     }
                     assertEquals(null, inside?.id, "${f.id} overlaps ${inside?.id} at ${s.timeMs} ms: $f")
-                    val boundary = RULES_TABLE.boundary!!
+                    val boundary = level.boundary!!
                     val rang = out.events.of<RingOut>(f.id)
                     val left = boundary.contains(before.pos) && !boundary.contains(st.pos)
                     if (left) assertEquals(1, rang.size, "${f.id} left without a RingOut at ${s.timeMs} ms")
@@ -360,7 +506,8 @@ class DuelNewRulesTest {
             }
         }
         println("fuzzWithTheNewRulesKeepsTheInvariants: $counts")
-        for (k in listOf("Hit", "Clash", "RingOut", "WallSlam", "SpecialStarted", "miss by height", "special waits for the dash")) {
+        val wanted = listOf("Hit", "Clash", "RingOut", "WallSlam", "SpecialStarted", "Missed", "miss by height", "special waits for the dash")
+        for (k in wanted + listOf("Hit", "RingOut", "SpecialStarted", "Missed").map { "cup-and-book $it" }) {
             assertTrue((counts[k] ?: 0) > 0, "the fuzz never produced $k: $counts")
         }
     }
@@ -417,9 +564,10 @@ internal val PRE_T57_PARAMS = DuelParams(
     subStepMs = 8, specialCooldownMs = 9000, stompRadiusRadii = 3f, stompScale = 0.85f, liftMs = 1200,
     liftSpeedScale = 1.5f, liftHeightRadii = 0.5f, ramDashScale = 1.3f, ramKnockScale = 1.1f, dodgeMs = 900,
     counterMs = 1500, counterKnockScale = 2.0f, wobblePerHit = 1f, wobbleKnockScale = 0.7f, wobbleMax = 4f,
+    stompCooldownScale = 1f, liftCooldownScale = 1f, ramCooldownScale = 1f, dodgeCooldownScale = 1f,
     wobbleDecayPerS = 0f,
     specialsShareDashCooldown = false, dashReachBase = 1f, dashReachPerSpeed = 0f,
-    hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT,
+    hitReachUpM = DuelParams.NO_REACH_LIMIT, hitReachDownM = DuelParams.NO_REACH_LIMIT, stompReachUpM = DuelParams.NO_REACH_LIMIT,
 )
 
 /** Every BotTuning number as T48 left it (commit 207acc6). */
@@ -488,6 +636,7 @@ internal class Fingerprint {
         is DuelEvent.SpecialStarted -> add(1).add(e.id).add(e.ability.ordinal).add(e.atMs)
         is DuelEvent.Hit -> add(2).add(e.attacker).add(e.victim).add(e.speedMps).add(e.fromAbove).add(e.atMs)
         is DuelEvent.Clash -> add(3).add(e.a).add(e.b).add(e.atMs)
+        is DuelEvent.Missed -> add(6).add(e.attacker).add(e.victim).add(e.stomp).add(e.atMs)
         is DuelEvent.WallSlam -> add(4).add(e.id).add(e.objectId).add(e.atMs)
         is DuelEvent.RingOut -> add(5).add(e.id).add(e.atMs)
     }
