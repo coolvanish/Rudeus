@@ -49,16 +49,16 @@ import kotlinx.serialization.Serializable
  *   The ram goes along the facing its last walk left it with; its in-path checks still decide whether it can hit.
  * @property turnStepRadii T57: a ROLL whose ram would be ready if it faced the opponent walks this far at it first (the
  *   walk turns its facing) and rams on its next thought.
- * @property wholeDetour T60: going round the opponent or an object, when another object (or a hole) closes the shorter
- *   way round, a bot takes the other side if its whole way round is open, else walks straight at its goal if nothing is
- *   in the way; otherwise (and always, with false) it picks a side by its next waypoint alone, as before T60. Without it a
+ * @property wholeDetour T60: going round the opponent or an object, when another object that blocks closes the shorter
+ *   way round (a hole does not count: its bounding circle is too coarse), a bot takes the other side if its whole way
+ *   round is open, else walks straight at its goal if nothing is in the way; otherwise (and always, with false) it picks
+ *   a side by its next waypoint alone, as before T60. Without it a
  *   NORMAL or HARD bot goes to and fro for a whole round beside a fighter standing on its mark of
  *   [DuelArenas.CUP_AND_BOOK] (the way to the spot it pushes from runs through the gap between that fighter and the cup)
  *   and never dashes: the fighter that does nothing wins 2:0 on the clock. With it the bot wins those matches 2:0 by
  *   ring-outs, and nothing changes on a table without objects. **Off by default** (the T60 Result): on, NORMAL plays the
  *   ROLL mirror on cup-and-book about as well as HARD (it went to and fro beside a HARD bot standing by the cup too), and
- *   `normalIsBetweenEasyAndHard`'s floor fails there (HARD ROLL over NORMAL ROLL 214 of 400 for 220); and next to a long
- *   hole, whose coarse bounding circle it counts as an object, NORMAL bots stall more often. A human decides.
+ *   `normalIsBetweenEasyAndHard`'s floor fails there (HARD ROLL over NORMAL ROLL 214 of 400 for 220). A human decides.
  *   Draws nothing from the bot's generator either way.
  */
 @Serializable

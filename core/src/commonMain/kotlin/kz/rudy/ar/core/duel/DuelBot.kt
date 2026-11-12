@@ -863,8 +863,8 @@ private class Brain(
 
     /**
      * A waypoint going round the circle ([c], [rho]) from the bot toward [goal], on the side that is the shorter way and
-     * safe. T60 ([BotTuning.wholeDetour]): when the shorter way round is closed by another circle the bot keeps out of (an
-     * object or a hole, not the edge: [wayRound]; [route] goes straight on once the line to [goal] clears [pass] round
+     * safe. T60 ([BotTuning.wholeDetour]): when the shorter way round is closed by the circle of another object that blocks
+     * (not the edge, nor a hole: [misfit], [wayRound]; [route] goes straight on once the line to [goal] clears [pass] round
      * [c]), the other side if its whole way round is open; else, when the straight line to [goal] touches nothing (it keeps
      * [core], the circle's body, from [c] and out of every other circle), [goal] itself; only else as before. (Before T60
      * the side was picked by its next waypoint alone, and in a gap too narrow to pass, as between a fighter and the cup,
@@ -907,12 +907,13 @@ private class Brain(
     }
 
     /**
-     * T60: whether waypoint [p] round [c] may be sent ([WAY_OPEN]), or what refuses it: another circle the bot keeps out
-     * of ([WAY_OBJECT]), else the edge margin ([WAY_EDGE]).
+     * T60: whether waypoint [p] round [c] may be sent ([WAY_OPEN]), or what refuses it: the circle of another object that
+     * blocks ([WAY_OBJECT]), else the edge margin or a hole's circle ([WAY_EDGE]). A hole counts with the edge, not as an
+     * object: its circle is the bounding one (21 cm round a 4 x 30 cm strip), too coarse to say a way is closed.
      */
     private fun misfit(p: Vec2, c: Vec2): Int = when {
-        keeps.any { k -> k.c != c && p.distanceTo(k.c) < k.r } -> WAY_OBJECT
-        board.inside(p) < margin -> WAY_EDGE
+        keeps.any { k -> !k.hole && k.c != c && p.distanceTo(k.c) < k.r } -> WAY_OBJECT
+        board.inside(p) < margin || keeps.any { k -> k.hole && k.c != c && p.distanceTo(k.c) < k.r } -> WAY_EDGE
         else -> WAY_OPEN
     }
 

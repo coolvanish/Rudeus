@@ -182,6 +182,15 @@ If I1 can be met only by making a row of the matrix worse, keep the best candida
   | 4 | 3 only round an opponent standing still (IDLE) | 42 / 42 | 3.0 s | 214 / 1071 | - | no: the same cost |
   | 5 | 3 only on the ring (not off it) | 42 / 42 | 3.0 s | 217 / 1089 | - | no: the same cost |
   | 6 | 3 + HARD walks straight past the opponent whenever its body clears it (a level change, measured for the human) | 42 / 42 | 3.2 s | 211 / 1072 | - | no: empty HARD ROLL v NORMAL 252 -> 154 |
+  | 7 | 3, but a hole's circle closes a way as the edge does, not as an object (the orchestrator's one extra candidate, for the hole-strip regression) | 42 / 42 | 3.0 s | 214 / - (the same code on the tuning arenas) | `--n 100`: identical to 3, all 320 cells | **kept** |
+
+  Candidate 7 against 3, switch on (every ability pair at equal stats, seeds 1..6; "sides" = bot sides with a stretch
+  over 10 s, of 192): the 4 x 30 cm hole-strip table, NORMAL 6 -> **0** sides (the switch off: 0), HARD 2 -> 2 (off 2):
+  on that table the switch now changes nothing. day5: NORMAL 27 -> 30 sides (off 27), HARD 129 -> 127 (off 126); rounds
+  on the clock NORMAL 6 -> 7 (off 6), HARD 60 -> 61 (off 62); a still fighter is beaten 24 -> 22 of 24 at NORMAL and at
+  HARD (off 23), none by a ring-out in any of the three (day5's own stand-offs, "what a human must decide" 6). I1..I4 as
+  3; `duel matrix --n 100` with the switch on: 320 of 320 cells identical to 3 (no tuning arena has a hole), so no row
+  moves.
 
   Candidates 1, 2, 4 to 6 were not committed: none could be committed green with the switch on, and with it off they
   are all the T57 bot. Candidate 3 changes nothing on a table without objects (240 of 320 matrix cells identical,
