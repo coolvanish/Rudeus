@@ -1,6 +1,6 @@
 # T53 — thin-host-step-3
 
-status: todo
+status: doing
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S3a of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` and `:shared` still compile for iOS); a precondition of S3b, T54 and T50
@@ -8,7 +8,9 @@ cut-if-slips: never cut. Two revert points, see "Done when": commit C alone, the
 depends: T47 and T52 merged **and their Pixel checks passed by the user** ("hand over the lens", "walk, bow, jump").
   T53 builds on both and is not dispatched before that. Not while another brief is `doing` on `shared/.../ArSlot.kt`
   or `App.kt` (T49 adds actions to `CharacterAction`: whichever lands second rebases onto the type's new home)
-tier: rudeus-fable-high draft, as planned (a split inside a 936-line composable; two hand-review commits)
+tier: rudeus-opus-extra (the plan table's tier: the split is specified line by line and proved by script, as T52 was;
+  the review and the Pixel check are the safety net). Dispatched 2026-11-12 at d79c7e5+: `ar/RudeusArView.kt`, `ArSlot.kt`
+  and `core/session` are unchanged since 23a9ea2, so every `file:line` below still holds; T45, T49 and T57 are merged
 
 `file:line` below is the line at 23a9ea2. Paths without a module are under `androidApp/src/main/kotlin/kz/rudy/ar/`.
 
@@ -84,7 +86,7 @@ common code. The player sees no difference.
 Does not move and must not touch: the frame callback (`ar/RudeusArView.kt:711-830`), the scenario (453-465), every
 scan line (390-412, 487-553, 751-779), taps and the finger grab (472-480, 558-564, 610-680, 836-892), the pre-anchor
 gate (723-743, 843-856), `ar/CharacterNode.kt`, `ar/CastTouch.kt`, `core/session/GameLoop.kt` and `BillboardPoser.kt`,
-`core/duel/**` (T45 is working there), `core/physics/**`, `core/emote/**`, every Gradle file. No `Stage` interface, no
+`core/duel/**`, `core/physics/**`, `core/emote/**`, every Gradle file. No `Stage` interface, no
 duel code, no `FrameInput`.
 
 ## Contract

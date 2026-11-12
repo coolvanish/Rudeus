@@ -3,8 +3,8 @@
 `claude/practical-dijkstra-2uveq7` (from `main` at 4f58c28): the first waves of `ai/build-plan-v2.md`. Verify in
 the cloud container after T57: core 710, shared 42, androidApp 3 tests, 0 failed; APK 63 MB; `:core` and `:shared`
 compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has no Pixel, no API key and no Mac.
-**Everything left on the plan now waits for you**: the two Pixel checks in §3 unblock the host steps (T53, T56, T54,
-T50); the duel decisions in §4.3 unblock a third balance pass, if you want one before playing it.
+**2026-11-12: you reported the two Pixel checks of §3 (T47, T52) as fine ("все ок продолжай"), so the host steps
+are running again: T53 first.** The duel decisions in §4.3 are still open; none of them blocks the host work.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 4f58c28..HEAD`)
 | Brief | What | Status |
@@ -17,11 +17,11 @@ T50); the duel decisions in §4.3 unblock a third balance pass, if you want one 
 | T43 thin-host-map | per-file map of `:androidApp` (2 121 code lines: 995 platform-free), the `TableEngine` seam, the step order | done |
 | T44 fighter-card-ui | `FighterStatsCard` on Processing "Done"; **Done now waits for a tap on Next** (the 2 s auto-advance is gone) | done; needs your Pixel look |
 | T45 duel-match-specials | COUNTDOWN / FIGHT / POINT / RESULT, first to two, marks, `rearrange` for a rescan between rounds, one special per ability | done |
-| T47 thin-host S1 | `GameLoop` moved verbatim to `core.session`, 22 tests; host diff 7 lines | needs your Pixel run |
+| T47 thin-host S1 | `GameLoop` moved verbatim to `core.session`, 22 tests; host diff 7 lines | done; Pixel: fine by your word, 2026-11-12 |
 | T49 duel-ui | pure `duelHud` model, HUD, opponent picker, VS card, result; not wired into the app | done; look UNTESTED until T50 |
-| T52 thin-host S2 | billboard maths moved to `core.session.BillboardPoser` -> `NodePose`, 25 tests; `CharacterNode.kt` 252 -> 162 lines | needs your Pixel run |
+| T52 thin-host S2 | billboard maths moved to `core.session.BillboardPoser` -> `NodePose`, 25 tests; `CharacterNode.kt` 252 -> 162 lines | done; Pixel: fine by your word, 2026-11-12 |
 | T48 cli-duel-sim-balance | `cli duel match / series / matrix`, a 120 x 60 cm arena, tuned defaults, **wobble** (each hit taken in a round makes the next knockback larger; cleared every round; `wobblePerHit = 0` is the old physics), swept knockback (no tunnelling at any speed) | done; five acceptance rows still FAIL, see §3 G4 and §4 |
-| T53 thin-host S3a | brief only | waits for the two Pixel runs above |
+| T53 thin-host S3a | `TableEngine` in `core.session` (surface lock, cast sync, active member, commands) | dispatched 2026-11-12; will need your Pixel run ("place, scan, two friends, lens, replay") |
 | T57 duel-balance-2 | your four rule decisions, each with an off switch (off = the T48 physics bit for bit): stomp and ram share the dash cooldown, SPEED lengthens every dash, height matters for hits, FLY's archetype 4/6/4/6. The bots use every special (new acceptance row B11). Two reviews: the first found that between bots three of the four specials were never used, so the balance row measured nothing; fixed and re-measured | done; balance is in band at NORMAL, not at HARD; see §3 G4 and §4.3 |
 | T55 duel-bot-sim | seeded bot (EASY / NORMAL / HARD), `DuelRunner` (bots decide on a tick grid: identical matches at any frame length), `DuelSim`, three tuning arenas. Measured: plain dashes almost never ring anyone out (FLY / HIDE mirrors end 92–99 % of rounds by the clock): the numbers are not a game yet, T48 tunes them | done |
 
@@ -36,11 +36,11 @@ Second terminal first: `scripts/device.sh log`. Unlock the phone. A cup on the t
 ### G1 foundation — PASS in the container
 `scripts/verify.sh` compiles `:core` and `:shared` for iOS. Nothing iOS has been linked or run.
 
-### Thin host on the Pixel (T47, T52) — UNTESTED
+### Thin host on the Pixel (T47, T52) — PASS by your report (2026-11-12, no evidence files)
 | Criterion | Status | Evidence |
 |---|---|---|
-| **"Hand over the lens" (T47):** two characters, tap so one walks across, cover the lens ~3 s, uncover: the Paused scrim while covered; both reappear where they stood; the walker finishes its walk to the tapped spot; nobody jumps, slides or returns to the middle | UNTESTED (JVM PASS: `GameLoopTest`, 22) | no `cast_add` in the log after the blip; `docs/evidence/v2-t47-lens.png` |
-| **"Walk, bow, jump" (T52):** tap right then left of one character: it turns once each way and bobs; Bye after each walk: it bows toward the side it looks at, stays facing you, feet on the table; Jump: stretch going up, squash on landing | UNTESTED (JVM PASS: `BillboardPoserTest`, 25; 200 000-frame equivalence run, 0 differing bits) | `docs/evidence/v2-t52-bow.png` |
+| **"Hand over the lens" (T47):** two characters, tap so one walks across, cover the lens ~3 s, uncover: the Paused scrim while covered; both reappear where they stood; the walker finishes its walk to the tapped spot; nobody jumps, slides or returns to the middle | PASS, reported in chat (JVM PASS: `GameLoopTest`, 22) | no `cast_add` in the log after the blip; `docs/evidence/v2-t47-lens.png` |
+| **"Walk, bow, jump" (T52):** tap right then left of one character: it turns once each way and bobs; Bye after each walk: it bows toward the side it looks at, stays facing you, feet on the table; Jump: stretch going up, squash on landing | PASS, reported in chat (JVM PASS: `BillboardPoserTest`, 25; 200 000-frame equivalence run, 0 differing bits) | `docs/evidence/v2-t52-bow.png` |
 If T47 fails: `git revert 6102cbc`. If T52 fails: `git revert 8c97f42`; if still wrong, also `git revert f881b35`.
 
 ### G2 stats — JVM PASS, live UNTESTED
@@ -142,4 +142,6 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 - No key ships in a store build: a public release needs a key proxy (plan, "Not now").
 
 ## 7. Device results
-(none yet)
+- 2026-11-12, T47 "hand over the lens" and T52 "walk, bow, jump": reported fine by you in chat ("все ок продолжай")
+  after the checks were named. No screenshots or logs were handed over, so `docs/evidence/v2-t47-lens.png` and
+  `v2-t52-bow.png` do not exist. If that message meant something else, say so: T53 builds on both.

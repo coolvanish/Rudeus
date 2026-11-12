@@ -1,6 +1,6 @@
 # T47 — thin-host-step-1
 
-status: review
+status: done (Pixel check reported fine by the user in chat, 2026-11-12; no evidence files)
 created: 2026-11-11
 phase: v2 wave 2 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S1 of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` still compiles for iOS); protects G5 ("no tracking reset")
