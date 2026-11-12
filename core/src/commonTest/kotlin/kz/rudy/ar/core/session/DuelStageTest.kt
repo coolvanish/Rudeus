@@ -496,13 +496,15 @@ class DuelStageTest {
             h.refresh()
             h.frame()
             assertTrue("cast_remove id=$gone" in h.lines)
-            assertEquals(listOf("duel_refused serial=1 reason=NO_FIGHTER"), h.duelLines())
+            assertEquals(2, h.duelLines().size, "${h.duelLines()}")
+            assertEquals("duel_refused serial=1 reason=NO_FIGHTER", h.duelLines()[0])
+            assertTrue(h.duelLines()[1].startsWith("duel_end serial=1 phase=FIGHT score="), h.duelLines()[1])
             val refused = assertIs<DuelReport.Refused>(h.reports.single().second)
             assertEquals(1 to DuelRefusal.NO_FIGHTER, refused.serial to refused.reason)
             assertNull(h.engine.duelMatch)
             h.frames(20)
             assertNull(h.engine.duelMatch, "the same serial is not restarted")
-            assertEquals(1, h.duelLines().size)
+            assertEquals(2, h.duelLines().size)
             val left = h.members.first().id
             h.loop.walkTo(left, Vec2(0.25f, 0.15f))
             h.frames(5)
@@ -1315,5 +1317,63 @@ class DuelStageTest {
         h.want(null)
         h.frames(20)
         assertTrue(h.castStates.isNotEmpty())
+    }
+
+    // --- T58 review: serials rise, and every duel that started ends with one duel_end ---
+
+    @Test
+    fun aSerialAtOrBelowTheHighestTakenIsIgnored() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(5))
+        h.frame()
+        h.frames(10)
+        val running = h.match
+        h.clear()
+        for (old in listOf(3, 5, 4)) {
+            h.want(wanted(old, seed = old.toLong()))
+            h.frame()
+        }
+        assertTrue(h.duelLines().isEmpty(), "${h.duelLines()}")
+        assertEquals(running.duel.timeMs + 3 * DUEL_FRAME_MS, h.match.duel.timeMs, "the same match goes on")
+        h.want(wanted(6)) // A -> B -> A: B is a rematch, A again is ignored
+        h.frame()
+        h.want(wanted(5))
+        h.frames(5)
+        assertEquals(listOf("duel_end serial=5", "duel_start serial=6"), h.duelLines().map { it.split(' ').take(2).joinToString(" ") })
+        assertEquals(6, h.lastRunning().serial)
+    }
+
+    @Test
+    fun everyDuelThatStartedLogsOneDuelEnd() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        h.want(wanted(2)) // a rematch
+        h.frame()
+        h.want(wanted(3, foe = "zz")) // a refused new serial ends the running one
+        h.frame()
+        h.want(wanted(4))
+        h.frame()
+        h.members = listOf(duelist("a")) // a fighter leaves
+        h.refresh()
+        h.frame()
+        h.members = listOf(duelist("a"), duelist("b"))
+        h.refresh()
+        h.frame()
+        h.want(wanted(6))
+        h.frame()
+        h.want(null) // the slot drops it
+        h.frame()
+        val kinds = h.duelLines().filter { !it.startsWith("duel_round") && !it.startsWith("duel_fight") }
+            .map { it.split(' ').take(2).joinToString(" ") }
+        assertEquals(
+            listOf(
+                "duel_start serial=1", "duel_end serial=1",
+                "duel_start serial=2", "duel_end serial=2", "duel_refused serial=3",
+                "duel_start serial=4", "duel_refused serial=4", "duel_end serial=4",
+                "duel_start serial=6", "duel_end serial=6",
+            ),
+            kinds,
+        )
     }
 }

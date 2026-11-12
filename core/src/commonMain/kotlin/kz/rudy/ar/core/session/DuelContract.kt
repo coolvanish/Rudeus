@@ -11,7 +11,10 @@ import kz.rudy.ar.core.duel.DuelRules
 
 /** The duel the UI wants on the table; `TableSlot.duel == null` is the walking game. Immutable, one per slot. */
 class DuelSetup(
-    /** Rising; a serial the engine has not seen starts a new match, a seen one never restarts. */
+    /**
+     * Rising; a serial the engine has not seen starts a new match, a seen one never restarts. The engine takes a serial
+     * on the first tracked frame it sees it, and ignores one at or below the highest it has taken.
+     */
     val serial: Int,
     /** The child's fighter: a member id. */
     val mineId: String,

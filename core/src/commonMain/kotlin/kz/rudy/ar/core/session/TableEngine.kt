@@ -129,7 +129,7 @@ class TableEngine(
     /** T58: what a tap, a command and a frame mean now ([Stage]): [walk], or the duel the slot asked for. */
     private var stage: Stage = walk
 
-    /** T58: the serial of the last `TableSlot.duel` taken on a tracked frame (started or refused); null before any. */
+    /** T58: the highest `TableSlot.duel` serial taken on a tracked frame (started or refused); null before any. */
     private var duelSerial: Int? = null
 
     /** T58: the running duel's match, null in the walking game. No host reads it; the tests read the duel through it. */
@@ -262,23 +262,24 @@ class TableEngine(
     /**
      * T58: the stage follows `TableSlot.duel`, compared by its serial on every anchored frame right after [syncCast]:
      * no setup ends a running duel (the walking game goes on where it stood); a fighter gone from the cast ends it
-     * (NO_FIGHTER); a serial not taken yet starts a match on a tracked frame (the camera decides the sides), or is
-     * refused once and never retried. Starting releases every finger. Without a setup and a duel: one null check.
+     * (NO_FIGHTER), also during a loss; a serial above the highest taken is taken on a tracked frame (the camera decides
+     * the sides): it ends a running duel (a rematch) and starts a match, or is refused once and never retried. Starting
+     * releases every finger. Every duel that started logs one `duel_end`. Without a setup and a duel: one null check.
      */
     private fun syncDuel(input: FrameInput) {
         val setup = current().duel
         val duel = stage as? DuelStage
         if (setup == null) {
-            if (duel != null) {
-                val m = duel.match
-                log("duel_end serial=${duel.serial} phase=${m.phase} score=${m.scoreA}:${m.scoreB}")
-                stage = walk
-            }
+            if (duel != null) endDuel(duel)
             return
         }
-        if (duel != null && !(loop.has(duel.mineId) && loop.has(duel.foeId))) refuseDuel(duel.serial, DuelRefusal.NO_FIGHTER)
-        if (!input.tracking || setup.serial == duelSerial) return
+        if (duel != null && !(loop.has(duel.mineId) && loop.has(duel.foeId))) {
+            refuseDuel(duel.serial, DuelRefusal.NO_FIGHTER, running = duel)
+        }
+        val taken = duelSerial
+        if (!input.tracking || (taken != null && setup.serial <= taken)) return
         duelSerial = setup.serial
+        (stage as? DuelStage)?.let(::endDuel) // a rematch, or a refusal of the new serial, ends the running duel
         val reason = when {
             setup.mineId == setup.foeId || !isFighter(setup.mineId) || !isFighter(setup.foeId) -> DuelRefusal.NO_FIGHTER
             loop.level.boundary == null -> DuelRefusal.NO_BOUNDARY
@@ -286,7 +287,7 @@ class TableEngine(
         }
         val started = if (reason != null) null else DuelStage.open(setup, loop, current, profile, port, log, walkDepthSamples, input.camera.pos)
         if (started == null) {
-            refuseDuel(setup.serial, reason ?: DuelRefusal.NO_ROOM)
+            refuseDuel(setup.serial, reason ?: DuelRefusal.NO_ROOM, running = null)
             return
         }
         for (id in loop.ids) touch.unbindMember(id) // a finger held when the duel starts leads nobody any more
@@ -300,11 +301,21 @@ class TableEngine(
     /** T58: member [id] can fight: on the table and in the slot (its stats and ability come from the slot). */
     private fun isFighter(id: String): Boolean = loop.has(id) && current().members.any { it.id == id }
 
-    /** T58: the duel with [serial] did not start or ended before RESULT: the slot hears why, the walking game goes on. */
-    private fun refuseDuel(serial: Int, reason: DuelRefusal) {
-        log("duel_refused serial=$serial reason=$reason")
-        current().onDuel(DuelReport.Refused(serial, reason))
+    /** T58: the running [duel] ends (one `duel_end` per `duel_start`) and the walking game goes on where it stood. */
+    private fun endDuel(duel: DuelStage) {
+        val m = duel.match
+        log("duel_end serial=${duel.serial} phase=${m.phase} score=${m.scoreA}:${m.scoreB}")
         stage = walk
+    }
+
+    /**
+     * T58: the duel with [serial] did not start, or the [running] one ended before RESULT: the reason is logged, the
+     * running duel ends, the slot hears why, the walking game goes on.
+     */
+    private fun refuseDuel(serial: Int, reason: DuelRefusal, running: DuelStage?) {
+        log("duel_refused serial=$serial reason=$reason")
+        if (running != null) endDuel(running)
+        current().onDuel(DuelReport.Refused(serial, reason))
     }
 
     /**
