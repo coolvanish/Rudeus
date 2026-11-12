@@ -64,10 +64,12 @@ import kz.rudy.ar.core.session.ArPort
 import kz.rudy.ar.core.session.CameraFrame
 import kz.rudy.ar.core.session.FrameInput
 import kz.rudy.ar.core.session.ScreenView
+import kz.rudy.ar.core.session.TableEngine
 import kz.rudy.ar.core.session.TableHit
 import kz.rudy.ar.core.session.TouchAction
 import kz.rudy.ar.core.session.TouchEvent
 import kz.rudy.ar.core.session.TouchPoint
+import kz.rudy.ar.rememberTableEngine
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -179,8 +181,8 @@ import kotlin.math.abs
 // file builds a FrameInput and writes each NodePose into its
 // node; the scan reads the level and the members through the engine. PAUSED still freezes and never resets, one
 // anchor per session, scans stay a button plus the quiet ones and are never per frame.
-// HAND-REVIEW: T54 — what a finger does after the anchor is TableEngine.onTap / onTouch: this
-// file maps the MotionEvent and answers ArPort (the table under a pixel, the depth on the way, the camera as a
+// HAND-REVIEW: T54 — what a finger does after the anchor is TableEngine.onTap / onTouch (now `core.session`, pinned by
+// JVM tests): this file maps the MotionEvent and answers ArPort (the table under a pixel, the depth on the way, the camera as a
 // ScreenView when a touch needs a pick). The T32 notes on CastTable above describe code that is the engine's now.
 // One anchor per session (only the placement tap creates it), PAUSED still freezes and never resets, scans untouched.
 
