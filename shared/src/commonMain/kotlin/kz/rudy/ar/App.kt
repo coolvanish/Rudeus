@@ -59,9 +59,9 @@ import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.Strings
 import kz.rudy.ar.ui.components.CastUi
 import kz.rudy.ar.ui.duel.DuelFlow
+import kz.rudy.ar.ui.duel.DuelFlowState
 import kz.rudy.ar.ui.duel.DuelScreen
 import kz.rudy.ar.ui.duel.DuelStep
-import kz.rudy.ar.ui.duel.DuelUi
 import kz.rudy.ar.ui.screens.BundledCharacter
 import kz.rudy.ar.ui.screens.CaptureScreen
 import kz.rudy.ar.ui.screens.ExportStatus
@@ -157,9 +157,10 @@ private const val VOICE_BUBBLE_MS = 2000L
  * A result that passes the gate is saved as it lands; one below it is saved at Done only if its Keep chip is on. Done and
  * Back both return to Capture (Back cancels what still runs; what was saved stays); nothing goes to Scanning or Play.
  *
- * Duel (T59): a state over Play, not a [Screen] ([DuelUi], null = free play). Play's Duel button (a scanned edge, the
+ * Duel (T59): a state over Play, not a [Screen] ([DuelFlowState], its `ui` null = free play). Every transition is a
+ * pure `DuelFlow` function; App only holds the state and calls them. Play's Duel button (a scanned edge, the
  * anchor, tracking) opens the picker; Play / Watch put the opponent on the table and show the VS card; then the slot
- * carries a `DuelSetup` (a new `duelSerial` per match, never lowered) and the engine answers through `ArSlot.onDuel`. The
+ * carries a `DuelSetup` (a new serial per match, never lowered) and the engine answers through `ArSlot.onDuel`. The
  * report sits in a state only [DuelScreen] reads, so it never recomposes App. A refusal closes the duel with "Not enough
  * room"; Done, Back and the session end close it. During the fight Play is not composed, background scans are off and
  * no bubble shows.
@@ -238,12 +239,10 @@ fun App(
     // T31 review: the saved card of the photo now being played ("saved-<stamp>"), so the Add sheet does not offer the
     // same drawing again under its other id while its "photo-<ref>" member is on the table.
     var photoSavedId by remember { mutableStateOf<String?>(null) }
-    // T59: the duel over Play (null = free play), the serial of its match (never lowered, like commandSerial), the bots'
-    // seed, and the engine's last report. App's body never reads the report: DuelScreen does, so the engine's ten
-    // reports a second recompose that screen only.
-    var duelUi by remember { mutableStateOf<DuelUi?>(null) }
-    var duelSerial by remember { mutableStateOf(0) }
-    var duelSeed by remember { mutableStateOf(0L) }
+    // T59: the duel over Play (its ui null = free play), the serial of its match (never lowered, like commandSerial) and
+    // the bots' seed; and the engine's last report. App's body never reads the report: DuelScreen does, so the engine's
+    // ten reports a second recompose that screen only.
+    var duelFlow by remember { mutableStateOf(DuelFlowState()) }
     val duelReport = remember { mutableStateOf<DuelReport?>(null) }
 
     val scope = rememberCoroutineScope()
@@ -285,10 +284,10 @@ fun App(
         command = c
     }
     fun jump() { jumpRequest++; act(CharacterAction.Jump) }
-    /** T59: back to free play on the same table; the cast stays as the duel left it. */
-    fun closeDuel() {
-        duelUi = null
-        duelReport.value = null
+    /** T59: the one way the duel state changes; the report goes with every move that leaves the current match's fight. */
+    fun moveDuel(next: DuelFlowState) {
+        if (!DuelFlow.keepsReport(duelFlow, next)) duelReport.value = null
+        duelFlow = next
     }
     fun walkForward() { walkForwardRequest++; act(CharacterAction.WalkForward) }
     /** T31 emote row: the active member plays [e] and says its choreography's line at once. */
@@ -403,7 +402,7 @@ fun App(
     fun back() {
         if (settingsOpen) { settingsOpen = false; return }
         if (addOpen) { addOpen = false; return }
-        if (duelUi != null) { closeDuel(); return } // T59: any step of a duel -> free play, never Capture
+        DuelFlow.back(duelFlow)?.let { moveDuel(it); return } // T59: any step of a duel -> free play, never Capture
         when (screen) {
             Screen.CAPTURE -> Unit
             Screen.METRICS -> {
@@ -505,7 +504,7 @@ fun App(
         // An id not on the table is ignored; "" is the v1.0 host's onCharacterEvent before any cast exists.
         if (id.isNotEmpty() && cast.none { it.id == id }) return@rememberUpdatedState
         if (e == CharacterEvent.STARTED_WALKING) walkedOnce = true
-        if (duelUi?.step == DuelStep.FIGHT) return@rememberUpdatedState // T59: the duel HUD has no bubble (the host played the sound)
+        if (duelFlow.ui?.step == DuelStep.FIGHT) return@rememberUpdatedState // T59: the duel HUD has no bubble (the host played the sound)
         val memberSheet = castSheets[id] ?: activeSheet()
         speech = HudSpeech.next(speech, e, nowMs(), Strings.sheetLines(memberSheet.lines, lang), lang, speakerOf(id))
     }
@@ -558,24 +557,21 @@ fun App(
     // T59: only the current match's report, and only while its fight is on screen (a late one after Done is dropped).
     // A refusal closes the duel and says why.
     val onDuel = rememberUpdatedState<(DuelReport) -> Unit> { r ->
-        if (r.serial != duelSerial || duelUi?.step != DuelStep.FIGHT) return@rememberUpdatedState
-        when (r) {
-            is DuelReport.Running -> duelReport.value = r
-            is DuelReport.Refused -> {
-                closeDuel()
-                speech = HudSpeech.say(speech, StringId.duel_no_room.get(lang), nowMs())
-            }
-        }
+        val step = DuelFlow.report(duelFlow, r)
+        if (step.keep) duelReport.value = r
+        if (step.flow != duelFlow) moveDuel(step.flow)
+        step.say?.let { speech = HudSpeech.say(speech, it.get(lang), nowMs()) }
     }
     val debug = hud.showFootprints
     val active = CastUi.active(cast, activeId)
     val spritePng = active?.spritePng // legacy mirror: the active member's (null = the host's built-in dino)
     val ability = active?.ability ?: sheet.ability
     // T59: null in free play, so the slot's keys and fields are what they were; a rescan between rounds holds the countdown.
-    val duel = remember(duelUi, duelSerial, duelSeed, active?.id, hud.scanning) {
-        DuelFlow.setup(duelUi, duelSerial, active?.id, duelSeed, hold = hud.scanning)
+    val duelUi = duelFlow.ui
+    val duel = remember(duelFlow, active?.id, hud.scanning) {
+        DuelFlow.setup(duelFlow.ui, duelFlow.serial, active?.id, duelFlow.seed, hold = hud.scanning)
     }
-    val slotAutoScan = autoScan && duelUi?.step != DuelStep.FIGHT // never a background scan mid-round
+    val slotAutoScan = DuelFlow.autoScanFor(duelUi, autoScan) // never a background scan mid-round
     val slot = remember(
         spritePng, surface, debug, soundsOn, slotAutoScan, scanRequest, jumpRequest, scenarioRequest, walkForwardRequest, ability, characterSize,
         cast, active?.id, command, duel,
@@ -630,7 +626,7 @@ fun App(
             activeId = cast.firstOrNull()?.id
             command = null
             addOpen = false
-            closeDuel() // T59: duelSerial is never lowered
+            moveDuel(DuelFlow.sessionEnd(duelFlow)) // T59: the serial is never lowered
         }
     }
     LaunchedEffect(walkedOnce) {
@@ -920,7 +916,7 @@ fun App(
                             onAdd = ::addToCast,
                             onAddDismiss = { addOpen = false },
                             onEmote = ::emote,
-                            onDuel = { duelUi = DuelUi() },
+                            onDuel = { moveDuel(DuelFlow.open(duelFlow)) },
                             duelEnabled = active != null && DuelFlow.canDuel(level) && scan.anchored && !hud.trackingLost,
                         )
                         val ui = duelUi
@@ -943,40 +939,29 @@ fun App(
                                 pausedHint = if (surface == Surface.FLOOR) StringId.paused_hint_floor else StringId.paused_hint,
                                 scanning = hud.scanning,
                                 scanProgress = hud.scanProgress,
-                                onPick = { id -> duelUi = duelUi?.copy(foeId = id) },
-                                onDifficulty = { d -> duelUi = duelUi?.copy(difficulty = d) },
+                                onPick = { id -> moveDuel(DuelFlow.pick(duelFlow, id)) },
+                                onDifficulty = { d -> moveDuel(DuelFlow.difficulty(duelFlow, d)) },
                                 onStart = { watch ->
+                                    val next = DuelFlow.play(duelFlow, watch)
                                     // The opponent joins the table now, so the host has placed it before the match starts.
-                                    if (foe != null) {
-                                        val next = DuelFlow.castFor(cast, mine.id, CastUi.member(foe, lang))
-                                        if (next !== cast) {
-                                            cast = next
-                                            castSheets = (castSheets + (foe.id to foe.sheet)).filterKeys { k -> next.any { it.id == k } }
+                                    if (foe != null && next !== duelFlow) {
+                                        val nextCast = DuelFlow.castFor(cast, mine.id, CastUi.member(foe, lang))
+                                        if (nextCast !== cast) {
+                                            cast = nextCast
+                                            castSheets = (castSheets + (foe.id to foe.sheet)).filterKeys { k -> nextCast.any { it.id == k } }
                                         }
-                                        duelUi = ui.copy(step = DuelStep.VERSUS, watch = watch)
+                                        moveDuel(next)
                                     }
                                 },
-                                onVersusDone = {
-                                    val now = duelUi
-                                    if (now?.step == DuelStep.VERSUS) { // the timer and a tap can both fire
-                                        duelSerial++
-                                        duelSeed = nowMs()
-                                        duelReport.value = null
-                                        duelUi = now.copy(step = DuelStep.FIGHT)
-                                    }
-                                },
+                                onVersusDone = { moveDuel(DuelFlow.versusDone(duelFlow, nowMs())) },
                                 onDash = { act(CharacterAction.Dash) },
                                 onJump = { act(CharacterAction.Jump) },
                                 onSpecial = { act(CharacterAction.Special) },
                                 // Between rounds: one scan through the usual request; its arc effect and onScanned end it,
                                 // and while it runs the setup's hold keeps the countdown waiting for the new table.
                                 onRescan = { hud = hud.copy(scanning = true, scanProgress = 0f); scanRequest++ },
-                                onRematch = {
-                                    duelSerial++
-                                    duelSeed = nowMs()
-                                    duelReport.value = null
-                                },
-                                onDone = ::closeDuel,
+                                onRematch = { moveDuel(DuelFlow.again(duelFlow, nowMs())) },
+                                onDone = { moveDuel(DuelFlow.done(duelFlow)) },
                             )
                         }
                     }

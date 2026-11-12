@@ -7,6 +7,7 @@ import kz.rudy.ar.core.duel.BotLevel
 import kz.rudy.ar.core.physics.Cast
 import kz.rudy.ar.core.session.DuelReport
 import kz.rudy.ar.core.session.DuelSetup
+import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.screens.BundledCharacter
 
 /** Where the duel flow is: the opponent picker, the VS card, or the match on the table (its RESULT included). */
@@ -25,6 +26,19 @@ data class DuelUi(
     /** Watch: both sides are bots at [difficulty]; the child's buttons stay grey. */
     val watch: Boolean = false,
 )
+
+/**
+ * T59: everything App keeps about the duel: [ui] (null = free play), the serial of the current match (rising, never
+ * lowered, not even when the duel closes or the session ends, so the engine never sees an old serial again) and the
+ * bots' [seed] for it.
+ */
+data class DuelFlowState(val ui: DuelUi? = null, val serial: Int = 0, val seed: Long = 0L)
+
+/**
+ * What a report from the engine does: [keep] = it is the fight's report (App shows it); [flow] = the flow after it (a
+ * refusal closes the duel); [say] = the bubble's line, if any.
+ */
+data class ReportStep(val flow: DuelFlowState, val keep: Boolean, val say: StringId? = null)
 
 /** T59: the pure rules of the duel flow (no Compose, tested on the JVM). DESIGN.md "Duel". */
 object DuelFlow {
@@ -92,6 +106,75 @@ object DuelFlow {
             hold = hold,
         )
     }
+
+    /** `ArSlot.autoScan`: the player's switch, except never a background scan during a fight (between rounds included). */
+    fun autoScanFor(ui: DuelUi?, userSwitch: Boolean): Boolean = userSwitch && ui?.step != DuelStep.FIGHT
+
+    // ---- The flow's events. Each returns the next state; App only holds it and calls these. ----
+
+    /** Play's Duel button: the picker, Normal preselected, nobody picked. */
+    fun open(flow: DuelFlowState): DuelFlowState = flow.copy(ui = DuelUi())
+
+    /** A card tapped in the picker. */
+    fun pick(flow: DuelFlowState, foeId: String): DuelFlowState = flow.copy(ui = flow.ui?.copy(foeId = foeId))
+
+    /** A difficulty chip tapped in the picker. */
+    fun difficulty(flow: DuelFlowState, d: DuelDifficulty): DuelFlowState = flow.copy(ui = flow.ui?.copy(difficulty = d))
+
+    /** Play ([watch] false) or Watch (true) in the picker with a card picked: the VS card. Anything else changes nothing. */
+    fun play(flow: DuelFlowState, watch: Boolean): DuelFlowState {
+        val ui = flow.ui ?: return flow
+        if (ui.step != DuelStep.PICK || ui.foeId == null) return flow
+        return flow.copy(ui = ui.copy(step = DuelStep.VERSUS, watch = watch))
+    }
+
+    /**
+     * The VS card's time ran out or it was tapped: a new match ([nowMs] its seed) and the fight. Only from VERSUS: the
+     * timer and a tap can both fire, the second changes nothing (the same instance).
+     */
+    fun versusDone(flow: DuelFlowState, nowMs: Long): DuelFlowState {
+        val ui = flow.ui ?: return flow
+        if (ui.step != DuelStep.VERSUS) return flow
+        return DuelFlowState(ui.copy(step = DuelStep.FIGHT), serial = flow.serial + 1, seed = nowMs)
+    }
+
+    /** The result card's Again: a new match ([nowMs] its seed), same opponent and difficulty, straight to the countdown. */
+    fun again(flow: DuelFlowState, nowMs: Long): DuelFlowState {
+        val ui = flow.ui ?: return flow
+        if (ui.step != DuelStep.FIGHT) return flow
+        return flow.copy(serial = flow.serial + 1, seed = nowMs)
+    }
+
+    /** The result card's Done: free play. The serial stays. */
+    fun done(flow: DuelFlowState): DuelFlowState = close(flow)
+
+    /** Back (system or on screen): any step of a duel -> free play; null = no duel, the rest of App's Back rule applies. */
+    fun back(flow: DuelFlowState): DuelFlowState? = if (flow.ui == null) null else close(flow)
+
+    /** The AR session ended: free play. The serial stays. */
+    fun sessionEnd(flow: DuelFlowState): DuelFlowState = close(flow)
+
+    /**
+     * A report from the engine: kept only when it is the current match's ([DuelFlowState.serial]) and the fight is on
+     * screen; any other is dropped (a late one after Done or Again). The current match refused: the duel closes and the
+     * bubble says [StringId.duel_no_room].
+     */
+    fun report(flow: DuelFlowState, report: DuelReport): ReportStep {
+        if (report.serial != flow.serial || flow.ui?.step != DuelStep.FIGHT) return ReportStep(flow, keep = false)
+        return when (report) {
+            is DuelReport.Running -> ReportStep(flow, keep = true)
+            is DuelReport.Refused -> ReportStep(close(flow), keep = false, say = StringId.duel_no_room)
+        }
+    }
+
+    /**
+     * Whether the report App holds survives the move [before] -> [after]: only while the same match's fight stays on
+     * screen. A new match, a closed duel or any other step clears it, so an old report is never drawn.
+     */
+    fun keepsReport(before: DuelFlowState, after: DuelFlowState): Boolean =
+        after.ui?.step == DuelStep.FIGHT && after.serial == before.serial
+
+    private fun close(flow: DuelFlowState): DuelFlowState = flow.copy(ui = null)
 
     /**
      * `duelHud` of a running report with its own arena, rules and params; null for no report, a refusal, or a report

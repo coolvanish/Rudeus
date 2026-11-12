@@ -23,7 +23,9 @@ import kz.rudy.ar.core.physics.Cast
 import kz.rudy.ar.core.session.DuelRefusal
 import kz.rudy.ar.core.session.DuelReport
 import kz.rudy.ar.ui.duel.DuelDifficulty
+import kz.rudy.ar.ui.StringId
 import kz.rudy.ar.ui.duel.DuelFlow
+import kz.rudy.ar.ui.duel.DuelFlowState
 import kz.rudy.ar.ui.duel.DuelStep
 import kz.rudy.ar.ui.duel.DuelUi
 import kz.rudy.ar.ui.duel.duelHud
@@ -226,5 +228,114 @@ class DuelFlowTest {
             played.copy(dash = played.dash.copy(enabled = false), jump = played.jump.copy(enabled = false), special = played.special.copy(enabled = false)),
             watched,
         )
+    }
+
+    // ---- T59 review: the flow's transitions, pure (App only holds the state and calls them). ----
+
+    private val picking = DuelFlowState(DuelUi(foeId = "foe", difficulty = DuelDifficulty.HARD), serial = 4, seed = 11L)
+    private val versus = DuelFlowState(DuelUi(DuelStep.VERSUS, "foe", DuelDifficulty.HARD), serial = 4, seed = 11L)
+    private val fighting = DuelFlowState(DuelUi(DuelStep.FIGHT, "foe", DuelDifficulty.HARD), serial = 5, seed = 900L)
+
+    @Test
+    fun openPickAndDifficultyStayInThePicker() {
+        val opened = DuelFlow.open(DuelFlowState(serial = 7, seed = 3L))
+        assertEquals(DuelFlowState(DuelUi(), serial = 7, seed = 3L), opened) // Normal, nobody picked, the serial kept
+        val picked = DuelFlow.difficulty(DuelFlow.pick(opened, "foe"), DuelDifficulty.EASY)
+        assertEquals(DuelUi(DuelStep.PICK, "foe", DuelDifficulty.EASY), picked.ui)
+        assertEquals(7, picked.serial)
+        assertNull(DuelFlow.pick(DuelFlowState(), "foe").ui) // free play stays free play
+    }
+
+    @Test
+    fun playAndWatchShowTheVersusCard() {
+        val played = DuelFlow.play(picking, watch = false)
+        assertEquals(picking.copy(ui = picking.ui!!.copy(step = DuelStep.VERSUS, watch = false)), played)
+        val watched = DuelFlow.play(picking, watch = true)
+        assertEquals(DuelStep.VERSUS, watched.ui?.step)
+        assertTrue(assertNotNull(watched.ui).watch)
+        assertEquals(BotLevel.HARD, DuelFlow.setup(DuelFlow.versusDone(watched, 1L).ui, 5, "mine", 1L)?.mineBot)
+        // Nobody picked, or not in the picker: nothing changes.
+        val nobody = picking.copy(ui = picking.ui.copy(foeId = null))
+        assertSame(nobody, DuelFlow.play(nobody, watch = false))
+        assertSame(versus, DuelFlow.play(versus, watch = true))
+        assertSame(fighting, DuelFlow.play(fighting, watch = true))
+    }
+
+    @Test
+    fun versusDoneStartsANewMatchOnce() {
+        val next = DuelFlow.versusDone(versus, nowMs = 1234L)
+        assertEquals(DuelFlowState(versus.ui!!.copy(step = DuelStep.FIGHT), serial = 5, seed = 1234L), next)
+        assertNotNull(DuelFlow.setup(next.ui, next.serial, "mine", next.seed))
+        // The timer and a tap both fire: the second changes nothing.
+        assertSame(next, DuelFlow.versusDone(next, nowMs = 1300L))
+        assertSame(picking, DuelFlow.versusDone(picking, nowMs = 1300L))
+        assertFalse(DuelFlow.keepsReport(versus, next))
+    }
+
+    @Test
+    fun againStartsANewMatchWithTheSameOpponentStraightToTheFight() {
+        val next = DuelFlow.again(fighting, nowMs = 5000L)
+        assertEquals(6, next.serial) // a new serial: the engine starts a new match
+        assertEquals(5000L, next.seed)
+        assertEquals(fighting.ui, next.ui) // same opponent, difficulty, watch, and FIGHT: no VS card
+        assertFalse(DuelFlow.keepsReport(fighting, next)) // the old result card goes
+        assertSame(versus, DuelFlow.again(versus, 5000L))
+    }
+
+    @Test
+    fun backAtAnyStepIsFreePlayAndKeepsTheSerial() {
+        for (flow in listOf(picking, versus, fighting)) {
+            val back = assertNotNull(DuelFlow.back(flow))
+            assertNull(back.ui)
+            assertEquals(flow.serial, back.serial)
+            assertNull(DuelFlow.setup(back.ui, back.serial, "mine", back.seed)) // the slot carries no duel
+            assertFalse(DuelFlow.keepsReport(flow, back))
+        }
+        assertNull(DuelFlow.back(DuelFlowState(serial = 3))) // no duel: App's Back rule goes on (Play -> Capture)
+        // Done and the session end close it the same way, the serial kept.
+        assertEquals(DuelFlowState(null, 5, 900L), DuelFlow.done(fighting))
+        assertEquals(DuelFlowState(null, 4, 11L), DuelFlow.sessionEnd(versus))
+    }
+
+    @Test
+    fun onlyTheCurrentFightsReportIsKept() {
+        val state = DuelMatch.start(MINE, FOE, ARENA, MARKS)
+        val current = DuelFlow.report(fighting, running(state, serial = 5))
+        assertTrue(current.keep)
+        assertSame(fighting, current.flow)
+        assertNull(current.say)
+        assertFalse(DuelFlow.report(fighting, running(state, serial = 4)).keep) // the match before Again
+        assertFalse(DuelFlow.report(fighting, running(state, serial = 6)).keep)
+        // The right serial but not in the fight (after Done, or a duel opened again): dropped.
+        assertFalse(DuelFlow.report(DuelFlow.done(fighting), running(state, serial = 5)).keep)
+        assertFalse(DuelFlow.report(fighting.copy(ui = DuelUi()), running(state, serial = 5)).keep)
+        assertSame(versus, DuelFlow.report(versus, running(state, serial = 4)).flow)
+        // The report App holds stays while the same fight does.
+        assertTrue(DuelFlow.keepsReport(fighting, fighting))
+        assertTrue(DuelFlow.keepsReport(fighting, DuelFlow.versusDone(fighting, 1L)))
+    }
+
+    @Test
+    fun aRefusalClosesTheDuelAndSaysNoRoom() {
+        val refused = DuelFlow.report(fighting, DuelReport.Refused(5, DuelRefusal.NO_ROOM))
+        assertFalse(refused.keep)
+        assertNull(refused.flow.ui) // free play, not an empty fight screen
+        assertEquals(5, refused.flow.serial)
+        assertEquals(StringId.duel_no_room, refused.say)
+        // Any reason says the same; an old serial's refusal changes nothing.
+        assertNull(DuelFlow.report(fighting, DuelReport.Refused(5, DuelRefusal.NO_BOUNDARY)).flow.ui)
+        val old = DuelFlow.report(fighting, DuelReport.Refused(4, DuelRefusal.NO_ROOM))
+        assertSame(fighting, old.flow)
+        assertNull(old.say)
+    }
+
+    @Test
+    fun noBackgroundScanDuringTheFight() {
+        assertTrue(DuelFlow.autoScanFor(null, userSwitch = true)) // free play: the player's switch
+        assertFalse(DuelFlow.autoScanFor(null, userSwitch = false))
+        assertTrue(DuelFlow.autoScanFor(picking.ui, userSwitch = true))
+        assertTrue(DuelFlow.autoScanFor(versus.ui, userSwitch = true))
+        assertFalse(DuelFlow.autoScanFor(fighting.ui, userSwitch = true))
+        assertFalse(DuelFlow.autoScanFor(fighting.ui, userSwitch = false))
     }
 }
