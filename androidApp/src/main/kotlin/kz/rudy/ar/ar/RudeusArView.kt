@@ -50,7 +50,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kz.rudy.ar.ArCharacter
 import kz.rudy.ar.ArSlot
-import kz.rudy.ar.CharacterAction
+import kz.rudy.ar.core.session.CharacterAction
 import kz.rudy.ar.ScanAnswer
 import kz.rudy.ar.audio.Sounds
 import kz.rudy.ar.core.domain.CharacterEvent

@@ -8,6 +8,7 @@ import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
+import kz.rudy.ar.core.session.CharacterCommand
 
 /** How one scan request ended. */
 sealed interface ScanAnswer {
@@ -42,16 +43,6 @@ data class ArCharacter(
     override fun equals(other: Any?): Boolean = this === other
     override fun hashCode(): Int = super.hashCode()
 }
-
-/** T31: what one [CharacterCommand] asks of one character. */
-sealed interface CharacterAction {
-    data object Jump : CharacterAction
-    data object WalkForward : CharacterAction
-    data class Emote(val emote: kz.rudy.ar.core.emote.Emote) : CharacterAction
-}
-
-/** T31: edge-triggered on [serial] (strictly rising within a session; the host applies each new serial once). */
-data class CharacterCommand(val serial: Int, val id: String, val action: CharacterAction)
 
 /**
  * Everything the shared UI hands to the AR view slot and everything it wants back. No ARCore/SceneView types:
