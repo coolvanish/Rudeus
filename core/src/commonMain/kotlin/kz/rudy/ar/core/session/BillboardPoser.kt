@@ -70,6 +70,7 @@ data class NodePose(
     val scaleX: Float,     // magnitudes on the quad the host built (height = the profile's, width = height x aspect);
     val scaleY: Float,     //   never negative: the flip is [mirrored]
     val mirrored: Boolean, // show the picture flipped horizontally (Android: a negative X scale, as today)
+    val visible: Boolean = true, // false = the node stays hidden (T56: just after a tracking loss)
 )
 
 /**
