@@ -10,17 +10,20 @@ its next waypoint alone, flips: off the ring the waypoint into the gap is refuse
 The bot goes to and fro 1 to 2 cm below-left of the fighter for the whole round, from where a dash would push it 30° or
 more off the push, so it never dashes. EASY dashes at any alignment and wins. The full trace is in the brief's Result.
 
-**The fix, behind `BotTuning.wholeDetour` (off by default, a human decides; see below).** When another object (or a
-hole) closes the shorter way round, the bot takes the other side if its whole way round is open, else walks straight
-at its goal if nothing is in the way; otherwise as before. No rule, physics or `DuelParams` change; nothing drawn from
+**The fix, behind `BotTuning.wholeDetour` (off by default, a human decides; see below).** When another object that
+blocks closes the shorter way round (a hole does not count: its bounding circle is too coarse), the bot takes the other
+side if its whole way round is open, else walks straight at its goal if nothing is in the way; otherwise as before. No rule, physics or `DuelParams` change; nothing drawn from
 the bot's generator; `PRE_T57_TUNING` sets it false, and with it false the 24 golden match setups at today's rules give
 the prints recorded before T60 (`theFixSwitchedOffIsTheOldBot`). On a table without objects it changes nothing.
 
 **Why it is off by default.** On, it breaks `normalIsBetweenEasyAndHard` (not loosened): HARD ROLL beats NORMAL ROLL on
 cup-and-book 214 of 400 on the test's seeds, under the 0.55 floor (220); 238 before. Over five seed bases (2000
 matches) 63.4 % -> 54.1 %. The fix on NORMAL alone: 50.4 %; on HARD alone: 68.4 %. Both levels play better near the cup
-with it; NORMAL, which went to and fro beside a HARD bot standing by the cup too, gains far more. The five
-candidates (of six) that met I1 all cost that cell, 211..217 of 400 (the brief's candidate log).
+with it; NORMAL, which went to and fro beside a HARD bot standing by the cup too, gains far more. The six
+candidates that met I1 all cost that cell, 211..217 of 400 (the brief's candidate log). The orchestrator decided to turn
+the fix on and to set that test's per-ability floor to 0.50 with a 0.58 mean; the permission system refused the commit
+that lowers the floor (a threshold change needs the user's own approval), so the default stays off until the user
+approves it.
 
 ### The idle table (I1, I2): a fighter that sends no input on its mark, 5/5/5/5 both
 
@@ -53,23 +56,26 @@ cells, four arenas, NORMAL and HARD, seeds 1..10: 3200 bot sides): longest 8.6 s
 
 | arena | level | rounds on the clock, off / on | sides over 10 s, off / on | a still fighter: won (by ring-outs), off / on |
 |---|---|---|---|---|
-| `Scenarios.day5Level()` (cup, book, 10 x 30 cm gap) | NORMAL | 6 of 235 / 6 of 233 | 27 / 27 | 23 (0) / 24 (0) of 24 |
-| `Scenarios.day5Level()` | HARD | 62 of 228 / 60 of 233 | 126 / 129 | 23 (0) / 24 (0) of 24 |
-| 50 x 40 cm, a 4 x 30 cm hole strip, a book | NORMAL | 0 / 3 | **0 / 6** | 24 (2) / 24 (2) of 24 |
+| `Scenarios.day5Level()` (cup, book, 10 x 30 cm gap) | NORMAL | 6 of 235 / 7 of 238 | 27 / 30 | 23 (0) / 22 (0) of 24 |
+| `Scenarios.day5Level()` | HARD | 62 of 228 / 61 of 229 | 126 / 127 | 23 (0) / 22 (0) of 24 |
+| 50 x 40 cm, a 4 x 30 cm hole strip, a book | NORMAL | 0 / 0 | 0 / 0 | 24 (2) / 24 (2) of 24 |
 | 50 x 40 cm, a 4 x 30 cm hole strip, a book | HARD | 1 / 1 | 2 / 2 | 24 (2) / 24 (2) of 24 |
 
 day5 is where the T58 review saw HARD v HARD draw 0:0 after 5 rounds. Its causes are not T60's gap (traced): the mark
 (0.08, 0) touches the cup and the push toward the nearest edge drives the fighter into it (wall slams); a bot on that mark
 starts inside the cup's keep-out circle with its goal straight away from it and goes to and fro round it (the side flips
 with a near-zero cross product); the gap's bounding circle plus margin (21.8 cm) bars walk targets on half the table.
-The fix changes none of it. On the strip arena the switch on makes NORMAL stall more often (0 -> 6 sides): it counts the
-strip's coarse bounding circle (21 cm) as an object closing the way. Both are in the brief's "what a human must decide".
+The fix changes none of it. A first version of the fix also counted a hole's coarse bounding circle (21 cm round the
+strip) as an object closing the way, and on the strip table NORMAL stalled more often (0 -> 6 sides over 10 s); since
+candidate 7 a hole closes a way as the edge does, and the switch changes nothing on that table. Both are in the brief's
+"what a human must decide".
 
 ### The matrix (`duel matrix --n 200`), before and with the switch on
 
 Before = 920ed48 (identical to the T57 table below); the committed default (switch off) gives the same `matrix.json`
-cells. On = `--tuning` `{"wholeDetour": true}`, 91 s on 4 threads. Only the 80 cup-and-book cells change; the other 240
-tallies are identical.
+cells. On = `--tuning` `{"wholeDetour": true}`, 91 s on 4 threads, measured with candidate 3; candidate 7 (kept) differs
+only near holes, which no tuning arena has (`--n 100`: all 320 cells identical to 3's). Only the 80 cup-and-book cells
+change; the other 240 tallies are identical.
 
 | # | Threshold | Before | On | |
 |---|---|---|---|---|
