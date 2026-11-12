@@ -689,9 +689,9 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                         }
                     }
                     // HAND-REVIEW: T56 — the cast sync, the scenario's taps, physics, the cast-state report, the reappear timer and one
-                    // pose per member are TableEngine.onFrame; each NodePose goes into its node (writePose, CharacterNode.kt) and a
-                    // member whose node is not composed yet is skipped, as before. PAUSED still freezes and never resets: no pose
-                    // while not tracking. The camera is now read on every anchored frame; its pose is trusted only while tracking.
+                    // pose per member are TableEngine.onFrame; each NodePose goes into its node (writePose, CharacterNode.kt). A member
+                    // without a node yet gets no write, but the engine has posed it (new: its flip can settle 1-2 frames earlier). PAUSED
+                    // freezes, never resets: no pose while not tracking. The camera is read on every anchored frame, used only while tracking.
                     val camera = CameraFrame(planeCoords(a, frame.camera.pose), planeHeight(a, frame.camera.pose), cameraRight(a, frame))
                     for (p in game.onFrame(FrameInput(now, tracking, camera))) rigs[p.id]?.node?.writePose(p)
                 }

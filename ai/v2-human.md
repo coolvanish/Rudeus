@@ -1,11 +1,11 @@
 # v2 waves 1–4 — what only a human can do (2026-11-12)
 
 `claude/practical-dijkstra-2uveq7` (from `main` at 4f58c28): the first waves of `ai/build-plan-v2.md`. Verify in
-the cloud container after T53: core 737, shared 43, androidApp 3 tests, 0 failed; APK 63 MB; `:core` and `:shared`
+the cloud container after T56: core 765, shared 43, androidApp 3 tests, 0 failed; APK 63 MB; `:core` and `:shared`
 compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has no Pixel, no API key and no Mac.
-**2026-11-12: you reported the Pixel checks of T47, T52 and then T53 as fine in chat ("все ок"), so the host steps
-keep going: T56 (the frame step) is next and will need its own run, "lens and replay".** The duel decisions in §4.3
-are still open; none of them blocks the host work.
+**2026-11-12: you reported the Pixel checks of T47, T52 and then T53 as fine in chat ("все ок"). T56 (the frame
+step) is merged and now needs your run: §3, "walk, cover, grow, replay".** T54 (taps and the grab) is next and is
+merged only after that run. The duel decisions in §4.3 are still open; none of them blocks the host work.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 4f58c28..HEAD`)
 | Brief | What | Status |
@@ -24,6 +24,7 @@ are still open; none of them blocks the host work.
 | T48 cli-duel-sim-balance | `cli duel match / series / matrix`, a 120 x 60 cm arena, tuned defaults, **wobble** (each hit taken in a round makes the next knockback larger; cleared every round; `wobblePerHit = 0` is the old physics), swept knockback (no tunnelling at any speed) | done; five acceptance rows still FAIL, see §3 G4 and §4 |
 | T53 thin-host S3a | `TableEngine` in `core.session` (surface lock, cast sync, active member, commands: the rules "one anchor per session" and "a command is applied once" now live and are tested in common code) and `rememberTableEngine` in `:shared`; 27 + 1 tests; `RudeusArView.kt` 936 -> 875 lines (17 in, 78 out). Reviewed: both move proofs redone, 8 of 8 mutants caught, verdict merge | done; Pixel: fine by your word, 2026-11-12; host diffs still need your approval |
 | T57 duel-balance-2 | your four rule decisions, each with an off switch (off = the T48 physics bit for bit): stomp and ram share the dash cooldown, SPEED lengthens every dash, height matters for hits, FLY's archetype 4/6/4/6. The bots use every special (new acceptance row B11). Two reviews: the first found that between bots three of the four specials were never used, so the balance row measured nothing; fixed and re-measured | done; balance is in band at NORMAL, not at HARD; see §3 G4 and §4.3 |
+| T56 thin-host S3b | the per-frame step is `TableEngine.onFrame(FrameInput): List<NodePose>` in `:core` (tracking edge, scenario, physics, cast-state report, the 0.8 s reappear, one pose per member); the scan reads the level through `engine.level` / `engine.standing()`; 28 tests incl. a bit-for-bit run against the old poser; `RudeusArView.kt` 875 -> 804 lines, `CharacterNode.kt` 162 -> 141. Reviewed: move proofs redone, 22 of 22 mutants caught, verdict merge | **needs your Pixel run**; host diffs need your approval |
 | T55 duel-bot-sim | seeded bot (EASY / NORMAL / HARD), `DuelRunner` (bots decide on a tick grid: identical matches at any frame length), `DuelSim`, three tuning arenas. Measured: plain dashes almost never ring anyone out (FLY / HIDE mirrors end 92–99 % of rounds by the clock): the numbers are not a game yet, T48 tunes them | done |
 
 ## 2. Install and log
@@ -58,6 +59,26 @@ In `scripts/device.sh log`: one `cast_add` per character (`n=1`, then `n=2`), on
 `jump_ignored .. mode=PAUSED`, `scenario_done ms=` just over 15000, no `anchor_refused`. JVM: `TableEngineTest` 27,
 `TableSlotTest` 1. If anything is off: `git revert a98a74f` (the switch to the common engine) and look again; if it
 is still wrong, also `git revert e0cc901` (the split inside the host) and tell me which step failed.
+
+### Thin host S3b on the Pixel (T56) — UNTESTED
+**"Walk, cover, grow, replay"**, about two minutes. One character on a table with a cup, scanned once, footprints on:
+| Step | What you should see | Status |
+|---|---|---|
+| 1. Tap to its right, then to its left | it walks and bobs, turns once each way, the mini-map dot goes with it | UNTESTED |
+| 2. Tap far away, cover the lens 3 s while it walks | the Paused scrim comes at once, the character stays put. Uncover: the scrim goes, the character is hidden for a little under a second, then stands where it stopped, no slide, and finishes the walk | UNTESTED |
+| 3. Add a second character, press Bigger | it appears beside the first within a moment; both grow, feet on the table | UNTESTED |
+| 4. Press Jump | stretch going up, squash on landing | UNTESTED |
+| 5. Press Scan again | "found", and the character still cannot walk through the cup | UNTESTED |
+| 6. Press Scenario, cover the lens 2 s half-way | the first character starts from the spawn point, freezes under the cover, goes on, plays to the end | UNTESTED |
+Also watch for stutter: the host now reads the camera and anchor pose on every frame after the anchor, tracked or not
+(before: only while tracking, or when a character joined). In `scripts/device.sh log`: `scenario_start id=day5
+steps=5`, `scenario_step idx=0` to `idx=4` in order, one `scenario_done ms=` just over 15000 in spite of the cover,
+one `cast_add` with `n=2`, no `scenario_rejected`, no `anchor_refused`. What a fault means: a slide or a character
+that never comes back = the reappear timer; a sprite standing still while the dot moves = the node write; a walk
+that looks backwards = the flip (`spriteBuilt`); a scrim that is late, missing or stuck = the tracking edge; a dead
+dot = the cast-state report; a replay that ends early or skips a beat = the scenario clock. If anything is off:
+`git revert 833bae0` (the switch to the common engine) and look again; if it is still wrong, `git revert e9715e7`
+and then `git revert e162438` (both: the first alone does not build) and tell me which step failed.
 
 ### G2 stats — JVM PASS, live UNTESTED
 | Criterion | Status | Evidence |
@@ -142,6 +163,7 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 ## 5. Housekeeping only you can do
 - Approve the hand-review diffs: `git diff 4f58c28..HEAD -- '*.gradle.kts' gradle/libs.versions.toml androidApp/src/main`.
   T53's part alone: `git diff 33b6a13..f7f2c07 -- androidApp/src/main` (one file, 17 lines in, 78 out; nine named edits in the brief).
+  T56's part alone: `git diff 7a0e15e..HEAD -- androidApp/src/main` (`RudeusArView.kt` 23 in, 94 out; `CharacterNode.kt` 8 in, 29 out; fifteen named edits in the brief, plus one note I reworded after the review because it said a member without a node is "skipped, as before").
 - Merge to `main` (or open a PR) when the Pixel rows pass.
 - The cloud session left agent worktrees under `.claude/worktrees/agent-*` with branches `worktree-agent-*`; they
   exist only in the cloud container and vanish with it.
@@ -153,6 +175,7 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 - The duel's balance is measured bots against bots only. Nobody has played it: every feel question in §4.3 is open until T50.
 - T33 pose frames never reach the screen (the host never reads `ArCharacter.frames`); T50 builds the picture swap.
 - An action issued on the first frame back from a tracking loss loses its event (no jump sound); v1.0 behaviour, pinned.
+- Found by T56's tests in the moved code, left as it was: a character added while tracking is lost is placed and paused on the same frame; a platform that appears under a standing character during a loss is climbed on the resume frame as RESUMED, not STEPPED_UP. Stale comments still name the deleted `CharacterPoser` (`RudeusArView.kt:227`, `scan/FootprintOverlay.kt:24`, `core/session/GameLoop.kt:34`).
 - Found by T53's tests in the moved code, left as it was: an emote for a character that is missing from the slot that sent the command is dropped without a log line; a silent emote (Bye, Spin) still calls the host's sound player with `NONE` (Android ignores it; an iOS host must too).
 - Android still saves characters through `FileCharacterFolder`, which cannot rewrite an existing id (latent: ids only grow).
 - `IoCharacterFolder` is not safe against power loss (no fsync), like `File*`.
