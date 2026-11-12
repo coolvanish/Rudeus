@@ -132,6 +132,9 @@ class TableEngine(
     /** T58: the highest `TableSlot.duel` serial taken on a tracked frame (started or refused); null before any. */
     private var duelSerial: Int? = null
 
+    /** T58 review: a duel that failed in a tap or a command, told to the slot by the next frame. */
+    private var failedBetweenFrames: DuelReport.Refused? = null
+
     /** T58: the running duel's match, null in the walking game. No host reads it; the tests read the duel through it. */
     internal val duelMatch: DuelMatchState? get() = (stage as? DuelStage)?.match
 
@@ -225,7 +228,16 @@ class TableEngine(
             log("command_ignored serial=${c.serial} id=${c.id} anchored=${anchored}")
             return
         }
-        stage.command(c, from)
+        val duel = stage as? DuelStage
+        if (duel == null) {
+            stage.command(c, from)
+        } else {
+            try {
+                duel.command(c, from)
+            } catch (e: Exception) { // T58 review: as in a frame
+                failDuel(duel, e, inFrame = false)
+            }
+        }
     }
 
     /** T32: whose taps and buttons: the slot's active member when it is on the table, else the first. */
@@ -282,10 +294,20 @@ class TableEngine(
         (stage as? DuelStage)?.let(::endDuel) // a rematch, or a refusal of the new serial, ends the running duel
         val reason = when {
             setup.mineId == setup.foeId || !isFighter(setup.mineId) || !isFighter(setup.foeId) -> DuelRefusal.NO_FIGHTER
-            loop.level.boundary == null -> DuelRefusal.NO_BOUNDARY
+            !loop.level.hasFiniteBoundary() -> DuelRefusal.NO_BOUNDARY // also before DuelArena.marks meets an infinite vertex
             else -> null
         }
-        val started = if (reason != null) null else DuelStage.open(setup, loop, current, profile, port, log, walkDepthSamples, input.camera.pos)
+        val started = if (reason != null) {
+            null
+        } else {
+            try {
+                DuelStage.open(setup, loop, current, profile, port, log, walkDepthSamples, input.camera.pos)
+            } catch (e: Exception) { // T58 review: the duel's code never ends the session; open's own refusal is NO_ROOM
+                log("duel_failed serial=${setup.serial} phase=null what=${e::class.simpleName}")
+                current().onDuel(DuelReport.Refused(setup.serial, DuelRefusal.FAILED))
+                return
+            }
+        }
         if (started == null) {
             refuseDuel(setup.serial, reason ?: DuelRefusal.NO_ROOM, running = null)
             return
@@ -316,6 +338,18 @@ class TableEngine(
         log("duel_refused serial=$serial reason=$reason")
         if (running != null) endDuel(running)
         current().onDuel(DuelReport.Refused(serial, reason))
+    }
+
+    /**
+     * T58 review: [duel]'s own code threw ([e]) inside a frame ([inFrame]), a tap or a command. One line without the
+     * message, the duel ends as if the slot had dropped it, and the slot hears FAILED once: at once from a frame, from
+     * the next frame for a tap or a command (onDuel is a frame's callback). Its serial is taken: never retried.
+     */
+    private fun failDuel(duel: DuelStage, e: Exception, inFrame: Boolean) {
+        log("duel_failed serial=${duel.serial} phase=${duel.match.phase} what=${e::class.simpleName}")
+        endDuel(duel)
+        val report = DuelReport.Refused(duel.serial, DuelRefusal.FAILED)
+        if (inFrame) current().onDuel(report) else failedBetweenFrames = report
     }
 
     /**
@@ -402,8 +436,18 @@ class TableEngine(
         val now = input.nowMs
         val tracking = input.tracking
         syncCast { input.camera.right } // T32: members added or removed since the last frame
+        failedBetweenFrames?.let { failedBetweenFrames = null; current().onDuel(it) } // T58 review: a tap's failure
         syncDuel(input) // T58: the slot's duel starts, ends or is refused here (after the opponent may have joined)
-        stage.step(input) // T58: the scenario's due taps and physics (the walking game's steps 4-5, moved into Walk)
+        val duel = stage as? DuelStage
+        if (duel == null) {
+            stage.step(input) // T58: the scenario's due taps and physics (the walking game's steps 4-5, moved into Walk)
+        } else {
+            try {
+                duel.step(input) // the step, its reports, a rearrange
+            } catch (e: Exception) { // T58 review: the duel never ends the AR session
+                failDuel(duel, e, inFrame = true)
+            }
+        }
         val cast = loop.cast
         // footprints mini-map — the HUD never saw physics positions, so its dot stood still while the sprite
         // walked. Report every member's state about 10x a second while debug chrome is on; a small map, never per frame.
@@ -556,7 +600,16 @@ class TableEngine(
      */
     fun onTap(xPx: Float, yPx: Float, uv: Vec2, depthGapM: () -> Float?) {
         if (!anchored) return
-        stage.tap(xPx, yPx, uv, depthGapM)
+        val duel = stage as? DuelStage
+        if (duel == null) {
+            stage.tap(xPx, yPx, uv, depthGapM)
+        } else {
+            try {
+                duel.tap(xPx, yPx, uv, depthGapM)
+            } catch (e: Exception) { // T58 review: as in a frame
+                failDuel(duel, e, inFrame = false)
+            }
+        }
     }
 
     /**

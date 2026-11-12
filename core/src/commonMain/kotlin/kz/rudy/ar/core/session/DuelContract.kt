@@ -46,4 +46,8 @@ sealed interface DuelReport {
     class Refused(override val serial: Int, val reason: DuelRefusal) : DuelReport
 }
 
-enum class DuelRefusal { NO_BOUNDARY, NO_ROOM, NO_FIGHTER }
+/**
+ * Why a duel did not start or ended before RESULT. NO_BOUNDARY also covers a boundary with a non-finite vertex; FAILED:
+ * the duel's own code threw inside a frame, a tap or a command (T58 review), and the table went back to the walking game.
+ */
+enum class DuelRefusal { NO_BOUNDARY, NO_ROOM, NO_FIGHTER, FAILED }

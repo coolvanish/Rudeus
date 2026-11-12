@@ -40,6 +40,12 @@ import kotlin.time.TimeSource
 internal const val DUEL_REPORT_PERIOD_MS = 100L
 
 /**
+ * T58 review: a duel can be fought on this level: it has a boundary and every vertex of it is finite. An infinite
+ * vertex kept `DuelArena.marks` busy for 34 s inside one frame (an ANR), so it is refused before the search.
+ */
+internal fun Level.hasFiniteBoundary(): Boolean = boundary?.points?.all { it.u.isFinite() && it.v.isFinite() } == true
+
+/**
  * The match [setup] asks for, on the level that was scanned when it started: the child's fighter is slot `a`, the
  * opponent slot `b` played by a [DuelBot]; a watched match ([DuelSetup.mineBot]) gives slot `a` a bot too. Built by
  * [open] (the engine's `syncDuel`), which answers null when the level has no room for two. Main thread only.
@@ -221,7 +227,7 @@ internal class DuelStage private constructor(
      * marks or marks the match refuses: the old arena stays. True when the arena changed.
      */
     private fun rearrange(level: Level): Boolean {
-        if (level.boundary == null) {
+        if (!level.hasFiniteBoundary()) {
             log("duel_arena_kept reason=${DuelRefusal.NO_BOUNDARY}")
             return false
         }

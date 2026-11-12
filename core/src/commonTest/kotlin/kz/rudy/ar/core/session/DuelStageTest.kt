@@ -1,6 +1,7 @@
 package kz.rudy.ar.core.session
 
 import kz.rudy.ar.core.domain.Ability
+import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.FighterStats
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
@@ -85,6 +86,9 @@ private class DuelPort : ArPort {
     var depth: (Vec2) -> Float? = { null }
     val asked = ArrayList<String>()
 
+    /** T58 review: the session throws when asked for the way (a host bug, or what a duel tap must survive). */
+    var wayThrows = false
+
     override fun hitTable(xPx: Float, yPx: Float, toleranceM: Float): TableHit? {
         asked += "hit"
         val uv = Vec2(xPx, yPx)
@@ -93,6 +97,7 @@ private class DuelPort : ArPort {
 
     override fun depthGapsOnWay(from: Vec2, to: Vec2, samples: Int): List<Float?> {
         asked += "way $samples"
+        if (wayThrows) throw IllegalStateException("the session is gone")
         return (1..samples).map { i -> depth(from + (to - from) * (i / samples.toFloat())) }
     }
 
@@ -125,6 +130,9 @@ private class DuelHost(surface: Surface = Surface.TABLE, bias: Float = 0f) {
     var debug = false
     var duel: DuelSetup? = null
     var command: CharacterCommand? = null
+
+    /** T58 review: the slot's onCastEvent throws for these (member, event) pairs: something the duel's step calls. */
+    var throwOn: ((String, CharacterEvent) -> Boolean)? = null
     private var serial = 0
     var latest: TableSlot = slot()
     val engine = TableEngine(
@@ -140,7 +148,10 @@ private class DuelHost(surface: Surface = Surface.TABLE, bias: Float = 0f) {
         command = command,
         soundsOn = true,
         onAnchorPlaced = { anchors++; calls += "anchor" },
-        onCastEvent = { id, e -> calls += "$id $e" },
+        onCastEvent = { id, e ->
+            calls += "$id $e"
+            if (throwOn?.invoke(id, e) == true) throw IllegalStateException("the slot failed on $id $e")
+        },
         characterSize = size,
         debug = debug,
         onTracking = { calls += "tracking $it" },
@@ -1319,6 +1330,120 @@ class DuelStageTest {
         assertTrue(h.castStates.isNotEmpty())
     }
 
+    // --- T58 review: the duel cannot end the AR session ---
+
+    @Test
+    fun anExceptionInTheDuelStepEndsTheDuelAndFreePlayGoesOn() {
+        // Inside a frame: the slot's onCastEvent, which the duel's step calls for my fighter's JUMPED, throws.
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        h.fight()
+        val stood = h.loop.cast
+        h.throwOn = { id, e -> id == "a" && e == CharacterEvent.JUMPED }
+        h.clear()
+        h.press(CharacterAction.Jump)
+        val poses = h.frame()
+        assertNull(h.engine.duelMatch, "the duel ended")
+        assertEquals(
+            listOf("duel_failed serial=1 phase=FIGHT what=IllegalStateException", "duel_end serial=1 phase=FIGHT score=0:0"),
+            h.duelLines(),
+        )
+        val (at, report) = h.reports.single()
+        assertEquals(h.now, at)
+        val refused = assertIs<DuelReport.Refused>(report)
+        assertEquals(1 to DuelRefusal.FAILED, refused.serial to refused.reason)
+        assertEquals(stood, h.loop.cast, "the walking game stands where it stood, as after duel = null")
+        assertEquals(listOf(true, true), poses.map { it.visible }, "the same frame poses the walking cast")
+        assertEquals(stood["a"]!!.state.pos, poses[0].pos)
+        h.throwOn = null
+        val target = Vec2(0.25f, 0.15f)
+        h.tap(target)
+        h.frames(5)
+        assertEquals(Mode.WALKING, h.state("a").mode, "free play goes on")
+        assertEquals(target, h.state("a").target)
+        assertEquals(1, h.reports.size)
+        // Between frames: the session throws inside a duel tap. The duel ends at once, the slot hears it on the next frame.
+        val g = DuelHost().start(duelist("a"), duelist("b"))
+        g.want(wanted(1))
+        g.frame()
+        g.fight()
+        g.clear()
+        g.port.wayThrows = true
+        g.tap(Vec2(0.1f, 0.1f))
+        assertNull(g.engine.duelMatch)
+        assertEquals(
+            listOf("duel_failed serial=1 phase=FIGHT what=IllegalStateException", "duel_end serial=1 phase=FIGHT score=0:0"),
+            g.duelLines(),
+        )
+        assertTrue(g.reports.isEmpty(), "onDuel is a frame's callback")
+        g.port.wayThrows = false
+        g.frame()
+        val (gAt, gReport) = g.reports.single()
+        assertEquals(g.now, gAt)
+        assertEquals(DuelRefusal.FAILED, assertIs<DuelReport.Refused>(gReport).reason)
+        g.frames(5)
+        assertEquals(1, g.reports.size)
+    }
+
+    @Test
+    fun aFailedSerialIsNotRetried() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(4))
+        h.frame()
+        h.fight()
+        h.throwOn = { id, e -> id == "a" && e == CharacterEvent.JUMPED }
+        h.press(CharacterAction.Jump)
+        h.frame()
+        assertNull(h.engine.duelMatch)
+        h.throwOn = null
+        h.clear()
+        h.frames(30)
+        h.want(wanted(4, seed = 9L)) // a new instance with the failed serial
+        h.frames(10)
+        h.want(wanted(3)) // a lower one
+        h.frames(10)
+        assertNull(h.engine.duelMatch)
+        assertTrue(h.duelLines().isEmpty(), "${h.duelLines()}")
+        assertTrue(h.reports.isEmpty())
+        h.want(wanted(5))
+        h.frame()
+        assertNotNull(h.engine.duelMatch, "a new serial starts")
+    }
+
+    @Test
+    fun aNonFiniteBoundaryIsRefusedWithoutSearchingMarks() {
+        fun table(bad: Vec2) = Level(
+            emptyList(),
+            boundary = Polygon(listOf(Vec2(-0.3f, -0.2f), bad, Vec2(0.3f, 0.2f), Vec2(-0.3f, 0.2f))),
+        )
+        val bad = listOf(
+            table(Vec2(Float.POSITIVE_INFINITY, -0.2f)),
+            table(Vec2(0.3f, Float.NEGATIVE_INFINITY)),
+            table(Vec2(Float.NaN, -0.2f)),
+        )
+        for (level in bad) {
+            val h = DuelHost().start(duelist("a"), duelist("b"), level = level)
+            h.want(wanted(1))
+            h.frame()
+            assertNull(h.engine.duelMatch)
+            assertEquals(listOf("duel_refused serial=1 reason=NO_BOUNDARY"), h.duelLines(), "${level.boundary}")
+        }
+        // At a rearrange: the old arena is kept, and no marks_ms= shows a search.
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        val old = h.match.startA to h.match.startB
+        for (level in bad) {
+            h.clear()
+            h.engine.level = level
+            h.frame()
+            assertEquals(listOf("duel_arena_kept reason=NO_BOUNDARY"), h.duelLines())
+            assertEquals(old, h.match.startA to h.match.startB)
+            assertEquals(MatchPhase.COUNTDOWN, h.match.phase)
+        }
+    }
+
     // --- T58 review: serials rise, and every duel that started ends with one duel_end ---
 
     @Test
@@ -1360,6 +1485,13 @@ class DuelStageTest {
         h.members = listOf(duelist("a"), duelist("b"))
         h.refresh()
         h.frame()
+        h.want(wanted(5))
+        h.frame()
+        h.fight()
+        h.throwOn = { id, e -> id == "a" && e == CharacterEvent.JUMPED } // a failure
+        h.press(CharacterAction.Jump)
+        h.frame()
+        h.throwOn = null
         h.want(wanted(6))
         h.frame()
         h.want(null) // the slot drops it
@@ -1371,6 +1503,7 @@ class DuelStageTest {
                 "duel_start serial=1", "duel_end serial=1",
                 "duel_start serial=2", "duel_end serial=2", "duel_refused serial=3",
                 "duel_start serial=4", "duel_refused serial=4", "duel_end serial=4",
+                "duel_start serial=5", "duel_failed serial=5", "duel_end serial=5",
                 "duel_start serial=6", "duel_end serial=6",
             ),
             kinds,
