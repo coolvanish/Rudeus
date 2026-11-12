@@ -66,6 +66,8 @@ import kz.rudy.ar.core.pipeline.ScanSectors
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.session.CameraFrame
 import kz.rudy.ar.core.session.FrameInput
+import kz.rudy.ar.core.session.TableEngine
+import kz.rudy.ar.rememberTableEngine
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -173,7 +175,8 @@ import kotlin.math.abs
 // TableEngine fed by rememberTableEngine (now `core.session.TableEngine` and `:shared` `rememberTableEngine`, pinned by
 // JVM tests); one anchor per session and PAUSED never resets are untouched.
 // HAND-REVIEW: T56 — the frame step (tracking edge, scenario, physics, cast-state report,
-// reappear timer, poses) is TableEngine.onFrame: this file builds a FrameInput and writes each NodePose into its
+// reappear timer, poses) is TableEngine.onFrame (now `core.session.TableEngine.onFrame`, pinned by JVM tests): this
+// file builds a FrameInput and writes each NodePose into its
 // node; the scan reads the level and the members through the engine. PAUSED still freezes and never resets, one
 // anchor per session, scans stay a button plus the quiet ones and are never per frame.
 
