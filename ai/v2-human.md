@@ -1,11 +1,12 @@
 # v2 waves 1–4 — what only a human can do (2026-11-12)
 
 `claude/practical-dijkstra-2uveq7` (from `main` at 4f58c28): the first waves of `ai/build-plan-v2.md`. Verify in
-the cloud container after T56: core 765, shared 43, androidApp 3 tests, 0 failed; APK 63 MB; `:core` and `:shared`
+the cloud container after T54 and the duel contract: core 814, shared 43, androidApp 4 tests, 0 failed; APK 63 MB; `:core` and `:shared`
 compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has no Pixel, no API key and no Mac.
-**2026-11-12: you reported the Pixel checks of T47, T52 and then T53 as fine in chat ("все ок"). T56 (the frame
-step) is merged and now needs your run: §3, "walk, cover, grow, replay".** T54 (taps and the grab) is next and is
-merged only after that run. The duel decisions in §4.3 are still open; none of them blocks the host work.
+**2026-11-12: you reported the Pixel checks of T47, T52 and then T53 as fine in chat ("все ок"). Two host steps
+now wait for your run, in this order: T56, "walk, cover, grow, replay", then T54, "tap, pick, drag, grow" (§3).**
+The duel (T58 in `:core`, T59 in `:shared`) is built on top of them and needs no host edit; its first match on the
+Pixel is the third check. The duel decisions in §4.3 are still open; none of them blocks this work.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 4f58c28..HEAD`)
 | Brief | What | Status |
@@ -25,6 +26,7 @@ merged only after that run. The duel decisions in §4.3 are still open; none of 
 | T53 thin-host S3a | `TableEngine` in `core.session` (surface lock, cast sync, active member, commands: the rules "one anchor per session" and "a command is applied once" now live and are tested in common code) and `rememberTableEngine` in `:shared`; 27 + 1 tests; `RudeusArView.kt` 936 -> 875 lines (17 in, 78 out). Reviewed: both move proofs redone, 8 of 8 mutants caught, verdict merge | done; Pixel: fine by your word, 2026-11-12; host diffs still need your approval |
 | T57 duel-balance-2 | your four rule decisions, each with an off switch (off = the T48 physics bit for bit): stomp and ram share the dash cooldown, SPEED lengthens every dash, height matters for hits, FLY's archetype 4/6/4/6. The bots use every special (new acceptance row B11). Two reviews: the first found that between bots three of the four specials were never used, so the balance row measured nothing; fixed and re-measured | done; balance is in band at NORMAL, not at HARD; see §3 G4 and §4.3 |
 | T56 thin-host S3b | the per-frame step is `TableEngine.onFrame(FrameInput): List<NodePose>` in `:core` (tracking edge, scenario, physics, cast-state report, the 0.8 s reappear, one pose per member); the scan reads the level through `engine.level` / `engine.standing()`; 28 tests incl. a bit-for-bit run against the old poser; `RudeusArView.kt` 875 -> 804 lines, `CharacterNode.kt` 162 -> 141. Reviewed: move proofs redone, 22 of 22 mutants caught, verdict merge | **needs your Pixel run**; host diffs need your approval |
+| T54 thin-host S4 | everything a finger does after the anchor is in `:core`: the table tap (walk, the boundary growth, the depth-gap check), picking a character on screen, the grab and the lead (`CastTouch` moved out of the host), behind `TableEngine` and a new `ArPort` with three questions (`hitTable`, `depthGapsOnWay`, `screenView`). No host line reads the engine's loop any more. 47 + 2 tests incl. 10 000 seeded picks against the old projection; `RudeusArView.kt` 804 -> 752 lines. Reviewed: move proofs redone, 14 of 18 mutants caught (2 equivalent, 2 closed by new tests), verdict merge | **needs your Pixel run** (after T56's); host diffs need your approval |
 | T55 duel-bot-sim | seeded bot (EASY / NORMAL / HARD), `DuelRunner` (bots decide on a tick grid: identical matches at any frame length), `DuelSim`, three tuning arenas. Measured: plain dashes almost never ring anyone out (FLY / HIDE mirrors end 92–99 % of rounds by the clock): the numbers are not a game yet, T48 tunes them | done |
 
 ## 2. Install and log
@@ -79,6 +81,30 @@ that looks backwards = the flip (`spriteBuilt`); a scrim that is late, missing o
 dot = the cast-state report; a replay that ends early or skips a beat = the scenario clock. If anything is off:
 `git revert 833bae0` (the switch to the common engine) and look again; if it is still wrong, `git revert e9715e7`
 and then `git revert e162438` (both: the first alone does not build) and tell me which step failed.
+
+### Thin host S4 on the Pixel (T54) — UNTESTED (run it after T56's check above)
+**"Tap, pick, drag, grow"**, about two minutes. Two characters on a table with a cup, scanned once, footprints on:
+| Step | What you should see | Status |
+|---|---|---|
+| 1. Tap the table to the right of the active character, then far to its left | it walks to each tap, the other stays | UNTESTED |
+| 2. Tap the other character on its body, head included; then tap the table | its chip lights and it takes at most a small step toward the finger, the first one does not move; then the second one walks | UNTESTED |
+| 3. Put a finger on a character, drag it slowly 30 cm, lift | it walks after the finger, never jumps, stops where the finger left | UNTESTED |
+| 4. Hold one, put a second finger on the other, move both, lift; then hold one and tap the bare table with another finger | each follows its own finger; nobody walks to that tap | UNTESTED |
+| 5. Drag a character past the table edge; tap the floor beyond | it stops at the edge and does not fall; no walk | UNTESTED |
+| 6. Tap the table just outside the drawn boundary loop; tap inside it | the loop grows to hold the tap, here and on the mini-map, and the character walks there; inside, the loop does not change | UNTESTED |
+| 7. Hold a character, cover the lens 2 s, lift the finger under the cover, uncover | it finishes its last walk, and a new drag works at once | UNTESTED |
+In `scripts/device.sh log`: each walking tap is a `tap u=` line followed by `tap_depth_gap=.. way=[7 values] id=`;
+step 2 gives `grab pointer=0 id=`, `active id=`, `release pointer=0 id=` and no `tap_depth_gap`; step 4 a
+`grab pointer=1 id=`; step 5 `lead_past_edge id=` or `tap_past_edge`; step 6 one `boundary_grown n=` for the tap
+outside and none for the tap inside; every `grab` has its `release`; no `anchor_refused`. What a fault means: a
+walk to the wrong place or none = the tap's point or the depth check; a character that cannot be picked, or is
+picked through another = the screen projection or the picture sizes; a grab that sticks, jumps or drops = the touch
+mapping; a loop that does not grow on screen while the character walks = the host's level mirror. If anything is
+off, revert in this order and look again after the first: `git revert --no-edit 9cf7d56` (the switch to the common
+engine, host only); if still wrong, `git revert --no-edit c5aa240`, `git revert --no-edit 80bd256`,
+`git revert --no-edit 0de5704`, `git revert --no-edit cd793ae` (all four; a subset does not build), and tell me
+which step failed. The duel (T58, T59) sits on top of T54: if T54 has to go, tell me first and I will take the duel
+commits off before you revert.
 
 ### G2 stats — JVM PASS, live UNTESTED
 | Criterion | Status | Evidence |
@@ -164,6 +190,7 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 - Approve the hand-review diffs: `git diff 4f58c28..HEAD -- '*.gradle.kts' gradle/libs.versions.toml androidApp/src/main`.
   T53's part alone: `git diff 33b6a13..f7f2c07 -- androidApp/src/main` (one file, 17 lines in, 78 out; nine named edits in the brief).
   T56's part alone: `git diff 7a0e15e..HEAD -- androidApp/src/main` (`RudeusArView.kt` 23 in, 94 out; `CharacterNode.kt` 8 in, 29 out; fifteen named edits in the brief, plus one note I reworded after the review because it said a member without a node is "skipped, as before").
+  T54's part alone: `git diff d110054..b99c9e0 -- androidApp/src/main` (`RudeusArView.kt` 96 in, 148 out; `ar/CastTouch.kt` deleted, it lives in `:core` now; nineteen named edits in the brief). One ARCore call differs: the anchor's pose is read once per pick as a matrix instead of twice per character.
 - Merge to `main` (or open a PR) when the Pixel rows pass.
 - The cloud session left agent worktrees under `.claude/worktrees/agent-*` with branches `worktree-agent-*`; they
   exist only in the cloud container and vanish with it.
@@ -175,6 +202,7 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 - The duel's balance is measured bots against bots only. Nobody has played it: every feel question in §4.3 is open until T50.
 - T33 pose frames never reach the screen (the host never reads `ArCharacter.frames`); T50 builds the picture swap.
 - An action issued on the first frame back from a tracking loss loses its event (no jump sound); v1.0 behaviour, pinned.
+- Found by T54 in the moved touch code, pinned by tests as it is and not fixed (a later brief can): a tap on a character also walks it to the table point under the finger (a few centimetres behind its feet when the finger is on its head); only a standing or walking character can be picked (a tap on a jumping or paused one walks the active one to the point behind it); the nearest centre in pixels wins, so a character can be picked through another; nothing in taps or grabs checks tracking (a grab survives a tracking loss).
 - Found by T56's tests in the moved code, left as it was: a character added while tracking is lost is placed and paused on the same frame; a platform that appears under a standing character during a loss is climbed on the resume frame as RESUMED, not STEPPED_UP. Stale comments still name the deleted `CharacterPoser` (`RudeusArView.kt:227`, `scan/FootprintOverlay.kt:24`, `core/session/GameLoop.kt:34`).
 - Found by T53's tests in the moved code, left as it was: an emote for a character that is missing from the slot that sent the command is dropped without a log line; a silent emote (Bye, Spin) still calls the host's sound player with `NONE` (Android ignores it; an iOS host must too).
 - Android still saves characters through `FileCharacterFolder`, which cannot rewrite an existing id (latent: ids only grow).
