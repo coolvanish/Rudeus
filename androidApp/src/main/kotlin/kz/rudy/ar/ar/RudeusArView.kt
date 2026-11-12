@@ -64,11 +64,8 @@ import kz.rudy.ar.core.pipeline.AutoScanPolicy
 import kz.rudy.ar.core.pipeline.ScanAngle
 import kz.rudy.ar.core.pipeline.ScanSectors
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
-import kz.rudy.ar.core.scenario.ScenarioPlayer
-import kz.rudy.ar.core.scenario.ScenarioStep
-import kz.rudy.ar.core.scenario.Scenarios
-import kz.rudy.ar.core.session.TableEngine
-import kz.rudy.ar.rememberTableEngine
+import kz.rudy.ar.core.session.CameraFrame
+import kz.rudy.ar.core.session.FrameInput
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -175,6 +172,10 @@ import kotlin.math.abs
 // HAND-REVIEW: T53 — the surface lock, the cast sync, the active member and the commands are a pure
 // TableEngine fed by rememberTableEngine (now `core.session.TableEngine` and `:shared` `rememberTableEngine`, pinned by
 // JVM tests); one anchor per session and PAUSED never resets are untouched.
+// HAND-REVIEW: T56 — the frame step (tracking edge, scenario, physics, cast-state report,
+// reappear timer, poses) is TableEngine.onFrame: this file builds a FrameInput and writes each NodePose into its
+// node; the scan reads the level and the members through the engine. PAUSED still freezes and never resets, one
+// anchor per session, scans stay a button plus the quiet ones and are never per frame.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
@@ -218,9 +219,6 @@ private class HeldTap(val x: Float, val y: Float, val atMs: Long)
  */
 private const val REAPPEAR_AFTER_TRACKING_MS = 800L
 
-/** Footprints mini-map: how often the host reports every member's physics state (`ArSlot.onCastState`) while debug chrome is on. */
-private const val CAST_STATE_PERIOD_MS = 100L
-
 /**
  * HAND-REVIEW: T03 — the stylize prompt fixes no facing direction, so a generated sprite is assumed to face left like
  * the demo dino; CharacterPoser flips it by walking direction. Check on the Pixel: a sprite drawn facing right walks
@@ -237,14 +235,12 @@ private const val WALK_DEPTH_SAMPLES = 6
  */
 private class SlotState(private val game: TableEngine) {
     var surfaceReady = false
-    var tracking: Boolean? = null // null until the anchor exists
     val surface: Surface get() = game.surface
     val profile: SurfaceProfile get() = game.profile
 }
 
 /** T32: one member's render side. `node` is written by the PlaneNode's `apply` and read by the frame callback. */
 private class MemberRig(val id: String, val sprite: CharacterSprite) {
-    val poser = CharacterPoser(id, sprite)
     var node: PlaneNode? = null
 }
 
@@ -313,7 +309,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     grabMarginPx[0] = GRAB_MARGIN_DP * LocalDensity.current.density
     val projector = remember { ScreenProjector() }
     val members = slot.members()
-    val game = rememberTableEngine(slot, members, playEmoteSound = { sounds?.play(it) }, onMemberRemoved = touch::unbindMember, log = { Log.i(GATE_TAG, it) }, separate = SEPARATION_ENABLED)
+    val game = rememberTableEngine(slot, members, playEmoteSound = { sounds?.play(it) }, onMemberRemoved = touch::unbindMember, log = { Log.i(GATE_TAG, it) }, feetDepthBias = FEET_DEPTH_BIAS, reappearAfterTrackingMs = REAPPEAR_AFTER_TRACKING_MS, separate = SEPARATION_ENABLED)
     val loop = game.loop
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
     val scanQuiet = remember { booleanArrayOf(false) } // T37: the pending scan is a quiet one (no onScanned); cleared with scanPending
@@ -328,8 +324,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val scope = rememberCoroutineScope()
     var level by remember { mutableStateOf<Level?>(null) } // written per scan and per boundary-growing tap (overlay), never per frame
     val footprintMaterials = remember(materialLoader) { footprintMaterials(materialLoader) }
-    val reappearAtMs = remember { longArrayOf(0L) } // character hidden until then (after a tracking loss)
-    val castStateAtMs = remember { longArrayOf(0L) } // last ArSlot.onCastState report (footprints mini-map)
     val settle = remember { PlaneSettle() }
     val slotState = remember { SlotState(game) }
     val surface = slotState.surface
@@ -344,6 +338,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             val png = c.spritePng
             val sprite = if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
             else spriteFromAssets(engine, materialLoader, context.assets, profile.characterHeightM)
+            game.spriteBuilt(c.id, sprite.facesRight) // T56: this picture's pose starts unflipped, as a new CharacterPoser did
             MemberRig(c.id, sprite).also { rigs[c.id] = it }
         }
         DisposableEffect(rig) {
@@ -364,9 +359,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val cameraStream = rememberARCameraStream(materialLoader)
     var occlusion by remember { mutableStateOf(Occlusion.NONE) } // written once per session, never per frame
     val occluderMaterial = remember(materialLoader) { materialLoader.createOcclusionInstance() }
-    // T21 (c): the running scenario, plain holders (main thread: the LaunchedEffect below and the frame callback).
-    val scenario = remember { arrayOfNulls<ScenarioPlayer>(1) }
-    val scenarioStartMs = remember { longArrayOf(0L) }
 
     LaunchedEffect(hintTaps) {
         if (hintTaps > 0) {
@@ -404,20 +396,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         scanQuiet[0] = false // T37: a button press is never quiet; a quiet scan still pending becomes this button's scan
     }
     fun activeId(): String? = game.activeId()
-    // T21 (c): one increment = one replay from spawn (restartAtSpawn); a replay in progress is restarted.
-    LaunchedEffect(slot.scenarioRequest) {
-        if (slot.scenarioRequest == 0) return@LaunchedEffect
-        if (anchorRef[0] == null) {
-            Log.i(GATE_TAG, "scenario_rejected anchored=false")
-            return@LaunchedEffect
-        }
-        val script = Scenarios.DAY5.scaled(slotState.profile.scale)
-        loop.restartAtSpawn() // every run starts at spawn (FIRST member only, T32): a FLY run ends past the gap and would skip the cup beat
-        val startMs = loop.simMs // simulated time, see the T21 header
-        scenario[0] = ScenarioPlayer(script, startMs)
-        scenarioStartMs[0] = startMs
-        Log.i(GATE_TAG, "scenario_start id=${script.id} steps=${script.steps.size} surface=${slotState.surface} sim_ms=$startMs")
-    }
     /**
      * HAND-REVIEW: T25 — the plane polygon is only the table seen so far, so a tap the hit test accepted is table: it
      * grows the boundary instead of being refused. Only the tap: on the Pixel the live polygon ran past the end of the
@@ -470,10 +448,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         // T37: a button scan from here marks its sector visited (and restarts the policy's cooldown); the grab's pose is the
         // sensor pose, same frame as the policy sees. Main thread, like every other policy call.
         if (!quiet) policy.markScanned(planeFrame.toPlane(grab.cameraPose.position), SystemClock.elapsedRealtime())
-        val previous = loop.level
+        val previous = game.level
         val profile = slotState.profile
         // T37: where the members stand now (plane coords), for the merge: the object under a character never changes.
-        val standingNow = loop.cast.members.map { it.body.state.pos }.ifEmpty { listOf(loop.state.pos) }
+        val standingNow = game.standing().map { it.pos }
         scope.launch {
             var answer: ScanAnswer = ScanAnswer.Failed
             try {
@@ -483,10 +461,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 // scans and drop a character standing still, or loop respawns if it misses the spawn. This only changes
                 // the Level: PAUSED still freezes and never resets.
                 // T32: every member pulls the boundary after it (afterScan keeps the hull it is given, so folding is safe).
-                val standing = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
-                val built = outcome.level?.let { l -> standing.fold(l) { acc, s -> SurfaceBoundary.afterScan(acc, loop.level, s) } }
+                val standing = game.standing()
+                val built = outcome.level?.let { l -> standing.fold(l) { acc, s -> SurfaceBoundary.afterScan(acc, game.level, s) } }
                 if (built != null) {
-                    loop.level = built // main thread: the next frame already steps against the new level
+                    game.level = built // main thread: the next frame already steps against the new level
                     level = built
                     currentSlot.onLevel(built)
                     answer = ScanAnswer.Found(built.objects.size, outcome.missed)
@@ -522,11 +500,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         val x = a.pose.inverse().compose(frame.camera.displayOrientedPose).xAxis
         return Vec2(x[0], x[2])
     }
-    /**
-     * T32: the physics cast follows the slot's members. Main thread, from the tap that creates the anchor and from every
-     * anchored frame (a list of at most Cast.MAX ids compared by id; no allocation when nothing changed).
-     */
-    fun syncCast(a: Anchor, frame: Frame) = game.syncCast { cameraRight(a, frame) }
     /** The session's one anchor, on [hit]: from a tap on a settled plane, or from the frame that lands a held tap. Main thread. */
     fun placeAnchor(hit: HitResult, plane: Plane, frame: Frame, ageMs: Long?) {
         heldTap[0] = null
@@ -537,12 +510,9 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         anchor = created
         policy.reset() // T37: a new level frame; no sector is visited yet
         firstLevelScanned[0] = false // T37 review fix: the first level of this anchor comes from the button again
-        slotState.tracking = true
         probe.onAnchorPlaced(created)
         Log.i(GATE_TAG, "anchor_plane_age_ms=$ageMs surface=${slotState.surface}")
-        val s = currentSlot
         game.anchorPlaced { cameraRight(created, frame) }
-        s.onTracking(true)
     }
     // T32: what CastTouch needs; the hit test is the tap's, the grab a screen-space quad test (review fix (a)), the lead a
     // boundary-clamped, edge-checked walkTo (review fix (b)).
@@ -683,10 +653,9 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                 } else {
                     val tracking = frame.camera.trackingState == TrackingState.TRACKING &&
                         a.trackingState == TrackingState.TRACKING
-                    if (tracking != slotState.tracking) {
-                        slotState.tracking = tracking
-                        currentSlot.onTracking(tracking)
-                    }
+                    // HAND-REVIEW: T56 — reported here, before the scan block, as before: App drops a scan answer that comes after a
+                    // loss (shared/.../App.kt:472, 495). onFrame reports it too; this early call goes when S5 moves the scan.
+                    game.trackingEdge(tracking)
                     // HAND-REVIEW: T37 review fix — the switch went off while a quiet scan waited for its frame and nobody asked for
                     // it: dropped before the grab. A quiet scan already running is not cancelled (the switch stops new frames).
                     if (scanPending[0] && scanQuiet[0] && !currentSlot.autoScan && scanOwed[0] == 0) {
@@ -716,55 +685,12 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                             scanTries[0] = 0
                         }
                     }
-                    // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
-                    // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
-                    syncCast(a, frame) // T32: members added or removed since the last frame
-                    val player = scenario[0]
-                    val scripted: (() -> Unit)? = if (player == null) null else {
-                        {
-                            val first = player.issued
-                            val hero = loop.firstId // T32: the scenario drives the FIRST member only
-                            player.due(loop.simMs).forEachIndexed { i, step ->
-                                when (step) {
-                                    is ScenarioStep.WalkTo -> if (hero != null) loop.walkTo(hero, step.target)
-                                    is ScenarioStep.Jump -> if (hero == null || !loop.jump(hero)) {
-                                        Log.i(GATE_TAG, "jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
-                                    }
-                                }
-                                Log.i(GATE_TAG, "scenario_step idx=${first + i} at_ms=${step.atMs}")
-                            }
-                            if (player.finished) {
-                                scenario[0] = null
-                                Log.i(GATE_TAG, "scenario_done ms=${loop.simMs - scenarioStartMs[0]}")
-                            }
-                        }
-                    }
-                    val cast = loop.onFrame(now, tracking, { id, e -> currentSlot.onCastEvent(id, e) }, beforeStep = scripted)
-                    // HAND-REVIEW: footprints mini-map — the HUD never saw physics positions, so its dot stood still while the sprite
-                    // walked. Report every member's state about 10x a second while debug chrome is on; a small map, never per frame.
-                    if (currentSlot.debug && now - castStateAtMs[0] >= CAST_STATE_PERIOD_MS) {
-                        castStateAtMs[0] = now
-                        currentSlot.onCastState(cast.members.associate { it.id to it.body.state })
-                    }
-                    if (!tracking) reappearAtMs[0] = now + REAPPEAR_AFTER_TRACKING_MS
-                    // While not tracking the camera pose is meaningless and the AnchorNode hides its children.
-                    if (tracking) {
-                        val cameraLocal = planeCoords(a, frame.camera.pose)
-                        val cameraHeightM = planeHeight(a, frame.camera.pose)
-                        val visible = now >= reappearAtMs[0]
-                        for (m in cast.members) {
-                            val rig = rigs[m.id] ?: continue
-                            val node = rig.node ?: continue
-                            rig.poser.apply(
-                                node, m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
-                                verticalVelocity = m.body.verticalVelocity,
-                                sinceLandedMs = now - loop.landedAtMs(m.id),
-                                size = currentSlot.characterSize,
-                                emotePose = loop.emotePose(m.id),
-                            )
-                            if (node.isVisible != visible) node.isVisible = visible
-                        }
-                    }
+                    // HAND-REVIEW: T56 — the cast sync, the scenario's taps, physics, the cast-state report, the reappear timer and one
+                    // pose per member are TableEngine.onFrame; each NodePose goes into its node (writePose, CharacterNode.kt) and a
+                    // member whose node is not composed yet is skipped, as before. PAUSED still freezes and never resets: no pose
+                    // while not tracking. The camera is now read on every anchored frame; its pose is trusted only while tracking.
+                    val camera = CameraFrame(planeCoords(a, frame.camera.pose), planeHeight(a, frame.camera.pose), cameraRight(a, frame))
+                    for (p in game.onFrame(FrameInput(now, tracking, camera))) rigs[p.id]?.node?.writePose(p)
                 }
             },
             onTrackingFailureChanged = { reason -> Log.i(GATE_TAG, "tracking_failure=$reason") },

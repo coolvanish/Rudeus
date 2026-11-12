@@ -14,11 +14,8 @@ import io.github.sceneview.math.Scale
 import io.github.sceneview.node.PlaneNode
 import io.github.sceneview.texture.ImageTexture
 import kz.rudy.ar.core.bundle.SavedCharacters
-import kz.rudy.ar.core.domain.CharacterState
-import kz.rudy.ar.core.domain.Vec2
-import kz.rudy.ar.core.emote.EmotePose
 import kz.rudy.ar.core.geometry.Quat
-import kz.rudy.ar.core.session.BillboardPoser
+import kz.rudy.ar.core.session.NodePose
 import kotlin.math.roundToInt
 
 // HAND-REVIEW: T02 — the character is ONE Y-only billboard quad: SceneView `PlaneNode` (geometry, not the ARCore
@@ -49,7 +46,7 @@ internal const val DEMO_SPRITE_FACES_RIGHT = false
 // the character's height (3.6 cm on the table): every pixel stays exactly where it was and only its depth shrinks. A cup
 // still hides a character behind it: the cup's near side is about 11 cm in front of it. PAUSED and the physics do not see
 // this, it is the node transform only. 0f turns it off.
-private const val FEET_DEPTH_BIAS = 0.6f
+internal const val FEET_DEPTH_BIAS = 0.6f
 
 internal class CharacterSprite(
     val texture: Texture,
@@ -132,30 +129,12 @@ private fun spriteFromBitmap(
 // HAND-REVIEW: T52 — the maths is in BillboardPoser (now `core.session.BillboardPoser`, pinned by JVM tests): it returns
 // a NodePose, and these three writes are the whole host side.
 // The squash / stretch numbers and FLIP_DEADBAND went with it; FEET_DEPTH_BIAS stays here (a Pixel number, passed in).
-/**
- * Writes a [CharacterState] into the billboard node every frame. Keeps only the flip sign between frames.
- * The node must be a child of the session AnchorNode (local frame = plane frame, see PlaneCoords.kt).
- */
-internal class CharacterPoser(id: String, sprite: CharacterSprite) {
-    private val poser = BillboardPoser(id, sprite.heightM, sprite.facesRight, FEET_DEPTH_BIAS)
-
-    /** [BillboardPoser.pose] written into [node]; the parameters are documented there. */
-    fun apply(
-        node: PlaneNode,
-        state: CharacterState,
-        cameraLocal: Vec2,
-        cameraHeightM: Float,
-        walkPhaseMs: Long,
-        verticalVelocity: Float = 0f,
-        sinceLandedMs: Long = Long.MAX_VALUE,
-        size: Float = 1f,
-        emotePose: EmotePose? = null,
-    ) {
-        val p = poser.pose(state, cameraLocal, cameraHeightM, walkPhaseMs, verticalVelocity, sinceLandedMs, size, emotePose)
-        node.position = localPosition(p.pos, p.h)
-        node.quaternion = p.rotation.toNode()
-        node.scale = Scale(x = if (p.mirrored) -p.scaleX else p.scaleX, y = p.scaleY, z = 1f)
-    }
+// HAND-REVIEW: T56 — each member's poser is TableEngine's now (a new one per sprite: spriteBuilt); this is the node write.
+internal fun PlaneNode.writePose(p: NodePose) {
+    position = localPosition(p.pos, p.h)
+    quaternion = p.rotation.toNode()
+    scale = Scale(x = if (p.mirrored) -p.scaleX else p.scaleX, y = p.scaleY, z = 1f)
+    if (isVisible != p.visible) isVisible = p.visible
 }
 
 /** The one place a :core rotation becomes a node's. */
