@@ -1,6 +1,6 @@
 # T53 — thin-host-step-3
 
-status: doing
+status: review
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S3a of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` and `:shared` still compile for iOS); a precondition of S3b, T54 and T50
@@ -386,9 +386,174 @@ the orchestrator.
   after tracking with no slide, and finishes its walk; then Scenario plays to the end with `scenario_done ms=` just
   over 15000 and, with footprints on, the mini-map dot follows it.
 
-## Result (filled on acceptance)
-- measured: ...
-- step-3 and step-4 diffs: ...
-- found by the characterization tests: ...
-- Pixel check: ...
-- cut/deferred: ...
+## Result (filled 2026-11-12, cloud container with /opt/android-sdk, no device)
+- commits (on 33b6a13): P `d6bc58e` (the type move), A `e0cc901` (host split + `TableEnginePinTest`), B `4ecf53d`
+  (`:core` / `:shared` copies + the same tests), C `a98a74f` (the host switches over). This Result is a fifth,
+  docs-only commit, so reverting C alone touches only the host.
+- measured (test XML; every Gradle call under `flock /tmp/rudeus-gradle.lock`):
+  - baseline 33b6a13, `scripts/verify.sh` exit 0: core 710, shared 42, android 3.
+  - P: the step-2 command green; core 710, shared 42 (the moved types are only re-imported).
+  - A: `:androidApp:testDebugUnitTest` 30 = 3 + 27 `TableEnginePinTest`, 0 failed; `:androidApp:assembleDebug` green.
+  - B: core 737 = 710 + 27 `TableEngineTest`, shared 43 = 42 + `TableSlotTest`, android 30, all 0 failed;
+    `:core` and `:shared` main and test klibs compile for iosSimulatorArm64. The same 27 assertions are green against
+    both engines at this commit.
+  - C: `scripts/verify.sh` exit 0: core 737, shared 43, android 3 (back to the baseline), apk built; a forced
+    `:core:jvmTest --rerun` after it: 737, 0 failed.
+  - Mutation check at B, on the `:core` engine, one at a time, the file restored byte for byte after each (`cmp`):
+    no serial guard -> `theSameSerialOfferedTwiceIsAppliedOnce`; no anchor refusal -> `aSecondAnchorIsRefused`,
+    `logLinesKeepTheirKeys`; the latest slot's members or `soundsOn` for an emote -> `emoteUsesTheMembersOfTheSlotThatSentIt`;
+    PLACED before `onAnchorPlaced` -> `anchorPlacedReportsTheAnchorThenPlacedPerMemberInSlotOrder`,
+    `commandBeforeTheAnchorIsIgnoredAndLogged`; spawn near the origin -> `firstMemberStandsAtTheOrigin...`; the surface
+    never locks -> 4 tests (lock, configure, walk, log keys); the walk without `profile.scale` -> `walkForward...AlongFacing`;
+    camera-right asked on every sync -> 3 tests; the finger not released -> `aMemberGoneFromTheSlot...`. 10 of 10 caught.
+  - No compiler warning in any T53 file (non-incremental forced recompiles of `:core` JVM and iOS main and test,
+    `:androidApp` main; a deliberate probe line showed the `:shared` test compiles do surface warnings, then was removed).
+  - host diff (`git diff 33b6a13..a98a74f --stat -- androidApp/src/main`): `RudeusArView.kt` 17 insertions, 78
+    deletions (936 -> 875 lines); no `ar/TableEngine*.kt` left. Per commit: P 1/1 (line 53), A 14/78 (the nine edits),
+    C 4/1 (two imports, the note re-wrapped to take the words). No SceneView or ARCore call added, removed or made
+    differently: `cameraRight(a, frame)` is still asked only when a member joins, now through a lambda.
+  - `grep -rn "HAND-REVIEW" core/src shared/src`: empty. Files changed (`git diff --stat 33b6a13..HEAD`): only those
+    under "Owns".
+- step-3 diff, run right after committing A (the old file saved with `git show d6bc58e:...` to a scratch dir; it differs
+  from 23a9ea2 only at line 53, so every brief line number holds; engine bodies at `TableEngine.kt` 81-86, 91-92, 148,
+  113-144, 156-168, 173-180, 97, 102):
+  ```
+  ### offerSurface: old 331,336 vs body 81,86
+  (no difference)
+  ### configure: old 342,343 vs body 91,92
+  (no difference)
+  ### activeId: old 414,414 vs body 148,148
+  (no difference)
+  ### command: old 422,450 vs body 113,144
+  0a1,3
+  >         val serial = from.command?.serial
+  >         if (serial != null && serial == lastOffered) return
+  >         lastOffered = serial
+  ### syncCast: old 575,587 vs body 156,168
+  (no difference)
+  ### anchorPlaced: old 599 + 603-605 vs body 173-180 (by eye)
+  0a1,4
+  >         if (anchored) {
+  >             log("anchor_refused")
+  >             return
+  >         }
+  2c6
+  <         val s = currentSlot
+  ---
+  >         val s = current()
+  4c8
+  <         syncCast(created, frame) // T32: every waiting member is placed now, each with onCastEvent(id, PLACED)
+  ---
+  >         syncCast(cameraRight) // T32: every waiting member is placed now, each with onCastEvent(id, PLACED)
+  ### activeOffered: old 415 vs body 97 (by eye)
+  1c1
+  <     LaunchedEffect(id) { id?.let { log("active id=$it") } }
+  ---
+  >         id?.let { log("active id=$it") }
+  ### abilities: old 417 vs body 102 (by eye)
+  1c1
+  <     LaunchedEffect(members) { for (c in members) loop.setAbility(c.id, c.ability) }
+  ---
+  >         for (c in members) loop.setAbility(c.id, c.ability)
+  ```
+  The effect keys in `ar/TableEngineHost.kt`: `(game.surface, slot.characterSize)`, `(slot.activeId)`, `(members)`,
+  `(slot.command?.serial)`, the expressions of lines 341 (`surface` there was `slotState.surface`, the engine's now),
+  415, 417, 421.
+- step-4 diff at B (comment lines stripped by the brief's `grep -vE`):
+  ```
+  ### androidApp/.../ar/TableEngine.kt vs core/.../core/session/TableEngine.kt
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  10,12d9
+  < import kz.rudy.ar.core.session.CharacterAction
+  < import kz.rudy.ar.core.session.CharacterCommand
+  < import kz.rudy.ar.core.session.GameLoop
+  15c12
+  < internal class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+  ---
+  > class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+  17c14
+  < internal class TableSlot(
+  ---
+  > class TableSlot(
+  26c23
+  < internal class TableEngine(
+  ---
+  > class TableEngine(
+  ### androidApp/.../ar/TableEngineHost.kt vs shared/.../kz/rudy/ar/TableEngineHost.kt
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar
+  8,9d7
+  < import kz.rudy.ar.ArCharacter
+  < import kz.rudy.ar.ArSlot
+  10a9,11
+  > import kz.rudy.ar.core.session.Member
+  > import kz.rudy.ar.core.session.TableEngine
+  > import kz.rudy.ar.core.session.TableSlot
+  13c14
+  < internal fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
+  ---
+  > fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
+  23c24
+  < internal fun rememberTableEngine(
+  ---
+  > fun rememberTableEngine(
+  ### tests (plain diff)
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  116c116
+  < class TableEnginePinTest {
+  ---
+  > class TableEngineTest {
+  ```
+- found by the characterization tests: **all 27 were green against the host-local engine on the first run**; no moved
+  body was changed. What they pin beyond the brief's wording (behaviour as it was, no fix proposed):
+  1. T47's inference is now pinned: a WalkForward under a tracking loss sets the target and keeps PAUSED; the first
+     frame back reports RESUMED only (no STARTED_WALKING), the member walks from there and ARRIVED comes as usual. A
+     Jump under the loss logs `jump_ignored id=.. mode=PAUSED ..` and nothing jumps after the resume.
+  2. An emote for a member that is on the table but missing from the slot that sent the command is dropped with **no
+     log line at all**: besides the new serial guard, the only ignored-command path without a line (the on-table check
+     reads the loop, the member lookup reads the sender). It needs a member removed between the press and the effect; not seen on a device.
+  3. With sounds on, a silent choreography (BYE, SPIN) hands `EmoteSound.NONE` to `playEmoteSound`; the Android
+     `Sounds.play(EmoteSound)` returns early on it (`audio/Sounds.kt:69`). An iOS host must do the same.
+  4. Camera-right is asked for the first member too (the argument is evaluated though `spawnFor` ignores it for an
+     empty cast): two members placed at the anchor = two asks. Removals and quiet syncs ask nothing.
+  5. `activeOffered` logs any id it is given, on the table or not (`active id=zz`); null logs nothing.
+  6. At add time a member's ability is the latest slot's; `abilities` before the anchor is a no-op.
+  7. New guards, as specified: the serial guard keys on the serial alone (another id or action under the same serial is
+     dropped too), and a serial ignored before the anchor is not re-applied after it (Compose would not re-run that
+     effect either). Both unreachable on Android: serials only rise and `command` is reset to null only with the session.
+  Found by reading, not pinned (it is what the code does; S3b decides): `syncCast` has no anchored check. The Android
+  host calls it only from the anchor and from anchored frames; an engine caller that syncs before `anchorPlaced` would
+  place members. S3b moves the frame (and this call) into the engine, where the check is natural.
+- deviations from the letter of the brief (none changes behaviour):
+  1. `anchorPlaced`'s by-eye diff has three parts, not two: the 4-line refusal guard, `val s = current()` for
+     `val s = currentSlot` (the 16-line sed has no rule for a bare `currentSlot`), and `syncCast(cameraRight)`.
+  2. Edit 3 also rewrites one line of `SlotState`'s KDoc ("`anchored` freezes it" -> "the engine's, locked at the
+     anchor"), since `anchored` left the class. Edit 6 keeps the T25 note and changes its second line to point at
+     `rememberTableEngine`. The KDoc and comments of the removed closures (old 413, 416, 418-420) moved into the
+     engine as KDoc; edit 7 replaced 413-451 with the one line, as written.
+  3. `RudeusArView.kt` is 17 in / 78 out (the brief estimated about 30 / 75); commit C is 4 / 1, not 3 lines, because
+     the note's new words wrap onto a second line (as T52's did).
+  4. `TableSlotTest`'s one test also anchors a `TableEngine` fed by the converted slot (the anchor, then PLACED per
+     member in the given order) besides checking the fields, callbacks and defaults.
+  5. `rememberTableEngine` holds the three lambdas in `rememberUpdatedState`, as specified, so the engine calls the
+     latest `sounds`; the old command effect used the `sounds` of its launch. `sounds` is MainActivity's one instance
+     and `touch` is remembered, so nothing observable changes.
+  6. `configure` reads `profile` when the effect runs, the old effect the composition's `profile` at launch: the same
+     value, because the effect is keyed on the surface and a surface change cancels an effect that has not run yet.
+- Pixel check ("place, scan, two friends, lens, replay"): UNTESTED (no device in the cloud container). **Needs the
+  user's Pixel run**, the six steps under "Done when": tap to place (once, with its sound); Scan (found, cannot walk
+  through the cup); add a second character (beside the first, toward screen-right); Jump (the active one, once), pick
+  the other chip and Hello (only that one, one sound); cover the lens, Jump while covered, uncover after 3 s (both
+  reappear where they stood, nobody jumps); Scenario (the first one plays to the end). Log: one `cast_add` per
+  character with `n=1` then `n=2`, one `jump id=`, one `emote id=`, one `jump_ignored .. mode=PAUSED`, `scenario_done
+  ms=` just over 15000, no `anchor_refused`. If anything is off, revert C first, then A, as "Done when" says.
+- cut/deferred: nothing cut. `engine.loop` stays exposed (the host's frame, taps and scans read it until S3b, T54, S5);
+  `SlotState.surface` / `profile` now delegate to the engine and go when S3b moves the frame.
