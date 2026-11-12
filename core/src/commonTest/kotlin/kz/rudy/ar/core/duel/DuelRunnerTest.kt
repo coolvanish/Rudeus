@@ -118,7 +118,8 @@ class DuelRunnerTest {
         // Long.MAX_VALUE, so the whole bot path runs: the resume, the cut at every tick, the asking, and it answers None),
         // the runner is DuelMatch.step for the child's side, step for step: random frames (empty, negative, on the tick,
         // longer than maxStepMs), tracking losses, inputs for the child, for the bot's side and for nobody.
-        val asleep = BotMind(BotLevel.HARD, rng = 42L, nextThinkMs = Long.MAX_VALUE)
+        // (A NORMAL mind: since T57 a HARD one has reflexes, it jumps over an incoming dash between its thinks.)
+        val asleep = BotMind(BotLevel.NORMAL, rng = 42L, nextThinkMs = Long.MAX_VALUE)
         val ruleSets = listOf(
             DuelRules(),
             DuelRules(countdownMs = 0L, roundMs = 2_000L, pointPauseMs = 0L),

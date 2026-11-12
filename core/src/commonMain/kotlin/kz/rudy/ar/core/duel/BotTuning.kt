@@ -40,6 +40,8 @@ import kotlinx.serialization.Serializable
  * @property sameDirectionCos two push directions closer than this (cosine, about 11°) are the one it settled on.
  * @property blockedPushRadii a push that something stops before the edge (a wall slam, not a ring-out) scores this many
  *   radii longer.
+ * @property jumpMarginMs T57: a jump over a dash or a stomp is tried only if the feet are above the hit's reach this long
+ *   before the hit can land and stay there this long after it has passed (the sub-steps round the jump's arc).
  */
 @Serializable
 data class BotTuning(
@@ -65,12 +67,14 @@ data class BotTuning(
     val lineOfSightRadii: Float = 0.8f,
     val sameDirectionCos: Float = 0.98f,
     val blockedPushRadii: Float = 10f,
+    val jumpMarginMs: Long = 16,
     val easy: BotSkill = BotSkill.EASY,
     val normal: BotSkill = BotSkill.NORMAL,
     val hard: BotSkill = BotSkill.HARD,
 ) {
     init {
         require(tickMs > 0L) { "tickMs must be > 0, got $tickMs" }
+        require(jumpMarginMs >= 0L) { "jumpMarginMs must be >= 0, got $jumpMarginMs" }
         for ((name, v) in listOf(
             "edgeMarginRadii" to edgeMarginRadii, "dashEndMarginRadii" to dashEndMarginRadii,
             "inPathLateralRadii" to inPathLateralRadii, "inPathReachShare" to inPathReachShare,
@@ -128,6 +132,13 @@ data class BotTuning(
  *   whatever the alignment.
  * @property safeRamsOnly rams only when the ram would end on the table even if it missed, and then wherever the
  *   opponent stands (not only near an edge).
+ * @property jumpChance T57 (height matters for hits): when a dash or a stomp is coming at it and a jump now would carry
+ *   its feet out of the hit's reach in time (and keep them there until the hit has passed), it jumps with this chance (a
+ *   ROLL body cannot jump). 0 = never (EASY).
+ * @property reflexes T57: it looks for such a dash or stomp on every tick, not only when it thinks ([thinkMs]): the jump
+ *   comes in time whenever it can.
+ * @property closesInOnJumpers T57: against an opponent that can jump over a dash, it dashes only from close enough that
+ *   the opponent, reacting on the next tick, could not get its feet out of reach before the dash lands.
  */
 @Serializable
 data class BotSkill(
@@ -147,8 +158,12 @@ data class BotSkill(
     val counters: Boolean,
     val safeRamsOnly: Boolean,
     val sidestepEdgeRadii: Float = nearEdgeRadii,
+    val jumpChance: Float = 0f,
+    val reflexes: Boolean = false,
+    val closesInOnJumpers: Boolean = false,
 ) {
     init {
+        require(jumpChance in 0f..1f) { "jumpChance must be in 0..1, got $jumpChance" }
         require(thinkMs >= 0L) { "thinkMs must be >= 0, got $thinkMs" }
         require(thinkJitterTicks >= 0) { "thinkJitterTicks must be >= 0, got $thinkJitterTicks" }
         require(wanderMs >= 0L) { "wanderMs must be >= 0, got $wanderMs" }
@@ -162,7 +177,7 @@ data class BotSkill(
     }
 
     companion object {
-        /** Slow (about half a second), wanders, dashes when close whatever the alignment, sometimes the wrong way, no special. */
+        /** Slow (about half a second), wanders, dashes when close whatever the alignment, sometimes the wrong way, no special, never jumps a dash. */
         val EASY = BotSkill(
             thinkMs = 384, thinkJitterTicks = 4, dashRangeShare = 0.7f, alignCos = -1f, aimErrorShare = 0.35f,
             wrongWayChance = 0.25f, wanderChance = 0.2f, wanderMs = 1200, leadsAim = false, weighsPush = false,
@@ -170,7 +185,8 @@ data class BotSkill(
         )
 
         /**
-         * The shared plan at a fifth of a second, a small aim error, the special in its obvious situation. T48:
+         * The shared plan at a fifth of a second, a small aim error, the special in its obvious situation; T57: jumps
+         * over a dash or a stomp it sees coming in time half of the time. T48:
          * `nearEdgeRadii` 20 (was 4): a FLY lifts off and a HIDE dodges whenever a dash or a stomp comes at it, not only
          * near an edge (in mid-table they had no special at all: equal stats, JUMP beat FLY 80 / 20).
          */
@@ -178,11 +194,13 @@ data class BotSkill(
             thinkMs = 144, thinkJitterTicks = 2, dashRangeShare = 0.8f, alignCos = 0.8660254f, aimErrorShare = 0.1f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = false, weighsPush = false,
             usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false,
+            jumpChance = 0.5f,
         )
 
         /**
          * NORMAL deciding every tick or a few, leading its aim, weighing where to push (high ground), sidestepping near an
-         * edge, countering. The jitter matters: two HARD bots deciding on the same ticks mirror each other on a symmetric
+         * edge, countering; T57: jumps over every dash or stomp a jump can clear (it watches on every tick), and against an
+         * opponent that can jump it dashes only from close. The jitter matters: two HARD bots deciding on the same ticks mirror each other on a symmetric
          * arena (with one tick: every round a tied timeout, every match a draw). T48: `thinkJitterTicks` 3 (was 1): with
          * one, two HARD bots of one ability still dashed together and clashed in mid-table (JUMP v JUMP on the 120 cm
          * table: 52 % of the rounds to the clock, 34 hits per ring-out); `nearEdgeRadii` 8 (was 4) for the lift-off and
@@ -193,7 +211,7 @@ data class BotSkill(
             thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
             usesSpecial = true, nearEdgeRadii = 8f, sidesteps = true, counters = true, safeRamsOnly = true,
-            sidestepEdgeRadii = 4f,
+            sidestepEdgeRadii = 4f, jumpChance = 1f, reflexes = true, closesInOnJumpers = true,
         )
     }
 }

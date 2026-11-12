@@ -120,3 +120,18 @@ yours: measure, describe under "What a human must decide", leave the code alone.
   24 seeded bot matches and 16 random fights (pressing Jump on every incoming dash) against fingerprints recorded on
   207acc6 (it caught a first draft that let a FLY on its lift's last sub-step be pushed in separation).
 - Tests: 12 new in `DuelNewRulesTest`; `scripts/verify.sh` OK (core 699, shared 41, android 3).
+
+### Step 2 — the rules on with the starting numbers, the bots taught (done; the matrix in docs/duel-balance.md)
+- Defaults on: shared cooldown; reach 0.75 + 0.05 SPEED; `hitReachUpM` 0.02, `hitReachDownM` 0.04.
+- Bots (`DuelBot`, numbers in `BotSkill.jumpChance` / `reflexes` / `closesInOnJumpers`, `BotTuning.jumpMarginMs`): dash
+  reaches from their own stats; a jump over a dash or a stomp when a jump clears it in time (EASY 0, NORMAL 0.5, HARD 1
+  and on every tick); no dash, counter, ram or stomp at a victim out of height reach (its feet predicted along its arc);
+  a HARD bot dashes at a jumper only from close enough that it cannot react; the push spot moves round the opponent to
+  where it is in reach (a fighter on a book: from the book); the stomp / ram before a plain dash when both are ready
+  (with the rule off: the T48 order); the walk is planned at the ground it will land on. With the reach unlimited none of
+  it happens (B9 goldens hold).
+- Matrix `--n 200`: B4, B6, B8, B9 PASS; B1 7.7..85.2 % (27 of 32 out), B2 17.0..91.7 % (10 out), B3 110 out, B5
+  3.4..12.7 (19 out, cup-and-book), B7 8.5..95.5 % (56 out). 144.7 s on 4 threads. At equal stats FLY / HIDE 59..85 %,
+  JUMP 16..33 %, ROLL 8..38 %.
+- Duel tests 116 green in 35 s. Updated tests so far (each because it pinned pre-T57 behaviour; listed in the final
+  Result).

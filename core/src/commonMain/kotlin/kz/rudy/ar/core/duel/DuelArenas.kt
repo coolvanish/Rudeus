@@ -70,8 +70,14 @@ object DuelArenas {
 /** Which table of the balance matrix ([DuelMatrix]) a cell belongs to. */
 @Serializable
 enum class CellGroup {
-    /** Ability against ability, each with its archetype stats ([defaultFor]). */
+    /** Ability against ability, each with its archetype stats ([defaultFor]): characters without stats (B2). */
     ABILITY,
+
+    /**
+     * T57: ability against ability, both sides 5/5/5/5 (B1): the abilities alone, as new drawings meet them (their stats
+     * come from the picture, not from the ability).
+     */
+    EQUAL,
 
     /** One ability on both sides: a specialist (one stat at 8, the rest at 4) or the illegal 8/8/8/8, against 5/5/5/5. */
     STAT,
@@ -168,32 +174,39 @@ data class CellTally(
 data class CellResult(val cell: MatrixCell, val tally: CellTally)
 
 /**
- * The thresholds of T48's acceptance table (ai/tasks/T48-cli-duel-sim-balance.md); the defaults are the brief's. A
- * test may widen them to check a small sample.
+ * The thresholds of T57's acceptance table (ai/tasks/T57-duel-balance-2.md, B1..B9; T48's A1..A8 were the same rows
+ * without the equal-stats group, with B2 at 35..65 % and no small / large exceptions in B5 / B6); the defaults are the
+ * brief's. A test may widen them to check a small sample.
  */
 @Serializable
 data class Acceptance(
-    /** A1: each ability's win share against the field (the other three), per arena and level. */
-    val fieldMin: Float = 0.35f,
-    val fieldMax: Float = 0.65f,
-    /** A2: each side's win share in every ability-against-another-ability cell. */
+    /** B1: each ability's win share against the field (the other three), all at 5/5/5/5, per arena and level. */
+    val equalMin: Float = 0.35f,
+    val equalMax: Float = 0.65f,
+    /** B2: the same with archetype stats (characters without stats). */
+    val fieldMin: Float = 0.30f,
+    val fieldMax: Float = 0.70f,
+    /** B3: each side's win share in every ability-against-another-ability cell, equal stats and archetypes. */
     val cellMin: Float = 0.25f,
     val cellMax: Float = 0.75f,
-    /** A3: the share of rounds ended by the clock, per ability pair (same-ability pairs included). */
+    /** B4: the share of rounds ended by the clock, per ability pair (same-ability pairs included, both groups). */
     val clockMax: Float = 0.25f,
-    /** A3 on [largeArena]. */
+    /** B4 on [largeArena]. */
     val clockMaxLarge: Float = 0.40f,
     val largeArena: String = "large",
-    /** A4: hits per ring-out of every ability pair (an arena's average is shown, not judged). */
+    /** B5: hits per ring-out of every ability pair (an arena's average is shown, not judged); [hitsMaxLarge] on [largeArena]. */
     val hitsMin: Float = 2f,
     val hitsMax: Float = 8f,
-    /** A5: mean match length of every ability pair, seconds of match time (an arena's average is shown, not judged). */
+    val hitsMaxLarge: Float = 10f,
+    /** B6: mean match length of every ability pair, seconds of match time; [matchMinSmallS] on [smallArena]. */
     val matchMinS: Float = 30f,
+    val matchMinSmallS: Float = 20f,
+    val smallArena: String = "small",
     val matchMaxS: Float = 120f,
-    /** A6: a specialist's win share against 5/5/5/5 with the same ability. */
+    /** B7: a specialist's win share against 5/5/5/5 with the same ability. */
     val specialistMin: Float = 0.40f,
     val specialistMax: Float = 0.65f,
-    /** A7: 8/8/8/8's win share against 5/5/5/5 with the same ability. */
+    /** B8: 8/8/8/8's win share against 5/5/5/5 with the same ability. */
     val boostedMin: Float = 0.65f,
 )
 
@@ -212,8 +225,8 @@ data class Criterion(
 )
 
 /**
- * The balance matrix of T48: which cells to play, how to play one (seeded bot-vs-bot matches, [DuelSim]), and the
- * arithmetic of the acceptance table on the results. Pure and deterministic; the CLI (`duel matrix`) spreads the
+ * The balance matrix of T48 (T57: with the equal-stats group and the B1..B9 table): which cells to play, how to play
+ * one (seeded bot-vs-bot matches, [DuelSim]), and the arithmetic of the acceptance table on the results. Pure and deterministic; the CLI (`duel matrix`) spreads the
  * [play] calls over threads, a test runs a small sample in one.
  */
 object DuelMatrix {
@@ -237,19 +250,24 @@ object DuelMatrix {
     fun specialist(stat: Stat): FighterStats = FighterStats.of { if (it == stat) SPECIALIST_HIGH else SPECIALIST_LOW }
 
     /** Every unordered ability pair, same-ability pairs included (10 per arena and level), archetype stats. */
-    fun abilityCells(arenas: List<String>, levels: List<BotLevel>): List<MatrixCell> {
+    fun abilityCells(arenas: List<String>, levels: List<BotLevel>): List<MatrixCell> = pairCells(CellGroup.ABILITY, arenas, levels) { FighterStats.defaultFor(it) }
+
+    /** T57 (B1): every unordered ability pair, same-ability pairs included (10 per arena and level), both sides 5/5/5/5. */
+    fun equalCells(arenas: List<String>, levels: List<BotLevel>): List<MatrixCell> = pairCells(CellGroup.EQUAL, arenas, levels) { FighterStats.BALANCED }
+
+    private fun pairCells(group: CellGroup, arenas: List<String>, levels: List<BotLevel>, stats: (Ability) -> FighterStats): List<MatrixCell> {
         val out = ArrayList<MatrixCell>()
         val abilities = Ability.entries
         for (arena in arenas) for (level in levels) for (i in abilities.indices) for (j in i until abilities.size) {
             val x = abilities[i]
             val y = abilities[j]
-            out += MatrixCell(
-                CellGroup.ABILITY, arena, level,
-                Contestant(A, FighterStats.defaultFor(x), x), Contestant(B, FighterStats.defaultFor(y), y), x.name, y.name,
-            )
+            out += MatrixCell(group, arena, level, Contestant(A, stats(x), x), Contestant(B, stats(y), y), x.name, y.name)
         }
         return out
     }
+
+    /** The groups whose cells are ability pairs ([abilityCells], [equalCells]). */
+    val PAIR_GROUPS: List<CellGroup> = listOf(CellGroup.EQUAL, CellGroup.ABILITY)
 
     /**
      * For each ability: the four specialists ([specialist]) and [BOOSTED], each against 5/5/5/5 with the same ability
@@ -310,12 +328,13 @@ object DuelMatrix {
     fun tally(results: Iterable<SimResult>): CellTally = results.fold(CellTally()) { t, r -> t + CellTally.of(r) }
 
     /**
-     * Ability [x] against the field on [arena] at [level]: its cells against each other ability (archetype stats), from
-     * [x]'s side (wins = [x]'s wins, in [CellTally.winsA]). Null when there is no such cell.
+     * Ability [x] against the field on [arena] at [level]: its cells of [group] ([CellGroup.ABILITY]: archetype stats;
+     * [CellGroup.EQUAL]: 5/5/5/5) against each other ability, from [x]'s side (wins = [x]'s wins, in [CellTally.winsA]).
+     * Null when there is no such cell.
      */
-    fun againstField(results: List<CellResult>, arena: String, level: BotLevel, x: Ability): CellTally? {
+    fun againstField(results: List<CellResult>, arena: String, level: BotLevel, x: Ability, group: CellGroup = CellGroup.ABILITY): CellTally? {
         var sum: CellTally? = null
-        for (r in abilityOf(results, arena, level)) {
+        for (r in abilityOf(results, arena, level, group)) {
             val c = r.cell
             val mine = when {
                 c.a.ability == c.b.ability -> null
@@ -328,95 +347,107 @@ object DuelMatrix {
         return sum
     }
 
-    /** All ability cells of [arena] at [level], summed (A4, A5). Null without any. */
-    fun arenaTotal(results: List<CellResult>, arena: String, level: BotLevel): CellTally? =
-        abilityOf(results, arena, level).map { it.tally }.reduceOrNull { x, y -> x + y }
+    /** All cells of [group] (an ability-pair group) of [arena] at [level], summed (B5, B6 averages). Null without any. */
+    fun arenaTotal(results: List<CellResult>, arena: String, level: BotLevel, group: CellGroup = CellGroup.ABILITY): CellTally? =
+        abilityOf(results, arena, level, group).map { it.tally }.reduceOrNull { x, y -> x + y }
 
-    private fun abilityOf(results: List<CellResult>, arena: String, level: BotLevel) =
-        results.filter { it.cell.group == CellGroup.ABILITY && it.cell.arena == arena && it.cell.level == level }
+    private fun abilityOf(results: List<CellResult>, arena: String, level: BotLevel, group: CellGroup) =
+        results.filter { it.cell.group == group && it.cell.arena == arena && it.cell.level == level }
+
+    /** "equal" or "archetype": how a failure names the group of an ability-pair cell. */
+    private fun groupName(group: CellGroup): String = if (group == CellGroup.EQUAL) "equal" else "archetype"
 
     /**
-     * The acceptance table A1..A8 on [results] with thresholds [t]. [stepsAgree]: whether every replayed match came out
-     * the same at another frame length (A8; [stepsNote] says how many), null = not checked. A9 (the tests) is not the
-     * matrix's to measure.
+     * T57's acceptance table B1..B9 on [results] with thresholds [t]. [stepsAgree]: whether every replayed match came
+     * out the same at another frame length (B9's first half; [stepsNote] says how many), null = not checked. B9's second
+     * half (the rules switched off are the physics before T57) is a test, `theNewRulesSwitchedOffAreThePreviousPhysics`;
+     * B10 (the tests) is not the matrix's to measure either.
      */
     fun acceptance(results: List<CellResult>, stepsAgree: Boolean?, stepsNote: String = "", t: Acceptance = Acceptance()): List<Criterion> {
-        val keys = results.filter { it.cell.group == CellGroup.ABILITY }.map { it.cell.arena to it.cell.level }.distinct()
         val out = ArrayList<Criterion>()
+        val pairs = results.filter { it.cell.group in PAIR_GROUPS }
 
-        // A1: each ability against the field, per arena and level.
-        val field = ArrayList<Float>()
-        val badField = ArrayList<String>()
-        for ((arena, level) in keys) for (x in Ability.entries) {
-            val s = againstField(results, arena, level, x)?.shareA ?: continue
-            field += s
-            if (s < t.fieldMin || s > t.fieldMax) badField += "$arena $level $x ${pct(s)}"
+        // B1, B2: each ability against the field, per arena and level: at equal stats, and at archetype stats.
+        for ((id, group, bounds) in listOf(
+            Triple("B1", CellGroup.EQUAL, t.equalMin to t.equalMax), Triple("B2", CellGroup.ABILITY, t.fieldMin to t.fieldMax),
+        )) {
+            val (min, max) = bounds
+            val keys = results.filter { it.cell.group == group }.map { it.cell.arena to it.cell.level }.distinct()
+            val field = ArrayList<Float>()
+            val bad = ArrayList<String>()
+            for ((arena, level) in keys) for (x in Ability.entries) {
+                val s = againstField(results, arena, level, x, group)?.shareA ?: continue
+                field += s
+                if (s < min || s > max) bad += "$arena $level $x ${pct(s)}"
+            }
+            val title = if (group == CellGroup.EQUAL) "each ability against the field, all at 5/5/5/5" else "each ability against the field, archetype stats"
+            out += Criterion(id, title, "${pct(min)}..${pct(max)}", range(field, ::pct), bad.isEmpty() && field.isNotEmpty(), bad)
         }
-        out += Criterion("A1", "each ability against the field", "${pct(t.fieldMin)}..${pct(t.fieldMax)}", range(field, ::pct), badField.isEmpty() && field.isNotEmpty(), badField)
 
-        // A2: each side of every cell of two different abilities.
+        // B3: each side of every cell of two different abilities, both groups.
         val cells = ArrayList<Float>()
         val badCells = ArrayList<String>()
-        for (r in results) {
+        for (r in pairs) {
             val c = r.cell
-            if (c.group != CellGroup.ABILITY || c.a.ability == c.b.ability) continue
+            if (c.a.ability == c.b.ability) continue
             for ((me, other, s) in listOf(Triple(c.labelA, c.labelB, r.tally.shareA), Triple(c.labelB, c.labelA, r.tally.shareB))) {
                 cells += s
-                if (s < t.cellMin || s > t.cellMax) badCells += "${c.arena} ${c.level} $me v $other ${pct(s)}"
+                if (s < t.cellMin || s > t.cellMax) badCells += "${c.arena} ${c.level} ${groupName(c.group)} $me v $other ${pct(s)}"
             }
         }
-        out += Criterion("A2", "every matchup, each side", "${pct(t.cellMin)}..${pct(t.cellMax)}", range(cells, ::pct), badCells.isEmpty() && cells.isNotEmpty(), badCells)
+        out += Criterion("B3", "every matchup, each side, equal stats and archetypes", "${pct(t.cellMin)}..${pct(t.cellMax)}", range(cells, ::pct), badCells.isEmpty() && cells.isNotEmpty(), badCells)
 
-        // A3: the clock, per ability pair (same-ability pairs too).
+        // B4: the clock, per ability pair (same-ability pairs too), both groups.
         val clock = ArrayList<Float>()
         val badClock = ArrayList<String>()
-        for (r in results) {
+        for (r in pairs) {
             val c = r.cell
-            if (c.group != CellGroup.ABILITY) continue
             val s = r.tally.clockShare
             clock += s
             val max = if (c.arena == t.largeArena) t.clockMaxLarge else t.clockMax
-            if (s > max) badClock += "${c.arena} ${c.level} ${c.labelA} v ${c.labelB} ${pct(s)}"
+            if (s > max) badClock += "${c.arena} ${c.level} ${groupName(c.group)} ${c.labelA} v ${c.labelB} ${pct(s)}"
         }
         out += Criterion(
-            "A3", "rounds ended by the clock, per ability pair", "<= ${pct(t.clockMax)} (${t.largeArena}: <= ${pct(t.clockMaxLarge)})",
+            "B4", "rounds ended by the clock, per ability pair", "<= ${pct(t.clockMax)} (${t.largeArena}: <= ${pct(t.clockMaxLarge)})",
             range(clock, ::pct), badClock.isEmpty() && clock.isNotEmpty(), badClock,
         )
 
-        // A4, A5: judged per ability pair (same-ability pairs too), so a failing pair cannot hide in an arena's
-        // average; the average over each arena's ability cells, per level, is shown next to it.
+        // B5, B6: judged per ability pair (same-ability pairs too, both groups), so a failing pair cannot hide in an
+        // arena's average; the average over each arena's cells of each group, per level, is shown next to it.
         val hits = ArrayList<Float>()
         val length = ArrayList<Float>()
         val badHits = ArrayList<String>()
         val badLength = ArrayList<String>()
-        for (r in results) {
+        for (r in pairs) {
             val c = r.cell
-            if (c.group != CellGroup.ABILITY) continue
             val h = r.tally.hitsPerRingOut
             val s = r.tally.meanMatchS
             hits += h
             length += s
-            if (!(h >= t.hitsMin && h <= t.hitsMax)) badHits += "${c.arena} ${c.level} ${c.labelA} v ${c.labelB} ${one(h)}"
-            if (s < t.matchMinS || s > t.matchMaxS) badLength += "${c.arena} ${c.level} ${c.labelA} v ${c.labelB} ${one(s)} s"
+            val hitsMax = if (c.arena == t.largeArena) t.hitsMaxLarge else t.hitsMax
+            val minS = if (c.arena == t.smallArena) t.matchMinSmallS else t.matchMinS
+            val what = "${c.arena} ${c.level} ${groupName(c.group)} ${c.labelA} v ${c.labelB}"
+            if (!(h >= t.hitsMin && h <= hitsMax)) badHits += "$what ${one(h)}"
+            if (s < minS || s > t.matchMaxS) badLength += "$what ${one(s)} s"
         }
         val arenaHits = ArrayList<Float>()
         val arenaLength = ArrayList<Float>()
-        for ((arena, level) in keys) {
-            val sum = arenaTotal(results, arena, level) ?: continue
+        for (group in PAIR_GROUPS) for ((arena, level) in pairs.filter { it.cell.group == group }.map { it.cell.arena to it.cell.level }.distinct()) {
+            val sum = arenaTotal(results, arena, level, group) ?: continue
             arenaHits += sum.hitsPerRingOut
             arenaLength += sum.meanMatchS
         }
         out += Criterion(
-            "A4", "hits per ring-out, per ability pair", "${one(t.hitsMin)}..${one(t.hitsMax)}",
+            "B5", "hits per ring-out, per ability pair", "${one(t.hitsMin)}..${one(t.hitsMax)} (${t.largeArena}: ..${one(t.hitsMaxLarge)})",
             "per pair ${range(hits, ::one)} (per arena ${range(arenaHits, ::one)})", badHits.isEmpty() && hits.isNotEmpty(), badHits,
         )
         out += Criterion(
-            "A5", "mean match length, per ability pair", "${one(t.matchMinS)}..${one(t.matchMaxS)} s",
+            "B6", "mean match length, per ability pair", "${one(t.matchMinS)}..${one(t.matchMaxS)} s (${t.smallArena}: ${one(t.matchMinSmallS)}..)",
             "per pair ${range(length) { "${one(it)} s" }} (per arena ${range(arenaLength) { "${one(it)} s" }})",
             badLength.isEmpty() && length.isNotEmpty(), badLength,
         )
 
-        // A6, A7: the stat cells.
+        // B7, B8: the stat cells.
         val spec = ArrayList<Float>()
         val boost = ArrayList<Float>()
         val badSpec = ArrayList<String>()
@@ -434,12 +465,12 @@ object DuelMatrix {
                 if (s < t.specialistMin || s > t.specialistMax) badSpec += what
             }
         }
-        out += Criterion("A6", "a specialist (8/4/4/4) against 5/5/5/5", "${pct(t.specialistMin)}..${pct(t.specialistMax)}", range(spec, ::pct), badSpec.isEmpty() && spec.isNotEmpty(), badSpec)
-        out += Criterion("A7", "8/8/8/8 against 5/5/5/5", ">= ${pct(t.boostedMin)}", range(boost, ::pct), badBoost.isEmpty() && boost.isNotEmpty(), badBoost)
+        out += Criterion("B7", "a specialist (8/4/4/4) against 5/5/5/5", "${pct(t.specialistMin)}..${pct(t.specialistMax)}", range(spec, ::pct), badSpec.isEmpty() && spec.isNotEmpty(), badSpec)
+        out += Criterion("B8", "8/8/8/8 against 5/5/5/5", ">= ${pct(t.boostedMin)}", range(boost, ::pct), badBoost.isEmpty() && boost.isNotEmpty(), badBoost)
 
-        // A8: the frame length.
+        // B9 (its first half): the frame length.
         out += Criterion(
-            "A8", "the same matches at another frame length", "identical",
+            "B9", "the same matches at another frame length", "identical",
             when (stepsAgree) {
                 null -> "not checked"
                 true -> "identical$stepsNote"

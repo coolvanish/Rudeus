@@ -129,22 +129,22 @@ data class DuelParams(
     /** Wobble lost per second of fight (0 = it stays until the round ends). */
     val wobbleDecayPerS: Float = 0f,
 
-    // T57: the user's rule decisions of 2026-11-12. Each has an off position that is the physics before T57, bit for bit
-    // (`theNewRulesSwitchedOffAreThePreviousPhysics`): false; 1 and 0; [NO_REACH_LIMIT] for both reaches.
+    // T57: the user's rule decisions of 2026-11-12, on by default. Each has an off position that is the physics before
+    // T57, bit for bit (`theNewRulesSwitchedOffAreThePreviousPhysics`): false; 1 and 0; [NO_REACH_LIMIT] for both reaches.
 
     /**
      * Rule 1: the JUMP stomp and the ROLL ram are hits, so they share the dash cooldown: [DuelInput.Special] for those two
      * needs the dash ready as well as the special ([DuelPhysics.canSpecial]) and starts both cooldowns. FLY's lift-off and
      * HIDE's dodge are defensive and never touch the dash. false = the specials leave the dash alone (before T57).
      */
-    val specialsShareDashCooldown: Boolean = false,
+    val specialsShareDashCooldown: Boolean = true,
     /**
      * Rule 2: SPEED lengthens the dash. Every dash (plain, counter, ram) moves at [dashSpeedMps] x
      * ([dashReachBase] + [dashReachPerSpeed] * SPEED), so its reach grows with SPEED and its duration stays. 1 and 0 =
      * every SPEED dashes as far (before T57). SPEED keeps setting the walk speed too.
      */
-    val dashReachBase: Float = 1f,
-    val dashReachPerSpeed: Float = 0f,
+    val dashReachBase: Float = 0.75f,
+    val dashReachPerSpeed: Float = 0.05f,
     /**
      * Rule 3: height matters for hits. A dash or a stomp hits only a victim whose feet are at most [hitReachUpM] above the
      * attacker's feet and at most [hitReachDownM] below them, judged at the sub-step the hit is judged in: a jump over a
@@ -153,8 +153,8 @@ data class DuelParams(
      * (scaled with the surface like [fromAboveMinM], not with the character's size). [NO_REACH_LIMIT] = no limit (before
      * T57); +infinity reads the same but does not survive JSON.
      */
-    val hitReachUpM: Float = NO_REACH_LIMIT,
-    val hitReachDownM: Float = NO_REACH_LIMIT,
+    val hitReachUpM: Float = 0.02f,
+    val hitReachDownM: Float = 0.04f,
 ) {
     init {
         // T48 searches these numbers: refuse any set that could divide by zero, reverse a push or stun forever.

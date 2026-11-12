@@ -165,12 +165,13 @@ class DuelSpecialsTest {
         assertTrue(DuelPhysics.isStunned(ram.states[ram.indexOf { it is Hit }].b))
         assertEquals(0L, ram.states[ram.indexOf { it is Hit }].a.dashMs, "the hit ends the ram")
 
-        // A ram that meets nobody: 325 ms, 9.75 cm (T48; 550 ms, 16.5 cm before), and nothing steers it; the dash
-        // cooldown is untouched. `end` is the first 16 ms frame after it.
+        // A ram that meets nobody: 325 ms, 9.75 cm at SPEED 5 (T48; 550 ms, 16.5 cm before), and nothing steers it.
+        // Since T57 it spends the dash cooldown too, so a dash right after it is ignored (before T57 it started at once).
+        // `end` is the first 16 ms frame after it.
         assertEquals(325L, P.ramDashMs)
         val end = (P.ramDashMs + 15L) / 16L * 16L
         val alone = DuelState(gifted("a", Vec2.ZERO, Ability.ROLL), fighter("b", Vec2(0f, 0.5f)))
-        val miss = runDuel(alone, OPEN, 1000L) { s ->
+        fun ramThenDash(params: DuelParams) = runDuel(alone, OPEN, 1000L, params = params) { s ->
             when {
                 s.timeMs == 0L -> inputs("a" to Special)
                 s.timeMs < end -> inputs("a" to MoveTo(Vec2(-0.3f, 0.3f)))
@@ -178,11 +179,14 @@ class DuelSpecialsTest {
                 else -> emptyMap()
             }
         }
-        assertEquals(P.dashSpeedMps * P.ramDashMs / 1000f, miss.at(end).a.pos.u, 1e-4f)
+        val miss = ramThenDash(P)
+        assertEquals(P.ramReachMFor(FighterStats.BALANCED), miss.at(end).a.pos.u, 1e-4f)
         assertEquals(0f, miss.at(end).a.pos.v, 1e-6f)
         assertTrue(miss.states.filter { it.timeMs in 16L..(end - 16L) }.all { DuelPhysics.isRamming(it.a) })
         assertEquals(DashKind.PLAIN, miss.at(end).a.dashKind)
-        assertEquals(listOf<DuelEvent>(dashStarted("a")), miss.all.filterIsInstance<DashStarted>().untimed(), "a dash right after the ram")
+        assertEquals(emptyList(), miss.all.filterIsInstance<DashStarted>(), "the ram spent the dash: ${miss.all}")
+        val unshared = ramThenDash(P.copy(specialsShareDashCooldown = false))
+        assertEquals(listOf<DuelEvent>(dashStarted("a")), unshared.all.filterIsInstance<DashStarted>().untimed(), "a dash right after the ram")
 
         // 9 cm from the edge (12 cm before T48 shortened the ram): a dash (7.5 cm) stops on the table, a ram (9.75 cm)
         // carries the roller off it.
@@ -194,7 +198,8 @@ class DuelSpecialsTest {
         assertTrue(abs(fell.atMs - 300L) <= 2 * P.subStepMs, "off the edge 9 cm later at 0.3 m/s: ${fell.atMs} ms")
         val dashed = runDuel(nearEdge, level, 2500L, script = atStart("a" to Dash()))
         assertTrue(dashed.all.none { it is RingOut })
-        assertEquals(0.135f, dashed.last.a.pos.u, 1e-4f)
+        assertEquals(0.06f + P.dashReachMFor(FighterStats.BALANCED), dashed.last.a.pos.u, 1e-4f) // 0.135
+        assertTrue(0.06f + P.ramReachMFor(FighterStats.BALANCED) > 0.15f && 0.06f + P.dashReachMFor(FighterStats.BALANCED) < 0.15f)
     }
 
     @Test

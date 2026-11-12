@@ -290,7 +290,7 @@ class DuelNewRulesTest {
         // Off: every SPEED dashes as far.
         assertEquals(1, (1..10).map { run(it, OFF).first }.distinct().size)
         // A stat factor: refused unless positive at SPEED 1 and 10, by name.
-        for (make in listOf({ DuelParams(dashReachBase = 0f) }, { DuelParams(dashReachBase = 0.5f, dashReachPerSpeed = -0.1f) })) {
+        for (make in listOf({ DuelParams(dashReachBase = 0f, dashReachPerSpeed = 0f) }, { DuelParams(dashReachBase = 0.5f, dashReachPerSpeed = -0.1f) })) {
             val e = assertFailsWith<IllegalArgumentException> { make() }
             assertTrue("dashReachBase" in (e.message ?: ""), "${e.message}")
         }

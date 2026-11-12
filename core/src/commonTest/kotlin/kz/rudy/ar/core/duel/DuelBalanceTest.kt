@@ -97,32 +97,57 @@ class DuelBalanceTest {
         assertEquals(60f, total.meanMatchS, 1e-4f)
         assertEquals(700f / 114f, total.hitsPerRingOut, 1e-4f) // 140 rounds, 26 by the clock
 
-        // The verdicts: ROLL takes 70 % of the field (A1 out), ROLL v HIDE is 90 / 10 (A2 out on both sides), the JUMP
-        // mirror ended every round by the clock and ROLL v HIDE 30 % (A3 out). A4 and A5 are judged per pair: the JUMP
-        // mirror has no ring-out at all (A4 out, though the arena's 6.1 hits per ring-out would pass); every pair's 60 s
-        // passes A5.
-        val verdicts = DuelMatrix.acceptance(results, stepsAgree = true).associateBy { it.id }
-        assertEquals(listOf("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"), verdicts.keys.toList())
-        assertFalse(verdicts.getValue("A1").pass)
-        assertEquals(listOf("t NORMAL ROLL 70.0 %"), verdicts.getValue("A1").failures)
-        assertEquals("36.7 %..70.0 %", verdicts.getValue("A1").measured)
-        assertEquals(listOf("t NORMAL ROLL v HIDE 90.0 %", "t NORMAL HIDE v ROLL 10.0 %"), verdicts.getValue("A2").failures)
-        assertEquals(listOf("t NORMAL JUMP v JUMP 100.0 %", "t NORMAL ROLL v HIDE 30.0 %"), verdicts.getValue("A3").failures)
-        assertFalse(verdicts.getValue("A4").pass)
-        assertEquals(listOf("t NORMAL JUMP v JUMP inf"), verdicts.getValue("A4").failures)
-        assertEquals("per pair 5.0..inf (per arena 6.1..6.1)", verdicts.getValue("A4").measured)
-        assertTrue(verdicts.getValue("A5").pass)
-        assertEquals("per pair 60.0 s..60.0 s (per arena 60.0 s..60.0 s)", verdicts.getValue("A5").measured)
-        // One pair over the bound fails A4 even when its arena's average is inside (ROLL v HIDE 7.1 -> 10.0).
+        // The verdicts (T57's B table; with T48's 35..65 % for the archetype field, so that ROLL's 70 % is out as it was
+        // for A1): ROLL takes 70 % of the field (B2 out), ROLL v HIDE is 90 / 10 (B3 out on both sides), the JUMP mirror
+        // ended every round by the clock and ROLL v HIDE 30 % (B4 out). B5 and B6 are judged per pair: the JUMP mirror
+        // has no ring-out at all (B5 out, though the arena's 6.1 hits per ring-out would pass); every pair's 60 s passes
+        // B6. No equal-stats cells: B1 cannot pass on nothing.
+        val verdicts = DuelMatrix.acceptance(results, stepsAgree = true, t = Acceptance(fieldMin = 0.35f, fieldMax = 0.65f)).associateBy { it.id }
+        assertEquals(listOf("B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"), verdicts.keys.toList())
+        assertFalse(verdicts.getValue("B1").pass)
+        assertEquals("no cells", verdicts.getValue("B1").measured)
+        assertFalse(verdicts.getValue("B2").pass)
+        assertEquals(listOf("t NORMAL ROLL 70.0 %"), verdicts.getValue("B2").failures)
+        assertEquals("36.7 %..70.0 %", verdicts.getValue("B2").measured)
+        assertTrue(DuelMatrix.acceptance(results, stepsAgree = true).first { it.id == "B2" }.pass, "70 % is inside T57's 30..70 %")
+        assertEquals(listOf("t NORMAL archetype ROLL v HIDE 90.0 %", "t NORMAL archetype HIDE v ROLL 10.0 %"), verdicts.getValue("B3").failures)
+        assertEquals(listOf("t NORMAL archetype JUMP v JUMP 100.0 %", "t NORMAL archetype ROLL v HIDE 30.0 %"), verdicts.getValue("B4").failures)
+        assertFalse(verdicts.getValue("B5").pass)
+        assertEquals(listOf("t NORMAL archetype JUMP v JUMP inf"), verdicts.getValue("B5").failures)
+        assertEquals("per pair 5.0..inf (per arena 6.1..6.1)", verdicts.getValue("B5").measured)
+        assertTrue(verdicts.getValue("B6").pass)
+        assertEquals("per pair 60.0 s..60.0 s (per arena 60.0 s..60.0 s)", verdicts.getValue("B6").measured)
+        // One pair over the bound fails B5 even when its arena's average is inside (ROLL v HIDE 7.1 -> 10.0).
         val heavy = results.map { if (it.cell.labelA == "ROLL" && it.cell.labelB == "HIDE") it.copy(tally = it.tally.copy(hits = 140)) else it }
-        assertEquals(listOf("t NORMAL JUMP v JUMP inf", "t NORMAL ROLL v HIDE 10.0"), DuelMatrix.acceptance(heavy, true).first { it.id == "A4" }.failures)
-        // No stat cells: A6 and A7 cannot pass on nothing; A8 as given.
-        assertFalse(verdicts.getValue("A6").pass || verdicts.getValue("A7").pass)
-        assertTrue(verdicts.getValue("A8").pass)
-        assertFalse(DuelMatrix.acceptance(results, stepsAgree = null).last().pass, "A8 not checked is not a pass")
-        // The large table has its own clock bound.
+        assertEquals(listOf("t NORMAL archetype JUMP v JUMP inf", "t NORMAL archetype ROLL v HIDE 10.0"), DuelMatrix.acceptance(heavy, true).first { it.id == "B5" }.failures)
+        // No stat cells: B7 and B8 cannot pass on nothing; B9 as given.
+        assertFalse(verdicts.getValue("B7").pass || verdicts.getValue("B8").pass)
+        assertTrue(verdicts.getValue("B9").pass)
+        assertFalse(DuelMatrix.acceptance(results, stepsAgree = null).last().pass, "B9 not checked is not a pass")
+        // The large table has its own clock bound and hits bound (up to 10: ROLL v HIDE's 10 hits pass there), the small
+        // one its own shortest match (20 s: a 25 s pair fails B6 elsewhere, passes there).
         val large = results.map { it.copy(cell = it.cell.copy(arena = "large")) }
-        assertEquals(listOf("large NORMAL JUMP v JUMP 100.0 %"), DuelMatrix.acceptance(large, true).first { it.id == "A3" }.failures)
+        assertEquals(listOf("large NORMAL archetype JUMP v JUMP 100.0 %"), DuelMatrix.acceptance(large, true).first { it.id == "B4" }.failures)
+        assertEquals(listOf("large NORMAL archetype JUMP v JUMP inf"), DuelMatrix.acceptance(heavy.map { it.copy(cell = it.cell.copy(arena = "large")) }, true).first { it.id == "B5" }.failures)
+        val quick = results.map { it.copy(tally = it.tally.copy(matchMs = 250_000L)) } // 25 s a match
+        assertEquals(results.size, DuelMatrix.acceptance(quick, true).first { it.id == "B6" }.failures.size)
+        assertTrue(DuelMatrix.acceptance(quick.map { it.copy(cell = it.cell.copy(arena = "small")) }, true).first { it.id == "B6" }.pass)
+
+        // T57's equal-stats group (B1): the same pairs with both sides 5/5/5/5, against the field like B2 but at 35..65 %.
+        val equal = results.map { r ->
+            r.copy(cell = r.cell.copy(group = CellGroup.EQUAL, a = r.cell.a.copy(stats = FighterStats.BALANCED), b = r.cell.b.copy(stats = FighterStats.BALANCED)))
+        }
+        val eq = DuelMatrix.acceptance(equal, true).associateBy { it.id }
+        assertEquals(listOf("t NORMAL ROLL 70.0 %"), eq.getValue("B1").failures)
+        assertEquals("no cells", eq.getValue("B2").measured)
+        assertEquals(listOf("t NORMAL equal ROLL v HIDE 90.0 %", "t NORMAL equal HIDE v ROLL 10.0 %"), eq.getValue("B3").failures)
+        assertEquals(
+            DuelMatrix.againstField(results, "t", BotLevel.NORMAL, Ability.ROLL),
+            DuelMatrix.againstField(equal, "t", BotLevel.NORMAL, Ability.ROLL, CellGroup.EQUAL),
+        )
+        val eqCells = DuelMatrix.equalCells(listOf("x", "y"), listOf(BotLevel.NORMAL, BotLevel.HARD))
+        assertEquals(40, eqCells.size)
+        assertTrue(eqCells.all { it.group == CellGroup.EQUAL && it.a.stats == FighterStats.BALANCED && it.b.stats == FighterStats.BALANCED })
 
         // The stat cells: specialists within 40..65 %, 8/8/8/8 at least 65 %.
         val stat = DuelMatrix.statCells(listOf("t"), listOf(BotLevel.NORMAL))
@@ -134,9 +159,9 @@ class DuelBalanceTest {
             CellResult(c, CellTally(matches = 10, winsA = wins, winsB = 10 - wins))
         }
         val sv = DuelMatrix.acceptance(results + statResults, true).associateBy { it.id }
-        assertEquals(Ability.entries.map { "t NORMAL $it GUARD 30.0 %" }, sv.getValue("A6").failures)
-        assertTrue(sv.getValue("A7").pass)
-        assertEquals("70.0 %..70.0 %", sv.getValue("A7").measured)
+        assertEquals(Ability.entries.map { "t NORMAL $it GUARD 30.0 %" }, sv.getValue("B7").failures)
+        assertTrue(sv.getValue("B8").pass)
+        assertEquals("70.0 %..70.0 %", sv.getValue("B8").measured)
 
         // The numbers print the same everywhere.
         assertEquals("45.7 %", DuelMatrix.pct(0.4567f))
@@ -150,24 +175,27 @@ class DuelBalanceTest {
 
     @Test
     fun acceptanceHoldsOnASample() {
-        // A reduced matrix: the ability cells on the four arenas at NORMAL and HARD, 20 matches each (1600, a few
-        // seconds), judged by A1, A3 and A4 (per pair) with widened margins. Not the acceptance itself (`duel matrix
-        // --n 200` is, see docs/duel-balance.md: A1 fails it): a guard that turns red when a later change breaks the
-        // balance badly: an ability that (almost) never or always wins against the field, rounds left to the clock, or a
-        // pair that needs far more hits than A4's 8 to ring anyone out.
-        val cells = DuelMatrix.abilityCells(DuelArenas.MATRIX.keys.toList(), listOf(BotLevel.NORMAL, BotLevel.HARD))
+        // A reduced matrix (T57: re-pointed at B1 and B4): the equal-stats cells (all 5/5/5/5) on the four arenas at
+        // NORMAL and HARD, 20 matches each (1600), judged by B1 with a widened margin, B4 as it is and B5 (per pair)
+        // widened. Not the acceptance itself (`duel matrix --n 200` is, see docs/duel-balance.md): a guard that turns red
+        // when a later change breaks the balance badly: an ability that wins far too much or too little against the field
+        // at equal stats, rounds left to the clock, or a pair that needs far more hits than B5's 8 to ring anyone out.
+        val cells = DuelMatrix.equalCells(DuelArenas.MATRIX.keys.toList(), listOf(BotLevel.NORMAL, BotLevel.HARD))
         val results = cells.map { c -> CellResult(c, DuelMatrix.tally(DuelMatrix.play(c, DuelArenas.MATRIX.getValue(c.arena), 1L, 21L))) }
-        val wide = Acceptance(fieldMin = 0.03f, fieldMax = 0.97f, clockMax = 0.15f, clockMaxLarge = 0.25f, hitsMax = 12f)
+        val wide = Acceptance(equalMin = 0.10f, equalMax = 0.90f, hitsMax = 16f, hitsMaxLarge = 16f)
         val verdicts = DuelMatrix.acceptance(results, stepsAgree = null, t = wide).associateBy { it.id }
         val strict = DuelMatrix.acceptance(results, stepsAgree = null).associateBy { it.id }
-        println("acceptanceHoldsOnASample: A1 ${verdicts.getValue("A1").measured}, A3 ${verdicts.getValue("A3").measured}, A4 ${strict.getValue("A4").measured}, A5 ${strict.getValue("A5").measured}")
-        for (id in listOf("A1", "A3", "A4")) {
+        println(
+            "acceptanceHoldsOnASample: B1 ${strict.getValue("B1").measured} (${strict.getValue("B1").failures.size} out of 35..65 %), " +
+                "B4 ${strict.getValue("B4").measured}, B5 ${strict.getValue("B5").measured}, B6 ${strict.getValue("B6").measured}",
+        )
+        for (id in listOf("B1", "B4", "B5")) {
             val v = verdicts.getValue(id)
             assertTrue(v.pass, "$id ${v.measured} out of ${v.threshold}: ${v.failures}")
         }
         // Every one of them ended, and the rounds ended on the table.
         assertTrue(results.all { it.tally.unfinished == 0 && it.tally.matches == 20 })
-        assertTrue(strict.getValue("A3").pass, "A3 ${strict.getValue("A3")}")
+        assertTrue(strict.getValue("B4").pass, "B4 ${strict.getValue("B4")}")
     }
 
     @Test

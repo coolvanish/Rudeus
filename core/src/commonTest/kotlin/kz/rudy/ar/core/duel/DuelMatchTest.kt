@@ -213,14 +213,15 @@ class DuelMatchTest {
 
     @Test
     fun theEarlierRingOutLosesAtAnyFrameRateAndInEitherSlot() {
-        // A clash on the 20 cm table: y, a little weaker and 0.6 mm closer to its edge, leaves the table two sub-steps
-        // before x does (376 and 392 ms), so in a 33 ms frame both ring-outs arrive in the same DuelPhysics call. The
+        // A clash on the 20 cm table: y, a little weaker and 0.2 mm closer to its edge, leaves the table two sub-steps
+        // before x does (400 and 416 ms), so in a 33 ms frame both ring-outs arrive in the same DuelPhysics call. The
         // earlier one loses, whatever the frames or the slots. (x's mark was -0.04 before T48's stat factors moved the
-        // two ring-outs 40 ms apart; -0.0414 puts them back two sub-steps apart in one call.)
+        // two ring-outs 40 ms apart, -0.0414 / 0.042 after; T57's SPEED-lengthened dash (SPEED 1: 0.8 x) put them at 392
+        // and 408 ms, across a 33 ms frame boundary: -0.0436 / 0.0438 puts them back two sub-steps apart in one call.)
         val tiny = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.2f, 0.3f), spawn = Vec2(0f, 0.1f))
         val x = Contestant("x", FighterStats(10, 1, 1, 8), Ability.JUMP)
         val y = Contestant("y", FighterStats(8, 1, 2, 9), Ability.JUMP)
-        val marks = Vec2(-0.0414f, 0f) to Vec2(0.042f, 0f)
+        val marks = Vec2(-0.0436f, 0f) to Vec2(0.0438f, 0f)
 
         // The physics alone (no match): both fly off, y first, 16 ms apart, in one 33 ms call.
         val raw = DuelMatch.start(x, y, tiny, marks).duel
@@ -362,7 +363,9 @@ class DuelMatchTest {
         assertEquals(mid, json.decodeFromString(DuelMatchState.serializer(), json.encodeToString(DuelMatchState.serializer(), mid)))
         val step = MatchStep(mid, t.all)
         assertEquals(step, Json.decodeFromString(MatchStep.serializer(), Json.encodeToString(MatchStep.serializer(), step)))
-        val later = play(mid, NARROW, maxMs = 6_000L, script = { mapOf(1000L to inputs("red" to Dash())) })
+        // Red's dash once its stomp's dash cooldown is over (T57: the stomp spends the dash too; at 1000 ms before).
+        val dashAt = (DuelParams.DEFAULT.cooldownMsFor(RED.stats) + 15L) / 16L * 16L
+        val later = play(mid, NARROW, maxMs = 3_000L + dashAt + 3_000L, script = { mapOf(dashAt to inputs("red" to Dash())) })
         val inPoint = later.states.first { it.phase == MatchPhase.POINT }
         assertEquals(inPoint, Json.decodeFromString(DuelMatchState.serializer(), Json.encodeToString(DuelMatchState.serializer(), inPoint)))
     }

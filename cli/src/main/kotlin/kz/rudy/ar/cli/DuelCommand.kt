@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * duel match  --a <fighter> --b <fighter> [--arena empty|cup|small|large] [--level-a easy|normal|hard] [--level-b ...]
  *             [--seed 1] [--step-ms 33] [--params file.json] [--rules file.json] [--tuning file.json] [--bundle docs/bundled]
  * duel series (the same) --n 200
- * duel matrix [--level normal,hard] [--arenas all|empty,cup,small,large] [--n 200] [--seed 1] [--groups ability,stat]
+ * duel matrix [--level normal,hard] [--arenas all|empty,cup,small,large] [--n 200] [--seed 1] [--groups ability,equal,stat]
  *             [--params file.json] [--rules file.json] [--tuning file.json] [--bundle docs/bundled] [--out build/duel]
  *             [--threads <cores>] [--check-n <n>] [--check-step-ms 16] [--step-ms 33] [--gate]
  *
@@ -51,10 +51,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * an ability with stats power,speed,guard,agility ("roll:7,6,5,2"), or "@<ref>": a bundled character
  * (<bundle>/<ref>/sheet.json: sheet.fighter, sheet.ability).
  *
- * matrix plays every cell (ability pairs with archetype stats; per ability the specialists 8/4/4/4 and the illegal
- * 8/8/8/8 against 5/5/5/5; the bundled round robin with --bundle) n times on each arena at each level, spread over
- * --threads, replays the first --check-n matches of every cell at --check-step-ms (A8: they must be identical), prints
- * the acceptance table of ai/tasks/T48 and writes <out>/matrix.md and <out>/matrix.json (default build/duel; never
+ * matrix plays every cell (ability pairs with archetype stats; T57: ability pairs all at 5/5/5/5, the "equal" group; per
+ * ability the specialists 8/4/4/4 and the illegal 8/8/8/8 against 5/5/5/5; the bundled round robin with --bundle) n
+ * times on each arena at each level, spread over --threads, replays the first --check-n matches of every cell at
+ * --check-step-ms (B9: they must be identical), prints the acceptance table of ai/tasks/T57 (B1..B9) and writes
+ * <out>/matrix.md and <out>/matrix.json (default build/duel; never
  * runs/, which belongs to MetricsLog). The same arguments print the same table (the timing goes to stderr). Exit 0
  * whatever the verdicts; with --gate, 1 unless every criterion passes.
  * --params / --rules / --tuning are JSON files of DuelParams / DuelRules / BotTuning (missing fields = the defaults).
@@ -235,11 +236,12 @@ private fun duelMatrix(flags: Flags): Int {
         if (a == "all") DuelArenas.MATRIX.keys.toList() else a.split(',').map { arenaByName(it.trim()).first }.distinct()
     }
     val bundleDir = flags.get("bundle")?.let(::File)
-    val groups = (flags.get("groups") ?: "ability,stat").split(',').map { it.trim().lowercase() }.toSet()
+    val groups = (flags.get("groups") ?: "ability,equal,stat").split(',').map { it.trim().lowercase() }.toSet()
     val outDir = File(flags.get("out") ?: DUEL_DEFAULT_OUT)
     refuseRunsDir(outDir)
 
     val cells = ArrayList<MatrixCell>()
+    if ("equal" in groups) cells += DuelMatrix.equalCells(arenas, levels)
     if ("ability" in groups) cells += DuelMatrix.abilityCells(arenas, levels)
     if ("stat" in groups) cells += DuelMatrix.statCells(arenas, levels)
     var bundled: List<Pair<String, Contestant>> = emptyList()
@@ -249,7 +251,7 @@ private fun duelMatrix(flags: Flags): Int {
         val distinct = bundled.distinctBy { it.second.stats to it.second.ability }.map { (_, c) -> fighterLabel(c) to c }
         cells += DuelMatrix.roundRobin(distinct, arenas, levels)
     }
-    if (cells.isEmpty()) throw CliError("no cells: --groups ability,stat and/or --bundle <dir>")
+    if (cells.isEmpty()) throw CliError("no cells: --groups ability,equal,stat and/or --bundle <dir>")
 
     val command = "duel matrix --n $n --seed $seed --level ${levels.joinToString(",") { it.name.lowercase() }} --arenas ${arenas.joinToString(",")} " +
         "--groups ${groups.sorted().joinToString(",")}" + (bundleDir?.let { " --bundle ${it.path}" } ?: "") +
@@ -287,7 +289,7 @@ private fun duelMatrix(flags: Flags): Int {
                 replayed++
                 if (r != matches[k]) {
                     differ++
-                    if (differ <= 5) System.err.println("A8: ${cell.arena} ${cell.level} ${cell.labelA} v ${cell.labelB} seed ${seed + k}: $stepMs ms ${matches[k]} vs $checkStepMs ms $r")
+                    if (differ <= 5) System.err.println("B9: ${cell.arena} ${cell.level} ${cell.labelA} v ${cell.labelB} seed ${seed + k}: $stepMs ms ${matches[k]} vs $checkStepMs ms $r")
                 }
             }
             results += CellResult(cell, DuelMatrix.tally(matches))
@@ -343,6 +345,8 @@ private fun bundleFighters(dir: File): List<Pair<String, Contestant>> {
 
 private fun statsText(s: FighterStats) = "${s.power}/${s.speed}/${s.guard}/${s.agility}"
 
+private fun groupTitle(group: CellGroup) = if (group == CellGroup.EQUAL) "equal stats, 5/5/5/5" else "archetype stats"
+
 private fun fighterLabel(c: Contestant) = "${c.ability} ${statsText(c.stats)}"
 
 private fun matrixMarkdown(
@@ -365,8 +369,9 @@ private fun matrixMarkdown(
     appendLine()
     appendLine(
         "Numbers: ${s.sources}. $n matches per cell (seeds $seed..${seed + n - 1}, marks swapped every other match from the first, as duel series does), both sides " +
-            "bots of the same level, $stepMs ms frames; A8 replays $checkN per cell at $checkStepMs ms. Clock = share of the " +
-            "rounds ended by the round clock; hits = Hit + Clash events per ring-out (all rounds' hits); s = mean match length.",
+            "bots of the same level, $stepMs ms frames; B9 replays $checkN per cell at $checkStepMs ms. Clock = share of the " +
+            "rounds ended by the round clock; hits = Hit + Clash events per ring-out (all rounds' hits); s = mean match length. " +
+            "\"equal\": both sides 5/5/5/5 (B1); \"archetype\": each ability's stats for a character without stats (B2).",
     )
     appendLine()
     appendLine("## Acceptance")
@@ -374,7 +379,7 @@ private fun matrixMarkdown(
     appendLine("| # | Criterion | Threshold | Measured | Verdict |")
     appendLine("|---|---|---|---|---|")
     for (c in acceptance) appendLine("| ${c.id} | ${c.title} | ${c.threshold} | ${c.measured} | ${if (c.pass) "PASS" else "FAIL"} (${c.failures.size} out) |")
-    appendLine("| A9 | every core/duel test green | - | not measured here: `scripts/verify.sh` | - |")
+    appendLine("| B10 | every core/duel test green | - | not measured here: `scripts/verify.sh` (B9's other half, the rules switched off, is the test `theNewRulesSwitchedOffAreThePreviousPhysics`) | - |")
     appendLine()
     for (c in acceptance.filter { it.failures.isNotEmpty() }) {
         val shown = c.failures.take(16)
@@ -382,35 +387,38 @@ private fun matrixMarkdown(
     }
     if (acceptance.any { it.failures.isNotEmpty() }) appendLine()
 
-    appendLine("## Overview (ability cells)")
-    appendLine()
-    appendLine("| arena | level | clock | worst pair clock | s | shortest / longest pair s | hits / ring-out | most hits, pair | ring-outs / match | wall slams / match | specials / match |")
-    appendLine("|---|---|---|---|---|---|---|---|---|---|---|")
-    for (arena in arenas) for (level in levels) {
-        val sum = DuelMatrix.arenaTotal(results, arena, level) ?: continue
-        val pairs = results.filter { it.cell.group == CellGroup.ABILITY && it.cell.arena == arena && it.cell.level == level }
-        val worst = pairs.maxByOrNull { it.tally.clockShare }
-        val most = pairs.maxByOrNull { it.tally.hitsPerRingOut }
-        val shortest = pairs.minOf { it.tally.meanMatchS }
-        val longest = pairs.maxOf { it.tally.meanMatchS }
-        appendLine(
-            "| $arena | $level | ${pct(sum.clockShare)} | ${worst?.let { "${it.cell.labelA} v ${it.cell.labelB} ${pct(it.tally.clockShare)}" } ?: "-"} | " +
-                "${one(sum.meanMatchS)} | ${one(shortest)} / ${one(longest)} | ${one(sum.hitsPerRingOut)} | " +
-                "${most?.let { "${it.cell.labelA} v ${it.cell.labelB} ${one(it.tally.hitsPerRingOut)}" } ?: "-"} | ${one(sum.ringOuts.toFloat() / sum.matches)} | " +
-                "${one(sum.wallSlams.toFloat() / sum.matches)} | ${one(sum.specials.toFloat() / sum.matches)} |",
-        )
+    for (group in DuelMatrix.PAIR_GROUPS) {
+        if (results.none { it.cell.group == group }) continue
+        appendLine("## Overview (${groupTitle(group)})")
+        appendLine()
+        appendLine("| arena | level | clock | worst pair clock | s | shortest / longest pair s | hits / ring-out | most hits, pair | ring-outs / match | wall slams / match | specials / match |")
+        appendLine("|---|---|---|---|---|---|---|---|---|---|---|")
+        for (arena in arenas) for (level in levels) {
+            val sum = DuelMatrix.arenaTotal(results, arena, level, group) ?: continue
+            val pairs = results.filter { it.cell.group == group && it.cell.arena == arena && it.cell.level == level }
+            val worst = pairs.maxByOrNull { it.tally.clockShare }
+            val most = pairs.maxByOrNull { it.tally.hitsPerRingOut }
+            val shortest = pairs.minOf { it.tally.meanMatchS }
+            val longest = pairs.maxOf { it.tally.meanMatchS }
+            appendLine(
+                "| $arena | $level | ${pct(sum.clockShare)} | ${worst?.let { "${it.cell.labelA} v ${it.cell.labelB} ${pct(it.tally.clockShare)}" } ?: "-"} | " +
+                    "${one(sum.meanMatchS)} | ${one(shortest)} / ${one(longest)} | ${one(sum.hitsPerRingOut)} | " +
+                    "${most?.let { "${it.cell.labelA} v ${it.cell.labelB} ${one(it.tally.hitsPerRingOut)}" } ?: "-"} | ${one(sum.ringOuts.toFloat() / sum.matches)} | " +
+                    "${one(sum.wallSlams.toFloat() / sum.matches)} | ${one(sum.specials.toFloat() / sum.matches)} |",
+            )
+        }
+        appendLine()
     }
-    appendLine()
 
     val abilities = Ability.entries
-    for (arena in arenas) for (level in levels) {
-        val cells = results.filter { it.cell.group == CellGroup.ABILITY && it.cell.arena == arena && it.cell.level == level }
+    for (group in DuelMatrix.PAIR_GROUPS) for (arena in arenas) for (level in levels) {
+        val cells = results.filter { it.cell.group == group && it.cell.arena == arena && it.cell.level == level }
         if (cells.isEmpty()) continue
         fun cell(x: Ability, y: Ability): Pair<CellResult, Boolean>? {
             cells.firstOrNull { it.cell.a.ability == x && it.cell.b.ability == y }?.let { return it to false }
             return cells.firstOrNull { it.cell.a.ability == y && it.cell.b.ability == x }?.let { it to true }
         }
-        appendLine("## Abilities: $arena, $level v $level")
+        appendLine("## Abilities (${groupTitle(group)}): $arena, $level v $level")
         appendLine()
         appendLine("Row's win share against the column, then clock / s / hits per ring-out of the pair.")
         appendLine()
@@ -422,9 +430,10 @@ private fun matrixMarkdown(
                 val t = if (flipped) r.tally.swapped() else r.tally
                 "${pct(t.shareA)} / ${pct(t.clockShare)} / ${one(t.meanMatchS)} s / ${one(t.hitsPerRingOut)}"
             }
-            val f = DuelMatrix.againstField(results, arena, level, x)
+            val f = DuelMatrix.againstField(results, arena, level, x, group)
             val field = f?.let { "${pct(it.shareA)} / ${pct(it.clockShare)} / ${one(it.meanMatchS)} s / ${one(it.hitsPerRingOut)}" } ?: "-"
-            appendLine("| **$x** ${statsText(FighterStats.defaultFor(x))} | ${row.joinToString(" | ")} | $field |")
+            val stats = if (group == CellGroup.EQUAL) FighterStats.BALANCED else FighterStats.defaultFor(x)
+            appendLine("| **$x** ${statsText(stats)} | ${row.joinToString(" | ")} | $field |")
         }
         appendLine()
     }
