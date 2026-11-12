@@ -11,8 +11,10 @@ import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.domain.defaultFor
+import kz.rudy.ar.core.emote.EmotePose
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.EmoteSound
+import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
@@ -116,6 +118,12 @@ class TableEngine(
     /** The physics driver. No host reads it (T54); the tests read physics state through it. */
     internal val loop = GameLoop(separate = separate)
 
+    /** T58: the walking game, the first stage ([Walk]). */
+    private val walk = Walk()
+
+    /** T58: what a tap, a command and a frame mean now ([Stage]). */
+    private var stage: Stage = walk
+
     /** The one the sprite and physics are built for: follows the slot until the anchor, then locked. */
     var surface: Surface = surface
         private set
@@ -204,32 +212,7 @@ class TableEngine(
             log("command_ignored serial=${c.serial} id=${c.id} anchored=${anchored}")
             return
         }
-        when (val action = c.action) {
-            CharacterAction.Jump -> {
-                val s = loop.state(c.id) ?: return
-                if (!loop.jump(c.id)) log("jump_ignored id=${c.id} mode=${s.mode} ability=${s.ability}")
-                else log("jump id=${c.id} ability=${s.ability} u=${s.pos.u} v=${s.pos.v}") // Pixel evidence
-            }
-            CharacterAction.WalkForward -> {
-                val s = loop.state(c.id) ?: return
-                val target = s.pos + s.facing * (0.10f * profile.scale)
-                val boundary = loop.level.boundary
-                if (boundary != null && !boundary.contains(target)) {
-                    log("voice_walk_outside_boundary id=${c.id} u=${target.u} v=${target.v}")
-                } else {
-                    loop.walkTo(c.id, target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
-                }
-            }
-            is CharacterAction.Emote -> {
-                val member = from.members.firstOrNull { it.id == c.id } ?: return
-                val choreo = member.emotes[action.emote]
-                loop.emote(c.id, choreo)
-                if (from.soundsOn) playEmoteSound(choreo.sound)
-                log("emote id=${c.id} emote=${action.emote} source=${member.emotes.source} ms=${choreo.durationMs}")
-            }
-            CharacterAction.Dash, CharacterAction.Special ->
-                log("duel_command_ignored serial=${c.serial} id=${c.id} duel=false")
-        }
+        stage.command(c, from)
     }
 
     /** T32: whose taps and buttons: the slot's active member when it is on the table, else the first. */
@@ -239,7 +222,7 @@ class TableEngine(
      * T37: where every member stands, in cast order, for the scan's merge (the object under a character never changes)
      * and its boundary fold; one default state while nobody is on the table.
      */
-    fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+    fun standing(): List<CharacterState> = stage.standing()
 
     /**
      * T32: the physics cast follows the slot's members. Main thread, from the anchor and from every anchored frame (a
@@ -342,30 +325,9 @@ class TableEngine(
         trackingEdge(input.tracking)
         val now = input.nowMs
         val tracking = input.tracking
-        // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
-        // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
         syncCast { input.camera.right } // T32: members added or removed since the last frame
-        val player = replay
-        val scripted: (() -> Unit)? = if (player == null) null else {
-            {
-                val first = player.issued
-                val hero = loop.firstId // T32: the scenario drives the FIRST member only
-                player.due(loop.simMs).forEachIndexed { i, step ->
-                    when (step) {
-                        is ScenarioStep.WalkTo -> if (hero != null) loop.walkTo(hero, step.target)
-                        is ScenarioStep.Jump -> if (hero == null || !loop.jump(hero)) {
-                            log("jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
-                        }
-                    }
-                    log("scenario_step idx=${first + i} at_ms=${step.atMs}")
-                }
-                if (player.finished) {
-                    replay = null
-                    log("scenario_done ms=${loop.simMs - replayStartMs}")
-                }
-            }
-        }
-        val cast = loop.onFrame(now, tracking, { id, e -> current().onCastEvent(id, e) }, beforeStep = scripted)
+        stage.step(input) // T58: the scenario's due taps and physics (the walking game's steps 4-5, moved into Walk)
+        val cast = loop.cast
         // footprints mini-map — the HUD never saw physics positions, so its dot stood still while the sprite
         // walked. Report every member's state about 10x a second while debug chrome is on; a small map, never per frame.
         if (current().debug && now - castStateAtMs >= CAST_STATE_PERIOD_MS) {
@@ -381,13 +343,13 @@ class TableEngine(
         val poses = ArrayList<NodePose>(cast.members.size)
         for (m in cast.members) {
             val p = poser(m.id).pose(
-                m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
-                verticalVelocity = m.body.verticalVelocity,
-                sinceLandedMs = now - loop.landedAtMs(m.id),
+                stage.body(m.id).state, cameraLocal, cameraHeightM, stage.walkPhaseMs(m.id),
+                verticalVelocity = stage.body(m.id).verticalVelocity,
+                sinceLandedMs = now - stage.landedAtMs(m.id),
                 size = current().characterSize,
-                emotePose = loop.emotePose(m.id),
+                emotePose = stage.emotePose(m.id),
             )
-            poses += if (visible) p else p.copy(visible = false)
+            poses += if (visible && stage.shows(m.id)) p else p.copy(visible = false)
         }
         return poses
     }
@@ -395,6 +357,117 @@ class TableEngine(
     /** Member [id]'s poser: made on first use and again after [spriteBuilt], at the locked surface's character height. */
     private fun poser(id: String): BillboardPoser =
         posers.getOrPut(id) { BillboardPoser(id, profile.characterHeightM, drawnRight[id] ?: false, feetDepthBias) }
+
+    /**
+     * T58: the walking game, the engine's first stage. The body of [onTap] after its guard, the `when` of [command], the
+     * scenario feed with the loop's frame (steps 4-5 of [onFrame]) and [standing] were moved here as they were; the
+     * pose loop reads the loop through the other answers. An inner class, so the moved lines use the engine's own
+     * `table`, `confirmSurface`, `replay` and the rest unchanged.
+     */
+    private inner class Walk : Stage {
+        override val fingers: Boolean get() = true
+
+        override fun tap(xPx: Float, yPx: Float, uv: Vec2, depthGapM: () -> Float?) {
+            // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first;
+            // with one member on the table `grabbable` is always null and the tap walks it, as v1.0).
+            val tapped = table.grabbable(xPx, yPx)
+            if (tapped != null) {
+                if (tapped != activeId()) current().onActiveChanged(tapped)
+                return
+            }
+            val active = activeId() ?: return
+            val from = loop.state(active)?.pos ?: return
+            val depthGap = depthGapM()
+            // Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
+            // so "in the polygon" is not "on the table". A drop in depth on the way or at the tap refuses it; :core decides.
+            // No depth reading (null) never refuses. The boundary is not touched. The character says it cannot go there
+            // (the BLOCKED line), so a refused tap is not a dead tap.
+            val gaps = port.depthGapsOnWay(from, uv, walkDepthSamples) + depthGap
+            log("tap_depth_gap=$depthGap feet_h=${loop.state(active)?.h} way=$gaps id=$active")
+            if (SurfaceBoundary.crossesEdge(gaps, profile)) {
+                log("tap_past_edge u=${uv.u} v=${uv.v}")
+                current().onCastEvent(active, CharacterEvent.BLOCKED)
+            } else {
+                confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
+                loop.walkTo(active, uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+            }
+        }
+
+        override fun command(c: CharacterCommand, from: TableSlot) {
+            when (val action = c.action) {
+                CharacterAction.Jump -> {
+                    val s = loop.state(c.id) ?: return
+                    if (!loop.jump(c.id)) log("jump_ignored id=${c.id} mode=${s.mode} ability=${s.ability}")
+                    else log("jump id=${c.id} ability=${s.ability} u=${s.pos.u} v=${s.pos.v}") // Pixel evidence
+                }
+                CharacterAction.WalkForward -> {
+                    val s = loop.state(c.id) ?: return
+                    val target = s.pos + s.facing * (0.10f * profile.scale)
+                    val boundary = loop.level.boundary
+                    if (boundary != null && !boundary.contains(target)) {
+                        log("voice_walk_outside_boundary id=${c.id} u=${target.u} v=${target.v}")
+                    } else {
+                        loop.walkTo(c.id, target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+                    }
+                }
+                is CharacterAction.Emote -> {
+                    val member = from.members.firstOrNull { it.id == c.id } ?: return
+                    val choreo = member.emotes[action.emote]
+                    loop.emote(c.id, choreo)
+                    if (from.soundsOn) playEmoteSound(choreo.sound)
+                    log("emote id=${c.id} emote=${action.emote} source=${member.emotes.source} ms=${choreo.durationMs}")
+                }
+                CharacterAction.Dash, CharacterAction.Special ->
+                    log("duel_command_ignored serial=${c.serial} id=${c.id} duel=false")
+            }
+        }
+
+        @Suppress("UNUSED_VARIABLE") // the moved last line keeps its `val cast`; the engine reads `loop.cast` after this
+        override fun step(input: FrameInput) {
+            val now = input.nowMs
+            val tracking = input.tracking
+            // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
+            // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
+            val player = replay
+            val scripted: (() -> Unit)? = if (player == null) null else {
+                {
+                    val first = player.issued
+                    val hero = loop.firstId // T32: the scenario drives the FIRST member only
+                    player.due(loop.simMs).forEachIndexed { i, step ->
+                        when (step) {
+                            is ScenarioStep.WalkTo -> if (hero != null) loop.walkTo(hero, step.target)
+                            is ScenarioStep.Jump -> if (hero == null || !loop.jump(hero)) {
+                                log("jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
+                            }
+                        }
+                        log("scenario_step idx=${first + i} at_ms=${step.atMs}")
+                    }
+                    if (player.finished) {
+                        replay = null
+                        log("scenario_done ms=${loop.simMs - replayStartMs}")
+                    }
+                }
+            }
+            val cast = loop.onFrame(now, tracking, { id, e -> current().onCastEvent(id, e) }, beforeStep = scripted)
+        }
+
+        override fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+
+        override fun shows(id: String): Boolean = true
+
+        /** The loop's body of [id], by index (no iterator: the pose loop asks twice per member per frame). */
+        override fun body(id: String): PhysicsBody {
+            val members = loop.cast.members
+            for (i in members.indices) if (members[i].id == id) return members[i].body
+            error("member $id is not in the loop") // the pose loop asks only for the loop's own members
+        }
+
+        override fun walkPhaseMs(id: String): Long = loop.walkPhaseMs(id)
+
+        override fun landedAtMs(id: String): Long = loop.landedAtMs(id)
+
+        override fun emotePose(id: String): EmotePose? = loop.emotePose(id)
+    }
 
     /**
      * T54: a tap on the table at view pixel ([xPx], [yPx]); [uv] is the table under it (the host's hit test, which its
@@ -405,38 +478,16 @@ class TableEngine(
      */
     fun onTap(xPx: Float, yPx: Float, uv: Vec2, depthGapM: () -> Float?) {
         if (!anchored) return
-        // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first;
-        // with one member on the table `grabbable` is always null and the tap walks it, as v1.0).
-        val tapped = table.grabbable(xPx, yPx)
-        if (tapped != null) {
-            if (tapped != activeId()) current().onActiveChanged(tapped)
-            return
-        }
-        val active = activeId() ?: return
-        val from = loop.state(active)?.pos ?: return
-        val depthGap = depthGapM()
-        // Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
-        // so "in the polygon" is not "on the table". A drop in depth on the way or at the tap refuses it; :core decides.
-        // No depth reading (null) never refuses. The boundary is not touched. The character says it cannot go there
-        // (the BLOCKED line), so a refused tap is not a dead tap.
-        val gaps = port.depthGapsOnWay(from, uv, walkDepthSamples) + depthGap
-        log("tap_depth_gap=$depthGap feet_h=${loop.state(active)?.h} way=$gaps id=$active")
-        if (SurfaceBoundary.crossesEdge(gaps, profile)) {
-            log("tap_past_edge u=${uv.u} v=${uv.v}")
-            current().onCastEvent(active, CharacterEvent.BLOCKED)
-        } else {
-            confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
-            loop.walkTo(active, uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
-        }
+        stage.tap(xPx, yPx, uv, depthGapM)
     }
 
     /**
      * T54: one touch event after the anchor, from the host's raw touch listener (before its tap detector). True: the
      * stream belongs to a finger that leads a member, and the host's tap detector must not see it ([CastTouch]).
-     * Before the anchor: false, nothing else.
+     * Before the anchor: false, nothing else. T58: also false, nothing asked, while the stage has no [Stage.fingers].
      */
     fun onTouch(e: TouchEvent): Boolean {
-        if (!anchored) return false
+        if (!anchored || !stage.fingers) return false
         return touch.onTouch(e, table)
     }
 
