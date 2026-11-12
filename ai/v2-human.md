@@ -72,7 +72,10 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
 2. **Copy.** `stats_title` «Кейіпкердің күші / Сила героя» repeats the stat «Күш / Сила»; `stats_from_drawing`; the duel
    strings the implementer was least sure of in Kazakh: `special_stomp` «Дүрс ет», `special_ram` «Зымыра», `duel_dash`
    «Ұмтыл», `duel_go` «Кеттік», `duel_title` «Сайыс». All in `shared/.../ui/Strings.kt` and the DESIGN.md copy table.
-3. **Duel rules** (each is a decision about the game, measured in `docs/duel-balance.md`; T57 implements what you pick):
+3. **Duel rules** (each is a decision about the game, measured in `docs/duel-balance.md`).
+   **Decided 2026-11-12 (you, in chat):** a. wobble stays; b. yes; c. yes, SPEED lengthens the dash, and FLY's
+   archetype may also change if still needed; e. height matters for hits (a jump over a dash is a dodge). T57
+   (`ai/tasks/T57-duel-balance-2.md`) implements them. d. and f. were not decided: T57 measures them again.
    a. **Wobble stays?** It is on. Without it a ring-out on a 120 cm table took 12–34 hits; with it 3.5–6.7.
       Off switch: `wobblePerHit = 0f` in `DuelParams`.
    b. **Stomp and ram spend the dash cooldown?** Today they do not, so they had to be weakened (0.85x, 1.1x) and
