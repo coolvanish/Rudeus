@@ -139,6 +139,8 @@ data class BotTuning(
  *   comes in time whenever it can.
  * @property closesInOnJumpers T57: against an opponent that can jump over a dash, it dashes only from close enough that
  *   the opponent, reacting on the next tick, could not get its feet out of reach before the dash lands.
+ * @property dodgesAnywhere a HIDE dodges a dash or a stomp coming at it wherever it stands (for the counter), not only
+ *   within [nearEdgeRadii] of an edge; before T57 this was what [sidesteps] meant for a HIDE, and it still defaults to it.
  */
 @Serializable
 data class BotSkill(
@@ -161,6 +163,7 @@ data class BotSkill(
     val jumpChance: Float = 0f,
     val reflexes: Boolean = false,
     val closesInOnJumpers: Boolean = false,
+    val dodgesAnywhere: Boolean = sidesteps,
 ) {
     init {
         require(jumpChance in 0f..1f) { "jumpChance must be in 0..1, got $jumpChance" }
@@ -186,14 +189,16 @@ data class BotSkill(
 
         /**
          * The shared plan at a fifth of a second, a small aim error, the special in its obvious situation; T57: jumps
-         * over a dash or a stomp it sees coming in time half of the time. T48:
+         * over a dash or a stomp it sees coming in time half of the time, and lifts off or dodges only within 2 radii of
+         * an edge (`nearEdgeRadii` 20 -> 2: with a jump to dodge with, a FLY or HIDE lifting or dodging at every dash took
+         * 70..80 % of the small table at equal stats). T48:
          * `nearEdgeRadii` 20 (was 4): a FLY lifts off and a HIDE dodges whenever a dash or a stomp comes at it, not only
          * near an edge (in mid-table they had no special at all: equal stats, JUMP beat FLY 80 / 20).
          */
         val NORMAL = BotSkill(
             thinkMs = 144, thinkJitterTicks = 2, dashRangeShare = 0.8f, alignCos = 0.8660254f, aimErrorShare = 0.1f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = false, weighsPush = false,
-            usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false,
+            usesSpecial = true, nearEdgeRadii = 2f, sidesteps = false, counters = false, safeRamsOnly = false,
             jumpChance = 0.5f,
         )
 
@@ -205,13 +210,15 @@ data class BotSkill(
          * one, two HARD bots of one ability still dashed together and clashed in mid-table (JUMP v JUMP on the 120 cm
          * table: 52 % of the rounds to the clock, 34 hits per ring-out); `nearEdgeRadii` 8 (was 4) for the lift-off and
          * the dodge, `sidestepEdgeRadii` 4 (as before T48) for the sidestep: with 8 for both, a HARD JUMP sidestepped so
-         * often that it lost to a NORMAL one (34 % on the empty table; 78 % with the sidestep at 4).
+         * often that it lost to a NORMAL one (34 % on the empty table; 78 % with the sidestep at 4). T57: lift-off and dodge
+         * within 2 radii of an edge (`nearEdgeRadii` 8 -> 2) and a HIDE no longer dodges anywhere (`dodgesAnywhere`
+         * false): with its jump and the dodge at every dash, a HARD HIDE took 68..83 % at equal stats.
          */
         val HARD = BotSkill(
             thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
-            usesSpecial = true, nearEdgeRadii = 8f, sidesteps = true, counters = true, safeRamsOnly = true,
-            sidestepEdgeRadii = 4f, jumpChance = 1f, reflexes = true, closesInOnJumpers = true,
+            usesSpecial = true, nearEdgeRadii = 2f, sidesteps = true, counters = true, safeRamsOnly = true,
+            sidestepEdgeRadii = 4f, jumpChance = 1f, reflexes = true, closesInOnJumpers = true, dodgesAnywhere = false,
         )
     }
 }

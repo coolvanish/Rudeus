@@ -312,7 +312,7 @@ private class Brain(
             val (dir, stomp) = threat
             val nearEdge = board.inside(me) <= skill.nearEdgeRadii * r
             val defend = canSpecial && (ability == Ability.FLY || ability == Ability.HIDE) &&
-                (nearEdge || (skill.sidesteps && ability == Ability.HIDE))
+                (nearEdge || (skill.dodgesAnywhere && ability == Ability.HIDE))
             // A HIDE's dodge comes first (it opens the counter); then a jump that clears it (T57: it costs nothing, a
             // FLY keeps its lift for later); then the lift-off.
             if (defend && ability == Ability.HIDE) return DuelInput.Special
@@ -366,7 +366,9 @@ private class Brain(
         when (self.ability) {
             Ability.JUMP -> {
                 val reach = params.stompRadiusRadii * r * t.stompReachShare
-                if (dist <= reach && (dist < Vec2.EPS || (toFoe / dist).dot(push) >= 0f) && stompReaches()) return DuelInput.Special
+                if (dist <= reach && (dist < Vec2.EPS || (toFoe / dist).dot(push) >= 0f) && stompReaches() && stompUnavoidable()) {
+                    return DuelInput.Special
+                }
             }
             Ability.ROLL -> if (ramReady(push)) return DuelInput.Special
             else -> Unit
@@ -654,6 +656,27 @@ private class Brain(
         if (!params.reachLimited) return true
         val air = 2f * physics.jumpVelocityMps / maxOf(gravity(self), 1e-3f)
         return params.inReach(myH, feetIn(foe, air))
+    }
+
+    /**
+     * JUMP, T57: a stomp spends the dash too (rule 1) and a jump gets out of its way (rule 3), so it is worth it only when
+     * the opponent cannot get out of the way: no lift-off or dodge ready, and no jump that clears the landing in time (a
+     * ROLL body cannot jump; a fighter stunned or dashing until too close to the landing cannot either). Always true with
+     * either rule off (the stomp as before T57).
+     */
+    private fun stompUnavoidable(): Boolean {
+        if (!params.reachLimited || !params.sharesDashCooldown(Ability.JUMP)) return true
+        val ability = foe.ability
+        if ((ability == Ability.FLY || ability == Ability.HIDE) && foe.specialCooldownMs <= 0L && foe.specialMs <= 0L) return false
+        val air = 2f * physics.jumpVelocityMps / maxOf(gravity(self), 1e-3f)
+        val (up, down) = jumpWindow(foe, myH + params.hitReachUpM - foeFeet) ?: return true
+        // The soonest it can act: its stun (that timer only starts once the knockback has run down: at least this) or dash.
+        val busy = maxOf(foe.stunMs, foe.dashMs) / 1000f
+        val margin = t.jumpMarginMs / 1000f
+        // A jump started at any moment from `busy` on clears the landing if it is high by then and not down yet.
+        val latest = air - up - margin
+        val earliest = air - down + margin
+        return busy > latest || latest < earliest
     }
 
     /** The opponent's feet where it stands, or the ground it will come down on. */

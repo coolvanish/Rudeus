@@ -505,10 +505,13 @@ class DuelPhysicsTest {
         }
         assertEquals(PhysicsParams.DEFAULT.walkSpeedMps * 2f, speeds[4], 1e-6f, "SPEED 5 walks twice the walking game")
         for (i in 1 until speeds.size) assertTrue(speeds[i] > speeds[i - 1])
-        // Every ability walks at its stats' speed (the walking game's ROLL x 2 does not stack on top).
+        // Every ability walks at its stats' speed (the walking game's ROLL x 2 does not stack on top); a ROLL x the duel's
+        // own `rollSpeedScale` (T57: 1.1; 1 before, then it walked exactly as the others).
         val roller = DuelState(fighter("a", Vec2.ZERO, ability = Ability.ROLL), fighter("b", Vec2(0f, 0.5f)))
         val rolled = runDuel(roller, OPEN, 1000L, script = atStart("a" to MoveTo(Vec2(5f, 0f))))
-        assertEquals(speeds[4], rolled.last.a.pos.u, 1e-4f)
+        assertEquals(speeds[4] * P.rollSpeedScale, rolled.last.a.pos.u, 1e-4f)
+        val even = runDuel(roller, OPEN, 1000L, params = P.copy(rollSpeedScale = 1f), script = atStart("a" to MoveTo(Vec2(5f, 0f))))
+        assertEquals(speeds[4], even.last.a.pos.u, 1e-4f)
         assertNotNull(rolled.last.a.body.state.target)
     }
 }

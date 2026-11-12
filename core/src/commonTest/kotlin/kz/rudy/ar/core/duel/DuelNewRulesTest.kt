@@ -9,7 +9,6 @@ import kz.rudy.ar.core.domain.Polygon
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.SurfaceProfile
-import kz.rudy.ar.core.domain.defaultFor
 import kz.rudy.ar.core.duel.DuelEvent.Clash
 import kz.rudy.ar.core.duel.DuelEvent.DashStarted
 import kz.rudy.ar.core.duel.DuelEvent.Hit
@@ -448,6 +447,12 @@ internal val PRE_T57_TUNING = BotTuning(
     ),
 )
 
+/** The archetypes as T48 left them (`FighterStats.defaultFor`; T57 changed FLY's from 3/7/3/7 to 4/6/4/6). */
+internal val PRE_T57_ARCHETYPE: Map<Ability, FighterStats> = mapOf(
+    Ability.JUMP to FighterStats(5, 5, 5, 5), Ability.FLY to FighterStats(3, 7, 3, 7),
+    Ability.ROLL to FighterStats(7, 6, 5, 2), Ability.HIDE to FighterStats(4, 5, 4, 7),
+)
+
 /** FNV-1a style fold of longs: a fingerprint that is the same on every run and platform (no identity hashes). */
 internal class Fingerprint {
     var value: Long = -3750763034362895579L
@@ -528,8 +533,8 @@ internal fun goldenMatch(i: Int, params: DuelParams, tuning: BotTuning): Pair<Si
     val arena = DuelArenas.MATRIX.values.toList()[i % 4]
     val xa = Ability.entries[i % 4]
     val xb = Ability.entries[(i / 4 + i) % 4]
-    val sa = if (i % 3 == 0) FighterStats.defaultFor(xa) else FighterStats(8, 4, 4, 4)
-    val sb = if (i % 5 == 0) FighterStats(4, 8, 4, 4) else FighterStats.defaultFor(xb)
+    val sa = if (i % 3 == 0) PRE_T57_ARCHETYPE.getValue(xa) else FighterStats(8, 4, 4, 4)
+    val sb = if (i % 5 == 0) FighterStats(4, 8, 4, 4) else PRE_T57_ARCHETYPE.getValue(xb)
     val (la, lb) = GOLDEN_LEVELS[(i / 2) % 4]
     val a = Contestant("a", sa, xa)
     val b = Contestant("b", sb, xb)

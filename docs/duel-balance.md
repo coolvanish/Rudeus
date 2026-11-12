@@ -42,7 +42,37 @@ Each ability against the field (win share, %), JUMP / FLY / ROLL / HIDE:
 | large | NORMAL | 15.7 / 75.7 / 36.3 / 72.3 | 17.0 / 57.7 / 65.8 / 59.5 |
 | large | HARD | 24.5 / 59.2 / 31.2 / 85.2 | 22.7 / 44.2 / 55.7 / 77.5 |
 
-What it says: the rules end the T48 problem the other way round. ROLL no longer runs the table (its ram now costs a
+### Step 3, best so far: candidate 8 (committed), 2026-11-12
+
+`duel matrix --n 200`, 108.4 s on 4 threads. Numbers: stomp 2.0 x, ram 1.3 x long / 2.0 x knock, counter 1.5 x, dodge
+700 ms, lift 600 ms, wobble 0.8 per hit, ROLL walks 1.1 x, reach 2.8 cm up / 4 cm down; bots: a stomp only when the
+other cannot get out of its way, FLY / HIDE lift off or dodge only within 2 radii of an edge (NORMAL and HARD, a HARD
+HIDE no longer anywhere); FLY's archetype 4/6/4/6.
+
+| # | Criterion | Threshold | Measured | Verdict |
+|---|---|---|---|---|
+| B1 | each ability against the field, all at 5/5/5/5 | 35.0 %..65.0 % | 26.7 %..60.0 % | FAIL (1 out: small HARD ROLL) |
+| B2 | each ability against the field, archetype stats | 30.0 %..70.0 % | 15.8 %..75.3 % | FAIL (9 out) |
+| B3 | every matchup, each side, equal stats and archetypes | 25.0 %..75.0 % | 5.5 %..94.5 % | FAIL (42 out) |
+| B4 | rounds ended by the clock, per ability pair | <= 25.0 % (large: <= 40.0 %) | 0.0 %..0.2 % | PASS |
+| B5 | hits per ring-out, per ability pair | 2.0..8.0 (large: ..10.0) | per pair 2.8..8.2 (per arena 3.5..7.8) | PASS |
+| B6 | mean match length, per ability pair | 30.0..120.0 s (small: 20.0..) | per pair 24.6 s..55.2 s (per arena 27.0 s..49.6 s) | PASS |
+| B7 | a specialist (8/4/4/4) against 5/5/5/5 | 40.0 %..65.0 % | 5.5 %..90.5 % | FAIL (77 out) |
+| B8 | 8/8/8/8 against 5/5/5/5 | >= 65.0 % | 95.5 %..100.0 % | PASS |
+| B9 | the same matches at another frame length | identical | identical (64 000 matches replayed at 16 ms) | PASS |
+
+| arena | level | equal stats (B1) JUMP / FLY / ROLL / HIDE | archetype stats (B2) |
+|---|---|---|---|
+| empty | NORMAL | 59.3 / 50.5 / 37.7 / 52.5 | 64.3 / 29.2 / 34.7 / 71.8 |
+| empty | HARD | 47.2 / 43.8 / 57.5 / 51.5 | 65.0 / 24.8 / 56.7 / 53.5 |
+| cup-and-book | NORMAL | 55.8 / 50.5 / 44.7 / 49.0 | 60.0 / 39.2 / 63.2 / 37.7 |
+| cup-and-book | HARD | 54.3 / 50.8 / 41.8 / 53.0 | 61.0 / 38.2 / 67.2 / 33.7 |
+| small | NORMAL | 49.7 / 45.5 / 57.8 / 47.0 | 33.7 / 33.7 / 64.7 / 68.0 |
+| small | HARD | 60.0 / 56.8 / 26.7 / 56.5 | 36.0 / 75.3 / 15.8 / 72.8 |
+| large | NORMAL | 55.2 / 48.7 / 45.2 / 51.0 | 63.7 / 23.2 / 57.5 / 55.7 |
+| large | HARD | 48.3 / 47.3 / 55.2 / 49.2 | 51.5 / 29.0 / 70.3 / 49.2 |
+
+What the step-2 table said: the rules end the T48 problem the other way round. ROLL no longer runs the table (its ram now costs a
 dash), but the stomp and the ram, still at T48's weakened 0.85 x / 1.1 x, are now worse than the dash they cost; FLY
 (a plain jump floats 2.2 s, far out of reach) and HIDE (the dodge, the x2 counter, and a jump too) take 59..85 % at
 equal stats. Rounds still end on the table (clock 0..5.6 %).

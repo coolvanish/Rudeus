@@ -90,10 +90,12 @@ class DuelWobbleTest {
 
     @Test
     fun wobbleGrowsKnockbackAndIsCapped() {
-        // Defaults: + 1 per hit taken, x (1 + 0.7 w), at most 4: hit n knocks 1, 1.7, 2.4, 3.1, then 3.8 x.
+        // Defaults: + 1 per hit taken, x (1 + 0.8 w), at most 4: hit n knocks 1, 1.8, 2.6, 3.4, then 4.2 x (T57; T48's 0.7:
+        // 1, 1.7, 2.4, 3.1, then 3.8 x).
         val plain = P.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED)
         val series = hits(7)
-        val factors = listOf(1f, 1.7f, 2.4f, 3.1f, 3.8f, 3.8f, 3.8f)
+        val factors = listOf(1f, 1.8f, 2.6f, 3.4f, 4.2f, 4.2f, 4.2f)
+        assertEquals(factors, (0 until 7).map { P.wobbleFactor(it.toFloat()) }.map { (it * 10f).let { x -> kotlin.math.round(x) / 10f } })
         for ((k, hit) in series.withIndex()) {
             assertEquals(plain * factors[k], hit.first, 1e-6f, "hit ${k + 1}")
             assertEquals(minOf(k + 1f, P.wobbleMax), hit.third, "wobble after hit ${k + 1}")
@@ -105,7 +107,7 @@ class DuelWobbleTest {
         assertTrue(slides[0] in 0.040f..0.050f && slides[4] > 3f * slides[0], "$slides")
         // A fighter made with more than the cap is knocked as if at the cap and keeps no more than it.
         val over = hits(1, first = 99f).single()
-        assertEquals(plain * 3.8f, over.first, 1e-6f)
+        assertEquals(plain * P.wobbleFactor(P.wobbleMax), over.first, 1e-6f)
         assertEquals(P.wobbleMax, over.third)
 
         // Each side of a clash counts as a hit taken, and each is knocked by its own wobble.
@@ -115,27 +117,27 @@ class DuelWobbleTest {
         val clash = runDuel(DuelState(left, right), OPEN, 200L, dtMs = 8L, script = atStart("a" to Dash(), "b" to Dash()))
         val k = clash.indexOf { it is Clash }
         assertEquals(2f to 4f, clash.states[k].a.wobble to clash.states[k].b.wobble)
-        assertEquals(plain * 1.7f, clash.states[k].a.knock.length, 1e-6f)
-        assertEquals(plain * 3.1f, clash.states[k].b.knock.length, 1e-6f)
+        assertEquals(plain * P.wobbleFactor(1f), clash.states[k].a.knock.length, 1e-6f)
+        assertEquals(plain * P.wobbleFactor(3f), clash.states[k].b.knock.length, 1e-6f)
 
         // A ram, a counter and a stomp count too, each on top of its own factor.
         val ram = runDuel(
             DuelState(gifted("a", Vec2.ZERO, Ability.ROLL), fighter("b", Vec2(NEAR, 0f)).copy(wobble = 2f)), OPEN, 600L,
             script = atStart("a" to Special),
         )
-        assertEquals(plain * P.ramKnockScale * 2.4f, ram.all.filterIsInstance<Hit>().single().speedMps, 1e-6f)
+        assertEquals(plain * P.ramKnockScale * P.wobbleFactor(2f), ram.all.filterIsInstance<Hit>().single().speedMps, 1e-6f)
         assertEquals(3f, ram.last.b.wobble)
         val stomp = runDuel(
             DuelState(gifted("a", Vec2.ZERO, Ability.JUMP), fighter("b", Vec2(2 * R, 0f)).copy(wobble = 1f)), OPEN, 1500L,
             script = atStart("a" to Special),
         )
-        assertEquals(plain * P.stompScale * 1.7f, stomp.all.filterIsInstance<Hit>().single().speedMps, 1e-6f)
+        assertEquals(plain * P.stompScale * P.wobbleFactor(1f), stomp.all.filterIsInstance<Hit>().single().speedMps, 1e-6f)
         assertEquals(2f, stomp.last.b.wobble)
         val counter = runDuel(
             DuelState(fighter("a", Vec2.ZERO).copy(wobble = 1f), gifted("b", Vec2(NEAR, 0f), Ability.HIDE, facing = Vec2(-1f, 0f)).copy(counterMs = 800L)),
             OPEN, 600L, script = atStart("b" to Dash()),
         )
-        assertEquals(plain * P.counterKnockScale * 1.7f, counter.all.filterIsInstance<Hit>().single().speedMps, 1e-6f)
+        assertEquals(plain * P.counterKnockScale * P.wobbleFactor(1f), counter.all.filterIsInstance<Hit>().single().speedMps, 1e-6f)
         // The attacker gains nothing by hitting.
         assertEquals(0f, ram.last.a.wobble)
 

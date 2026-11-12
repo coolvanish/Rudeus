@@ -55,7 +55,7 @@ class DuelSpecialsTest {
         val hit = side.all.filterIsInstance<Hit>().single()
         val stompSpeed = P.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED) * P.stompScale
         assertEquals(Hit("a", "b", stompSpeed, fromAbove = true, atMs = hit.atMs), hit)
-        assertEquals(0.2125f, hit.speedMps, 1e-6f) // T48: 0.25 x 0.85 (0.3 = 0.25 x 1.2 before)
+        assertEquals(0.5f, hit.speedMps, 1e-6f) // T57: 0.25 x 2.0 (T48: 0.25 x 0.85; 0.3 = 0.25 x 1.2 before)
         val k = side.indexOf { it is Hit }
         assertEquals(Mode.JUMPING, side.states[k - 1].a.body.state.mode, "still in the air the step before")
         assertTrue(grounded(side.states[k].a), "the hit is the landing")
@@ -78,13 +78,21 @@ class DuelSpecialsTest {
         assertTrue(stomp(fighter("b", Vec2(0.1f, 0f))).all.none { it is Hit })
         // A plain Jump lands the same way and hits nobody.
         assertTrue(stomp(fighter("b", Vec2(2 * R, 0f)), atStart("a" to Jump)).all.none { it is Hit })
-        // A lifted FLY or a dodging HIDE next to the landing is not hit.
-        val lifted = stomp(gifted("b", Vec2(2 * R, 0f), Ability.FLY), atStart("a" to Special, "b" to Special))
+        // A lifted FLY or a dodging HIDE next to the landing is not hit. (The FLY lifts at 160 ms, so that its 0.6 s lift
+        // covers the landing; T57 halved the lift, which covered it from 0 before.)
+        val lifted = stomp(gifted("b", Vec2(2 * R, 0f), Ability.FLY)) { s ->
+            when (s.timeMs) {
+                0L -> inputs("a" to Special)
+                160L -> inputs("b" to Special)
+                else -> emptyMap()
+            }
+        }
+        assertEquals(2, lifted.all.count { it is SpecialStarted })
         assertTrue(lifted.all.none { it is Hit }, "${lifted.all}")
         val dodging = stomp(gifted("b", Vec2(2 * R, 0f), Ability.HIDE)) { s ->
             when (s.timeMs) {
                 0L -> inputs("a" to Special)
-                320L -> inputs("b" to Special) // dodging 320..824 ms, over the landing
+                320L -> inputs("b" to Special) // dodging 320..1020 ms, over the landing
                 else -> emptyMap()
             }
         }
@@ -118,7 +126,7 @@ class DuelSpecialsTest {
         assertTrue(t.at(256L).a.pos.u > start.b.pos.u)
         // When the lift ends b stands on the table on top of a, and separation parts them in that same sub-step.
         val landed = t.states.indexOfFirst { it.timeMs > 0L && grounded(it.b) }
-        assertEquals(P.liftMs, t.states[landed].timeMs, "back on the table when the lift ends")
+        assertEquals((P.liftMs + 15L) / 16L * 16L, t.states[landed].timeMs, "back on the table when the lift ends (the first 16 ms frame after it)")
         assertEquals(0f, t.states[landed].b.body.state.h)
         assertTrue(t.states[landed - 1].b.body.state.h > 0f)
         for (s in t.states.drop(landed)) assertTrue(s.a.pos.distanceTo(s.b.pos) >= 2 * R - 1e-4f, "overlap at ${s.timeMs} ms")
@@ -127,10 +135,12 @@ class DuelSpecialsTest {
         assertEquals("a" to "b", second.attacker to second.victim)
         assertTrue(second.atMs > again)
 
-        // Lifted it walks at 1.5x, cannot dash, and can still walk off the edge (u = 0.15).
+        // Lifted it walks at 1.5x, cannot dash, and can still walk off the edge (u = 0.15). (A 1.2 s lift, as before T57:
+        // the 0.6 s one ends before the 15 cm walk to the edge does.)
+        val long = P.copy(liftMs = 1200L)
         val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.3f, 0.4f), spawn = Vec2(-0.1f, 0f))
         val walker = DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.1f, 0.15f)))
-        val w = runDuel(walker, level, 3000L) { s ->
+        val w = runDuel(walker, level, 3000L, params = long) { s ->
             when {
                 s.timeMs == 0L -> inputs("a" to MoveTo(Vec2(1f, 0f)))
                 s.timeMs == 16L -> inputs("a" to Special)
@@ -143,7 +153,7 @@ class DuelSpecialsTest {
         assertTrue(w.all.none { it is DashStarted }, "no dash while lifted: ${w.all}")
         val out = w.all.filterIsInstance<RingOut>().single()
         val k = w.indexOf { it is RingOut }
-        assertTrue(DuelPhysics.isLifted(w.states[k - 1].a) && out.atMs < 16L + P.liftMs, "walked off while lifted, at ${out.atMs} ms")
+        assertTrue(DuelPhysics.isLifted(w.states[k - 1].a) && out.atMs < 16L + long.liftMs, "walked off while lifted, at ${out.atMs} ms")
         assertFalse(DuelPhysics.isLifted(w.states[k].a), "the lift ends at the ring-out")
         assertEquals(level.spawn, w.last.a.pos, "came down past the edge and respawned")
     }
@@ -159,7 +169,7 @@ class DuelSpecialsTest {
         val plainHit = plain.all.filterIsInstance<Hit>().single()
         val ramHit = ram.all.filterIsInstance<Hit>().single()
         assertEquals(plainHit.speedMps * P.ramKnockScale, ramHit.speedMps, 1e-6f)
-        assertEquals(0.275f, ramHit.speedMps, 1e-6f) // T48: 0.25 x 1.1 (x 1.5 = 0.375 before)
+        assertEquals(0.5f, ramHit.speedMps, 1e-6f) // T57: 0.25 x 2.0 (T48: 0.25 x 1.1; x 1.5 = 0.375 before)
         assertTrue(ramSlide > 1.05f * plainSlide, "ram slide $ramSlide vs dash $plainSlide")
         assertEquals(listOf<DuelEvent>(SpecialStarted("a", Ability.ROLL, 0L)), ram.all.filter { it is SpecialStarted || it is DashStarted })
         assertTrue(DuelPhysics.isStunned(ram.states[ram.indexOf { it is Hit }].b))
@@ -358,10 +368,12 @@ class DuelSpecialsTest {
 
     @Test
     fun liftedFighterClimbsNoHigherThanAWalker() {
-        // A 5 cm platform blocks a walker (4 cm step-up); lifted 1.5 cm, a FLY still meets it as a walker would.
+        // A 5 cm platform blocks a walker (4 cm step-up); lifted 1.5 cm, a FLY still meets it as a walker would. (A 1.2 s
+        // lift, as before T57, so that it is still lifted where the walk meets the box and the book.)
+        val long = DuelParams.DEFAULT.copy(liftMs = 1200L)
         val box = LevelObject("box", "box", ObjectKind.PLATFORM, Polygon.rect(Vec2(0.1f, 0f), 0.06f, 0.06f), 0.05f)
         val level = Level(listOf(box), boundary = Polygon.rect(Vec2.ZERO, 0.6f, 0.4f), spawn = Vec2(-0.2f, 0f))
-        fun walk(lift: Boolean) = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.2f, 0.15f))), level, 2500L) { s ->
+        fun walk(lift: Boolean) = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.2f, 0.15f))), level, 2500L, params = long) { s ->
             when (s.timeMs) {
                 0L -> inputs("a" to MoveTo(Vec2(0.2f, 0f)))
                 16L -> if (lift) inputs("a" to Special) else emptyMap()
@@ -378,7 +390,7 @@ class DuelSpecialsTest {
         }
         // A 3 cm book is a step a walker takes: lifted, the FLY takes it too, hovering 1.5 cm above it, and lands on it.
         val bookLevel = Level(listOf(book("book", Vec2(0.15f, 0f))), boundary = Polygon.rect(Vec2.ZERO, 0.6f, 0.4f), spawn = Vec2(-0.2f, 0f))
-        val onto = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.2f, 0.15f))), bookLevel, 2500L) { s ->
+        val onto = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.FLY), fighter("b", Vec2(-0.2f, 0.15f))), bookLevel, 2500L, params = long) { s ->
             when (s.timeMs) {
                 0L -> inputs("a" to MoveTo(Vec2(0.15f, 0f)))
                 16L -> inputs("a" to Special)

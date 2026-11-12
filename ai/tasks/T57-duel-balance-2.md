@@ -135,3 +135,18 @@ yours: measure, describe under "What a human must decide", leave the code alone.
   JUMP 16..33 %, ROLL 8..38 %.
 - Duel tests 116 green in 35 s. Updated tests so far (each because it pinned pre-T57 behaviour; listed in the final
   Result).
+
+### Step 3 — tuning (candidate log; n 60 per cell without replays unless said, equal + archetype groups, about 13 s)
+Measured with `duel matrix --groups equal,ability --check-n 0 --params ... --tuning ...` (files under build/duel/cand).
+
+| # | what changed (from the previous unless said) | B1 | B2 | B3 | B4 | B5 | B6 | B7 | note |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | step 2 (n 200) | 7.7..85.2 (27 out) | 17.0..91.7 (10) | 110 | PASS | 19 out | PASS | 56 out | FLY / HIDE 59..85 %, JUMP / ROLL 8..38 % at equal stats |
+| 1 | stomp 1.5, ram 1.6 x long / 1.6 x knock, counter 1.5, dodge 700, lift 900 | 11.1..81.1 (23) | 20.0..82.2 (8) | 102 | PASS | 19 | PASS | - | numbers barely move it |
+| 2 | stomp 2.0, ram knock 1.8; lift-off / dodge within 6 (NORMAL) / 4 (HARD) radii of an edge | 10.0..80.6 (16) | 27.2..83.9 (7) | 112 | PASS | 25 | 1 | - | a NORMAL JUMP stomped a FLY 90 times for 3 hits (40 matches) |
+| 3 | bot: a stomp only when the other cannot get out of its way (code) | 10.0..82.8 (12) | 2.8..83.9 (10) | 82 | PASS | 22 | 1 | - | JUMP 31..66 % at equal; FLY's 3/7/3/7 drops to 3..44 % |
+| 4 | ram 1.3 x long / 2.0 x knock; a HARD HIDE dodges near an edge only (`dodgesAnywhere`) | 17.2..78.3 (7) | 3.3..75.0 (8) | 60 | PASS | 25 | 1 | - | B5's misses all on cup-and-book |
+| 5 | FLY archetype 4/6/4/6; wobble 0.8; ROLL walks 1.25 x; NORMAL near an edge 4 radii | 21.7..84.4 (9) | 14.4..90.6 (8) | 62 | PASS | 1 | PASS | - | ROLL 81..91 % on the large table (pace) |
+| 6 | ROLL 1.1 x; lift 600; reach up 2.8 cm | 33.9..81.7 (3) | 19.4..85.6 (6) | 44 | PASS | PASS | PASS | - | left: FLY on the small table 70 / 82 % |
+| 7 | lift 400 | 34.4..82.2 (3) | 19.4..86.1 (6) | 44 | PASS | PASS | PASS | - | the lift's length is not it: on the small table every spot is "near an edge" |
+| 8 | lift-off / dodge within 2 radii of an edge (NORMAL, HARD) | 26.1..63.9 (1) | 16.7..75.6 (7) | 42 | PASS | PASS | PASS | 72 (5.0..90.0) | **committed**; n 200: B1 26.7..60.0 (1 out: small HARD ROLL), B2 15.8..75.3 (9), B3 42, B7 77, B4 / B5 / B6 / B8 / B9 PASS |

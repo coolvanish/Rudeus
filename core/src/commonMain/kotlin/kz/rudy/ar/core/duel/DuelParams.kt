@@ -29,9 +29,10 @@ data class DuelParams(
     val speedPerPoint: Float = 0.10f,
     /**
      * Replaces [PhysicsParams.rollSpeedScale] inside a duel. 1 = the SPEED formula alone sets the walk speed for every
-     * ability (the walking game's ROLL x 2 would otherwise stack on top of the stats).
+     * ability (the walking game's ROLL x 2 would otherwise stack on top of the stats). T57: 1.1 (was 1): a ROLL cannot jump
+     * over a dash, so it gets a little more pace to take the spot behind the other first.
      */
-    val rollSpeedScale: Float = 1f,
+    val rollSpeedScale: Float = 1.1f,
 
     /** How long a dash lasts. */
     val dashMs: Long = 250,
@@ -93,37 +94,45 @@ data class DuelParams(
     val specialCooldownMs: Long = 9000,
     /** JUMP stomp: an opponent whose centre is within this many of the stomper's radii of the landing point is hit. */
     val stompRadiusRadii: Float = 3f,
-    /** JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it; T48: was 1.2). */
-    val stompScale: Float = 0.85f,
-    /** FLY lift-off: how long the fighter hovers, cannot be hit and walks at [liftSpeedScale] x its walk speed. */
-    val liftMs: Long = 1200,
+    /**
+     * JUMP stomp: knockback = [stompScale] x the plain knockback (the high-ground bonus does not stack on it). T57: 2.0
+     * (T48: 0.85, before 1.2): since T57 it spends the dash too, and a jump gets out of its way.
+     */
+    val stompScale: Float = 2.0f,
+    /**
+     * FLY lift-off: how long the fighter hovers, cannot be hit and walks at [liftSpeedScale] x its walk speed. T57: 600
+     * (was 1200; a lift is a dodge of one dash either way, and a FLY's own jump now floats out of reach for 2 s).
+     */
+    val liftMs: Long = 600,
     val liftSpeedScale: Float = 1.5f,
     /** FLY lift-off: hover height of the feet above the ground under them, in fighter radii (0.5 = 1.5 cm on the table). */
     val liftHeightRadii: Float = 0.5f,
     /**
-     * ROLL ram: a dash [ramDashScale] x as long as [dashMs] (325 ms, 9.75 cm) hitting with [ramKnockScale] x the
-     * knockback (T48: was 2.2 x and 1.5 x: a ram is a hit outside the dash cooldown, and ROLL took 82..93 % of the field).
+     * ROLL ram: a dash [ramDashScale] x as long as [dashMs] (325 ms, 9.75 cm at SPEED 5) hitting with [ramKnockScale] x
+     * the knockback (T48: 2.2 x and 1.5 x -> 1.3 x and 1.1 x, a ram was a hit outside the dash cooldown; T57: 1.3 x and
+     * 2.0 x, it spends the dash now and a ROLL cannot jump over the other's).
      */
     val ramDashScale: Float = 1.3f,
-    val ramKnockScale: Float = 1.1f,
-    /** HIDE dodge: for [dodgeMs] hits pass through the fighter (a dash of its own ends the dodge at once; T48: was 500). */
-    val dodgeMs: Long = 900,
+    val ramKnockScale: Float = 2.0f,
+    /** HIDE dodge: for [dodgeMs] hits pass through the fighter (a dash of its own ends the dodge at once; T48: 500 -> 900; T57: 700). */
+    val dodgeMs: Long = 700,
     /**
      * HIDE counter: a hit the dodge let through opens a window of [counterMs] from that sub-step; the first dash started
-     * in it hits with [counterKnockScale] x (T48: was 1.5). A dodge that dodged nothing gives no counter.
+     * in it hits with [counterKnockScale] x (T48: 1.5 -> 2.0; T57: back to 1.5). A dodge that dodged nothing gives no
+     * counter.
      */
     val counterMs: Long = 1500,
-    val counterKnockScale: Float = 2.0f,
+    val counterKnockScale: Float = 1.5f,
 
     // Wobble (T48): every hit a fighter takes in a round makes the next one push it farther, so a ring-out takes a few
     // hits on a large table without one hit being a ring-out on a small one. Dimensionless and per second, so they
     // follow the surface without being in [scaled]. wobblePerHit = 0 is the physics without it, exactly. Defaults: hit n
-    // of a round knocks 1, 1.7, 2.4, 3.1, then 3.8 x (4.5, 7.7, 10.8, 14.0, 17.1 cm at 5 v 5).
+    // of a round knocks 1, 1.8, 2.6, 3.4, then 4.2 x (4.5, 8.1, 11.7, 15.3, 18.9 cm at 5 v 5; T48's 0.7: 1 .. 3.8 x).
 
     /** Wobble a fighter gains with every hit it takes (a dash, a ram, a counter, a stomp; each side of a clash). */
     val wobblePerHit: Float = 1f,
-    /** A hit on a fighter with wobble w knocks it (1 + [wobbleKnockScale] * w) x the plain knockback. */
-    val wobbleKnockScale: Float = 0.7f,
+    /** A hit on a fighter with wobble w knocks it (1 + [wobbleKnockScale] * w) x the plain knockback (T57: 0.8, was 0.7). */
+    val wobbleKnockScale: Float = 0.8f,
     /** Wobble never exceeds this. */
     val wobbleMax: Float = 4f,
     /** Wobble lost per second of fight (0 = it stays until the round ends). */
@@ -151,9 +160,10 @@ data class DuelParams(
      * dash is a dodge, a floating FLY is out of reach of the ground, a fighter clearly higher is safe from below until the
      * attacker climbs. A miss uses nothing up: the dash carries on, no wobble, no stun, no counter for a dodge. Heights
      * (scaled with the surface like [fromAboveMinM], not with the character's size). [NO_REACH_LIMIT] = no limit (before
-     * T57); +infinity reads the same but does not survive JSON.
+     * T57); +infinity reads the same but does not survive JSON. Tuned: 2.8 cm up (the brief's starting point 2 cm), so a
+     * 3 cm book still puts its fighter out of reach of the table; 4 cm down (the platform height, as the brief).
      */
-    val hitReachUpM: Float = 0.02f,
+    val hitReachUpM: Float = 0.028f,
     val hitReachDownM: Float = 0.04f,
 ) {
     init {
