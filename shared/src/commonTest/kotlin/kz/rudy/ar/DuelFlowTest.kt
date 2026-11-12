@@ -223,7 +223,7 @@ class DuelFlowTest {
         assertFalse(watched.jump.enabled)
         assertFalse(assertNotNull(watched.special).enabled)
         assertEquals(
-            played.copy(dash = played.dash.copy(enabled = false), jump = played.jump.copy(enabled = false), special = played.special?.copy(enabled = false)),
+            played.copy(dash = played.dash.copy(enabled = false), jump = played.jump.copy(enabled = false), special = played.special.copy(enabled = false)),
             watched,
         )
     }

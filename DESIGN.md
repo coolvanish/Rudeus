@@ -301,16 +301,23 @@ AR view; HUD in a `Box` on top, everything inside the safe-drawing insets:
 - *Fell off the cliff*: bubble "Oops! Fell" then "Back up" on respawn.
 - *Scanning from Play*: the same `ScanOverlay`; the character keeps walking underneath.
 
-### Duel — `OpponentPicker`, `VersusCard`, `DuelHud`, `DuelResult` (T49)
+### Duel — `DuelScreen` over Play: `OpponentPicker`, `VersusCard`, `DuelHud`, `DuelResult` (T49, wired in T59)
 Two fighters a child drew push each other on the table; nobody is hurt, so no copy says hitting ("Play", "Dash",
 "Stomp", "Float", "Rush", "Dodge"; the loser hears "Good try"). The composables are stateless over `duelHud(state,
-myId, …)`, a pure `DuelHudModel`; the host (T50) only feeds it. Nothing here is wired yet; the visual check is the user's.
+myId, …)`, a pure `DuelHudModel`, fed from the match the table engine reports (`DuelFlow.hud`). The duel is a state over
+Play, not a screen: the AR session, the anchor and the cast stay; Back at any step returns to free play at once.
+- *Entry*: secondary **Duel** (`duel_title`) on Play, right above Scan / Rescan at the bottom-left (beside it there is no
+  room next to the 156 dp Jump in kk / ru); for ROLL in line after the Scan primary. Disabled (InkMuted) until the table
+  has a scanned edge, the character is placed and tracking holds: no floor duel yet. The child's fighter is the active one.
 - *Picker*: Paper screen. Display "Duel", headline "Pick an opponent", the shelf's character cards (124 dp, Cream, selected =
   Ink ring + Sun check) without the player's own, three chips Easy · Normal · Hard (the chip rule above), then secondary
-  **Watch** (eye glyph) and the Sun primary **Play**. Both buttons wait for a pick.
+  **Watch** (eye glyph) and the Sun primary **Play**. Both buttons wait for a pick. Normal is preselected. The cards are
+  saved then bundled, without the player's own. Play or Watch puts the opponent on the table (a full table gives it the
+  last seat that is not the player's; it stays there afterwards as a friend).
 - *VS card*: two Cream cards, the sprites on Paper wells facing each other (the left looks right, the right looks left;
   a side view drawn the other way is mirrored, a front or back view is not), name in `headline`, ability tag, "VS" in
-  `display` between them; under them two `FighterStatsCard(compact)` side by side.
+  `display` between them; under them two `FighterStatsCard(compact)` side by side. A Paper screen, the card centred; it
+  goes after 2.5 s or at a tap anywhere, then the countdown starts.
 - *HUD* (over the AR view, inside the safe-drawing insets, 16 dp in): top row = my name card, the clock pill with a quiet
   "Round N" pill under it, the other's name card. A name card is Paper with a 1 dp Line edge, radius `tile`, the name
   (`label`, InkMuted while that fighter is out) and one pip per point to win (14 dp, filled Ink = scored, CreamDeep =
@@ -324,7 +331,12 @@ myId, …)`, a pure `DuelHudModel`; the host (T50) only feeds it. Nothing here i
   colour grows from the left in step with the cooldown (Sun for Dash, CreamDeep for the others), text stays Ink: a fill,
   not a number, so a child sees when it is back. Enabled only in FIGHT and only when the physics would take the input.
 - *Result*: `Scrim` that takes the touches, one Paper card (hero radius): the verdict in `display` (You won · Good try ·
-  A draw), both names with the score `2 : 1` between them, primary **Again**, secondary **Done**.
+  A draw), both names with the score `2 : 1` between them, primary **Again**, secondary **Done**. Again starts a new match
+  against the same opponent at the same difficulty, straight to the countdown (no VS card); Done returns to free play.
+- *During the fight* Play's chrome is gone (chips, `+`, emotes, voice, size, Footprints, Metrics), no speech bubble
+  shows and no background scan runs; tracking lost shows the same Paused scrim as Play. *Watch* is the same match with
+  both sides played by the bot; the three buttons stay disabled. A duel the table has no room for closes with the
+  bubble "Not enough room" (`duel_no_room`).
 - Copy: `special_*` follows the fighter's ability (stomp = JUMP, float = FLY, rush = ROLL, dodge = HIDE); Jump keeps `play_jump`.
 
 ### Metrics — `MetricsScreen`
@@ -470,6 +482,7 @@ ids are snake_case and match `StringId` in `Strings.kt` one-to-one. Short, imper
 | duel_again | Тағы | Ещё | Again |
 | duel_done | Болды | Готово | Done |
 | duel_dash | Ұмтыл | Рывок | Dash |
+| duel_no_room | Орын аз | Мало места | Not enough room |
 | special_stomp | Дүрс ет | Топни | Stomp |
 | special_lift | Қалықта | Парь | Float |
 | special_ram | Зымыра | Разгон | Rush |

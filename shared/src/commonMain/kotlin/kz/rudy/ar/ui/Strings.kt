@@ -201,6 +201,8 @@ enum class StringId(val kk: String, val ru: String, val en: String) {
     duel_again("Тағы", "Ещё", "Again"),
     duel_done("Болды", "Готово", "Done"),
     duel_dash("Ұмтыл", "Рывок", "Dash"),
+    /** T59: the bubble when the engine refuses a duel (the table too small or too cluttered for two marks). */
+    duel_no_room("Орын аз", "Мало места", "Not enough room"),
     /** The special of each ability: JUMP, FLY, ROLL, HIDE. */
     special_stomp("Дүрс ет", "Топни", "Stomp"),
     special_lift("Қалықта", "Парь", "Float"),
