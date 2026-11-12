@@ -1,6 +1,6 @@
 # T57 — duel-balance-2
 
-status: review
+status: done
 created: 2026-11-12
 phase: v2 wave 4 (ai/build-plan-v2.md, "The game")
 gate: G4 — no ability wins more than 65 % against the field at equal budget

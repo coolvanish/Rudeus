@@ -19,6 +19,12 @@ Decisions below were taken with the user on 2026-11-11; where they contradict `a
 - Verbs: tap = walk (exists), **Dash** = a short charge along `facing` that knocks the other back, **Jump** (exists),
   **Special** = one per `Ability` with a cooldown (JUMP stomp shockwave, FLY brief ring-out immunity, ROLL long ram,
   HIDE dodge + counter).
+- Since T57 (the user's decisions of 2026-11-12, each with an off switch in `DuelParams`): the stomp and the ram need
+  and spend the dash cooldown as well as their own; SPEED lengthens every dash; **height matters for hits**: a dash
+  reaches 2.8 cm up and 4 cm down, so a jump over a dash is a dodge and a fighter on a book is safe from a dash until
+  the other climbs (and is not shoved by it either: "stands firm"). The stomp's shockwave reaches 9 cm up (a fighter
+  on a book and a low jumper are hit, a floating FLY is not): the implementer's number, waiting for the user's yes.
+  Wobble (T48): each hit taken in a round makes the next knockback larger; cleared every round.
 - The table matters: an OBSTACLE stops knockback (wall-slam = short stun), a PLATFORM is high ground (+25 % knockback
   from above), the boundary is the win condition. Between rounds the child may move real objects; one Scan rebuilds
   the arena. Never a scan mid-round.
@@ -26,7 +32,7 @@ Decisions below were taken with the user on 2026-11-11; where they contradict `a
 - Kid-safe: fighters are pushed, never hurt; the loser respawns and says a line.
 
 ### Stats (draw-to-power)
-`POWER` (dash impulse) · `SPEED` (walk speed) · `GUARD` (knockback resistance) · `AGILITY` (cooldowns, stun recovery).
+`POWER` (dash impulse) · `SPEED` (walk speed and, since T57, the dash's reach) · `GUARD` (knockback resistance) · `AGILITY` (cooldowns, stun recovery).
 Each 1..10, **sum always 20** (`FighterStats.BUDGET`). Spark returns raw 1–10 scores from what is visible (claws, wings,
 wheels, shell, size) plus a ≤ 4-word reason per stat in kk/ru/en; `StatBudget.normalise` in `:core` turns them into the
 budget. A sheet without stats (every v1.0 character) gets the archetype of its ability. Same budget for everyone means
@@ -76,7 +82,7 @@ One brief = one agent = one worktree. Same-wave briefs own disjoint files. Hand-
 | 3 | T56 thin-host S3b: the frame step and the scenario feed behind `FrameInput` / `CameraFrame`; also puts the host's scan reads behind `engine.level` / `engine.standing()` so the duel stage (T50) does not wait for S5 | core + shared + androidApp (hand-review) | fable-high draft | T53 |
 | 3 | T54 thin-host S4: taps and finger grab behind `ArPort` | core + androidApp (hand-review) | fable-high draft | T56 |
 | 3 | T48 cli-duel-sim-balance — **done**: rounds end on the table (clock share 0–1.9 %, was up to 97.8 %); wobble on; ability balance, specialists and per-pair hit counts still FAIL (`docs/duel-balance.md`) | cli, core tuning | opus-extra | T55 |
-| 4 | T57 duel-balance-2: the user's rule decisions of 2026-11-12 (stomp and ram share the dash cooldown, SPEED lengthens the dash, height matters for hits, FLY's archetype may change) and a second tuning pass | core/duel, domain (one line), cli | opus-extra | T48 |
+| 4 | T57 duel-balance-2 — **done** (reviewed twice): the three rules behind off switches (bit-exact with them off), FLY's archetype 4/6/4/6, the bots use every special (new row B11), a second tuning pass. At equal stats NORMAL is in band on all four arenas (39–65 %); HARD has 4 of 32 cells out (JUMP v FLY); archetypes, hopeless pairs and specialists still FAIL (`docs/duel-balance.md`, decisions in `ai/v2-human.md` §4.3) | core/duel, domain (one line), cli | opus-extra | T48 |
 | 3 | T49 duel-ui — **done** (not wired; the look is the user's check after T50) (picker, VS, HUD, result): components and pure models only; no `ArSlot.kt` / `App.kt` edits (T53 moves types out of `ArSlot.kt`; the wiring is T50) | shared | sonnet-high | T44, T45 |
 | 4 | T50 ar-host-views-duel (also builds the per-frame picture swap: T33 pose frames never reached the screen) | androidApp (hand-review) | fable-high draft | T41, T45, T49, T52–T54, T56 |
 | 4 | T51 ios-app-shell (Xcode, Swift RealityKit host) | iosApp | on the Mac | T46; a real AR host also needs S5 (scan) and S6 (capture) of the map |
@@ -107,8 +113,13 @@ After every implementing brief: `rudeus-reviewer` on the diff, fixes in the same
 - **G3 views**: live spike on ≥ 5 bundled characters, human verdict ≥ 4/5 usable BACK and FRONT; else cut to SIDE + BACK only, else cut views.
 - **G4 duel core**: `cli duel --all`: no archetype wins > 65 % against the field at equal budget; every match ends
   (no timeouts without a winner); 30 Hz and 60 Hz stepping agree on the winner in ≥ 95 % of seeded matches.
-  **State 2026-11-11:** matches end and frame rates agree exactly (57 600 of 57 600 replays); the balance half fails
-  (ROLL takes 67–88 % of the field on three arenas, FLY 7–26 %): `./gradlew :cli:run --args="duel matrix --n 200"`.
+  **State 2026-11-12 (after T57):** matches end, rounds end on the table (clock share 0–0.2 %), 16 and 33 ms steps
+  agree exactly (64 000 of 64 000 replays), every special is in use between bots (B11). The balance half: at equal
+  5/5/5/5 stats every ability is inside 35–65 % at NORMAL on all four arenas; at HARD 4 of 32 cells are out (JUMP 20–25 %
+  on the empty and large tables, FLY 65–84 % on the empty and small ones: a floating FLY is out of the stomp's reach).
+  Archetypes (6 cells out), hopeless matchups (54) and one-stat specialists (61 of 128) still fail and need rule
+  decisions, not numbers: `./gradlew :cli:run --args="duel matrix --n 200"`. The gate as written ("no archetype above
+  65 % of the field") is not reached.
 - **G5 duel on the Pixel**: three matches in a row on a real table, ring-outs at the real edge within 2 cm, no tracking reset.
 - **G6 iOS**: `iosApp` builds on the Mac and shows the Compose UI with a camera-less placeholder slot.
 

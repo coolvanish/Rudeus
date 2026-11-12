@@ -60,7 +60,7 @@ data class FighterStats(
 /**
  * The stats of a character whose sheet has none (every v1.0 character): one fixed, balanced archetype per ability,
  * power / speed / guard / agility. JUMP is the all-rounder, FLY is fast and nimble (T57: 4/6/4/6, was 3/7/3/7, which
- * lost 3..44 % of its matches against the field in the duel), ROLL rams, HIDE dodges.
+ * won only 3..44 % of its matches against the field in the duel), ROLL rams, HIDE dodges.
  */
 fun FighterStats.Companion.defaultFor(ability: Ability): FighterStats = when (ability) {
     Ability.JUMP -> FighterStats(5, 5, 5, 5)
