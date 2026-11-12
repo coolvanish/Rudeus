@@ -37,6 +37,7 @@ import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
+import kz.rudy.ar.core.domain.fighter
 import kz.rudy.ar.core.emote.Emote
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.PoseFrames
@@ -364,6 +365,7 @@ fun App(
             ability = sheet.ability,
             emotes = r?.emotes ?: EmoteSet.defaults(),
             frames = r?.frames ?: PoseFrames.EMPTY,
+            stats = sheet.fighter, // T59: what a duel reads
         )
         go(Screen.SCANNING)
         startCast(member, sheet)

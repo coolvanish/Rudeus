@@ -1,6 +1,7 @@
 package kz.rudy.ar.ui.components
 
 import kz.rudy.ar.ArCharacter
+import kz.rudy.ar.core.domain.fighter
 import kz.rudy.ar.core.physics.Cast
 import kz.rudy.ar.core.session.CharacterAction
 import kz.rudy.ar.core.session.CharacterCommand
@@ -12,9 +13,11 @@ import kz.rudy.ar.ui.screens.BundledCharacter
  * the JVM). The cast is a list in the order the characters joined; the first is the one Play started with.
  */
 object CastUi {
-    /** [c] as a cast member, its name in [lang]. */
-    fun member(c: BundledCharacter, lang: Lang): ArCharacter =
-        ArCharacter(id = c.id, name = c.sheet.nameIn(lang.code), spritePng = c.spritePng, ability = c.sheet.ability, emotes = c.emotes, frames = c.frames)
+    /** [c] as a cast member, its name in [lang]; T59: with its sheet's fighter stats (the archetype on a v1.0 sheet). */
+    fun member(c: BundledCharacter, lang: Lang): ArCharacter = ArCharacter(
+        id = c.id, name = c.sheet.nameIn(lang.code), spritePng = c.spritePng, ability = c.sheet.ability, emotes = c.emotes,
+        frames = c.frames, stats = c.sheet.fighter,
+    )
 
     /** Room for one more at the table (`Cast.MAX`). */
     fun canAdd(cast: List<ArCharacter>): Boolean = cast.size < Cast.MAX

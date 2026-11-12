@@ -5,6 +5,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import kz.rudy.ar.core.domain.FighterStats
+import kz.rudy.ar.core.domain.defaultFor
 import kz.rudy.ar.core.emote.EmoteSound
 import kz.rudy.ar.core.session.ArPort
 import kz.rudy.ar.core.session.Member
@@ -19,10 +21,14 @@ import kz.rudy.ar.core.session.TableSlot
 // its tracking and cast-state callbacks reach the engine through [toTableSlot]; the two Pixel numbers come in from the host.
 // T54 — the slot's onActiveChanged and onLevel reach the engine through [toTableSlot]; the host's ArPort and its two depth
 // sample counts go straight into the engine at the first composition, like the Pixel numbers. No sixth effect.
+// T59 — each member's fighter stats, the duel setup and its report callback reach the engine through [toTableSlot] too.
 
-/** [members] with the slot's command, active id, sounds flag, size, debug flag and its six callbacks, as the engine reads them. */
+/**
+ * [members] (with their fighter stats, the ability's archetype when unknown) with the slot's command, active id, sounds
+ * flag, size, debug flag, duel setup and its seven callbacks, as the engine reads them.
+ */
 fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
-    members = members.map { Member(it.id, it.ability, it.emotes) },
+    members = members.map { Member(it.id, it.ability, it.emotes, it.stats ?: FighterStats.defaultFor(it.ability)) },
     activeId = activeId,
     command = command,
     soundsOn = soundsOn,
@@ -34,6 +40,8 @@ fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
     onCastState = onCastState,
     onActiveChanged = onActiveChanged,
     onLevel = onLevel,
+    duel = duel,
+    onDuel = onDuel,
 )
 
 /**
