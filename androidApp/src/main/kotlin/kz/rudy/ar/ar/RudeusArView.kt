@@ -27,8 +27,6 @@ import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
-import com.google.ar.core.Pose
-import android.opengl.Matrix as GlMatrix
 import com.google.ar.core.TrackingState
 import io.github.sceneview.ar.ARSceneView
 import io.github.sceneview.ar.recording.rememberARRecorder
@@ -52,8 +50,6 @@ import kz.rudy.ar.ArCharacter
 import kz.rudy.ar.ArSlot
 import kz.rudy.ar.ScanAnswer
 import kz.rudy.ar.audio.Sounds
-import kz.rudy.ar.core.domain.CharacterEvent
-import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Surface
@@ -64,10 +60,14 @@ import kz.rudy.ar.core.pipeline.AutoScanPolicy
 import kz.rudy.ar.core.pipeline.ScanAngle
 import kz.rudy.ar.core.pipeline.ScanSectors
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
+import kz.rudy.ar.core.session.ArPort
 import kz.rudy.ar.core.session.CameraFrame
 import kz.rudy.ar.core.session.FrameInput
-import kz.rudy.ar.core.session.TableEngine
-import kz.rudy.ar.rememberTableEngine
+import kz.rudy.ar.core.session.ScreenView
+import kz.rudy.ar.core.session.TableHit
+import kz.rudy.ar.core.session.TouchAction
+import kz.rudy.ar.core.session.TouchEvent
+import kz.rudy.ar.core.session.TouchPoint
 import kz.rudy.ar.scan.FootprintOverlay
 import kz.rudy.ar.scan.GRAB_MAX_TRIES
 import kz.rudy.ar.scan.ScanPrompts
@@ -179,6 +179,10 @@ import kotlin.math.abs
 // file builds a FrameInput and writes each NodePose into its
 // node; the scan reads the level and the members through the engine. PAUSED still freezes and never resets, one
 // anchor per session, scans stay a button plus the quiet ones and are never per frame.
+// HAND-REVIEW: T54 — what a finger does after the anchor is TableEngine.onTap / onTouch: this
+// file maps the MotionEvent and answers ArPort (the table under a pixel, the depth on the way, the camera as a
+// ScreenView when a touch needs a pick). The T32 notes on CastTable above describe code that is the engine's now.
+// One anchor per session (only the placement tap creates it), PAUSED still freezes and never resets, scans untouched.
 
 /** HAND-REVIEW: T32 review fix — the grab rectangle grows by this on every side (16 dp = about one finger radius on the Pixel). */
 private const val GRAB_MARGIN_DP = 16f
@@ -248,36 +252,85 @@ private class MemberRig(val id: String, val sprite: CharacterSprite) {
 }
 
 /**
- * T32 review fix: world -> view pixels through this frame's ARCore camera (column-major GL matrices, `android.opengl.Matrix`).
- * Scratch arrays are reused: main thread only, one grab test at a time.
+ * T32 review fix: this frame's ARCore camera as a screen (column-major GL matrices). T54: the projection itself is
+ * TableEngine's (plane points through `ScreenView.planeToEye`); this reads the view and projection matrices and the
+ * anchor's model matrix, once per pick. Scratch arrays are reused (ScreenView.of copies): main thread only.
  */
 private class ScreenProjector {
     private val view = FloatArray(16)
     private val proj = FloatArray(16)
-    private val world = FloatArray(4)
-    private val eye = FloatArray(4)
-    private val clip = FloatArray(4)
+    private val model = FloatArray(16)
 
-    fun load(frame: Frame) {
+    fun screen(frame: Frame, a: Anchor, w: Int, h: Int, marginPx: Float): ScreenView {
         frame.camera.getViewMatrix(view, 0)
         frame.camera.getProjectionMatrix(proj, 0, PROJECTION_NEAR_M, PROJECTION_FAR_M)
+        a.pose.toMatrix(model, 0)
+        return ScreenView.of(worldToEye = view, planeToWorld = model, eyeToClip = proj, widthPx = w, heightPx = h, pickMarginPx = marginPx)
     }
-
-    /** [out] = (x px, y px, eye depth m) of [pose]'s position in a [w] x [h] view; false when it is behind the camera. */
-    fun project(pose: Pose, w: Int, h: Int, out: FloatArray): Boolean {
-        world[0] = pose.tx(); world[1] = pose.ty(); world[2] = pose.tz(); world[3] = 1f
-        GlMatrix.multiplyMV(eye, 0, view, 0, world, 0)
-        GlMatrix.multiplyMV(clip, 0, proj, 0, eye, 0)
-        if (clip[3] <= 1e-4f) return false
-        out[0] = (clip[0] / clip[3] + 1f) * 0.5f * w
-        out[1] = (1f - clip[1] / clip[3]) * 0.5f * h
-        out[2] = -eye[2]
-        return true
-    }
-
-    /** Pixels per metre across the view at eye depth [depth] (P00 = 2 * focal / width). */
-    fun pxPerM(depth: Float, w: Int): Float = proj[0] * w * 0.5f / depth
 }
+
+// HAND-REVIEW: T54 — the hit rule of a tap and of a finger (old `tableHit`), with the tolerance passed in: SessionPort
+// asks it with the engine's tolerance, the pre-anchor callers through `tableHit` with the profile's, as before.
+/**
+ * T32: the hit a tap or a finger counts: a plane hit inside its polygon, within the profile's tolerance of the
+ * anchor plane (a hit past the table edge is the floor plane and the character would walk off into the air).
+ */
+private fun surfaceHit(hits: List<HitResult>, a: Anchor?, toleranceM: Float): HitResult? {
+    return hits.firstOrNull {
+        val t = it.trackable
+        t is Plane && t.isPoseInPolygon(it.hitPose) && (a == null || abs(it.hitPose.ty() - a.pose.ty()) <= toleranceM)
+    }
+}
+
+// HAND-REVIEW: T54 — the three questions TableEngine asks of the session (ArPort), over the same plain holders the old
+// CastTable read: main thread, from a tap or a touch, about the latest frame. hitTable is the old CastTable.hitUv,
+// depthGapsOnWay PlaneCoords.kt's, screenView the old checks before a pick (no frame, no anchor, a view not laid out:
+// null, no matrix read) and then one ScreenProjector.screen. No anchor is created here.
+private class SessionPort(
+    private val latestFrame: Array<Frame?>, private val anchorRef: Array<Anchor?>,
+    private val viewSize: IntArray, private val grabMarginPx: FloatArray, private val projector: ScreenProjector,
+) : ArPort {
+    override fun hitTable(xPx: Float, yPx: Float, toleranceM: Float): TableHit? {
+        val frame = latestFrame[0] ?: return null
+        val a = anchorRef[0] ?: return null
+        val hits = frame.hitTest(xPx, yPx)
+        val hit = surfaceHit(hits, a, toleranceM) ?: return null
+        val depthGap = hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) }
+        return TableHit(planeCoords(a, hit.hitPose), depthGap)
+    }
+
+    override fun depthGapsOnWay(from: Vec2, to: Vec2, samples: Int): List<Float?> {
+        val frame = latestFrame[0] ?: return List(samples) { null }
+        val a = anchorRef[0] ?: return List(samples) { null }
+        return kz.rudy.ar.ar.depthGapsOnWay(frame, a, from, to, samples)
+    }
+
+    override fun screenView(): ScreenView? {
+        val frame = latestFrame[0] ?: return null
+        val a = anchorRef[0] ?: return null
+        val w = viewSize[0]
+        val h = viewSize[1]
+        if (w <= 0 || h <= 0) return null
+        return projector.screen(frame, a, w, h, grabMarginPx[0])
+    }
+}
+
+// HAND-REVIEW: T54 — a MotionEvent as TableEngine reads it: the masked action name for name, the action index, every
+// pointer's id and view position, and the host clock at the callback ([nowMs]), as CastTouch read them.
+private fun MotionEvent.toTouch(nowMs: Long): TouchEvent = TouchEvent(
+    action = when (actionMasked) {
+        MotionEvent.ACTION_DOWN -> TouchAction.DOWN
+        MotionEvent.ACTION_POINTER_DOWN -> TouchAction.POINTER_DOWN
+        MotionEvent.ACTION_MOVE -> TouchAction.MOVE
+        MotionEvent.ACTION_POINTER_UP -> TouchAction.POINTER_UP
+        MotionEvent.ACTION_UP -> TouchAction.UP
+        MotionEvent.ACTION_CANCEL -> TouchAction.CANCEL
+        else -> TouchAction.OTHER
+    },
+    actionIndex = actionIndex,
+    pointers = List(pointerCount) { TouchPoint(getPointerId(it), getX(it), getY(it)) },
+    nowMs = nowMs,
+)
 
 /** T32: the members this host renders: the slot's cast (the first only with CAST_ENABLED off), else the legacy fields as one member. */
 private fun ArSlot.members(): List<ArCharacter> = when {
@@ -306,14 +359,13 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
     val anchorRef = remember { arrayOfNulls<Anchor>(1) } // mirror of `anchor` for the frame callback
     val anchorPlane = remember { arrayOfNulls<Plane>(1) } // the plane the anchor was created on (scan boundary)
     val rigs = remember { HashMap<String, MemberRig>() } // T32: id -> rig, written in composition, read per frame
-    val touch = remember { CastTouch() }
     val viewSize = remember { intArrayOf(0, 0) } // the ARSceneView's pixels, for the screen-space grab (0 until laid out)
     val grabMarginPx = remember { floatArrayOf(0f) }
     grabMarginPx[0] = GRAB_MARGIN_DP * LocalDensity.current.density
     val projector = remember { ScreenProjector() }
+    val port = remember { SessionPort(latestFrame, anchorRef, viewSize, grabMarginPx, projector) }
     val members = slot.members()
-    val game = rememberTableEngine(slot, members, playEmoteSound = { sounds?.play(it) }, onMemberRemoved = touch::unbindMember, log = { Log.i(GATE_TAG, it) }, feetDepthBias = FEET_DEPTH_BIAS, reappearAfterTrackingMs = REAPPEAR_AFTER_TRACKING_MS, separate = SEPARATION_ENABLED)
-    val loop = game.loop
+    val game = rememberTableEngine(slot, members, playEmoteSound = { sounds?.play(it) }, port = port, log = { Log.i(GATE_TAG, it) }, feetDepthBias = FEET_DEPTH_BIAS, reappearAfterTrackingMs = REAPPEAR_AFTER_TRACKING_MS, walkDepthSamples = WALK_DEPTH_SAMPLES, leadDepthSamples = LEAD_DEPTH_SAMPLES, separate = SEPARATION_ENABLED)
     val scanPending = remember { booleanArrayOf(false) } // set by a scan request, consumed by the next frame
     val scanQuiet = remember { booleanArrayOf(false) } // T37: the pending scan is a quiet one (no onScanned); cleared with scanPending
     val policy = remember { AutoScanPolicy() } // T37: fed from the frame callback only; reset with the anchor
@@ -341,12 +393,15 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             val png = c.spritePng
             val sprite = if (png != null) spriteFromBytes(engine, materialLoader, context.assets, png, profile.characterHeightM, GENERATED_SPRITE_FACES_RIGHT)
             else spriteFromAssets(engine, materialLoader, context.assets, profile.characterHeightM)
-            game.spriteBuilt(c.id, sprite.facesRight) // T56: this picture's pose starts unflipped, as a new CharacterPoser did
+            game.spriteBuilt(c.id, sprite.facesRight, sprite.widthM, sprite.heightM) // T56: this picture's pose starts unflipped, as a new CharacterPoser did; T54: and its size, for picking
             MemberRig(c.id, sprite).also { rigs[c.id] = it }
         }
         DisposableEffect(rig) {
             onDispose {
-                if (rigs[c.id] === rig) rigs.remove(c.id)
+                if (rigs[c.id] === rig) {
+                    rigs.remove(c.id)
+                    game.spriteGone(c.id) // T54: no rig, no pick, as before; the engine forgets this picture
+                }
                 rig.sprite.destroy(engine, materialLoader)
             }
         }
@@ -397,22 +452,6 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
             scanTries[0] = 0
         }
         scanQuiet[0] = false // T37: a button press is never quiet; a quiet scan still pending becomes this button's scan
-    }
-    fun activeId(): String? = game.activeId()
-    /**
-     * HAND-REVIEW: T25 — the plane polygon is only the table seen so far, so a tap the hit test accepted is table: it
-     * grows the boundary instead of being refused. Only the tap: on the Pixel the live polygon ran past the end of the
-     * table and the hull kept that (2026-11-03). On the floor the boundary stays null. Main thread, called per tap, never
-     * per frame. One anchor per session stays: only the Level changes.
-     */
-    fun confirmSurface(uv: Vec2) {
-        if (loop.level.boundary == null) return
-        val grown = SurfaceBoundary.grown(loop.level, standing = listOf(uv))
-        if (grown === loop.level) return
-        loop.level = grown
-        level = grown
-        currentSlot.onLevel(grown)
-        Log.i(GATE_TAG, "boundary_grown n=${grown.boundary?.size} u=${uv.u} v=${uv.v}")
     }
     /**
      * Main thread, from onSessionUpdated while a request is pending: grab this frame, then build the level on IO and
@@ -487,17 +526,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         }
         return false
     }
-    /**
-     * T32: the hit a tap or a finger counts: a plane hit inside its polygon, within the profile's tolerance of the
-     * anchor plane (a hit past the table edge is the floor plane and the character would walk off into the air).
-     */
-    fun tableHit(hits: List<HitResult>, a: Anchor?): HitResult? {
-        val tolerance = slotState.profile.tapHeightToleranceM
-        return hits.firstOrNull {
-            val t = it.trackable
-            t is Plane && t.isPoseInPolygon(it.hitPose) && (a == null || abs(it.hitPose.ty() - a.pose.ty()) <= tolerance)
-        }
-    }
+    fun tableHit(hits: List<HitResult>, a: Anchor?): HitResult? = surfaceHit(hits, a, slotState.profile.tapHeightToleranceM)
     /** T32: camera-right in plane coords (the display-oriented camera's +X, ARCore Camera.getDisplayOrientedPose), for spawnNear. */
     fun cameraRight(a: Anchor, frame: Frame): Vec2 {
         val x = a.pose.inverse().compose(frame.camera.displayOrientedPose).xAxis
@@ -517,78 +546,10 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
         Log.i(GATE_TAG, "anchor_plane_age_ms=$ageMs surface=${slotState.surface}")
         game.anchorPlaced { cameraRight(created, frame) }
     }
-    // T32: what CastTouch needs; the hit test is the tap's, the grab a screen-space quad test (review fix (a)), the lead a
-    // boundary-clamped, edge-checked walkTo (review fix (b)).
-    val table = remember {
-        object : CastTable {
-            private val feet = FloatArray(3)
-            private val head = FloatArray(3)
-
-            override fun hitUv(x: Float, y: Float): TableHit? {
-                val frame = latestFrame[0] ?: return null
-                val a = anchorRef[0] ?: return null
-                val hits = frame.hitTest(x, y)
-                val hit = tableHit(hits, a) ?: return null
-                val depthGap = hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) }
-                return TableHit(planeCoords(a, hit.hitPose), depthGap)
-            }
-
-            override fun grabbable(x: Float, y: Float): String? {
-                if (loop.cast.members.size < 2) return null // review fix (c): one character walks as in v1.0, no grab
-                val frame = latestFrame[0] ?: return null
-                val a = anchorRef[0] ?: return null
-                val ground = loop.cast.members.filter { it.body.state.mode == Mode.IDLE || it.body.state.mode == Mode.WALKING }
-                val w = viewSize[0]
-                val h = viewSize[1]
-                if (w <= 0 || h <= 0) return hitUv(x, y)?.let { hit -> nearestOnGround(ground, hit.uv) }
-                projector.load(frame)
-                val size = currentSlot.characterSize
-                val margin = grabMarginPx[0]
-                var best: String? = null
-                var bestD2 = Float.MAX_VALUE
-                for (m in ground) {
-                    val s = m.body.state
-                    val sprite = rigs[m.id]?.sprite ?: continue
-                    if (!projector.project(toWorld(a, s.pos, s.h), w, h, feet)) continue
-                    if (!projector.project(toWorld(a, s.pos, s.h + sprite.heightM * size), w, h, head)) continue
-                    val halfW = projector.pxPerM(feet[2], w) * sprite.widthM * size * 0.5f + margin
-                    val cx = (feet[0] + head[0]) * 0.5f
-                    val cy = (feet[1] + head[1]) * 0.5f
-                    if (abs(x - cx) > halfW) continue
-                    if (y < minOf(feet[1], head[1]) - margin || y > maxOf(feet[1], head[1]) + margin) continue
-                    val d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy)
-                    if (d2 < bestD2) { bestD2 = d2; best = m.id }
-                }
-                return best
-            }
-
-            /** The fallback before the view is laid out: the brief's table-point grab radius. */
-            private fun nearestOnGround(ground: List<kz.rudy.ar.core.physics.CastMember>, uv: Vec2): String? {
-                val profile = slotState.profile
-                val reach = maxOf(profile.radiusAt(currentSlot.characterSize) * 1.5f, GRAB_MIN_M * profile.scale)
-                return ground.minByOrNull { it.body.state.pos.distanceTo(uv) }?.takeIf { it.body.state.pos.distanceTo(uv) <= reach }?.id
-            }
-
-            override fun lead(id: String, hit: TableHit) {
-                val frame = latestFrame[0] ?: return
-                val a = anchorRef[0] ?: return
-                val from = loop.state(id)?.pos ?: return
-                val target = loop.level.nearestInside(hit.uv) // inside the scanned hull (null boundary before a scan: unclamped)
-                val gaps = depthGapsOnWay(frame, a, from, target, LEAD_DEPTH_SAMPLES) + hit.depthGapM
-                if (SurfaceBoundary.crossesEdge(gaps, slotState.profile)) {
-                    Log.i(GATE_TAG, "lead_past_edge id=$id u=${target.u} v=${target.v} way=$gaps")
-                    return // the last target stays
-                }
-                loop.walkTo(id, target)
-            }
-
-            override fun onGrabbed(id: String) = currentSlot.onActiveChanged(id)
-        }
-    }
     // HAND-REVIEW: T32 — ARSceneView attaches its touch dispatcher once, at view creation (ARSceneView.kt:1386, 1515),
-    // so this lambda is remembered and reads only plain holders; a recomposition would not replace it.
+    // so this lambda is remembered and reads only plain holders; a recomposition would not replace it. T54: the bookkeeping is TableEngine's.
     val onTouch = remember<(MotionEvent, Any?) -> Boolean> {
-        { event, _ -> CAST_TOUCH_ENABLED && anchorRef[0] != null && touch.onTouch(event, SystemClock.elapsedRealtime(), table) }
+        { event, _ -> CAST_TOUCH_ENABLED && anchorRef[0] != null && game.onTouch(event.toTouch(SystemClock.elapsedRealtime())) }
     }
 
     Box(modifier.fillMaxSize()) {
@@ -725,31 +686,16 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     } else if (hit != null) {
                         val uv = planeCoords(a, hit.hitPose)
                         probe.onTap(a, hit.hitPose, uv)
-                        // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first;
-                        // with one member on the table `grabbable` is always null and the tap walks it, as v1.0).
-                        val tapped = table.grabbable(event.x, event.y)
-                        if (tapped != null) {
-                            if (tapped != activeId()) currentSlot.onActiveChanged(tapped)
-                            return
-                        }
-                        val active = activeId() ?: return
-                        val from = loop.state(active)?.pos ?: return
                         // HAND-REVIEW: Pixel 2026-11-03 — for feet that sink or float: where the Depth API sees the table at this
                         // tap, relative to the plane the level stands on (+ = plane too low), and the feet's height.
-                        val depthGap = hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) }
-                        // HAND-REVIEW: Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
-                        // so "in the polygon" is not "on the table". A drop in depth on the way or at the tap refuses it; :core decides.
-                        // No depth reading (null) never refuses. The boundary is not touched. The character says it cannot go there
-                        // (the BLOCKED line), so a refused tap is not a dead tap.
-                        val gaps = depthGapsOnWay(frame, a, from, uv, WALK_DEPTH_SAMPLES) + depthGap
-                        Log.i(GATE_TAG, "tap_depth_gap=$depthGap feet_h=${loop.state(active)?.h} way=$gaps id=$active")
-                        if (SurfaceBoundary.crossesEdge(gaps, slotState.profile)) {
-                            Log.i(GATE_TAG, "tap_past_edge u=${uv.u} v=${uv.v}")
-                            currentSlot.onCastEvent(active, CharacterEvent.BLOCKED)
-                        } else {
-                            confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
-                            loop.walkTo(active, uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
-                        }
+                        val depthGap = { hits.firstOrNull { it.trackable is DepthPoint }?.let { planeHeight(a, it.hitPose) } }
+                        // HAND-REVIEW: T54 — what this tap means is TableEngine.onTap (pick a member, the depth edge on the way, the
+                        // boundary growth, the walk). The hit test stays here: the placement tap shares it. The engine calls `depthGap`
+                        // where line 739 ran, only for a tap that walks. `level` mirrors a grown boundary for the overlay and the
+                        // occluders, as confirmSurface wrote it. This branch cannot create an anchor.
+                        val before = game.level
+                        game.onTap(event.x, event.y, uv, depthGap)
+                        game.level.let { if (it !== before) level = it }
                     }
                 }
                 rememberOnGestureListener(
@@ -757,7 +703,7 @@ fun RudeusArView(modifier: Modifier = Modifier, slot: ArSlot, scanner: TableScan
                     onDoubleTapEvent = { event, _ -> if (event.actionMasked == MotionEvent.ACTION_UP) tableTap(event) },
                 )
             },
-            onTouchEvent = onTouch, // T32: the finger grab, before the gesture detector (CastTouch.kt)
+            onTouchEvent = onTouch, // T32: the finger grab, before the gesture detector (TableEngine.onTouch)
         ) {
             anchor?.let { a ->
                 // HAND-REVIEW: SceneView's AnchorNode defaults to isPositionEditable = true; a drag would detach and
