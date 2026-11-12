@@ -45,6 +45,13 @@ private fun hello(serial: Int, id: String = "a") = cmd(serial, id, CharacterActi
 private fun TableSlot.sending(command: CharacterCommand?) =
     TableSlot(members, activeId, command, soundsOn, onAnchorPlaced, onCastEvent)
 
+/** T54: the AR session's answers; nothing here taps or touches, so it answers nothing (TableTouchTest asks it). */
+private val silentPort = object : ArPort {
+    override fun hitTable(xPx: Float, yPx: Float, toleranceM: Float): TableHit? = null
+    override fun depthGapsOnWay(from: Vec2, to: Vec2, samples: Int): List<Float?> = List(samples) { null }
+    override fun screenView(): ScreenView? = null
+}
+
 /**
  * Drives one engine the way RudeusArView and rememberTableEngine do: [latest] is the slot of the last composition,
  * every slot callback and every frame event lands in [calls] in order, the log in [lines].
@@ -52,7 +59,6 @@ private fun TableSlot.sending(command: CharacterCommand?) =
 private class Host(surface: Surface = Surface.TABLE) {
     val lines = ArrayList<String>()
     val sounds = ArrayList<EmoteSound>()
-    val released = ArrayList<String>()
     val calls = ArrayList<String>()
 
     /** Camera-right in plane coords as the host answers it (any length); counted. */
@@ -62,7 +68,7 @@ private class Host(surface: Surface = Surface.TABLE) {
 
     var now = T0
     var latest: TableSlot = slotOf()
-    val engine = TableEngine({ latest }, surface, { sounds += it }, { released += it }, { lines += it }, feetDepthBias = 0.6f, reappearAfterTrackingMs = 800L)
+    val engine = TableEngine({ latest }, surface, { sounds += it }, silentPort, { lines += it }, feetDepthBias = 0.6f, reappearAfterTrackingMs = 800L, walkDepthSamples = 6, leadDepthSamples = 2)
     val loop get() = engine.loop
 
     fun slotOf(vararg members: Member, activeId: String? = null, soundsOn: Boolean = true) = TableSlot(
@@ -90,7 +96,7 @@ private class Host(surface: Surface = Surface.TABLE) {
     fun frames(n: Int, tracking: Boolean = true) = repeat(n) { frame(tracking) }
 
     fun clear() {
-        lines.clear(); sounds.clear(); released.clear(); calls.clear(); rightAsked = 0
+        lines.clear(); sounds.clear(); calls.clear(); rightAsked = 0
     }
 
     fun state(id: String) = assertNotNull(loop.state(id), id)
@@ -188,7 +194,6 @@ class TableEngineTest {
         assertNull(h.engine.activeId())
         assertEquals(emptyList(), h.calls, "no PLACED, no physics event")
         assertEquals(0, h.rightAsked)
-        assertEquals(emptyList(), h.released)
     }
 
     @Test
@@ -297,8 +302,9 @@ class TableEngineTest {
         assertEquals(emptyList(), h.calls, "joining is no physics event")
     }
 
+    // T53 named it aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased; the finger is TableTouchTest's since T54.
     @Test
-    fun aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased() {
+    fun aMemberGoneFromTheSlotLeavesTheLoopWithOneLineAndNoEvent() {
         val h = Host()
         h.latest = h.slotOf(member("a"), member("b"), member("c"))
         h.anchor()
@@ -308,7 +314,6 @@ class TableEngineTest {
         h.sync()
         assertEquals(listOf("a", "c"), h.loop.ids)
         assertNull(h.loop.state("b"))
-        assertEquals(listOf("b"), h.released)
         assertEquals(listOf("cast_remove id=b"), h.lines)
         assertEquals(emptyList(), h.calls)
         assertEquals(0, h.rightAsked)
@@ -316,7 +321,6 @@ class TableEngineTest {
         h.latest = h.slotOf(member("c"))
         h.sync()
         assertEquals(listOf("c"), h.loop.ids)
-        assertEquals(listOf("a"), h.released)
         assertEquals(listOf("cast_remove id=a"), h.lines)
         h.frames(2)
         assertEquals(emptyList(), h.calls, "leaving is no physics event")
@@ -335,7 +339,6 @@ class TableEngineTest {
         assertSame(cast, h.loop.cast)
         assertEquals(emptyList(), h.calls)
         assertEquals(emptyList(), h.lines)
-        assertEquals(emptyList(), h.released)
         assertEquals(0, h.rightAsked)
     }
 

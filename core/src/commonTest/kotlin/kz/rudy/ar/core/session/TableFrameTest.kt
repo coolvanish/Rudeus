@@ -52,6 +52,13 @@ private val square = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.70f
 
 private fun member(id: String, ability: Ability = Ability.JUMP) = Member(id, ability, EmoteSet.defaults())
 
+/** T54: the AR session's answers; the frame step asks none of them, so it answers nothing (TableTouchTest asks it). */
+private val quietPort = object : ArPort {
+    override fun hitTable(xPx: Float, yPx: Float, toleranceM: Float): TableHit? = null
+    override fun depthGapsOnWay(from: Vec2, to: Vec2, samples: Int): List<Float?> = List(samples) { null }
+    override fun screenView(): ScreenView? = null
+}
+
 /**
  * Drives one engine the way RudeusArView and rememberTableEngine do: [latest] is the slot of the last composition,
  * every slot callback and every frame event lands in [calls] in order, the log in [lines]. The camera is plain
@@ -74,8 +81,8 @@ private class FrameHost(surface: Surface = Surface.TABLE, reappearMs: Long = REA
     var now = T0
     var latest: TableSlot = slotOf()
     val engine = TableEngine(
-        { latest }, surface, {}, {}, { lines += it },
-        feetDepthBias = BIAS, reappearAfterTrackingMs = reappearMs,
+        { latest }, surface, {}, quietPort, { lines += it },
+        feetDepthBias = BIAS, reappearAfterTrackingMs = reappearMs, walkDepthSamples = 6, leadDepthSamples = 2,
     )
     val loop get() = engine.loop
 

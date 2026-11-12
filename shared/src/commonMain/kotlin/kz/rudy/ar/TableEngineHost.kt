@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import kz.rudy.ar.core.emote.EmoteSound
+import kz.rudy.ar.core.session.ArPort
 import kz.rudy.ar.core.session.Member
 import kz.rudy.ar.core.session.TableEngine
 import kz.rudy.ar.core.session.TableSlot
@@ -16,8 +17,10 @@ import kz.rudy.ar.core.session.TableSlot
 // ArSlot never recreates it and it dies with the AR view's composition. Not tested (Compose); its proof is the move.
 // T56 — a fifth effect, the scenario request, moved here from RudeusArView with its key. The slot's size, debug flag and
 // its tracking and cast-state callbacks reach the engine through [toTableSlot]; the two Pixel numbers come in from the host.
+// T54 — the slot's onActiveChanged and onLevel reach the engine through [toTableSlot]; the host's ArPort and its two depth
+// sample counts go straight into the engine at the first composition, like the Pixel numbers. No sixth effect.
 
-/** [members] with the slot's command, active id, sounds flag, size, debug flag and its four callbacks, as the engine reads them. */
+/** [members] with the slot's command, active id, sounds flag, size, debug flag and its six callbacks, as the engine reads them. */
 fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
     members = members.map { Member(it.id, it.ability, it.emotes) },
     activeId = activeId,
@@ -29,12 +32,16 @@ fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
     debug = debug,
     onTracking = onTracking,
     onCastState = onCastState,
+    onActiveChanged = onActiveChanged,
+    onLevel = onLevel,
 )
 
 /**
  * The engine of one AR session and the five effects that feed it. Call it once, before anything reads the surface.
  * [members] = who the host renders (`slot.characters`; the Android host still has its v1.0 legacy member).
  * [feetDepthBias] and [reappearAfterTrackingMs] are the host's Pixel numbers (FEET_DEPTH_BIAS, REAPPEAR_AFTER_TRACKING_MS).
+ * [port] answers the engine's AR questions for the whole session; [walkDepthSamples] and [leadDepthSamples] are the
+ * host's (WALK_DEPTH_SAMPLES, LEAD_DEPTH_SAMPLES). All five are read at the first composition only.
  * Compose decides when (the effect keys), the engine decides what.
  */
 @Composable
@@ -42,26 +49,29 @@ fun rememberTableEngine(
     slot: ArSlot,
     members: List<ArCharacter>,
     playEmoteSound: (EmoteSound) -> Unit,
-    onMemberRemoved: (String) -> Unit,
+    port: ArPort,
     log: (String) -> Unit,
     feetDepthBias: Float,
     reappearAfterTrackingMs: Long,
+    walkDepthSamples: Int,
+    leadDepthSamples: Int,
     separate: Boolean = true,
 ): TableEngine {
     val view = remember(slot, members) { slot.toTableSlot(members) }
     val currentView by rememberUpdatedState(view)
     val currentPlay by rememberUpdatedState(playEmoteSound)
-    val currentRemoved by rememberUpdatedState(onMemberRemoved)
     val currentLog by rememberUpdatedState(log)
     val game = remember {
         TableEngine(
             current = { currentView },
             surface = slot.surface,
             playEmoteSound = { currentPlay(it) },
-            onMemberRemoved = { currentRemoved(it) },
+            port = port,
             log = { currentLog(it) },
             feetDepthBias = feetDepthBias,
             reappearAfterTrackingMs = reappearAfterTrackingMs,
+            walkDepthSamples = walkDepthSamples,
+            leadDepthSamples = leadDepthSamples,
             separate = separate,
         )
     }
