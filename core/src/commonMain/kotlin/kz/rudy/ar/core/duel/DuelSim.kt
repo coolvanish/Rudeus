@@ -245,7 +245,7 @@ object DuelSim {
                     is DuelEvent.WallSlam -> wallSlams++
                     is DuelEvent.SpecialStarted -> {
                         specials++
-                        if ((e.event as DuelEvent.SpecialStarted).id == aId) specialsA++
+                        if (e.event.id == aId) specialsA++
                     }
                     is DuelEvent.Missed -> misses++
                     else -> Unit
