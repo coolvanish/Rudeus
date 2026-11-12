@@ -57,7 +57,8 @@ import kotlinx.serialization.Serializable
  *   and never dashes: the fighter that does nothing wins 2:0 on the clock. With it the bot wins those matches 2:0 by
  *   ring-outs, and nothing changes on a table without objects. **Off by default** (the T60 Result): on, NORMAL plays the
  *   ROLL mirror on cup-and-book about as well as HARD (it went to and fro beside a HARD bot standing by the cup too), and
- *   `normalIsBetweenEasyAndHard`'s floor fails there (HARD ROLL over NORMAL ROLL 214 of 400 for 220); a human decides.
+ *   `normalIsBetweenEasyAndHard`'s floor fails there (HARD ROLL over NORMAL ROLL 214 of 400 for 220); and next to a long
+ *   hole, whose coarse bounding circle it counts as an object, NORMAL bots stall more often. A human decides.
  *   Draws nothing from the bot's generator either way.
  */
 @Serializable

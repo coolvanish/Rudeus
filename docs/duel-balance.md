@@ -19,8 +19,8 @@ the prints recorded before T60 (`theFixSwitchedOffIsTheOldBot`). On a table with
 **Why it is off by default.** On, it breaks `normalIsBetweenEasyAndHard` (not loosened): HARD ROLL beats NORMAL ROLL on
 cup-and-book 214 of 400 on the test's seeds, under the 0.55 floor (220); 238 before. Over five seed bases (2000
 matches) 63.4 % -> 54.1 %. The fix on NORMAL alone: 50.4 %; on HARD alone: 68.4 %. Both levels play better near the cup
-with it; NORMAL, which went to and fro beside a HARD bot standing by the cup too, gains far more. Six candidates,
-every one meeting I1, cost that cell 211..217 of 400 (the brief's candidate log).
+with it; NORMAL, which went to and fro beside a HARD bot standing by the cup too, gains far more. The five
+candidates (of six) that met I1 all cost that cell, 211..217 of 400 (the brief's candidate log).
 
 ### The idle table (I1, I2): a fighter that sends no input on its mark, 5/5/5/5 both
 
@@ -47,6 +47,23 @@ I3 (a target that walks to a new point one radius from its mark every 500 ms): 9
 HARD, all 2:0 by ring-outs, before and after (its motion breaks the to and fro). I4 between bots (equal and archetype
 cells, four arenas, NORMAL and HARD, seeds 1..10: 3200 bot sides): longest 8.6 s before, 8.0 s after, none over 10 s
 (the tests' 640 sides: 7.5 s).
+
+**Arenas with a CLIFF hole** (not tuning arenas; every ability pair at equal stats, seeds 1..6, 96 matches per level;
+"sides" = bot sides with a stretch over 10 s without closing in or attacking, of 192):
+
+| arena | level | rounds on the clock, off / on | sides over 10 s, off / on | a still fighter: won (by ring-outs), off / on |
+|---|---|---|---|---|
+| `Scenarios.day5Level()` (cup, book, 10 x 30 cm gap) | NORMAL | 6 of 235 / 6 of 233 | 27 / 27 | 23 (0) / 24 (0) of 24 |
+| `Scenarios.day5Level()` | HARD | 62 of 228 / 60 of 233 | 126 / 129 | 23 (0) / 24 (0) of 24 |
+| 50 x 40 cm, a 4 x 30 cm hole strip, a book | NORMAL | 0 / 3 | **0 / 6** | 24 (2) / 24 (2) of 24 |
+| 50 x 40 cm, a 4 x 30 cm hole strip, a book | HARD | 1 / 1 | 2 / 2 | 24 (2) / 24 (2) of 24 |
+
+day5 is where the T58 review saw HARD v HARD draw 0:0 after 5 rounds. Its causes are not T60's gap (traced): the mark
+(0.08, 0) touches the cup and the push toward the nearest edge drives the fighter into it (wall slams); a bot on that mark
+starts inside the cup's keep-out circle with its goal straight away from it and goes to and fro round it (the side flips
+with a near-zero cross product); the gap's bounding circle plus margin (21.8 cm) bars walk targets on half the table.
+The fix changes none of it. On the strip arena the switch on makes NORMAL stall more often (0 -> 6 sides): it counts the
+strip's coarse bounding circle (21 cm) as an object closing the way. Both are in the brief's "what a human must decide".
 
 ### The matrix (`duel matrix --n 200`), before and with the switch on
 

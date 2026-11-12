@@ -1,6 +1,6 @@
 # T60 — bot-beats-idle
 
-status: doing
+status: review
 created: 2026-11-12
 phase: v2 wave 4 (ai/build-plan-v2.md, "The game")
 gate: G5 duel on the Pixel (a bot that does nothing on a table with a cup and a book would be the first thing a child sees)
@@ -95,6 +95,9 @@ If I1 can be met only by making a row of the matrix worse, keep the best candida
   a spot on a PLATFORM above the opponent, and the book is below). EASY dashes at any alignment (`alignCos` -1), so it
   wins; on EMPTY, SMALL and LARGE no circle closes the way and the bot reaches the spot. Not a plain bug in a rule: the
   side choice was never asked for more than the next waypoint, so the fix can be a switch (below).
+  The T58 review reproduced it from the other side through `DuelRunner`: on CUP_AND_BOOK the EASY bot won 24 of 24 and
+  the idle side beat NORMAL and HARD 24 of 24 on two 60 s timeouts; on EMPTY and SMALL the bot won 24 of 24 at every
+  level (here: 42 of 42 per arena and level, the same split).
   **A moving child** meets the same condition whenever it stands (or keeps walking back to a spot) where the spot to
   push it from lies beyond a gap between it and a blocking object narrower than its ring plus the object's circle, and
   the bot comes from that side: next to the cup, with the cup on the far side of the push. The child's own motion breaks
@@ -102,19 +105,120 @@ If I1 can be met only by making a row of the matrix worse, keep the best candida
   CUP_AND_BOOK with a child that walks to a spot every 480 ms and stays (8 matches per spot and level, NORMAL and HARD,
   bot abilities varied): beside the cup left and right, below the cup, at the book's corner and beside the book the bots
   won 8 of 8 by ring-outs before the fix already. Three other spots show other stand-offs, not this cause (traced; the
-  fix changes none of them, measured with it on and off; the bot wins the first two on the clock):
-  1. *Behind the cup*, pressed against it 2 cm from the top edge: the push is toward that edge, every spot round the
-     child at the stand-off distance is inside the cup's circle or past the 2-radius edge margin (no walk target exists),
-     `safe()` clamps the spot to the near side of the cup, (0, 0.022), and the bot waits there for the round; it wins 8 of
-     8 on the clock (the child is 2 cm from the edge). 59 s without an attack.
-  2. *On the book* (3 cm up, out of a dash's 2.8 cm reach): no spot round the child at the stand-off distance is on the
-     12 x 8 cm book, so (T57's `climb`) the bot walks at the child, and the child's own circle blocks its step onto the
-     book's edge; a JUMP bot stomps it off (9 cm reach) in 4 s, the others press against it for the round and win on the
-     clock (8 of 8, 3 by ring-outs). 59 s without an attack.
-  3. *Between the cup and the book*, walking back to the middle after every hit: the bots attack 46 to 69 times a match,
-     but the middle is the deepest spot of the table (it wins every timeout) and a dash slides it at most 18.9 cm of the
-     20 to the edge before it walks back: it beats NORMAL in 2 of 8 and HARD in 7 of 8, on the clock. A balance question
-     (what the clock awards, a child that walks back; T48's "What a human must decide" 2), not a bot that does not engage.
-- measured: ...
-- what a human must decide: ...
-- cut/deferred: ...
+  fix changes none of them, measured with it on and off): behind the cup, on the book, and between the cup and the book.
+  They are out of scope, each under "what a human must decide" (3, 4, 5) with its numbers.
+- **the fix** (`DuelBot.kt`: `around`, with `detourPoint` taken out of it unchanged, and the new `misfit` / `wayRound`;
+  `BotTuning.wholeDetour`): when another object or a hole closes the shorter way round (`wayRound` walks the ring in
+  45° steps until the straight line to the goal clears the ring, as `route` does, and says what refused a waypoint
+  first), the bot takes the other side if its whole way round is open, else walks straight at its goal when that line
+  keeps a body's width from the circle's centre and out of every other circle; otherwise the old rule. Behind
+  `wholeDetour`: false reproduces the T57 bot bit for bit and draws nothing from the generator (`PRE_T57_TUNING` sets it
+  false explicitly, the one edit in `DuelNewRulesTest.kt`; `DuelBotTest.kt` is untouched). **Default: false** (below,
+  and "what a human must decide" 1): on, `normalIsBetweenEasyAndHard` fails, and it may not be loosened.
+- **measured** (with `wholeDetour` on unless said; the tests are `DuelIdleTest`, run with it on):
+  - **I1** (four arenas x NORMAL, HARD x every bot ability against the same ability and against JUMP x both marks x 3
+    seeds = 168 per level): the bot wins 168 of 168 at both levels, every one 2:0 by two ring-outs. Before (the T57 bot,
+    switch off): 126 of 168 at each level, all 42 on CUP_AND_BOOK lost 0:2 on the clock with no attack. Per arena
+    (won / lost 0:2 on the clock / mean match / longest stand-off), before -> after: CUP_AND_BOOK NORMAL 0 / 42 / 129.0 s
+    / 59.2 s -> 42 / 0 / 28.4 s / 3.0 s; HARD 0 / 42 / 129.0 s / 57.6 s -> 42 / 0 / 27.6 s / 2.6 s; EMPTY, SMALL, LARGE
+    unchanged at both levels (42 / 0; 22.6, 14.1, 27.7 s at NORMAL; 22.5, 14.3, 27.5 s at HARD). The full table is in
+    docs/duel-balance.md, "T60".
+  - **I2** (the same sample, EASY): 42 of 42 per arena, all 2:0 by ring-outs, before and after (CUP_AND_BOOK 32.9 ->
+    33.1 s); no match lost 0:2 on the clock.
+  - **I3** (a target that walks to a new point one radius from its mark every 500 ms, seeded; 9 per arena and level):
+    9 of 9 everywhere at NORMAL and HARD, all 2:0 by ring-outs, before and after.
+  - **I4** ("closes the distance": comes one radius closer than the farthest the other has been since the stretch began;
+    restarts at every dash or special, every round, and while either is out): against a fighter that stands still,
+    59.2 s (NORMAL) and 57.6 s (HARD) before, **3.0 s** after; between bots (the equal-stats and archetype cells of the
+    four arenas, NORMAL and HARD, seeds 1..10: 3200 bot sides) 8.6 s before, **8.0 s** after, none over 10 s (sides over
+    6 s: 6 -> 4); the test's own sample (equal cells, seeds 1..4: 640 sides) 7.5 s. A first definition, against the
+    distance at the stretch's start only, counted a HIDE herded by a FLY on LARGE (knocked 9 to 15 cm away every 2.5 s,
+    walking back each time) as 16 s without closing in (18.6 s on cup-and-book before the fix); it was the metric, not a
+    bot, and the definition was changed before any number here.
+  - **On arenas with a CLIFF hole** (not in I4's sample: the T58 review's 0:0 draw after 5 rounds, 322 s, HARD v HARD):
+    measured on `Scenarios.day5Level()` (cup, book, a 10 x 30 cm gap) and on `DuelArenaTest`'s 50 x 40 table with a
+    4 x 30 cm hole strip, every ability pair at equal stats, seeds 1..6 (96 matches per level). day5, switch off: HARD
+    62 of 228 rounds on the clock, 126 of 192 bot sides with a stretch over 10 s (58 s at most), NORMAL 6 rounds and 27
+    sides; against a still fighter NORMAL and HARD win 23 of 24 but none by a ring-out (60 s stretches). Switch on: the
+    same (HARD 60 rounds, 129 sides; NORMAL identical; idle 24 of 24, none by a ring-out). Not T60's cause (traced, see
+    "what a human must decide" 6), so the fix was not widened. On the strip arena the switch on makes it worse for
+    NORMAL: 0 of 192 sides over 10 s off, **6 of 192 on** (59 s at most); HARD 2 of 192 both ways.
+  - **The levels' order**, the strength tests on their own seeds: `hardBeatsEasy` 100 % (empty), 94.5 -> 96.5 %
+    (cup-and-book); NORMAL v EASY 100 % and 95.5 -> 97.5 %; HARD v NORMAL on EMPTY identical (JUMP 351, FLY 268, ROLL 252,
+    HIDE 358 of 400), on CUP_AND_BOOK JUMP 247 -> 257, FLY 274 -> 268, **ROLL 238 -> 214 (floor 0.55 = 220: fails)**,
+    HIDE 286 -> 284. The ROLL cell over five seed bases (33000, 1, 70001, 5000, 9000; 2000 matches): 1268 (63.4 %) ->
+    1082 (54.1 %). The fix on NORMAL only: 1007 (50.4 %); on HARD only: 1367 (68.4 %): both levels play better near the
+    cup, NORMAL far more (it went to and fro beside a HARD bot standing by the cup too).
+  - **The matrix** (`duel matrix --n 200`; before = 920ed48; the committed default gives the same 320 cells,
+    identical tallies; "on" = `--tuning {"wholeDetour": true}`, 91 s on 4 threads). Only the 80 cup-and-book cells
+    move; the other 240 are identical. B1 20.3..83.5 % FAIL (4 out) -> 20.3..83.5 % FAIL (5 out: + cup-and-book HARD ROLL
+    37.5 -> 33.2 %); B2 19.5..84.3 % FAIL (6) -> the same; B3 1.0..99.0 % FAIL (54) -> FAIL (52); B4 0..0.2 % PASS ->
+    PASS; B5 2.5..8.7 FAIL (3) -> 2.5..8.5 FAIL (1); B6 23.7..54.7 s PASS -> PASS; B7 7.0..83.5 % FAIL (61) -> FAIL (62:
+    3 back in, 4 cup-and-book SPEED specialists out); B8 80..100 % PASS -> PASS; B9 64 000 replays identical -> identical;
+    B11 0.9..3.9, 0 twins PASS -> PASS. No verdict changes, no range's ends move. Against the field on cup-and-book every
+    B1 move is under 5 points (largest HARD ROLL -4.3); B2's HARD ROLL 58.7 -> 48.5 % and HARD HIDE 47.8 -> 53.2 %, both
+    toward 50. 19 single cells move 5 points or more, all on cup-and-book, largest the SPEED specialists (NORMAL ROLL 44
+    -> 24 %, NORMAL HIDE 49 -> 36 %, HARD FLY 48 -> 35.5 %, HARD ROLL 41 -> 31.5 %) and HARD archetype ROLL v HIDE 47.5 ->
+    31.5 %; probably the cells where one side profited most from the other going to and fro by the cup (not traced cell
+    by cell). Tables in docs/duel-balance.md, "T60".
+  - **Tests**: `DuelIdleTest` (new, 5): `aBotBeatsAFighterThatStandsStill` (I1), `easyStillBeatsAnIdleFighter` (I2),
+    `aBotBeatsATargetThatShuffles` (I3), `noBotStandsOffForARound` (I4: the I1 sample and 320 bot matches),
+    `theFixSwitchedOffIsTheOldBot` (the 24 golden match setups at today's rules with the switch off against prints
+    recorded on 920ed48, `PRE_T57_TUNING` off, and the switch flipping one idle match from lost 0:2 without an attack to
+    2:0). Duel package 130 tests (125 + 5), all green, 55 s summed on a cold daemon (39 s warm; `DuelIdleTest` 3.7 to
+    4.9 s). The goldens (`theNewRulesSwitchedOffAreThePreviousPhysics`) green with their constants untouched.
+- **candidate log** (I1 = CUP_AND_BOOK 2:0 wins of 42 at NORMAL / HARD; ROLL = cup-and-book HARD ROLL v NORMAL ROLL,
+  400 matches from seed 33000 as in `normalIsBetweenEasyAndHard`, floor 220, and over five seed bases of 2000; B1 / B11
+  measured on the full matrix for the kept candidate only, the others failed the strength floor first):
+
+  | # | what | I1 | I4 idle | ROLL (of 400 / of 2000) | B1 / B11 | kept? |
+  |---|---|---|---|---|---|---|
+  | 0 | the T57 bot | 0 / 0 | 59 s | 238 / 1268 | 20.3..83.5 (4 out) / PASS | |
+  | 1 | the side whose whole way round is open first (closed by anything: edge or object), else as before | 42 / 18 | 36 s / 58 s (first I4 metric) | 222 / - | - | no: HARD's last waypoint before the spot lies in the cup's circle |
+  | 2 | 1 + straight at the goal when neither side is open and nothing is in the way | 42 / 42 | 3.0 s | 211 / 1098 | - | no: the floor |
+  | 3 | 2 only when another object or a hole closes the shorter way (not the edge) | 42 / 42 | 3.0 s | 214 / 1082 | 20.3..83.5 (5 out) / PASS 0.9..3.9 | **committed, switch off** |
+  | 4 | 3 only round an opponent standing still (IDLE) | 42 / 42 | 3.0 s | 214 / 1071 | - | no: the same cost |
+  | 5 | 3 only on the ring (not off it) | 42 / 42 | 3.0 s | 217 / 1089 | - | no: the same cost |
+  | 6 | 3 + HARD walks straight past the opponent whenever its body clears it (a level change, measured for the human) | 42 / 42 | 3.2 s | 211 / 1072 | - | no: empty HARD ROLL v NORMAL 252 -> 154 |
+
+  Candidates 1, 2, 4 to 6 were not committed: none could be committed green with the switch on, and with it off they
+  are all the T57 bot. Candidate 3 changes nothing on a table without objects (240 of 320 matrix cells identical,
+  EMPTY's strength cells identical).
+- **what a human must decide**:
+  1. **Turn the fix on** (`BotTuning.wholeDetour = true`, one line)? On: a child who stands still on cup-and-book loses
+     to NORMAL and HARD 2:0 by ring-outs in about 28 s (today it wins 2:0 on the clock, every time, from either mark);
+     nothing changes on tables without objects; the matrix keeps every verdict. The cost: `normalIsBetweenEasyAndHard`'s
+     cup-and-book ROLL cell, HARD over NORMAL 214 of 400 for a 0.55 floor (220), 54.1 % over 2000 matches; and B1's
+     cup-and-book HARD ROLL 37.5 -> 33.2 % (out of 35..65). The drop is NORMAL losing a bug, not HARD getting worse (HARD
+     alone with the fix: 68.4 %). Options: (a) on, and that cell's floor lowered to 0.50 (a loosening, not mine to make);
+     (b) on, and HARD made stronger in that mirror (a level change; candidate 6, the obvious one, is far worse); (c) keep
+     it off. My recommendation: (a), then the strip-hole case of 2 below.
+  2. **Near holes, with the switch on**, NORMAL bots stall more often on the 4 x 30 cm strip arena (0 -> 6 of 192 bot
+     sides over 10 s, 59 s at most: both bots stand still, the spot to push from inside the strip's keep circle, clamped
+     onto the opponent). The side switch counts a hole's bounding circle (21 cm for that strip) as an object closing the
+     way. Likely remedy, not tried (time-box): count only blocking objects, not holes, in `misfit`.
+  3. **Behind the cup**, a child pressed against it 2 cm from the top edge: every spot round it at the stand-off
+     distance is inside the cup's circle or past the 2-radius edge margin, `safe()` clamps the bot's spot to the near
+     side of the cup, (0, 0.022), and it waits there; it wins 8 of 8 on the clock, 59 s without an attack. A walk target
+     inside the edge margin, or a push along the edge, would let it attack.
+  4. **On the book** (3 cm up, out of a dash's 2.8 cm reach): no spot round the child at the stand-off distance is on the
+     12 x 8 cm book, so (T57's `climb`) the bot walks at the child and the child's circle blocks its step onto the book; a
+     JUMP bot stomps it off in 4 s, the others press against it for the round and win 8 of 8 on the clock (3 by
+     ring-outs), 59 s without an attack.
+  5. **Between the cup and the book**, a child that walks back to the middle after every hit beats NORMAL in 2 of 8 and
+     HARD in 7 of 8 (5 of them 0:2) on the clock, though the bots attack 46 to 69 times a match: the middle is the deepest
+     spot of the table and a dash slides it at most 18.9 cm of the 20. What the clock awards (T48's "What a human must
+     decide" 2), not a bot that does not engage.
+  6. **The day5 level** (`Scenarios.day5Level()`: cup at (0.15, 0), book, a 10 x 30 cm gap at u -0.2; the T58 review's
+     draws): HARD v HARD ends 27 % of the rounds on the clock and 2 of 3 bot sides have a stretch over 10 s; a still
+     fighter is beaten only on the clock. Three causes, traced, none T60's gap: the mark (0.08, 0) touches the cup, so a
+     push toward the nearest edge, (1, 0), drives the fighter into the cup (every hit a wall slam, it never moves; NORMAL
+     never weighs the push and HARD only for high ground); a bot on that mark starts inside the cup's keep-out circle
+     with its goal straight away from the cup, so `route` sends it round the cup and the side flips with the sign of a
+     near-zero cross product (it goes to and fro at its mark: the same function as T60, another trigger, unchanged by the
+     fix); and the gap's bounding circle plus margin (21.8 cm round (-0.2, 0)) bars every walk target on the left half of
+     the table near v = 0. Changes to the push choice, to a bot inside a keep circle, and to holes' coarse circles (T55's
+     KDoc: "safe, coarse for a long strip") are each their own brief.
+- **cut/deferred**: the fix stays off by default (1); no B12 idle row in the matrix (`DuelCommand.kt`, `DuelSim.kt`,
+  `DuelArenas.kt` untouched); the moving-target half is in (I3 passes); 2..6 above are found, not fixed. The six-candidate
+  time-box was used up.
