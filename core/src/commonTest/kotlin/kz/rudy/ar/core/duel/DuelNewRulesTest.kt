@@ -685,7 +685,7 @@ internal val PRE_T57_TUNING = BotTuning(
     standoffGapRadii = 0.6f, clearanceRadii = 0.6f, detourStepCos = 0.70710677f, detourStepSin = 0.70710677f,
     threatSlackRadii = 0.5f, sidestepRadii = 2f, stompReachShare = 0.8f, ramNearEdgeRadii = 8f, ramRoomRadii = 3f,
     walkCost = 0.5f, switchCostRadii = 1f, highGroundBonusRadii = 3f, leadShare = 1f, knockLeadShare = 0.5f,
-    lineOfSightRadii = 0.8f, sameDirectionCos = 0.98f, blockedPushRadii = 10f,
+    lineOfSightRadii = 0.8f, sameDirectionCos = 0.98f, blockedPushRadii = 10f, wholeDetour = false,
     easy = BotSkill(
         thinkMs = 384, thinkJitterTicks = 4, dashRangeShare = 0.7f, alignCos = -1f, aimErrorShare = 0.35f,
         wrongWayChance = 0.25f, wanderChance = 0.2f, wanderMs = 1200, leadsAim = false, weighsPush = false,

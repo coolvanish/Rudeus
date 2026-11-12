@@ -851,41 +851,90 @@ private class Brain(
     private fun route(goal: Vec2): Vec2 {
         var target = safe(goal)
         val ring = contact + t.clearanceRadii * r
-        if (target.distanceTo(them) >= ring * 0.9f && near(me, target, them, ring * 0.9f)) target = around(them, ring, target)
+        if (target.distanceTo(them) >= ring * 0.9f && near(me, target, them, ring * 0.9f)) target = around(them, ring, target, ring * 0.9f, contact)
         for (k in keeps) {
             if (near(me, target, k.c, k.r * 0.95f)) {
-                target = around(k.c, k.r, target)
+                target = around(k.c, k.r, target, k.r * 0.95f, k.bare + r)
                 break
             }
         }
         return safe(target)
     }
 
-    /** A waypoint going round the circle ([c], [rho]) from the bot toward [goal], on the side that is the shorter way and safe. */
-    private fun around(c: Vec2, rho: Float, goal: Vec2): Vec2 {
+    /**
+     * A waypoint going round the circle ([c], [rho]) from the bot toward [goal], on the side that is the shorter way and
+     * safe. T60 ([BotTuning.wholeDetour]): when the shorter way round is closed by another circle the bot keeps out of (an
+     * object or a hole, not the edge: [wayRound]; [route] goes straight on once the line to [goal] clears [pass] round
+     * [c]), the other side if its whole way round is open; else, when the straight line to [goal] touches nothing (it keeps
+     * [core], the circle's body, from [c] and out of every other circle), [goal] itself; only else as before. (Before T60
+     * the side was picked by its next waypoint alone, and in a gap too narrow to pass, as between a fighter and the cup,
+     * the two halves of that rule disagreed: off the ring the waypoint into the gap was refused, on the ring its first
+     * step was not, and the bot went to and fro beside the other for a whole round. And the ring's last waypoint before a
+     * spot against the cup lies inside the cup's circle when the spot does not.)
+     */
+    private fun around(c: Vec2, rho: Float, goal: Vec2, pass: Float, core: Float): Vec2 {
         val rel = me - c
         val len = rel.length
         val un = if (len > Vec2.EPS) rel / len else (goal - c).normalized().perp().takeIf { it != Vec2.ZERO } ?: Vec2(1f, 0f)
         val preferred = if (un.cross(goal - c) >= 0f) 1f else -1f
+        if (t.wholeDetour && wayRound(c, rho, detourPoint(c, rho, un, len, preferred), goal, preferred, pass) == WAY_OBJECT) {
+            val other = detourPoint(c, rho, un, len, -preferred)
+            if (wayRound(c, rho, other, goal, -preferred, pass) == WAY_OPEN) return other
+            if (!near(me, goal, c, core) && keeps.none { k -> k.c != c && near(me, goal, k.c, k.r * 0.95f) }) return goal
+        }
         var fallback: Vec2? = null
         for (side in floatArrayOf(preferred, -preferred)) {
-            val w = if (len > rho * 1.2f) {
-                // Outside: head for the tangent point, and a little past it along the tangent.
-                val cosA = rho / len
-                val sinA = sqrt((1f - cosA * cosA).coerceAtLeast(0f))
-                val dirT = un * cosA + un.perp() * (side * sinA)
-                val touch = c + dirT * rho
-                touch + (touch - me).normalized() * (rho * 0.5f)
-            } else {
-                // On the ring: one step round it.
-                val s = t.detourStepSin * side
-                val turned = Vec2(un.u * t.detourStepCos - un.v * s, un.u * s + un.v * t.detourStepCos)
-                c + turned * (rho * 1.1f)
-            }
+            val w = detourPoint(c, rho, un, len, side)
             if (board.inside(w) >= margin && keeps.none { k -> k.c != c && w.distanceTo(k.c) < k.r }) return w
             if (fallback == null) fallback = w
         }
         return fallback ?: goal
+    }
+
+    /** [around]'s next waypoint on [side] for the bot [len] from [c] along [un]. */
+    private fun detourPoint(c: Vec2, rho: Float, un: Vec2, len: Float, side: Float): Vec2 = if (len > rho * 1.2f) {
+        // Outside: head for the tangent point, and a little past it along the tangent.
+        val cosA = rho / len
+        val sinA = sqrt((1f - cosA * cosA).coerceAtLeast(0f))
+        val dirT = un * cosA + un.perp() * (side * sinA)
+        val touch = c + dirT * rho
+        touch + (touch - me).normalized() * (rho * 0.5f)
+    } else {
+        // On the ring: one step round it.
+        val s = t.detourStepSin * side
+        val turned = Vec2(un.u * t.detourStepCos - un.v * s, un.u * s + un.v * t.detourStepCos)
+        c + turned * (rho * 1.1f)
+    }
+
+    /**
+     * T60: whether waypoint [p] round [c] may be sent ([WAY_OPEN]), or what refuses it: another circle the bot keeps out
+     * of ([WAY_OBJECT]), else the edge margin ([WAY_EDGE]).
+     */
+    private fun misfit(p: Vec2, c: Vec2): Int = when {
+        keeps.any { k -> k.c != c && p.distanceTo(k.c) < k.r } -> WAY_OBJECT
+        board.inside(p) < margin -> WAY_EDGE
+        else -> WAY_OPEN
+    }
+
+    /**
+     * T60: the way round the circle ([c], [rho]) on [side] from waypoint [from], one detour step at a time (as [around]
+     * goes on the ring): [WAY_OPEN] when it reaches a waypoint whose straight line to [goal] passes [pass] or more from
+     * [c] (where [route] stops going round) before one it may not be sent to; else what closed it first ([misfit]), and
+     * [WAY_EDGE] after 8 steps (a whole turn at the default 45°).
+     */
+    private fun wayRound(c: Vec2, rho: Float, from: Vec2, goal: Vec2, side: Float, pass: Float): Int {
+        misfit(from, c).let { if (it != WAY_OPEN) return it }
+        var b = (from - c).normalized()
+        if (b == Vec2.ZERO) return WAY_EDGE
+        var p = from
+        val s = t.detourStepSin * side
+        repeat(8) {
+            if (!near(p, goal, c, pass)) return WAY_OPEN
+            b = Vec2(b.u * t.detourStepCos - b.v * s, b.u * s + b.v * t.detourStepCos)
+            p = c + b * (rho * 1.1f)
+            misfit(p, c).let { if (it != WAY_OPEN) return it }
+        }
+        return WAY_EDGE
     }
 
     /** A walk target the bot may send: finite, [margin] inside the boundary, off every hole ([offHoles]). */
@@ -935,6 +984,11 @@ private class Brain(
         val CLIMB_SIN = floatArrayOf(0f, S22, -S22, C45, -C45, C22, -C22, 1f, -1f, C22, -C22, C45, -C45, S22, -S22, 0f)
     }
 }
+
+/** T60, `Brain.wayRound`: the way round is open, closed by the edge margin (or never opens), closed by another circle. */
+private const val WAY_OPEN = 0
+private const val WAY_EDGE = 1
+private const val WAY_OBJECT = 2
 
 private const val C22 = 0.9238795f
 private const val S22 = 0.38268343f

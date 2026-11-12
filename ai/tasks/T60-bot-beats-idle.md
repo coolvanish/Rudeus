@@ -98,11 +98,11 @@ If I1 can be met only by making a row of the matrix worse, keep the best candida
   **A moving child** meets the same condition whenever it stands (or keeps walking back to a spot) where the spot to
   push it from lies beyond a gap between it and a blocking object narrower than its ring plus the object's circle, and
   the bot comes from that side: next to the cup, with the cup on the far side of the push. The child's own motion breaks
-  the cycle as soon as the geometry changes (I3's shuffling target won 9 of 9 everywhere before the fix too). Probed on
+  the cycle as soon as the geometry changes (the bots beat I3's shuffling target 9 of 9 everywhere before the fix too). Probed on
   CUP_AND_BOOK with a child that walks to a spot every 480 ms and stays (8 matches per spot and level, NORMAL and HARD,
   bot abilities varied): beside the cup left and right, below the cup, at the book's corner and beside the book the bots
   won 8 of 8 by ring-outs before the fix already. Three other spots show other stand-offs, not this cause (traced; the
-  fix changes none of them, the bot wins two of them on the clock):
+  fix changes none of them, measured with it on and off; the bot wins the first two on the clock):
   1. *Behind the cup*, pressed against it 2 cm from the top edge: the push is toward that edge, every spot round the
      child at the stand-off distance is inside the cup's circle or past the 2-radius edge margin (no walk target exists),
      `safe()` clamps the spot to the near side of the cup, (0, 0.022), and the bot waits there for the round; it wins 8 of
