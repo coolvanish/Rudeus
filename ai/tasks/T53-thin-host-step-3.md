@@ -548,8 +548,8 @@ the orchestrator.
      and `touch` is remembered, so nothing observable changes.
   6. `configure` reads `profile` when the effect runs, the old effect the composition's `profile` at launch: the same
      value, because the effect is keyed on the surface and a surface change cancels an effect that has not run yet.
-- Pixel check ("place, scan, two friends, lens, replay"): UNTESTED (no device in the cloud container). **Needs the
-  user's Pixel run**, the six steps under "Done when": tap to place (once, with its sound); Scan (found, cannot walk
+- Pixel check ("place, scan, two friends, lens, replay"): **reported fine by the user in chat on 2026-11-12** (no log
+  or screenshot handed over; the cloud container has no device). What was to be run, the six steps under "Done when": tap to place (once, with its sound); Scan (found, cannot walk
   through the cup); add a second character (beside the first, toward screen-right); Jump (the active one, once), pick
   the other chip and Hello (only that one, one sound); cover the lens, Jump while covered, uncover after 3 s (both
   reappear where they stood, nobody jumps); Scenario (the first one plays to the end). Log: one `cast_add` per
