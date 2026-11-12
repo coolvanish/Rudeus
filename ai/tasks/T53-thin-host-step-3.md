@@ -1,6 +1,6 @@
 # T53 — thin-host-step-3
 
-status: review
+status: done (Pixel check reported fine by the user in chat, 2026-11-12; no evidence files)
 created: 2026-11-11
 phase: v2 wave 3 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S3a of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` and `:shared` still compile for iOS); a precondition of S3b, T54 and T50
