@@ -281,9 +281,41 @@ Every Gradle call: `flock /tmp/rudeus-gradle.lock env ANDROID_HOME=/opt/android-
   5. The VS step's tap uses `detectTapGestures` on its full-screen Paper box (taking every touch the way
      `DuelResult`'s scrim does: the top sibling that is hit stops the hit test); the picker gets the scrim's
      `awaitPointerEvent` loop through its `modifier`. T49's files are untouched.
-  6. Opponents leave out `photoSavedId` only when *mine* is the photo member ("the saved card of my photo"); the Add
-     sheet leaves it out when any photo member is on the table.
+  6. (Fixed in review, 9699fc6.) Opponents first left out `photoSavedId` only when *mine* was the photo member; they now
+     use the Add sheet's rule (any photo member on the table), so the same drawing never stands on the table twice.
   7. `PausedOverlay` is drawn under `DuelResult`, as the brief lists them, so Done works on a paused result card.
+- review follow-ups (2026-11-12, verdict "merge" with three follow-ups): a05cf0e (the flow's transitions are pure
+  `DuelFlow` functions over `DuelFlowState(ui, serial, seed)`: `open`, `pick`, `difficulty`, `play`, `versusDone`,
+  `report` -> `ReportStep(flow, keep, say)`, `again`, `done`, `back`, `sessionEnd`, `autoScanFor`, `keepsReport`; App
+  only holds the state and calls them through one `moveDuel`, which clears the report on every move that leaves the
+  current fight; behaviour unchanged, the stricter report filter included), 9699fc6 (the picker's photo rule), 390d170
+  (an on-screen Back: a ghost Back at the picker's top-right, a secondary Back over the camera at the fight's top-left
+  until the first report; both call `back()`; existing `back` string and `BACK` glyph, no new copy). `scripts/verify.sh`
+  exit 0: core 814, shared 65 (+9 `DuelFlowTest`), android 4. Mutants re-made in `DuelFlow`, each run against
+  `DuelFlowTest` (every one red):
+
+  | Mutant (the reviewer's App mutant, in its new place) | Red test |
+  |---|---|
+  | Again reuses the serial (`again` keeps `serial`) | `againStartsANewMatchWithTheSameOpponentStraightToTheFight` |
+  | Back keeps the setup (`back` returns the flow unchanged) | `backAtAnyStepIsFreePlayAndKeepsTheSerial` |
+  | Again shows the VS card (`again` sets VERSUS) | `againStartsANewMatchWithTheSameOpponentStraightToTheFight` |
+  | A report for an old serial is accepted (serial check dropped) | `onlyTheCurrentFightsReportIsKept`, `aRefusalClosesTheDuelAndSaysNoRoom` |
+  | Refused goes to the fight (refusal kept, flow unchanged) | `aRefusalClosesTheDuelAndSaysNoRoom` |
+  | The Watch flag is never set (`play` ignores `watch`) | `playAndWatchShowTheVersusCard` |
+  | Auto-scan stays on during the fight (`autoScanFor` = the switch) | `noBackgroundScanDuringTheFight` |
+  | (follow-up 2) the photo rule only when mine is the photo | `aPhotoOnTheTableHidesItsSavedCardWhoeverIsActive` |
+
+  The two other new tests (`openPickAndDifficultyStayInThePicker`, `versusDoneStartsANewMatchOnce`) pin the remaining
+  events. What App still does by hand and no test reaches: calling these functions, the cast change at Play
+  (`castFor`, tested), the rescan request, and the commands.
+- what a human must look at:
+  - **The Duel button sits above the Scan row** for JUMP / FLY / HIDE, not in it as decision 2 says (the reason and the
+    numbers are deviation 1). It adds one button and 8 dp to every free-play screen: the emote row, the hint pill,
+    the bubble and the mini-map all sit 56 dp higher than before. For ROLL it is in the row after Scan.
+  - **On a full table (4) the opponent takes a friend's seat at Play without a word**, and the cast is not restored
+    after the duel: the friend is gone until it is added again from `+`.
+  - The two Back controls (picker top-right, a fight before its first report top-left) and the Rescan button between
+    rounds: placement never rendered here.
 - what K does not give: nothing was missing. Note for T58: `TableSlotTest` builds an engine with a `DuelSetup` in its
   slot (mine "b", foe "a") but only calls `anchorPlaced`, no frame; if T58 starts a match there, that test needs a look.
 - copy the implementer is least sure of: `duel_no_room` "Орын аз" (kk) is the user's to check; "Мало места" / "Not
