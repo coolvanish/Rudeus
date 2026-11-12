@@ -175,7 +175,8 @@ data class DuelParams(
      * attacker climbs. A miss uses nothing up: the dash carries on, no wobble, no stun, no counter for a dodge. Heights
      * (scaled with the surface like [fromAboveMinM], not with the character's size). [NO_REACH_LIMIT] = no limit (before
      * T57); +infinity reads the same but does not survive JSON. Tuned: 2.8 cm up (the brief's starting point 2 cm), so a
-     * 3 cm book puts its fighter out of reach of the table and a 2.5 cm one does not (a scan's height noise can flip a book
+     * 3 cm book puts its fighter out of reach of a dash from the table (not of a stomp's landing: [stompReachUpM]) and a
+     * 2.5 cm one does not (a scan's height noise can flip a book
      * near 2.8 cm). Every platform a fighter can stand on can be walked onto (`Semantics.STEP_UP_MAX_M`, 4 cm), so the one
      * on the book is safe only until the other climbs, and then has no height bonus over it. 4 cm down (the platform
      * height, as the brief): a fighter on a 4 cm platform reaches the table by exact float equality (0.04 - 0 <= 0.04).
@@ -183,9 +184,14 @@ data class DuelParams(
     val hitReachUpM: Float = 0.028f,
     val hitReachDownM: Float = 0.04f,
     /**
-     * Rule 3 for the JUMP stomp (the T57 review): how far above the stomper's feet its landing still reaches a victim.
-     * 0.09 m, above a jump's 8.3 cm apex: a stomp is telegraphed (0.67 s), and at a dash's 2.8 cm every fighter that can
-     * jump got out of it, so it cost the JUMP its dash for nothing; now only a FLY's float clears it. Off: [NO_REACH_LIMIT].
+     * Rule 3 for the JUMP stomp: how far above the stomper's feet its landing still reaches a victim. **A change to rule 3
+     * as the user decided it** (there a stomp reaches as high as a dash: set this to [hitReachUpM] for the rule as
+     * decided), made by the T57 review: 0.09 m, above a plain jump's apex (8.1 cm on 8 ms sub-steps). So the landing
+     * reaches a fighter standing on a 3 or 4 cm platform beside it (a dash from the same spot does not) and a low jumper;
+     * only a FLY's float (above 9 cm from 0.2 to 2.0 s after its jump, apex 27.6 cm) gets over it. Why: a stomp is
+     * telegraphed (0.67 s), and at the dash's 2.8 cm every fighter that can jump got out of it, so it cost the JUMP its dash
+     * for nothing; measured with it at 2.8 cm, the rest the defaults (n 100): a JUMP took 6..45 % against the field at
+     * equal stats and started 0.36..0.81 specials a match (B1 10 cells out, B11 6). Off: [NO_REACH_LIMIT].
      */
     val stompReachUpM: Float = 0.09f,
 ) {

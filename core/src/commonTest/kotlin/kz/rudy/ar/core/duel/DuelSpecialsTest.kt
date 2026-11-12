@@ -163,6 +163,41 @@ class DuelSpecialsTest {
     }
 
     @Test
+    fun aDefaultLiftClearsOnlyADashAboutToEnd() {
+        // The defaults (the T57 review): a 200 ms lift-off against a 250 ms dash, 8 ms steps. The dash hits b on any
+        // sub-step it overlaps b while b stands, so a lift clears it only if it covers every sub-step from the dash's first
+        // contact to its end: the dash must meet b late (from a gap) and the lift must start in a narrow window before
+        // that. Measured: lifted at L ms against a dash started at 0, which L clear it.
+        fun clears(gap: Float, liftAt: Long): Boolean {
+            val start = DuelState(fighter("a", Vec2.ZERO), gifted("b", Vec2(2 * R + gap, 0f), Ability.FLY, facing = Vec2(-1f, 0f)))
+            val t = runDuel(start, OPEN, 1000L, dtMs = 8L) { st ->
+                when (st.timeMs) {
+                    0L -> if (liftAt == 0L) inputs("a" to Dash(), "b" to Special) else inputs("a" to Dash())
+                    liftAt -> inputs("b" to Special)
+                    else -> emptyMap()
+                }
+            }
+            // (A hit before the lift stuns b and the lift does not start: not cleared either.)
+            return t.all.none { it is Hit } && t.all.any { it is SpecialStarted }
+        }
+        val times = (0L..240L step 8L).toList()
+        val touching = times.filter { clears(0.001f, it) }
+        val fromGap = times.filter { clears(0.03f, it) }
+        println("aDefaultLiftClearsOnlyADashAboutToEnd: touching $touching; from a 3 cm gap $fromGap")
+        // A dash that starts touching b: no lift clears it (it would have to last from the first sub-step to the 250th ms).
+        assertEquals(emptyList(), touching)
+        // From a 3 cm gap the dash meets b at 100 ms and has 150 ms left: only a lift started from 56 ms (it ends after the
+        // dash's last sub-step, 248..256) to 96 ms (the last step before the contact) clears it. Of a bot's ticks, 96 is
+        // inside and 48 is not: a lift on the first tick that sees the dash ends under it. With T57 pass 1's 600 ms lift a
+        // lift at the very start of a touching dash cleared it (below).
+        assertEquals((LIFT_FROM_GAP_FIRST..LIFT_FROM_GAP_LAST step 8L).toList(), fromGap)
+        val pass1 = P.copy(liftMs = 600L)
+        val long = runDuel(DuelState(fighter("a", Vec2.ZERO), gifted("b", Vec2(NEAR, 0f), Ability.FLY, facing = Vec2(-1f, 0f))), OPEN, 1000L, dtMs = 8L, params = pass1,
+            script = atStart("a" to Dash(), "b" to Special))
+        assertTrue(long.all.none { it is Hit }, "${long.all}")
+    }
+
+    @Test
     fun ramHitsHarderAndCanRollOffTheEdge() {
         fun slide(start: DuelState, input: DuelInput): Pair<Float, Trace> {
             val t = runDuel(start, OPEN, 2500L, script = atStart("a" to input))
@@ -648,3 +683,7 @@ class DuelSpecialsTest {
         return state
     }
 }
+
+// aDefaultLiftClearsOnlyADashAboutToEnd: the lift starts (ms after the dash's) that clear a dash from a 3 cm gap.
+private const val LIFT_FROM_GAP_FIRST = 56L
+private const val LIFT_FROM_GAP_LAST = 96L

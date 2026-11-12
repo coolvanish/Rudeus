@@ -112,9 +112,9 @@ with their specials unused. The pair behind the HARD cells is JUMP v FLY (5.5 / 
 1.0 / 99.0 % on the large one):
 a FLY's float clears every stomp. B5 now fails on three cup-and-book JUMP v HIDE pairs (8.0..8.7 hits per ring-out; it
 passed in pass 1); B2 (6 out), B3 (54) and B7 (61) fail, fewer out than pass 1 on B2 and B7, more on B3. B4, B6, B8, B9,
-B10, B11 pass. `normalIsBetweenEasyAndHard` holds its 0.60 per-ability floor by one win (cup-and-book HARD ROLL v
-NORMAL ROLL 121 of 200), after its per-ability sample went from 50 to 200 (at 50 that cell read 29 of 50). The
-retune took 13 candidates (P1..P13) against the review's 10, and the candidates before the adopted one were not
+B10, B11 pass. `stompReachUpM` 0.09 is a change to rule 3 as the user decided it (Deviation 13; What a human must
+decide 1). `normalIsBetweenEasyAndHard`'s HARD v NORMAL floor is 0.55 per ability on 400 matches each since the second
+review (was 0.60 on 50, then 200): it measures 59.5..89.5 %. The retune took 13 candidates (P1..P13) against the review's 10, and the candidates before the adopted one were not
 committed one by one (each was a JSON file under build/duel/cand; P10 + P11 is 548b37c). Between bots a plain jump
 clears no dash (below).
 
@@ -134,7 +134,8 @@ clears no dash (below).
 3. **Height matters for hits**: a dash hits only a victim with `-hitReachDownM <= victimFeet - attackerFeet <=
    hitReachUpM`, a stomp's landing one with `<= stompReachUpM` above (`DuelParams.inReach`), both feet read after step 3
    of the sub-step the hit is judged in (the same instant: frame-rate independent). Defaults 0.028 m up (the brief's
-   starting point 0.02, tuned), 0.04 m down, and for the stomp 0.09 m (the review: above a jump's 8.3 cm apex); scaled
+   starting point 0.02, tuned), 0.04 m down, and for the stomp 0.09 m (the review: above a plain jump's 8.1 cm apex; a
+   change to the rule as decided, where a stomp reaches as high as a dash: Deviation 13); scaled
    with `profile.scale` like `fromAboveMinM`, not with the character's size. Off: `DuelParams.NO_REACH_LIMIT`
    (`Float.MAX_VALUE`: survives JSON, kept as is by `scaled`; every reach must be finite and >= 0). A miss uses nothing
    up: no knockback, wobble or stun, no counter window for a HIDE whose dodge "let it through"; the dash carries on. It
@@ -175,8 +176,8 @@ Priority when rows conflict (the review): B9, B10 > B11 > B4 > B1 > B5, B6 > B3 
 | B7 | 40..65 % | 8.5..95.5 % (56 out) | 5.5..90.5 % (77 out) | 7.0..83.5 % (61 out: POWER 7.0..71.0, SPEED 9.0..83.5, GUARD 9.5..72.5, AGILITY 23.5..79.5) | FAIL |
 | B8 | >= 65 % | 83.5..100 % | 95.5..100 % | 80.0..100 % | PASS |
 | B9 | identical | 64 000 replays identical | identical | 64 000 replays at 16 ms identical; off switches: `theNewRulesSwitchedOffAreThePreviousPhysics` (24 bot matches + 16 fights vs 207acc6) bit for bit | PASS |
-| B10 | tests green | - | 701 core | `scripts/verify.sh` OK: core 706, shared 42, android 3; duel 121 (see How long) | PASS |
-| B11 | >= 1.0 NORMAL, >= 0.5 HARD, no twins | - | not measured (0.2..0.65 per fighter, all abilities together) | NORMAL 1.15..3.78, HARD 0.88..3.87; 0 twin pairs | PASS |
+| B10 | tests green | - | 701 core | `scripts/verify.sh` OK: core 710, shared 42, android 3; duel 125 (see How long) | PASS |
+| B11 | >= 1.0 NORMAL, >= 0.5 HARD, no twins | - | not measured: 0 specials in the 19 200 matches without a ROLL | NORMAL 1.15..3.78, HARD 0.88..3.87; 0 twin pairs | PASS |
 
 Specials per fighter per match (B11, equal stats, n 200), JUMP / FLY / ROLL / HIDE:
 
@@ -300,9 +301,10 @@ The review (pass 2), every special used as a player would:
 
 ### How long
 `duel matrix --n 200` (320 cells, 64 000 matches + 64 000 replays at 16 ms): 126.4 s on 4 threads (1012 matches/s).
-The duel test package: 121 tests (116 + 5), 42..46 s summed over two runs (DuelBotTest 14.2 s, of which
-`normalIsBetweenEasyAndHard` 9.0 s; DuelBalanceTest 12.0 s, of which `acceptanceHoldsOnASample` 11.8 s; DuelSimTest
-7.5 s): under the 90 s. `scripts/verify.sh` (under the Gradle lock): OK in 42 and 78 s.
+The duel test package: 125 tests (116 + 5 + 4 from the second review), 52 s summed (run alone, and inside the last
+`scripts/verify.sh`; 71 s once under load) (`normalIsBetweenEasyAndHard` about 17 s at 400 matches per ability, 9 s at 200;
+`acceptanceHoldsOnASample` 11.8 s; DuelSimTest 7.5 s): under the 90 s. `scripts/verify.sh` (under the Gradle lock): OK
+in 42 and 78 s after the review, 92 and 78 s after the second.
 
 ### Tests updated in pass 1 because they pinned pre-T57 behaviour or numbers (each with the old value in a comment)
 - `DuelPhysicsTest`: `hitFromAPlatformIsStronger` (a victim on the book is hit from the table only with the reach
@@ -368,6 +370,25 @@ Updated because they pinned pass-1 numbers or behaviour (each with the old value
 New: `botsUseTheirSpecialsInWholeMatches`, `aDashFromTheTableDoesNotShoveAFighterOnABook`, `theDasherStepsUpAndThenHits`,
 `aDashFromABookDoesNotShoveAFighterOutOfTheDownReach`, `theNewNumbersRefuseNegativeNaNAndInfinite`.
 
+### Tests touched by the second review
+- New `aStompReachesAFighterOnABookADashDoesNot`: the defaults' stomp knocks a fighter on a 3 or 4 cm platform 7 cm away
+  off it (0.5 m/s, past the far edge, onto the table); a dash from the same spot misses it (one Missed, it stands firm);
+  with `stompReachUpM` = `hitReachUpM` (the rule as decided) the stomp misses it too.
+- New `aPlainJumpDoesNotClearAStompAFloatDoes`: a HIDE beside a stomp's landing jumping at any of 41 times from 0 to 640
+  ms is hit every time (its apex 8.13 cm, under 9); a FLY jumping at those times is missed in 30 and hit in 11, missed
+  exactly when its feet are above 9 cm at the landing (apex 27.6 cm).
+- New `aDefaultLiftClearsOnlyADashAboutToEnd`: at the defaults (200 ms lift, 250 ms dash, 8 ms steps) no lift time
+  clears a dash that starts touching the FLY; from a 3 cm gap (contact at 100 ms) only lifts started at 56..96 ms do (a
+  bot's 48 ms tick is outside, its 96 ms tick inside); a 600 ms lift (pass 1) clears the touching dash.
+- New `aPreT57SaveDecodesAndSteps`: a mid-fight `DuelMatchState` written with every field and without `dashMissed`
+  (the fighter's keys checked against 207acc6's DuelFighter: id .. wobble) decodes with the plain `Json` to the same
+  state and steps the same. Nothing in the project's Json needed changing (a missing key takes its default).
+- `theStompMissesAFighterInTheAir`: comments only. Its first part runs with ON, the brief's starting numbers, where the
+  stomp reaches as high as a dash (2 cm): the FLY floats about 19 cm up and the HIDE is 8 cm up at the landing, both
+  above that; the fighter on the 3 cm book likewise. Its end shows the defaults' 9 cm (the HIDE is hit).
+- `normalIsBetweenEasyAndHard`: HARD v NORMAL 400 matches per ability, floor 0.55 (the aggregate floor 0.55 and the
+  NORMAL v EASY side unchanged), the reason and the measured values in its comment; about 17 s (9 s at 200).
+
 ### Deviations
 1. The out-of-reach "stands firm" separation (rule 3 above): not in the brief's text; without it a missed dash from the
    table shoves a fighter across a book by separation, against "safe from below". Tested since the review bit for bit
@@ -398,6 +419,18 @@ New: `botsUseTheirSpecialsInWholeMatches`, `aDashFromTheTableDoesNotShoveAFighte
    same 0.60. At 50 the cup-and-book ROLL cell read 28 then 29 of 50 although its 400-match share is 66.5 %.
 12. The review: `DuelParams`' positive / non-negative / stat-factor checks now refuse infinities too (an infinite scale
    or factor gave infinite, then NaN, positions); this touches pre-T57 fields' validation (not their values).
+13. **`stompReachUpM` = 0.09 changes rule 3 as the user decided it** (a dash *or a stomp* hits only within `hitReachUpM`
+   above). With 0.09 a JUMP on the table stomps a fighter standing on a 3 or 4 cm platform beside it off the platform,
+   where a dash from the same spot misses (`aStompReachesAFighterOnABookADashDoesNot`); a plain jump (apex 8.13 cm on 8 ms
+   steps) no longer clears a stomp, only a FLY's float does (above 9 cm from 200 to 2008 ms after its jump, apex 27.6 cm;
+   `aPlainJumpDoesNotClearAStompAFloatDoes`). "A fighter on a book is safe from the table" holds for dashes only. Kept
+   as the measured default by the orchestrator's decision; the user may overrule (What a human must decide 1).
+14. The second review: `normalIsBetweenEasyAndHard`'s HARD v NORMAL part plays 400 matches per ability with a 0.55 floor
+   (deviation 11's 200 / 0.60 replaced). The estimator's standard error at 200 is about 3.4 points, and the reviewer's
+   `duel series --n 400` for cup-and-book ROLL gave 66.5 % (seed 1), 65.8 % (seed 70001) and 59.5 % (seed 33000, the
+   test's own base): 0.60 passed by one win at 200 and failed at 400. Measured on the test's seeds (400 each): empty JUMP
+   351, FLY 268, ROLL 252, HIDE 358; cup-and-book JUMP 247, FLY 274, ROLL 238, HIDE 286, that is 59.5..89.5 % (the
+   lowest, cup-and-book ROLL, 18 wins over the floor). The EASY side and `hardBeatsEasy` are unchanged.
 
 ### Found in the earlier briefs' code while measuring
 1. (T55) An airborne bot built its keep-out circles at its feet height, so a jumping bot could aim a walk inside a low
@@ -411,27 +444,40 @@ New: `botsUseTheirSpecialsInWholeMatches`, `aDashFromTheTableDoesNotShoveAFighte
    keyed on "dodging" alone changed that, and the goldens caught it.
 
 ### What a human must decide
-1. **JUMP v FLY (B1's four cells).** A FLY's float (the walking game's 0.3 x gravity, about 2 s in the air) clears
+1. **The stomp's reach (Deviation 13).** Keep `stompReachUpM` 0.09: the landing's shockwave reaches a fighter on a book
+   and a low jumper, a FLY floats over it. Or set it to `hitReachUpM` (2.8 cm), the rule as decided: a fighter on a book
+   is safe from the stomp too and any jump clears it, and a JUMP is left with a special nobody needs to fear. From the
+   log: P0 (the stomp at the dash's reach, pass 1's numbers, the bots using their specials) had JUMP at 21.7..51.3 %
+   against the field at equal stats (4 of 8 cells under 35 %) with 0.87..2.64 specials a match (its stomp-jumps
+   counting); measured for this decision with every other number final (n 100): JUMP 6.0..44.7 % (5 of 8 cells under 35,
+   HARD 6.0 % on the large table, 10.3 % on the empty one) and 0.36..0.81 specials a match, so B1 goes to 10 cells out
+   and B11 fails on 6 (JUMP under 1.0 at NORMAL everywhere, under 0.5 at HARD on two tables).
+2. **JUMP v FLY (B1's four cells).** A FLY's float (the walking game's 0.3 x gravity, about 2 s in the air) clears
    every stomp, so a JUMP has no special against a FLY (5.5 % at HARD on the empty table). `stompReachUpM` above the
    float (about 27 cm) would make the stomp hit a floating FLY, which "a floating FLY is out of reach of the ground"
    rules out; a lower float for FLY in the duel, or a stomp that grounds a FLY, are rule changes. Within the numbers
    allowed, nothing balanced JUMP v FLY without breaking the others (P3..P13).
-2. **The HARD-over-NORMAL floor** (`normalIsBetweenEasyAndHard`, 0.60 per ability) holds by one win on cup-and-book
-   ROLL (121 of 200; 400 matches from seed 1: 66.5 %); cup-and-book JUMP is 132 of 200 (62 % at n 400). NORMAL now uses its
-   specials (B11) and HARD's edge over it shrank from pass 1's 66..90 % to 60.5..91 %. Keep the floor (and accept a
-   fragile test), lower it, or make HARD stronger in the mirror matches (a level change for every cell).
-3. **ROLL cannot jump** (the walking game's rule, kept by T45): ROLL v HIDE at HARD 14.5 / 19.5 % (the dodge takes a ram,
+3. **The HARD-over-NORMAL floor** is 0.55 per ability on 400 matches since the second review (Deviation 14; the
+   orchestrator's decision): HARD's edge over NORMAL in the mirror match shrank from pass 1's 66..90 % to 59.5..89.5 %
+   because NORMAL now uses its specials (B11). Accept 0.55, or make HARD stronger in the mirror matches (a level change
+   for every cell).
+4. **ROLL cannot jump** (the walking game's rule, kept by T45): ROLL v HIDE at HARD 14.5 / 19.5 % (the dodge takes a ram,
    the counter answers), ROLL v FLY on the small table 11 %. Keep it, give ROLL a duel-only hop, or accept.
-4. **The stats are not worth the same (B7, 61 of 128 out).** SPEED buys walking pace (the large table) and a longer
+5. **The stats are not worth the same (B7, 61 of 128 out).** SPEED buys walking pace (the large table) and a longer
    dash that bots rarely use from afar; AGILITY's worth depends on the level. Numbers did not fix it (pass 1's
    candidates 9, 14); a rule might.
-5. **The archetypes (B2, 6 out)**: HARD JUMP's 5/5/5/5 line as B1; ROLL's 7/6/5/2 84 % on the large table (its pace).
+6. **The archetypes (B2, 6 out)**: HARD JUMP's 5/5/5/5 line as B1; ROLL's 7/6/5/2 84 % on the large table (its pace).
    Only FLY's line was T57's to change.
-6. **The jump over a dash is for the child**: between bots it clears no dash (they dash from 1 to 2 cm). On the Pixel
+7. **The jump over a dash is for the child**: between bots it clears no dash (they dash from 1 to 2 cm). On the Pixel
    a child dashing from afar will see it; the user should check it feels right.
-7. **The specials' cost**: a lift-off cools 19.8 s and a dodge 14.4 s (2.2 x and 1.6 x), so a FLY or HIDE has about one
-   per round; a child may find that slow. The bot tuning makes them worth it (a working lift or dodge is a free hit back).
-8. The "stands firm" behaviour of an out-of-reach fighter (deviation 1) is a rule detail the user may want otherwise.
+8. **The specials' cost, and what a default lift-off does**: a lift-off cools 19.8 s and a dodge 14.4 s (2.2 x and
+   1.6 x), so a FLY or HIDE has about one per round; a child may find that slow. And the 200 ms lift-off does not clear a
+   250 ms dash that starts touching the FLY at any moment: it clears a dash only from a gap, lifted in a narrow window
+   (from a 3 cm gap: started 56..96 ms after the dash, so a bot's first 48 ms tick is too early;
+   `aDefaultLiftClearsOnlyADashAboutToEnd`). The reviewer counted 39 % of NORMAL FLY lift-offs and 18 % at HARD followed
+   by a hit on the FLY within 1 s. Lift-offs are worth it to the bots on balance (shorter lifts collapsed FLY, P8 / P9),
+   but a child pressing it as a dash starts will often be hit anyway: lengthen it (with its cooldown), or accept.
+9. The "stands firm" behaviour of an out-of-reach fighter (deviation 1) is a rule detail the user may want otherwise.
 
 - cut/deferred: nothing cut. Not done: B1's four HARD cells, B2, B3, B5's three pairs, B7 (above); the review's
   10-candidate time-box was passed by three (P11..P13), and the earlier candidates were not committed one by one.

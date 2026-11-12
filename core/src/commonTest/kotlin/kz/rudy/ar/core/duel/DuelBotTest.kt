@@ -129,16 +129,17 @@ class DuelBotTest {
             val overEasy = share(BotLevel.NORMAL, BotLevel.EASY, arena, name, 50)
             assertTrue(overEasy >= 0.60f, "$name: NORMAL won $overEasy against EASY")
             val perAbility = HashMap<Ability, Float>()
-            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 200, perAbility)
+            val hardOver = share(BotLevel.HARD, BotLevel.NORMAL, arena, name, 400, perAbility)
             assertTrue(hardOver >= 0.55f, "$name: HARD won $hardOver against NORMAL")
             // And with every ability on its own (T48 review: a HARD JUMP losing to a NORMAL one hid in the aggregate).
-            // T57 pass 1 measured 66..90 % per ability (50 matches each) and set the floor 5 points under the lowest. Since
-            // the T57 review NORMAL uses its specials too (B11) and HARD's edge is smaller: 200 matches per ability (50
-            // before; the floor is the same) measure 60.5..91 % on these seeds (empty JUMP 182, FLY 131, ROLL 127, HIDE
-            // 180 of 200; cup-and-book JUMP 132, FLY 137, ROLL 121, HIDE 141), and 400 matches from seed 1 (`duel
-            // series`) 62..87 %. Cup-and-book ROLL is one win over the floor (at 50 a match it read 29 of 50, under it):
-            // the Result's "What a human must decide".
-            for ((ab, s) in perAbility) assertTrue(s >= 0.60f, "$name: HARD $ab won only $s against NORMAL $ab ($perAbility)")
+            // T57 pass 1 measured 66..90 % per ability on 50 matches each, floor 0.60. Since the T57 review NORMAL uses its
+            // specials too (B11) and HARD's edge over it in the mirror match is smaller; the second review (2026-11-12)
+            // set 400 matches per ability and a 0.55 floor: at 200 the estimator's standard error is about 3.4 points, and
+            // `duel series --n 400` for cup-and-book ROLL measured 66.5 % (seed 1), 65.8 % (seed 70001) and 59.5 % (seed
+            // 33000, this test's base for ROLL), so 0.60 passed by one win at 200 and failed at 400. Measured here (400
+            // each): empty JUMP 351, FLY 268, ROLL 252, HIDE 358; cup-and-book JUMP 247, FLY 274, ROLL 238, HIDE 286
+            // (59.5..89.5 %; the lowest, cup-and-book ROLL, is 18 wins over the floor). About 17 s.
+            for ((ab, s) in perAbility) assertTrue(s >= 0.55f, "$name: HARD $ab won only $s against NORMAL $ab ($perAbility)")
         }
     }
 

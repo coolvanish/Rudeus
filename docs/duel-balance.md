@@ -7,21 +7,31 @@ half, the test `theNewRulesSwitchedOffAreThePreviousPhysics`): the JUMP stomp an
 (`specialsShareDashCooldown`); SPEED lengthens every dash (`dashReachBase + dashReachPerSpeed * SPEED` x the dash speed,
 its duration unchanged); a dash or a stomp hits only a victim whose feet are at most `hitReachUpM` (a stomp:
 `stompReachUpM`) above and `hitReachDownM` below the attacker's (a jump over a dash is a dodge, a fighter on a book is
-safe from the table), and the fighter a missed dash presses into stands firm. And rule 4: FLY's archetype is 4/6/4/6
+safe from a dash from the table, not from a stomp landing beside it: see below), and the fighter a missed dash presses
+into stands firm. And rule 4: FLY's archetype is 4/6/4/6
 (was 3/7/3/7). The acceptance table is T57's B1..B11; B1, the abilities at equal stats 5/5/5/5, is the row new drawings
 meet; B11 (added by the review) checks that the bots use every ability's special, so that B1 measures the abilities and
 not only their bodies. Priority when rows conflict: B9, B10 > B11 > B4 > B1 > B5, B6 > B3 > B2 > B7.
 
-**The review (pass 2).** Pass 1's bots used the specials so rarely between themselves (FLY and HIDE lifted off and
-dodged only within 2 radii of an edge, a JUMP stomped only a fighter that could not jump) that its B1 measured JUMP,
-FLY and HIDE with their specials unused. Since the review the bots use them as a player would: a FLY lifts off and a
+**The review (pass 2).** Pass 1's bots used no special at all in the 19 200 matrix matches without a ROLL (FLY and
+HIDE lifted off and dodged only within 2 radii of an edge, a JUMP stomped only a fighter that could not jump: a ROLL);
+the 12 800 with a ROLL had 1.5 a match (its rams, and stomps at it). So its B1 measured JUMP, FLY and HIDE with their
+specials unused. Since the review the bots use them as a player would: a FLY lifts off and a
 HIDE dodges a hit that would land, wherever they stand (NORMAL notices a hit coming between its thoughts 30 % of the
 time); a JUMP whose stomp is ready jumps a dash as a stomp, and stomps a fighter on the ground that no jump gets out of
-(the stomp now reaches 9 cm up, above a jump's 8.3 cm apex: only a FLY's float clears it); a ROLL turns to face the
+(the stomp now reaches 9 cm up, above a plain jump's 8.1 cm apex: only a FLY's float clears it); a ROLL turns to face the
 other and rams anywhere on the table; a HARD ROLL also rams an opponent in its path that cannot get out of it. The
 numbers were retuned so that each special is worth using: stomp 2.0 x, ram 2.0 x, counter 1.2 x, lift-off 200 ms at
 walking pace, dodge 300 ms, and each special its own cooldown (lift-off 2.2 x, dodge 1.6 x the 9 s: a lift-off or a
 dodge that works is a free hit back).
+
+**The stomp's reach is a change to rule 3 as the user decided it** (there a stomp reaches as high as a dash, 2.8 cm).
+With `stompReachUpM` 0.09 a JUMP on the table stomps a fighter standing on a 3 or 4 cm platform beside it off the
+platform (a dash from the same spot misses it: `aStompReachesAFighterOnABookADashDoesNot`), and a plain jump (apex 8.1
+cm on 8 ms steps) no longer clears a stomp; only a FLY's float does (above 9 cm from 0.2 to 2.0 s after its jump, apex
+27.6 cm: `aPlainJumpDoesNotClearAStompAFloatDoes`). At the dash's 2.8 cm, the rest the final defaults (n 100), a JUMP
+took 6.0..44.7 % against the field at equal stats and started 0.36..0.81 specials a match (B1 10 cells out, B11 6).
+Kept as the measured default; the user decides (the brief's Result, "What a human must decide").
 
 ### Verdicts (n = 200, NORMAL v NORMAL and HARD v HARD, four arenas)
 
@@ -42,7 +52,7 @@ taught, everything else as T48 left it); "pass 1" is the defaults T57 first comm
 | B8 | 8/8/8/8 against 5/5/5/5 | >= 65 % | 32..100 % (3 out) | 83.5..100 % | 95.5..100 % | 80.0..100 % | PASS |
 | B9 | the same matches at 16 ms and 33 ms; the rules off = the T48 game | identical | identical | identical | identical | identical (64 000 replays); off switches: 24 bot matches + 16 fights recorded on 207acc6, bit for bit | PASS |
 | B10 | every core/duel test green | - | - | - | green | green (`scripts/verify.sh`; the Result lists every test touched) | PASS |
-| B11 | specials per fighter per match, equal stats, per ability, arena and level; no twin pairs | >= 1.0 NORMAL, >= 0.5 HARD | - | - | not measured (all abilities together 0.2..0.65 per fighter: the pass-1 overview's 0.4..1.3 a match for both) | NORMAL 1.15..3.78, HARD 0.88..3.87; no twins | PASS |
+| B11 | specials per fighter per match, equal stats, per ability, arena and level; no twin pairs | >= 1.0 NORMAL, >= 0.5 HARD | - | - | not measured: 0 specials in the 19 200 matches without a ROLL (JUMP, FLY and HIDE never used theirs there) | NORMAL 1.15..3.78, HARD 0.88..3.87; no twins | PASS |
 
 Each ability against the field at equal stats (B1, win share %), JUMP / FLY / ROLL / HIDE, and the specials each starts
 per fighter per match (B11):
@@ -82,8 +92,10 @@ What still fails, and why (the counts):
   dashes that missed by height on the empty table (0.25 a match at NORMAL, 0.34 at HARD) all had a JUMP for victim, its
   stomp-jump. Bots dash from 1 to 2 cm, once aligned behind the other, too close to clear. The jump over a dash is a
   tool for the child, who dashes from afar; the bots' `botsJumpOverDashesByLevel` shows they would take it.
-- The bot strength ordering holds; `normalIsBetweenEasyAndHard`'s per-ability floor (60 %) holds by one win on one cell:
-  HARD ROLL v NORMAL ROLL on cup-and-book 121 of 200 (400 matches from seed 1: 66.5 %).
+- The bot strength ordering holds. HARD's edge over NORMAL in the mirror match is smaller now that NORMAL uses its
+  specials: `normalIsBetweenEasyAndHard` measures 59.5..89.5 % per ability on 400 matches each (cup-and-book ROLL the
+  lowest; `duel series --n 400` gives that cell 66.5 % from seed 1, 65.8 % from seed 70001, 59.5 % from seed 33000), and
+  its floor is 0.55 since the second review (0.60 on 50 or 200 matches before).
 
 ### Step 2: the rules on with the starting numbers, the bots taught (the T57 "before"), 2026-11-12
 
@@ -123,7 +135,9 @@ equal stats. Rounds still end on the table (clock 0..5.6 %).
 
 ### T57 pass 1 (specials unused between bots), 2026-11-12
 
-The defaults T57 first committed (0d8042b, candidate 17), before the review: FLY and HIDE lifted off and dodged only within 2 radii of an edge and a JUMP stomped only a fighter that could not jump, so between bots the specials were rarely used (0.3..1.3 a match for both fighters together). Its acceptance table, as committed; the full pass-1 matrix is docs/duel-balance.md at 7d1a247.
+The defaults T57 first committed (0d8042b, candidate 17), before the review: FLY and HIDE lifted off and dodged only within 2 radii of an edge and a JUMP stomped only a fighter that could not jump, so between bots the specials were used only in the cells with a ROLL: 0 in the 19 200 equal-stats and archetype
+matches without one, 1.5 a match in the 12 800 with one (the overview's 0.3..1.3 a match is that, averaged over all
+pairs). Its acceptance table, as committed; the full pass-1 matrix is docs/duel-balance.md at 7d1a247.
 
 #### Acceptance (pass 1)
 

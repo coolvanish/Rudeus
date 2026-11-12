@@ -20,6 +20,9 @@ import kz.rudy.ar.core.duel.DuelInput.Jump
 import kz.rudy.ar.core.duel.DuelInput.MoveTo
 import kz.rudy.ar.core.duel.DuelInput.Special
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kz.rudy.ar.core.physics.Physics
 import kotlin.random.Random
 import kotlin.test.Test
@@ -227,11 +230,16 @@ class DuelNewRulesTest {
 
     @Test
     fun theStompMissesAFighterInTheAir() {
+        // With ON: the brief's starting numbers, where the stomp reaches as high as a dash (2 cm), the rule as the user
+        // decided it. The defaults' stomp reaches 9 cm (the T57 review, a change to that rule): then only a FLY's float
+        // gets above it (the end of this test, [aStompReachesAFighterOnABookADashDoesNot],
+        // [aPlainJumpDoesNotClearAStompAFloatDoes]).
         fun stomp(victim: DuelFighter, level: Level = OPEN, attackerH: Float = 0f, script: (DuelState) -> Map<String, DuelInput> = atStart("a" to Special)) =
             runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.JUMP).at(attackerH), victim), level, 2500L, params = ON, script = script)
         // Standing beside the landing: hit (the control).
         assertEquals(1, stomp(fighter("b", Vec2(2 * R, 0f))).all.count { it is Hit })
-        // A FLY that jumped with it floats far above the landing; a HIDE that jumped 0.4 s later is 8 cm up: both missed.
+        // A FLY that jumped with it floats far above the landing (about 19 cm); a HIDE that jumped 0.4 s later is 8 cm up
+        // at the landing: both above ON's 2 cm, both missed.
         val fly = stomp(fighter("b", Vec2(2 * R, 0f), ability = Ability.FLY), script = atStart("a" to Special, "b" to Jump))
         assertTrue(fly.all.none { it is Hit }, "${fly.all}")
         val hide = stomp(fighter("b", Vec2(2 * R, 0f), ability = Ability.HIDE)) { s ->
@@ -244,7 +252,8 @@ class DuelNewRulesTest {
         assertTrue(hide.all.none { it is Hit }, "${hide.all}")
         val landing = hide.states.first { it.timeMs > 0L && !it.a.stomping }
         assertTrue(landing.b.body.state.h > ON.hitReachUpM, "b was ${landing.b.body.state.h} m up at the landing")
-        // On a 3 cm book beside a landing on the table: out of reach. The stomper on the book, the victim below: a hit.
+        // On a 3 cm book beside a landing on the table: 3 cm up, out of ON's 2 cm. The stomper on the book, the victim below:
+        // a hit (3 cm down, within 4).
         val onBook = stomp(fighter("b", Vec2(0.07f, 0f)).at(0.03f), level = Level(listOf(ledge(0.1f))))
         assertTrue(onBook.all.none { it is Hit }, "${onBook.all}")
         assertEquals(listOf(Missed("a", "b", stomp = true, atMs = 0L)), onBook.all.filterIsInstance<Missed>().map { it.copy(atMs = 0L) })
@@ -266,6 +275,78 @@ class DuelNewRulesTest {
         assertTrue(flyDefault.all.none { it is Hit }, "${flyDefault.all}")
         val fromBook = stomp(fighter("b", Vec2(0.07f, 0f)), level = Level(listOf(ledge(-0.04f))), attackerH = 0.03f)
         assertEquals(1, fromBook.all.count { it is Hit })
+    }
+
+    @Test
+    fun aStompReachesAFighterOnABookADashDoesNot() {
+        // The defaults (the T57 review): a stomp's landing reaches `stompReachUpM` = 9 cm up, a dash `hitReachUpM` = 2.8 cm.
+        // A JUMP on the table, a fighter 7 cm away on a 3 cm book or a 4 cm box: the stomp knocks it off the platform; a
+        // dash from the same spot misses it (one Missed, it stands firm). With the stomp's reach set to the dash's (the
+        // rule as the user decided it) the stomp misses it too.
+        val p = DuelParams.DEFAULT
+        assertEquals(0.09f, p.stompReachUpM)
+        assertEquals(0.028f, p.hitReachUpM)
+        for (height in listOf(0.03f, 0.04f)) {
+            val level = Level(listOf(book("platform", Vec2(0.1f, 0f), heightM = height)))
+            val start = DuelState(gifted("a", Vec2.ZERO, Ability.JUMP), fighter("b", Vec2(0.07f, 0f)).at(height))
+            val stomp = runDuel(start, level, 2500L, dtMs = 8L, script = atStart("a" to Special))
+            val hit = stomp.all.filterIsInstance<Hit>().single()
+            assertEquals(Hit("a", "b", p.knockSpeedMpsFor(FighterStats.BALANCED, FighterStats.BALANCED) * p.stompScale, fromAbove = true, atMs = hit.atMs), hit, "$height")
+            assertTrue(stomp.all.none { it is Missed }, "$height: ${stomp.all}")
+            assertEquals(0f, stomp.last.b.body.state.h, "$height: knocked off the platform")
+            assertTrue(stomp.last.b.pos.u > 0.15f, "$height: past its far edge, ${stomp.last.b.pos}")
+            val dash = runDuel(start.copy(a = start.a.copy(specialCooldownMs = 9_000L)), level, 1500L, dtMs = 8L, script = atStart("a" to Dash()))
+            assertTrue(dash.all.none { it is Hit || it is Clash }, "$height: ${dash.all}")
+            assertEquals(listOf(Missed("a", "b", stomp = false, atMs = 0L)), dash.all.filterIsInstance<Missed>().map { it.copy(atMs = 0L) }, "$height")
+            assertTrue(dash.states.all { it.b.pos == start.b.pos && it.b.body.state.h == height }, "$height: b stands firm on the platform")
+            val asDecided = p.copy(stompReachUpM = p.hitReachUpM)
+            val missed = runDuel(start, level, 2500L, dtMs = 8L, params = asDecided, script = atStart("a" to Special))
+            assertTrue(missed.all.none { it is Hit }, "$height: ${missed.all}")
+            assertEquals(listOf(Missed("a", "b", stomp = true, atMs = 0L)), missed.all.filterIsInstance<Missed>().map { it.copy(atMs = 0L) }, "$height")
+        }
+    }
+
+    @Test
+    fun aPlainJumpDoesNotClearAStompAFloatDoes() {
+        // The defaults: a JUMP stomps at 0 (it lands at about 0.67 s), b stands beside the landing and jumps at t. A plain
+        // jump (a HIDE body, the walking game's gravity) peaks at about 8.1 cm on 8 ms steps, under the stomp's 9 cm: at
+        // every t from 0 to 640 ms the stomp hits it, in the air or not. A FLY's jump (0.3 x gravity) floats far higher: the
+        // stomp misses it exactly when its feet are above 9 cm at the landing (jumped early enough), and hits it otherwise.
+        val p = DuelParams.DEFAULT
+        fun run(ability: Ability, t: Long) = runDuel(DuelState(gifted("a", Vec2.ZERO, Ability.JUMP), fighter("b", Vec2(2 * R, 0f), ability = ability)), OPEN, 2500L, dtMs = 8L) { st ->
+            when (st.timeMs) {
+                0L -> if (t == 0L) inputs("a" to Special, "b" to Jump) else inputs("a" to Special)
+                t -> inputs("b" to Jump)
+                else -> emptyMap()
+            }
+        }
+        var apex = 0f
+        for (t in 0L..640L step 16L) {
+            val r = run(Ability.HIDE, t)
+            assertEquals(1, r.all.count { it is Hit }, "HIDE jumping at $t: ${r.all}")
+            assertTrue(r.all.none { it is Missed }, "HIDE jumping at $t")
+            apex = maxOf(apex, r.states.maxOf { it.b.body.state.h })
+        }
+        assertTrue(apex > 0.08f && apex < p.stompReachUpM, "a plain jump's apex $apex")
+        var cleared = 0
+        var hit = 0
+        var floatApex = 0f
+        for (t in 0L..640L step 16L) {
+            val r = run(Ability.FLY, t)
+            val k = r.indexOf { it is Hit || it is Missed }
+            assertTrue(k > 0, "FLY jumping at $t: ${r.all}")
+            val feet = r.states[k].b.body.state.h
+            if (r.all.any { it is Missed }) {
+                cleared++
+                assertTrue(feet > p.stompReachUpM && r.all.none { it is Hit }, "FLY jumping at $t missed with its feet at $feet")
+            } else {
+                hit++
+                assertTrue(feet <= p.stompReachUpM, "FLY jumping at $t hit with its feet at $feet")
+            }
+            floatApex = maxOf(floatApex, r.states.maxOf { it.b.body.state.h })
+        }
+        println("aPlainJumpDoesNotClearAStompAFloatDoes: plain apex $apex m; FLY apex $floatApex m, cleared $cleared, hit $hit of 41")
+        assertTrue(cleared > 0 && hit > 0 && floatApex > 0.25f, "FLY: cleared $cleared, hit $hit, apex $floatApex")
     }
 
     @Test
@@ -379,6 +460,34 @@ class DuelNewRulesTest {
             val e = assertFailsWith<IllegalArgumentException> { make() }
             assertTrue("dashReachBase" in (e.message ?: ""), "${e.message}")
         }
+    }
+
+    // -- saves -------------------------------------------------------------------------------------------------------
+
+    @Test
+    fun aPreT57SaveDecodesAndSteps() {
+        // A DuelMatchState saved by the pre-T57 app (207acc6) has no `dashMissed`: the one field T57 added to the match
+        // state (DuelFighter there had exactly PRE_T57_FIGHTER_KEYS; DuelMatchState, DuelState and their parts are
+        // unchanged). Written here as 207acc6 wrote a state with every field: a mid-fight state of two bots, encoded with
+        // every default, that key removed. The project's plain `Json` decodes it (a missing key takes its default, false)
+        // into the very state, and it steps as the state does.
+        val arena = DuelArenas.EMPTY
+        val c = Contestant("a", FighterStats.BALANCED, Ability.JUMP)
+        // The first FIGHT state 5 s in with a dash on the way and neither `dashMissed` set (a pre-T57 save cannot say true).
+        val mid = runRunner(botMatch(c, c.copy(id = "b", ability = Ability.HIDE), arena, BotLevel.HARD, BotLevel.HARD, 3L), arena, maxMs = 30_000L).states
+            .map { it.match }
+            .first { it.phase == MatchPhase.FIGHT && it.duel.timeMs >= 5_000L && !it.duel.a.dashMissed && !it.duel.b.dashMissed && (it.duel.a.dashMs > 0L || it.duel.b.dashMs > 0L) }
+        val full = EVERY_FIELD.encodeToJsonElement(DuelMatchState.serializer(), mid).jsonObject
+        val duel = full.getValue("duel").jsonObject
+        fun preT57(f: JsonElement) = JsonObject(f.jsonObject.filterKeys { it != "dashMissed" })
+        val old = JsonObject(full + ("duel" to JsonObject(duel + mapOf("a" to preT57(duel.getValue("a")), "b" to preT57(duel.getValue("b"))))))
+        val oldDuel = old.getValue("duel").jsonObject
+        for (side in listOf("a", "b")) assertEquals(PRE_T57_FIGHTER_KEYS, oldDuel.getValue(side).jsonObject.keys, side)
+        val text = old.toString()
+        assertFalse("dashMissed" in text)
+        val back = Json.decodeFromString(DuelMatchState.serializer(), text)
+        assertEquals(mid, back)
+        assertEquals(DuelMatch.step(mid, arena, 16L), DuelMatch.step(back, arena, 16L))
     }
 
     // -- the numbers' bounds ------------------------------------------------------------------------------------------
@@ -665,6 +774,15 @@ internal class Fingerprint {
         return add(r.botA).add(r.botB)
     }
 }
+
+/** A Json that writes every field, defaults included (how [PRE_T57_FIGHTER_KEYS] are counted). */
+private val EVERY_FIELD = Json { encodeDefaults = true }
+
+/** DuelFighter's properties at 207acc6, the JSON keys of a fighter in a pre-T57 save written with every default. */
+private val PRE_T57_FIGHTER_KEYS = setOf(
+    "id", "body", "stats", "knock", "stunMs", "dashMs", "dashDir", "dashCooldownMs", "ability", "specialMs",
+    "specialCooldownMs", "stomping", "counterMs", "dashKind", "wobble",
+)
 
 /** How many seeded bot matches [goldenMatch] plays, and how many physics fuzz runs [goldenFuzz]. */
 internal const val GOLDEN_MATCHES = 24
