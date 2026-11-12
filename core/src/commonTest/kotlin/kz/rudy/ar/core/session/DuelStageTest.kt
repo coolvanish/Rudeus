@@ -812,6 +812,9 @@ class DuelStageTest {
         h.tap(foe)
         h.frame()
         assertEquals(foe, h.match.duel.a.body.state.target)
+        h.frames(4) // T58 review (M15): the fighter's walk bob runs in a duel
+        assertEquals(Mode.WALKING, h.match.duel.a.body.state.mode)
+        assertNotEquals(1f, h.frame()[0].scaleY, "the walk bob runs in a duel")
         assertTrue(h.calls.none { it.startsWith("active") || it == "level" }, "${h.calls}")
         assertSame(level, h.engine.level)
         assertSame(level, h.lastRunning().arena)
@@ -1442,6 +1445,107 @@ class DuelStageTest {
             assertEquals(old, h.match.startA to h.match.startB)
             assertEquals(MatchPhase.COUNTDOWN, h.match.phase)
         }
+    }
+
+    // --- T58 review: rules the first tests did not pin ---
+
+    @Test
+    fun aSetupSeenDuringALossStartsOnTheFirstTrackedFrame() {
+        val (low, high) = DuelArenas.marks(DuelArenas.EMPTY)
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.frame(tracking = false)
+        h.camera = Vec2(-0.5f, 0.3f) // what the camera reads under the cover
+        h.want(wanted(1))
+        h.frames(20, tracking = false)
+        assertNull(h.engine.duelMatch)
+        assertTrue(h.duelLines().isEmpty() && h.reports.isEmpty())
+        h.camera = Vec2(0.5f, 0.3f)
+        h.frame()
+        assertEquals(high, h.match.duel.a.body.state.pos, "the sides come from the first tracked frame's camera")
+        assertEquals(low, h.match.duel.b.body.state.pos)
+    }
+
+    @Test
+    fun theTapsDepthCheckStartsFromTheDuelBody() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.loop.remove("a") // the walking body stands past the edge the duel tap will meet (b is in the way of a walk)
+        h.loop.add("a", Vec2(0.25f, 0f), Ability.JUMP)
+        h.want(wanted(1))
+        h.frame()
+        h.fight()
+        assertTrue(h.match.duel.a.body.state.pos.u < 0.2f, "my fighter stands on its mark")
+        h.clear()
+        h.port.depth = { p -> if (p.u > 0.2f) DROP_M else 0f }
+        h.tap(Vec2(0.28f, 0f))
+        assertLine("duel_tap_past_edge u= v=", h.lines.single())
+    }
+
+    @Test
+    fun theTapIsClampedIntoTheArenaNotIntoALevelWrittenSince() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        h.fight()
+        h.engine.level = MOVED // reaches u = 0.4; the arena (EMPTY) stops at 0.3 until the round ends
+        val uv = Vec2(0.38f, 0f)
+        assertTrue(MOVED.boundary!!.contains(uv) && !DuelArenas.EMPTY.boundary!!.contains(uv))
+        h.tap(uv)
+        h.frame()
+        assertEquals(DuelArenas.EMPTY.nearestInside(uv), h.match.duel.a.body.state.target)
+    }
+
+    @Test
+    fun anInputIsKeptAcrossATrackedFrameThatStepsNothing() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        h.fight()
+        val uv = Vec2(-0.05f, 0.12f)
+        h.tap(uv)
+        h.frame(gapMs = 0L)
+        assertNull(h.match.duel.a.body.state.target, "a frame with dt = 0 sends nothing")
+        h.frame()
+        assertEquals(uv, h.match.duel.a.body.state.target, "the next one sends it")
+        // The frame back from a loss steps nothing too: a button pressed after the cover is lifted waits for the next.
+        h.frame(tracking = false)
+        h.press(CharacterAction.Jump)
+        h.frame()
+        assertNotEquals(Mode.JUMPING, h.match.duel.a.body.state.mode)
+        h.frame()
+        assertEquals(Mode.JUMPING, h.match.duel.a.body.state.mode)
+    }
+
+    @Test
+    fun theFirstFrameBackFromAShortLossReportsAtOnce() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        h.fight()
+        h.untilReport()
+        val n = h.reports.size
+        h.frame(tracking = false) // 16 ms after the report: not due
+        assertEquals(n, h.reports.size)
+        h.frame() // 32 ms after it
+        assertEquals(n + 1, h.reports.size)
+        assertEquals(h.now, h.reports.last().first)
+        assertNotEquals(Mode.PAUSED, h.lastRunning().state.duel.a.body.state.mode)
+    }
+
+    @Test
+    fun aFighterLeavingDuringALossEndsTheDuelAtOnce() {
+        val h = DuelHost().start(duelist("a"), duelist("b"))
+        h.want(wanted(1))
+        h.frame()
+        h.fight()
+        h.frames(3, tracking = false)
+        h.clear()
+        h.members = listOf(duelist("a"))
+        h.refresh()
+        h.frame(tracking = false)
+        assertNull(h.engine.duelMatch, "no tracked frame is waited for")
+        assertEquals("duel_refused serial=1 reason=NO_FIGHTER", h.duelLines().first())
+        assertTrue(h.duelLines()[1].startsWith("duel_end serial=1 "))
+        assertEquals(DuelRefusal.NO_FIGHTER, assertIs<DuelReport.Refused>(h.reports.single().second).reason)
     }
 
     // --- T58 review: serials rise, and every duel that started ends with one duel_end ---
