@@ -103,6 +103,20 @@ yours: measure, describe under "What a human must decide", leave the code alone.
 - No file outside "Owns" changed
 
 ## Result (filled on acceptance)
-- measured: ...
-- what a human must decide: ...
-- cut/deferred: ...
+(in progress; kept current after every step and candidate so an interruption loses nothing)
+
+### Step 1 — the three rules behind their off switches (done)
+- `DuelParams`: `specialsShareDashCooldown` (off: false), `dashReachBase` / `dashReachPerSpeed` (off: 1 / 0),
+  `hitReachUpM` / `hitReachDownM` (off: `DuelParams.NO_REACH_LIMIT` = `Float.MAX_VALUE`, survives JSON, kept by `scaled`).
+  All validated by name. Helpers: `sharesDashCooldown(ability)` (the one place the shared cooldown is read),
+  `dashSpeedMpsFor` / `dashReachMFor` / `ramReachMFor`, `inReach(attackerH, victimH)`, `reachLimited`.
+- `DuelPhysics`: `canSpecial` refuses a stomp / ram while the dash recharges; `startSpecial` starts the dash cooldown for
+  them; every dash kind moves at the fighter's `dashSpeedMpsFor`; `hits` judges dash and stomp contacts only within the
+  height reach (feet after step 3, both at the same instant), a miss is nothing (no event, wobble, stun, counter window;
+  the dash carries on); a fighter the other's dash pressed into from out of reach stands firm in separation (as a dodge
+  does) so a missed dash from the table does not shove a fighter across a book. New `specialWaitLeft` (the HUD ring).
+- B9 with the switches off: the T48 matrix (`--n 20 --seed 2`, 240 cells, `--check-n 0`) gives byte-identical `cells`
+  and `acceptance` in `matrix.json` before (207acc6) and after; `theNewRulesSwitchedOffAreThePreviousPhysics` replays
+  24 seeded bot matches and 16 random fights (pressing Jump on every incoming dash) against fingerprints recorded on
+  207acc6 (it caught a first draft that let a FLY on its lift's last sub-step be pushed in separation).
+- Tests: 12 new in `DuelNewRulesTest`; `scripts/verify.sh` OK (core 699, shared 41, android 3).
