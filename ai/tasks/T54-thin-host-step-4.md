@@ -1,6 +1,6 @@
 # T54 — thin-host-step-4
 
-status: doing
+status: review
 created: 2026-11-12
 phase: v2 wave 3 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S4 of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` and `:shared` still compile for iOS); a precondition of T50
@@ -490,8 +490,289 @@ configuration, the anchor, `FrameInput`, node writes, `SessionPort` with its `Sc
 overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are other files. `ArPort` gains
 `grabScanFrame` in S5, and `pictureAspect` only if T50's pictures need it.
 
-## Result (filled on acceptance)
-- commits, measured counts, the step-3 and step-4 diffs, the mutations: ...
-- found by the characterization tests; deviations from the letter of the brief: ...
-- Pixel check ("tap, pick, drag, grow"): ...
-- cut/deferred: ...
+## Result (filled 2026-11-12, cloud container with /opt/android-sdk, no device)
+- commits (on f3a8d88): P `7882b30` (inert types and `ScreenView.of`), A `cd793ae` (host-local engine + `TableTouchPinTest`
+  + `ScreenMatrixTest`; hand-review), B `0de5704` (`:core` / `:shared` copies + the same tests), C `9cf7d56` (the host
+  switches over; hand-review), then `80bd256` (test only: one `!!` in `TableTouchTest` that warns in `:core`, see
+  "deviations" 9). This Result is a sixth, docs-only commit, so reverting C alone touches only the host (the restored
+  pin test keeps its `!!`, which `:androidApp` needs).
+- line check: the ten `ar/RudeusArView.kt` lines and the three `TableEngine.kt` lines of the header match at f3a8d88;
+  `ar/RudeusArView.kt` there is `cmp`-equal to 4ab4100's and no file under `androidApp/`, `core/` or `shared/` changed
+  between 4ab4100 and f3a8d88, so every line number of this brief held; nothing was shifted.
+- measured (test XML; every Gradle call under `flock /tmp/rudeus-gradle.lock`):
+  - baseline f3a8d88: core 765, shared 43, android 3.
+  - P: `:core:jvmTest :core:compileKotlinIosSimulatorArm64 :shared:testAndroidHostTest :androidApp:assembleDebug` green;
+    core 767 (+ `ScreenViewTest` 2), shared 43, android 3.
+  - A: `:androidApp:testDebugUnitTest` 49 = 3 + 45 `TableTouchPinTest` + 1 `ScreenMatrixTest`, 0 failed;
+    `:androidApp:assembleDebug` green.
+  - B: core 812 = 767 + 45 `TableTouchTest` (`TableEngineTest` still 27, `TableFrameTest` 28), shared 43 (`TableSlotTest`
+    still one test, now with the two new fields), android 49, all 0 failed; `:core` and `:shared` main and test klibs
+    compile for iosSimulatorArm64. The same 45 assertions are green against both engines at this commit.
+  - C: `scripts/verify.sh` exit 0: core 812, shared 43, android 4 (3 + `ScreenMatrixTest`), apk built. A forced
+    `:core:jvmTest --rerun` after the mutation check: 812, 0 failed. Up by 47 in core (45 + 2), by one in android.
+    `scripts/verify.sh` again at `80bd256`: exit 0, the same counts.
+  - `pickAgreesWithTheOldWorldSpaceProjection`: 10 000 seeded cases (anchor yaw + small tilt within 1 m, three members,
+    some on books, random quads, sizes 0.5-2, portrait and landscape, margin 0-60 px), 3 365 of them pick someone; 1
+    touch came within 0.01 px of a threshold; the other 9 999 picks are identical to the transcribed old code.
+    `ScreenMatrixTest`: the worst `toMatrix x (u, h, v, 1)` against `compose(makeTranslation)` over 10 000 ARCore poses
+    is 4.8e-7 m (bound 1e-5).
+  - mutation check on the `:core` files (one at a time, the file restored byte for byte after each, `cmp` true every
+    time; `kz.rudy.ar.core.session.*` run): 15 of 15 caught.
+    1. the pick without its margin (`margin = 0f`) -> `pickRectangleIsTheQuadPlusTheMargin`, `projectionMatchesAPinholeCamera`,
+       `pickAgreesWithTheOldWorldSpaceProjection`, `theNearestCentreWinsAlsoThroughAMemberInFront`
+    2. the first member in the rectangle instead of the nearest -> `theNearestCentreWinsAlsoThroughAMemberInFront`, `pickAgrees...`
+    3. PAUSED members pickable -> `aMemberInTheAirOrPausedIsNotPicked`
+    4. the screen asked before the two-member check -> 16 tests, among them `oneMemberIsNeverPicked`,
+       `pickAsksTheScreenOnlyWhenATouchNeedsIt`, `aTapWalksTheActiveMemberAndAsksThePortOnceForTheWay`
+    5. a tap that reports the active member again -> `aTapOnAMemberOnlyMakesItActive`
+    6. the tap's depth read before the pick (the line moved above `grabbable`) -> `theTapsDepthIsReadOnlyWhenTheTapWalks`,
+       `aTapOnAMemberOnlyMakesItActive`, `aTapWithNobodyOnTheTableDoesNothing` and 3 more
+    7. `walkTo` before `confirmSurface` -> `aTapOutsideTheBoundaryGrowsItThenWalks`
+    8. a lead that grows the boundary (`confirmSurface(hit.uv)` before its `walkTo`) -> `aLeadIsClampedIntoTheBoundaryAndGrowsNothing`
+    9. a lead without `nearestInside` -> `aLeadIsClampedIntoTheBoundaryAndGrowsNothing`
+    10. the way's readings without the tap's own -> `theTapsOwnReadingIsTheLastOfTheWay`, `aTapPastADepthEdgeIsBlockedAtOnceAndGrowsNothing`,
+        `noDepthReadingNeverRefuses`, `touchLogLinesKeepTheirKeys` and 2 more
+    11. no throttle -> `leadIsThrottledToSixtyMsAndFiveMillimetres`
+    12. UP without its last lead -> `liftingLeadsOnceMoreThenReleases`, `aTapOnAMemberThroughTheGrabWalksItToThePointUnderTheFinger`,
+        `aFingerOffTheTableLeavesTheLastTarget`, `aReleaseDuringALossStillReleases`
+    13. a stream that is captured per pointer (a DOWN / POINTER_DOWN that grabs nobody returns false) -> `theStreamStaysCapturedUntilTheLastFingerLifts`
+    14. `syncCast` without the unbind -> `aGrabbedMemberRemovedFromTheCastIsReleased`
+    15. `spriteGone` that keeps the poser -> `spriteGoneAlsoDropsThePoserAndTheDrawnFacing`
+  - host diff (`git diff 7882b30..9cf7d56 --stat -- androidApp/src/main`, i.e. `<A>^..<C>`): `RudeusArView.kt` 96 in / 148
+    out (804 -> 752 lines), `CastTouch.kt` 124 out; no `ar/TableEngine*.kt`, no `ar/CastTouch.kt` left. Per commit: A
+    `RudeusArView.kt` 96 / 150 (the fourteen edits), `CastTouch.kt` 24 / 23 (edits 15-19), plus the two new host files
+    529 and 90 lines, the pin test 1 764 and `ScreenMatrixTest` 44; C `RudeusArView.kt` 4 / 2 (two imports back, the
+    note re-wrapped to take its words), the three host-local files and the pin test deleted. Old 691-696 are unchanged
+    (now 654-659), and so are the regions under "Does not move" (old 378-400, 417-489, 501-505, 506-519, 635-655,
+    662-690, 704-724: each found verbatim in the new file); `PlaneCoords.kt`, `CharacterNode.kt`, `GateProbes.kt`
+    untouched.
+  - `grep -n "loop" ar/RudeusArView.kt | grep -vE '^[0-9]+:\s*//'`: empty. `grep -rn "\.loop\b" androidApp/src/main
+    shared/src/commonMain`: empty. `core/.../session/TableEngine.kt:105`: `internal val loop = GameLoop(separate = separate)`.
+    `grep -rn "HAND-REVIEW" core/src shared/src`: empty. `git diff --stat f3a8d88..HEAD`: only files under "Owns".
+- step-3 diff, run on the committed A tree (old files saved with `git show HEAD:...` before editing; `$S/t54.sed` and
+  `$S/touch.sed` exactly the brief's 9 and 3 lines; engine bodies at host `ar/TableEngine.kt` 449-456, 408-430,
+  466-488, 496-505, 461-462, 490-494, 507, 464, 510-528):
+  ```
+  ### confirmSurface: old 408,416 vs body 449,456
+  1c1
+  <     fun confirmSurface(uv: Vec2) {
+  ---
+  >     private fun confirmSurface(uv: Vec2) {
+  6d5
+  <         level = grown
+  ### onTap, after its guard: old 728,752 vs body 408,430
+  10,11d9
+  <                         // Pixel 2026-11-03 — for feet that sink or float: where the Depth API sees the table at this
+  <                         // tap, relative to the plane the level stands on (+ = plane too low), and the feet's height.
+  ### table.grabbable: old 536,563 vs body 466,488
+  3,4d2
+  <                 val frame = latestFrame[0] ?: return null
+  <                 val a = anchorRef[0] ?: return null
+  6,7d3
+  <                 val w = viewSize[0]
+  <                 val h = viewSize[1]
+  9d4
+  <                 projector.load(frame)
+  ### table.lead: old 572,583 vs body 496,505
+  2,3d1
+  <                 val frame = latestFrame[0] ?: return
+  <                 val a = anchorRef[0] ?: return
+  ### table: feet / head: old 524,525 vs body 461,462
+  (no difference)
+  ### table: nearestOnGround: old 565,570 vs body 490,494
+  (no difference)
+  ### table: onGrabbed: old 585,585 vs body 507,507
+  (no difference)
+  ### table.hitUv: old 527-534 vs body 464 (by eye)
+          override fun hitUv(x: Float, y: Float): TableHit? = port.hitTable(x, y, profile.tapHeightToleranceM)
+  ### project, pxPerM, mulMV: old 266-276, 279 vs body 510-528 (by eye)
+      plane[0] = pos.u; plane[1] = h; plane[2] = pos.v; plane[3] = 1f       (for world[...] = pose.tx() ...)
+      mulMV(eye, view.planeToEye, plane); mulMV(clip, view.eyeToClip, eye) (for the two GlMatrix.multiplyMV)
+      out[0] = ... * 0.5f * view.widthPx; out[1] = ... * 0.5f * view.heightPx   (for w, h)
+      pxPerM(view, depth) = view.eyeToClip[0] * view.widthPx * 0.5f / depth     (for proj[0] * w * 0.5f / depth)
+      mulMV: out[i] = m[i] * v[0] + m[4 + i] * v[1] + m[8 + i] * v[2] + m[12 + i] * v[3]
+  ### CastTouch: old 51-124 through touch.sed vs the class to the end of the new ar/CastTouch.kt
+  1c1
+  < internal class CastTouch {
+  ---
+  > internal class CastTouch(private val log: (String) -> Unit) {
+  17c17,18
+  <     fun onTouch(event: MotionEvent, nowMs: Long, table: CastTable): Boolean {
+  ---
+  >     fun onTouch(event: TouchEvent, table: CastTable): Boolean {
+  >         val nowMs = event.nowMs
+  56a58
+  >             TouchAction.OTHER -> Unit
+  ```
+  By eye, the host's own moves: `SessionPort.hitTable` is old 528-533 with `frame.hitTest(xPx, yPx)` and
+  `surfaceHit(hits, a, toleranceM)`, nothing else; `screenView` is old 538-539 and 541-542 as they were, 543 with
+  `return null` for its fallback, 544 + 546 as `projector.screen(frame, a, w, h, grabMarginPx[0])`. `onTouch`,
+  `spriteGone`, the two one-line changes (`touch.unbindMember(id)`, the `Quad` line of `spriteBuilt`) as the contract has them.
+  The copies at A (`strip` = `grep -vE '^\s*(//|/\*|\*)'`, `:core` / `:shared` file on the left): `TableEngine.kt` hunks
+  `1c1` (package), `7a8`, `12a14`, `15a18,28` (imports), `20c33`, `22c35`, `35c50` (`internal` on `Member`,
+  `TableSlot`, `TableEngine`), `39c54` (`onMemberRemoved` -> `port`), `45c62` (`internal val loop`), `140c164`
+  (`onMemberRemoved(id)` -> `touch.unbindMember(id)`), `165c189` (the `spriteBuilt` signature), and otherwise only
+  additions: `32a46,47` (the two slot fields), `42a58,59` (the two sample counts), `72a90,96` (the private state and
+  `Quad`), `167a192,198` (the `Quad` line, `spriteGone`), `245a277,377` (`onTap`, `onTouch`, `confirmSurface`, `table`,
+  `project`, `pxPerM`, `mulMV`). `TableEngineHost.kt`: `1c1` (package), `7a8,9` and `9,11c11` (imports), `14c14` and
+  `28c30` (`internal` twice), `32c34` (the parameter `onMemberRemoved` -> `port`), `41d44` (its `rememberUpdatedState`
+  line), `48c51` (the call's argument), and additions `24a25,26` (the two fields in `toTableSlot`), `35a38,39` (the two
+  parameters), `51a55,56` (their two arguments).
+- step-4 diffs at B (the same `strip`; the test files plain):
+  ```
+  ### core/.../session/TableEngine.kt vs androidApp/.../ar/TableEngine.kt
+  1c1
+  < package kz.rudy.ar.core.session
+  ---
+  > package kz.rudy.ar.ar
+  17a18,27
+  > import kz.rudy.ar.core.session.ArPort
+  > import kz.rudy.ar.core.session.BillboardPoser
+  > import kz.rudy.ar.core.session.CharacterAction
+  > import kz.rudy.ar.core.session.CharacterCommand
+  > import kz.rudy.ar.core.session.FrameInput
+  > import kz.rudy.ar.core.session.GameLoop
+  > import kz.rudy.ar.core.session.NodePose
+  > import kz.rudy.ar.core.session.ScreenView
+  > import kz.rudy.ar.core.session.TableHit
+  > import kz.rudy.ar.core.session.TouchEvent
+  23c33
+  < class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+  ---
+  > internal class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+  25c35
+  < class TableSlot(
+  ---
+  > internal class TableSlot(
+  40c50
+  < class TableEngine(
+  ---
+  > internal class TableEngine(
+  ### shared/.../TableEngineHost.kt vs androidApp/.../ar/TableEngineHost.kt
+  1c1
+  < package kz.rudy.ar
+  ---
+  > package kz.rudy.ar.ar
+  7a8,9
+  > import kz.rudy.ar.ArCharacter
+  > import kz.rudy.ar.ArSlot
+  10,12d11
+  < import kz.rudy.ar.core.session.Member
+  < import kz.rudy.ar.core.session.TableEngine
+  < import kz.rudy.ar.core.session.TableSlot
+  15c14
+  < fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
+  ---
+  > internal fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
+  31c30
+  < fun rememberTableEngine(
+  ---
+  > internal fun rememberTableEngine(
+  ### core/.../session/CastTouch.kt vs androidApp/.../ar/CastTouch.kt
+  1c1
+  < package kz.rudy.ar.core.session
+  ---
+  > package kz.rudy.ar.ar
+  3a4,6
+  > import kz.rudy.ar.core.session.TableHit
+  > import kz.rudy.ar.core.session.TouchAction
+  > import kz.rudy.ar.core.session.TouchEvent
+  ### androidApp/.../TableTouchPinTest.kt vs core/.../TableTouchTest.kt (plain diff)
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  531c531
+  < class TableTouchPinTest {
+  ---
+  > class TableTouchTest {
+  ```
+  The `:core` / `:shared` files at B were made from the host copies by `sed` (package line, `internal` off the classes
+  and functions, the `core.session` imports dropped, the copies' `HAND-REVIEW: T54 — host-local copy` lines dropped,
+  `CastTouch.kt`'s `HAND-REVIEW: ` prefixes dropped).
+- ARCore / SceneView calls made differently: exactly the brief's one. `Anchor.getPose` + `Pose.toMatrix` (1.54.0,
+  `Pose.toMatrix(float[], int)` confirmed in the AAR's classes.jar; column-major per the ARCore reference) once per pick
+  in `ScreenProjector.screen`, where old 552-553 made `Anchor.getPose`, `Pose.makeTranslation` and `Pose.compose` twice
+  per ground member with a picture. Unchanged: `Camera.getViewMatrix` / `getProjectionMatrix` once per pick with two
+  members, a frame, an anchor and a laid-out view (`screenView`, old 544); `Frame.hitTest(event)` once per tap (709);
+  the tap's depth reading only through the lazy `depthGap` (739), called by the engine after the pick and only for a
+  tap that walks; `Frame.hitTest(x, y)` once per lead and per fallback pick (`SessionPort.hitTable`, old 530); the 6 or
+  2 ray tests of `depthGapsOnWay`; the 60 ms throttle. Nothing is read per frame that was not; `FrameInput` /
+  `CameraFrame` untouched. No SceneView call added, removed or made differently. That `hitTable` answers null while
+  the camera is not tracking rests on ARCore, as before (`ArFrame_hitTest`: "If not tracking, the hit_result_list will
+  be empty"); `SessionPort` adds no tracking check.
+- found by the characterization tests: **42 of 45 were green against the host-local engine on the first run; no moved
+  body was changed.** The three reds were the tests' own mistakes, fixed in the test before commit A:
+  `theBoundaryGrowsByTheTapsSquareAndNeverShrinks` asserted that every corner of the 2 cm square outside the old
+  boundary is a hull vertex (a near corner can lie inside the hull; it now asserts every corner inside or on the hull
+  and the far corners as vertices); `pickRectangleIsTheQuadPlusTheMargin`'s set-up check that the camera tells the feet
+  depth from the head depth by more than 2 px failed at size 0.5 (1.2 px; the members now stand nearer the camera,
+  2.0 px, and the check is > 1.5 px, still more than the 1-px probes); `pickAgreesWithTheOldWorldSpaceProjection`'s
+  sanity bound on how many cases pick someone failed (1 357 of 10 000, with no disagreement; the aim was tightened to
+  3 365, bound 3 000). Pinned as the code does it, beyond the "Found" list above, no fix proposed:
+  1. With one member a DOWN asks the port nothing at all and is never captured (the two-member check comes before the
+     screen); a tap asks only the depth and the way; with nobody on the table a tap asks nothing and logs nothing.
+  2. The lead's throttle clock restarts on every MOVE that passes it, also one that leads nowhere (off the table, or
+     under 5 mm): `lastLeadMs` is set before the hit test. The next lead is then 60 ms after that MOVE.
+  3. A grabbed member removed by `syncCast` is released, but the stream stays the engine's: its later MOVE and UP
+     return true and ask nothing.
+  4. A finger lifted off the table makes no lead (the hit is null) and the member finishes its last walk; the same
+     during a loss (the port answers no hit), where the member stays PAUSED with its target and walks after the loss.
+  5. The fallback pick (no screen) and every lead ask `hitTable` with the profile's `tapHeightToleranceM` (3 cm on the
+     table, 12 cm on the floor); the reach is 4.5 cm x scale at size 1 and the 3 cm x scale floor below size 2/3.
+  6. A member 1.2 m behind a low camera, whose mirrored rectangle would still be a few pixels wide and on the screen,
+     is kept out only by the `clip.w <= 1e-4` test.
+  7. A tap that selects a member (or the active one) never reads the depth; a tap the depth refuses reads it once, like
+     a tap that walks, and its BLOCKED comes from the tap itself, before any frame, with nothing grown.
+  8. `lead_past_edge`'s `way=` has `leadDepthSamples + 1` readings, the finger's own last, as the tap's has
+     `walkDepthSamples + 1`.
+  Found by reading, not changed: `ar/CastTouch.kt:66`'s KDoc (now `core/.../CastTouch.kt`) still says "[nowMs] =
+  SystemClock.elapsedRealtime", now a local copied from the event; the moved T32 header in `CastTouch.kt` still says
+  "RudeusArView implements" `CastTable` (it is the engine's `table` now); `RudeusArView.kt`'s T32 header notes (3)
+  still name `CastTouch.kt` and "`CastTable` below" (the T54 note says they describe the engine's code now); the
+  T53 test `aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased` keeps its name without the `released`
+  assertions (TableTouchTest's `aGrabbedMemberRemovedFromTheCastIsReleased` pins the release).
+- deviations from the letter of the brief (none changes behaviour, the contract or the ARCore call list):
+  1. Edit 16 also removes the blank line after the deleted `TableHit` (old 35), so no double blank line is left.
+  2. Edit 4: each new piece has its own `// HAND-REVIEW: T54 —` line comment; `surfaceHit` carries old 490-493's KDoc
+     under it (edit 10 moves it there), and its body is a block (`{ return hits.firstOrNull { ... } }`) as old 496-499.
+  3. Edit 12: the words "T54: the bookkeeping is TableEngine's." are appended to line 589 (one line, 588 unchanged).
+  4. `RudeusArView.kt` is 96 in / 148 out over `<A>^..<C>`, 752 lines (the brief estimated about 75 / 150 and 730): the
+     three new top-level pieces carry their HAND-REVIEW notes and KDoc, and `SessionPort` / `toTouch` are written one
+     statement per line. Commit C is 4 / 2: two imports back and the note re-wrapped to take its words.
+  5. The A strip diff of `TableEngineHost.kt` shows the `rememberUpdatedState` line as a deletion (`41d44`) and the
+     `TableEngine(` call's argument as a change (`48c51`); the brief words both as "replaced".
+  6. The older harnesses' port: `TableEngineTest` declares a file-private `silentPort` above `Host`, `TableFrameTest`
+     a file-private `quietPort` after `member` (outside 76-79, which only take it and the two sample counts);
+     `TableSlotTest` builds one inline. They answer null / all nulls / null.
+  7. Harness names in `TableTouchTest`: `TouchHost`, `FakePort`, `Pinhole` (the camera), `PickRect`, `D3`, `OldPick`
+     (the transcription of old 544-562 with `ScreenProjector`, `toWorld` through ARCore's `Quaternion.rotateVector` as
+     read from its 1.54.0 bytecode, and `android.opengl.Matrix.multiplyMV`'s sum order); none clashes in
+     `kz.rudy.ar.core.session` tests.
+  8. Mutation 4 is an extra `port.screenView()` call before the two-member check; 6 moves the depth line above the
+     pick; 8 adds `confirmSurface(hit.uv)` before the lead's `walkTo`; 13 makes a DOWN / POINTER_DOWN that grabs
+     nobody return false.
+  9. Warning check after C: a forced non-incremental recompile (`--rerun-tasks -Pkotlin.incremental=false`) of
+     `:core` JVM and iOS main and test, `:shared` iOS main and test, `:androidApp` main and unit test gave 64 warnings,
+     two of them (one, reported twice) in a T54 file: `TableTouchTest.kt:591`, an unnecessary `!!` (in `:core`
+     `grown.boundary` smart-casts after line 586's `!!`; in `:androidApp` it is another module's property and cannot).
+     Fixed by `80bd256` with one `assertNotNull`, no assertion changed; recompiled non-incrementally, no warning left in
+     a T54 file, 812 green. So `TableTouchTest.kt` now differs from the B-time pin test by that one line too; the
+     step-4 identity above is B's.
+- Pixel check ("tap, pick, drag, grow"): **needs the user's run** (no device in the cloud container). The seven steps
+  under "Done when": two characters on a table with a cup, scanned once, footprints on. (1) Tap the table right of the
+  active character, then far left: it walks to each tap, the other stays. (2) Tap the other character on its body,
+  head included: its chip lights, it takes at most a small step toward the finger, the first does not move; tap the
+  table: now the second one walks. (3) Drag a character slowly 30 cm across the table and lift: it follows, never
+  jumps, stops where the finger left. (4) Hold one, put a second finger on the other and move both: each follows its
+  own finger; lift both; hold one and tap the bare table with another finger: nobody walks to that tap. (5) Drag past
+  the table edge: it stops at the edge and does not fall; tap the floor beyond: no walk. (6) Tap just outside the
+  drawn boundary loop: the loop grows to hold the tap, here and on the mini-map, and the character walks there; tap
+  inside: no change. (7) Hold a character, cover the lens 2 s, lift under the cover; uncover: it finishes its last
+  walk and a new drag works at once. In `scripts/device.sh log`: each walking tap is `tap u=` then `tap_depth_gap=..
+  way=[7 values] id=`; step 2 `grab pointer=0 id=`, `active id=`, `release pointer=0 id=` and no `tap_depth_gap`;
+  step 4 a `grab pointer=1 id=`; step 5 `lead_past_edge id=` or `tap_past_edge`; step 6 one `boundary_grown n=` for the
+  tap outside and none inside; every `grab` has its `release` (step 7's during the cover); one `anchor t_ms=0`, no
+  `anchor_refused`. If anything is off, revert C first, then B and A together, as "Done when" says.
+- cut/deferred: nothing cut. The scan block, the early `trackingEdge` call and `SlotState` stay in the host until S5;
+  `ArPort.grabScanFrame` is S5's.
