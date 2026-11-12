@@ -4,11 +4,13 @@ import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.CharacterEvent
 import kz.rudy.ar.core.domain.CharacterSize
 import kz.rudy.ar.core.domain.CharacterState
+import kz.rudy.ar.core.domain.FighterStats
 import kz.rudy.ar.core.domain.Level
 import kz.rudy.ar.core.domain.Mode
 import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
+import kz.rudy.ar.core.domain.defaultFor
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.EmoteSound
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
@@ -43,7 +45,13 @@ import kotlin.math.abs
 internal const val CAST_STATE_PERIOD_MS = 100L
 
 /** One character the engine keeps on the table: what physics and the emotes need. No pictures. */
-class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+class Member(
+    val id: String,
+    val ability: Ability,
+    val emotes: EmoteSet,
+    /** T58: what a duel reads (the sheet's `fighter`); a member without them fights with its ability's archetype. */
+    val stats: FighterStats = FighterStats.defaultFor(ability),
+)
 
 /** The engine's view of one `ArSlot`: what the UI wants and where it listens. One immutable value per slot. */
 class TableSlot(
@@ -71,6 +79,10 @@ class TableSlot(
     val onActiveChanged: (String) -> Unit = {},
     /** T54: a tap grew the level's boundary (`ArSlot.onLevel`); the host's scans call the slot's own. */
     val onLevel: (Level) -> Unit = {},
+    /** T58: the duel the UI wants on the table; null = the walking game. */
+    val duel: DuelSetup? = null,
+    /** T58: the duel's report. Main thread, from `onFrame`; cheap, must not call back into the engine. */
+    val onDuel: (DuelReport) -> Unit = {},
 )
 
 /**
@@ -215,6 +227,8 @@ class TableEngine(
                 if (from.soundsOn) playEmoteSound(choreo.sound)
                 log("emote id=${c.id} emote=${action.emote} source=${member.emotes.source} ms=${choreo.durationMs}")
             }
+            CharacterAction.Dash, CharacterAction.Special ->
+                log("duel_command_ignored serial=${c.serial} id=${c.id} duel=false")
         }
     }
 

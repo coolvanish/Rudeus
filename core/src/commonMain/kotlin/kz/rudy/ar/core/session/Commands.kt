@@ -8,6 +8,10 @@ sealed interface CharacterAction {
     data object Jump : CharacterAction
     data object WalkForward : CharacterAction
     data class Emote(val emote: kz.rudy.ar.core.emote.Emote) : CharacterAction
+    /** Duel only: a dash along the fighter's facing. Ignored outside a duel. */
+    data object Dash : CharacterAction
+    /** Duel only: the fighter's special (stomp, lift-off, ram, dodge). Ignored outside a duel. */
+    data object Special : CharacterAction
 }
 
 /** T31: edge-triggered on [serial] (strictly rising within a session; the host applies each new serial once). */
