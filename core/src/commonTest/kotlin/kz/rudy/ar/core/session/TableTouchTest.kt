@@ -250,6 +250,9 @@ private class TouchHost(surface: Surface = Surface.TABLE, camera: Pinhole = Pinh
 
     /** Every member's walk target at the moment onLevel came. */
     val targetsAtLevel = ArrayList<Map<String, Vec2?>>()
+
+    /** The engine's level at the moment onLevel came (T54 review: it must already be the one handed over). */
+    val engineLevelAtLevel = ArrayList<Level>()
     val port = FakePort(camera)
     val asked get() = port.asked
     var now = T0
@@ -271,6 +274,7 @@ private class TouchHost(surface: Surface = Surface.TABLE, camera: Pinhole = Pinh
             levels += l
             calls += "level"
             targetsAtLevel += loop.cast.members.associate { it.id to it.body.state.target }
+            engineLevelAtLevel += engine.level
         },
     )
 
@@ -357,7 +361,8 @@ private class TouchHost(surface: Surface = Surface.TABLE, camera: Pinhole = Pinh
     }
 
     fun clear() {
-        lines.clear(); calls.clear(); levels.clear(); targetsAtLevel.clear(); asked.clear(); port.tolerances.clear()
+        lines.clear(); calls.clear(); levels.clear(); targetsAtLevel.clear(); engineLevelAtLevel.clear(); asked.clear()
+        port.tolerances.clear()
     }
 
     fun state(id: String) = assertNotNull(loop.state(id), id)
@@ -1761,5 +1766,58 @@ class TableTouchTest {
         assertEquals(emptyList(), h.lines)
         assertTrue(h.up(0f, 0f))
         assertEquals(emptyList(), h.lines, "nothing left to release")
+    }
+
+    // --- Added by the T54 review: what the T53 `released` assertions checked, and the onLevel order ---
+
+    @Test
+    fun aMemberLeavingTheCastReleasesOnlyItsOwnFinger() {
+        for (leaving in listOf("b", "a")) {
+            val staying = if (leaving == "b") "a" else "b"
+            val leavingPointer = if (leaving == "a") 0 else 1
+            val stayingPointer = 1 - leavingPointer
+            val h = TouchHost().start("a", "b")
+            h.place("a" to Vec2(-0.08f, 0f), "b" to Vec2(0.08f, 0f))
+            val a = h.centreOf("a")
+            val b = h.centreOf("b")
+            assertTrue(h.down(a)) // pointer 0 holds a
+            assertTrue(h.touch(TouchAction.POINTER_DOWN, at(a, 0), at(b, 1), index = 1)) // pointer 1 holds b
+            h.clear()
+            h.latest = h.slotOf(member(staying))
+            h.frame() // syncCast removes the one who left
+            assertEquals(listOf("release pointer=$leavingPointer id=$leaving", "cast_remove id=$leaving"), h.lines, "$leaving leaves: only its finger")
+            h.clear()
+            // The other grab is still bound and still leads on its next MOVE; the freed pointer leads nothing.
+            h.now += 60
+            val to = Vec2(if (staying == "a") -0.12f else 0.12f, -0.06f)
+            val toPx = h.port.camera.px(to)
+            val awayPx = h.port.camera.px(Vec2(0f, -0.20f))
+            val pointers = listOf(at(if (stayingPointer == 0) toPx else awayPx, 0), at(if (stayingPointer == 1) toPx else awayPx, 1))
+            assertTrue(h.move(*pointers.toTypedArray()))
+            assertEquals(listOf("hit", "way $LEAD"), h.asked, "$leaving left: one lead, $staying's")
+            assertNear(to, h.state(staying).target, "$staying follows its finger")
+            assertNull(h.loop.state(leaving))
+            assertEquals(emptyList(), h.lines)
+            // Its finger was bound until now.
+            assertTrue(h.cancel())
+            assertEquals(listOf("release pointer=$stayingPointer id=$staying"), h.lines)
+        }
+    }
+
+    @Test
+    fun onLevelIsReportedAfterTheEngineHoldsTheGrownLevel() {
+        val h = TouchHost().start("a")
+        val level = Level(emptyList(), boundary = Polygon.rect(Vec2.ZERO, 0.30f, 0.30f))
+        h.engine.level = level
+        h.tapAt(Vec2(0.25f, 0.02f)) // outside the boundary: grows it
+        val handed = h.levels.single()
+        assertNotSame(level, handed)
+        assertSame(handed, h.engineLevelAtLevel.single(), "when onLevel fires the engine already holds the level it hands over")
+        assertSame(handed, h.engine.level)
+        // The next growth, the same order.
+        h.clear()
+        h.tapAt(Vec2(-0.25f, -0.10f))
+        assertSame(h.levels.single(), h.engineLevelAtLevel.single())
+        assertNotSame(handed, h.engine.level)
     }
 }

@@ -493,9 +493,28 @@ overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are o
 ## Result (filled 2026-11-12, cloud container with /opt/android-sdk, no device)
 - commits (on f3a8d88): P `7882b30` (inert types and `ScreenView.of`), A `cd793ae` (host-local engine + `TableTouchPinTest`
   + `ScreenMatrixTest`; hand-review), B `0de5704` (`:core` / `:shared` copies + the same tests), C `9cf7d56` (the host
-  switches over; hand-review), then `80bd256` (test only: one `!!` in `TableTouchTest` that warns in `:core`, see
-  "deviations" 9). This Result is a sixth, docs-only commit, so reverting C alone touches only the host (the restored
-  pin test keeps its `!!`, which `:androidApp` needs).
+  switches over; hand-review), then `80bd256` (test only: the `!!` warning in `TableTouchTest`, one hunk, 2 lines out
+  and 3 in: both `grown.boundary!!` lines rewritten, one `assertNotNull` line added; see "deviations" 9), `74fb889`
+  (this Result), and the review follow-up `core: T54 review — the release and onLevel order are pinned, stale
+  comments (T54)` (two tests, two comments, a test name and these corrections; it cannot name its own hash here: find
+  it with `git log -1 --format=%h --grep='^core: T54 review'`).
+- revert points (corrected by the review; the old "C alone, then B and A together" no longer works as written:
+  `80bd256` and the review commit edit `TableTouchTest.kt`, and the review commit `CastTouch.kt` and
+  `TableEngineTest.kt`, all of them files B created or changed, so reverting B right after C stops on a modify/delete
+  conflict). In this order, each from the tree the previous one left:
+  ```
+  # 1. the host only (the switch); B, the tests and the Result stay
+  git revert --no-edit 9cf7d56
+  # 2. then the common copies and the host-local split, together
+  git revert --no-edit $(git log -1 --format=%h --grep='^core: T54 review')
+  git revert --no-edit 80bd256
+  git revert --no-edit 0de5704
+  git revert --no-edit cd793ae
+  ```
+  Step 2's first revert also takes back these Result corrections (they ride in that commit); P (`7882b30`) and the
+  first Result (`74fb889`) can stay. Run on this branch with `git revert --no-commit` in that order: no conflict, and
+  afterwards `androidApp/`, `core/` and `shared/` equal P's tree (`git diff --cached 7882b30 -- androidApp core shared`
+  empty); reverting step 1 alone leaves `core/` and `shared/` as they are.
 - line check: the ten `ar/RudeusArView.kt` lines and the three `TableEngine.kt` lines of the header match at f3a8d88;
   `ar/RudeusArView.kt` there is `cmp`-equal to 4ab4100's and no file under `androidApp/`, `core/` or `shared/` changed
   between 4ab4100 and f3a8d88, so every line number of this brief held; nothing was shifted.
@@ -511,6 +530,9 @@ overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are o
   - C: `scripts/verify.sh` exit 0: core 812, shared 43, android 4 (3 + `ScreenMatrixTest`), apk built. A forced
     `:core:jvmTest --rerun` after the mutation check: 812, 0 failed. Up by 47 in core (45 + 2), by one in android.
     `scripts/verify.sh` again at `80bd256`: exit 0, the same counts.
+  - after the review follow-up: core 814 = 812 + `aMemberLeavingTheCastReleasesOnlyItsOwnFinger` +
+    `onLevelIsReportedAfterTheEngineHoldsTheGrownLevel` (`TableTouchTest` 47), shared 43, android 4, all 0 failed;
+    `scripts/verify.sh` exit 0.
   - `pickAgreesWithTheOldWorldSpaceProjection`: 10 000 seeded cases (anchor yaw + small tilt within 1 m, three members,
     some on books, random quads, sizes 0.5-2, portrait and landscape, margin 0-60 px), 3 365 of them pick someone; 1
     touch came within 0.01 px of a threshold; the other 9 999 picks are identical to the transcribed old code.
@@ -538,6 +560,12 @@ overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are o
     13. a stream that is captured per pointer (a DOWN / POINTER_DOWN that grabs nobody returns false) -> `theStreamStaysCapturedUntilTheLastFingerLifts`
     14. `syncCast` without the unbind -> `aGrabbedMemberRemovedFromTheCastIsReleased`
     15. `spriteGone` that keeps the poser -> `spriteGoneAlsoDropsThePoserAndTheDrawnFacing`
+    The review ran 18 mutants of its own: 14 killed, 2 of the 4 survivors equivalent; the other two are pinned by
+    the review follow-up, each checked red with the same runner and the file restored byte for byte (`cmp`):
+    16. `unbindMember` releasing every finger (`bindings.filterValues { it.id == id }.keys` -> `bindings.keys.toList()`,
+        `CastTouch.kt:58`; it passed all 812, since the T53 `released` assertions with their ids had gone) ->
+        `aMemberLeavingTheCastReleasesOnlyItsOwnFinger`
+    17. `current().onLevel(grown)` before `loop.level = grown` in `confirmSurface` -> `onLevelIsReportedAfterTheEngineHoldsTheGrownLevel`
   - host diff (`git diff 7882b30..9cf7d56 --stat -- androidApp/src/main`, i.e. `<A>^..<C>`): `RudeusArView.kt` 96 in / 148
     out (804 -> 752 lines), `CastTouch.kt` 124 out; no `ar/TableEngine*.kt`, no `ar/CastTouch.kt` left. Per commit: A
     `RudeusArView.kt` 96 / 150 (the fourteen edits), `CastTouch.kt` 24 / 23 (edits 15-19), plus the two new host files
@@ -726,12 +754,15 @@ overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are o
      a tap that walks, and its BLOCKED comes from the tap itself, before any frame, with nothing grown.
   8. `lead_past_edge`'s `way=` has `leadDepthSamples + 1` readings, the finger's own last, as the tap's has
      `walkDepthSamples + 1`.
-  Found by reading, not changed: `ar/CastTouch.kt:66`'s KDoc (now `core/.../CastTouch.kt`) still says "[nowMs] =
-  SystemClock.elapsedRealtime", now a local copied from the event; the moved T32 header in `CastTouch.kt` still says
-  "RudeusArView implements" `CastTable` (it is the engine's `table` now); `RudeusArView.kt`'s T32 header notes (3)
-  still name `CastTouch.kt` and "`CastTable` below" (the T54 note says they describe the engine's code now); the
-  T53 test `aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased` keeps its name without the `released`
-  assertions (TableTouchTest's `aGrabbedMemberRemovedFromTheCastIsReleased` pins the release).
+  Found by reading: `RudeusArView.kt`'s T32 header notes (3) still name `CastTouch.kt` and "`CastTable` below" (the
+  T54 note says they describe the engine's code now; not changed, hand-review zone). Fixed by the review follow-up
+  (comments and a test name only): `core/.../CastTouch.kt`'s `onTouch` KDoc said "[nowMs] = SystemClock.elapsedRealtime"
+  (now: the event's `TouchEvent.nowMs`, the host's clock at the callback) and its moved T32 header said "RudeusArView
+  implements" `CastTable` (now: TableEngine, since T54); the T53 test `aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased`
+  is now `aMemberGoneFromTheSlotLeavesTheLoopWithOneLineAndNoEvent`, what it still asserts, with the T53 name in a
+  comment above it. The release itself, with the id the T53 `released` assertions checked, is pinned by
+  `aGrabbedMemberRemovedFromTheCastIsReleased` and, for a member that is not the held one,
+  `aMemberLeavingTheCastReleasesOnlyItsOwnFinger` (both directions: b leaves while a is held, and a leaves while b is).
 - deviations from the letter of the brief (none changes behaviour, the contract or the ARCore call list):
   1. Edit 16 also removes the blank line after the deleted `TableHit` (old 35), so no double blank line is left.
   2. Edit 4: each new piece has its own `// HAND-REVIEW: T54 —` line comment; `surfaceHit` carries old 490-493's KDoc
@@ -756,9 +787,10 @@ overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are o
      `:core` JVM and iOS main and test, `:shared` iOS main and test, `:androidApp` main and unit test gave 64 warnings,
      two of them (one, reported twice) in a T54 file: `TableTouchTest.kt:591`, an unnecessary `!!` (in `:core`
      `grown.boundary` smart-casts after line 586's `!!`; in `:androidApp` it is another module's property and cannot).
-     Fixed by `80bd256` with one `assertNotNull`, no assertion changed; recompiled non-incrementally, no warning left in
-     a T54 file, 812 green. So `TableTouchTest.kt` now differs from the B-time pin test by that one line too; the
-     step-4 identity above is B's.
+     Fixed by `80bd256`, one hunk with 2 lines out and 3 in (both `grown.boundary!!` lines rewritten, one
+     `val boundary = assertNotNull(grown.boundary)` added), no assertion changed; recompiled non-incrementally, no
+     warning left in a T54 file, 812 green. So `TableTouchTest.kt` now differs from the B-time pin test by that hunk and
+     by the review follow-up's two tests and harness field (`engineLevelAtLevel`); the step-4 identity above is B's.
 - Pixel check ("tap, pick, drag, grow"): **needs the user's run** (no device in the cloud container). The seven steps
   under "Done when": two characters on a table with a cup, scanned once, footprints on. (1) Tap the table right of the
   active character, then far left: it walks to each tap, the other stays. (2) Tap the other character on its body,
@@ -773,6 +805,6 @@ overlays, probes). `ar/CastTouch.kt` is gone; S6 (capture) and S7 (sounds) are o
   way=[7 values] id=`; step 2 `grab pointer=0 id=`, `active id=`, `release pointer=0 id=` and no `tap_depth_gap`;
   step 4 a `grab pointer=1 id=`; step 5 `lead_past_edge id=` or `tap_past_edge`; step 6 one `boundary_grown n=` for the
   tap outside and none inside; every `grab` has its `release` (step 7's during the cover); one `anchor t_ms=0`, no
-  `anchor_refused`. If anything is off, revert C first, then B and A together, as "Done when" says.
+  `anchor_refused`. If anything is off, revert C first, then the rest in the order of "revert points" above.
 - cut/deferred: nothing cut. The scan block, the early `trackingEdge` call and `SlotState` stay in the host until S5;
   `ArPort.grabScanFrame` is S5's.

@@ -302,8 +302,9 @@ class TableEngineTest {
         assertEquals(emptyList(), h.calls, "joining is no physics event")
     }
 
+    // T53 named it aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased; the finger is TableTouchTest's since T54.
     @Test
-    fun aMemberGoneFromTheSlotLeavesTheLoopAndItsFingerIsReleased() {
+    fun aMemberGoneFromTheSlotLeavesTheLoopWithOneLineAndNoEvent() {
         val h = Host()
         h.latest = h.slotOf(member("a"), member("b"), member("c"))
         h.anchor()

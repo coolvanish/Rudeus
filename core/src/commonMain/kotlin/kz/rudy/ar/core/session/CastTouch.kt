@@ -5,8 +5,9 @@ import kz.rudy.ar.core.domain.Vec2
 // T32 — finger-led characters. ARSceneView's raw `onTouchEvent: ((MotionEvent, HitResult?) -> Boolean)?`
 // (ARSceneView.kt:758 in the shipped 4.31.0 sources) runs before the gesture detector and returning true keeps the event
 // from it (ARSceneView.kt:1401). This class only keeps the pointerId -> memberId bindings and the move throttle; the hit
-// test, the grab radius and the walk go through [CastTable], which RudeusArView implements over the same anchor and
-// GameLoop as the taps. No ARCore/SceneView type here, so the bookkeeping reads in one screen.
+// test, the grab radius and the walk go through [CastTable], which TableEngine implements (since T54; RudeusArView did
+// before) over its ArPort and the same GameLoop as the taps. No ARCore/SceneView type here, so the bookkeeping reads in
+// one screen.
 // Per stream (ACTION_DOWN .. ACTION_UP/CANCEL): a DOWN / POINTER_DOWN on a member binds that pointer to it and makes
 // it active; a pointer that lands on the table binds nothing. MOVE leads every bound pointer's member at most every
 // GRAB_MOVE_MS and only when the table point moved GRAB_MOVE_MIN_M (a resting finger sends nothing). POINTER_UP / UP /
@@ -59,7 +60,10 @@ internal class CastTouch(private val log: (String) -> Unit) {
         for (pointer in gone) release(pointer)
     }
 
-    /** Returns true when the event belongs to this stream (see the header). [nowMs] = SystemClock.elapsedRealtime. */
+    /**
+     * Returns true when the event belongs to this stream (see the header). The clock is the event's [TouchEvent.nowMs]:
+     * the host's at the callback (Android: SystemClock.elapsedRealtime).
+     */
     fun onTouch(event: TouchEvent, table: CastTable): Boolean {
         val nowMs = event.nowMs
         when (event.action) {
