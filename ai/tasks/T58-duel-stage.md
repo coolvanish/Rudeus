@@ -455,17 +455,24 @@ Every Gradle call: `flock /tmp/rudeus-gradle.lock env ANDROID_HOME=/opt/android-
      balance brief (`docs/duel-balance.md`), and worth one Pixel match before T59's flow is judged.
   2. Frame cost on a phone: `DuelArena.marks` runs inside one AR frame at the start and at every rearrange (2 ms warm
      on the JVM for LARGE; its KDoc says tens of ms cold for up to 1.3 million pairs; an ARCore hull with many vertices
-     adds a segment test per vertex per grid point). Expect one or a few dropped frames at a duel's start and after a
-     rescan; `marks_ms=` measures it on the Pixel. Per frame the match is immutable data: every 8 ms sub-step copies
+     adds a segment test per vertex per grid point). The review measured on the JVM: a 64-gon 0.9 m across 37-40 ms, a
+     40-gon 0.6 m cold 13-20 ms, LARGE with 12 objects 6-20 ms; expect a few times that on the Pixel, so one to several
+     dropped frames at a duel's start and after a rescan; `marks_ms=` measures it there. Per frame the match is
+     immutable data: every 8 ms sub-step copies
      `DuelState`, both `DuelFighter`s, their `PhysicsBody` and `CharacterState`; `DuelRunner` adds a `RunnerState`, the
      `MatchStep` lists and a `HashMap` per bot input; the stage adds one input map per input and one `Running` per
      report. Tens of short-lived objects per frame, nothing retained.
-  3. Nothing catches an exception from `DuelRunner.step` inside `onFrame`: one would reach the host's frame callback
-     (Android: a crash). None was found on valid input, but every arena the duel was tuned on is a rectangle from
-     `DuelArenas`; a real ARCore hull has not been through `DuelBot`.
+  3. (Fixed by the review's group A, below.) Nothing caught an exception from `DuelRunner.step` inside `onFrame`: one
+     would have reached the host's frame callback (Android: a crash, the session and its one anchor gone). Every arena
+     the duel was tuned on is a rectangle from `DuelArenas`; a real ARCore hull has not been through `DuelBot`.
   4. Starting a duel releases every binding (`release pointer= id=` lines) but `CastTouch`'s `captured` flag stays
      until the next DOWN: a finger held through the start and the end of a duel gets its later MOVE / UP consumed
-     (T54's finding 3 in a new place). Harmless, not pinned.
+     (T54's finding 3 in a new place). Harmless, not pinned; clearing it needs a `CastTouch` method (a file this brief
+     must not touch).
+  6. Cosmetic: a duel that ends on the first tracked frame after a loss (the slot drops the setup, or a fighter leaves,
+     on that frame) leaves the HUD with PAUSED and no RESUMED for both fighters: the loss frame reported PAUSED from the
+     duel's bodies, the duel ends before its step, and the walking loop, never paused, reports nothing. `HudSpeech`
+     ignores both events; not pinned.
   5. A duel never steps the walking loop, so its scenario clock, emotes and walks stand still and the first walking
      frame after a duel steps the clamped 50 ms (decision 3, as designed).
 - for T59, what the contract does not say:
@@ -473,11 +480,13 @@ Every Gradle call: `flock /tmp/rudeus-gradle.lock env ANDROID_HOME=/opt/android-
   2. Reports: `Running` on the start frame, then on the first frame at least 100 ms after the last (112 ms at 16 ms
      frames), and at once on a new phase, round or score, an applied input, the first frame back from a loss, a
      rearranged arena. One paused report per loss, one RESULT report, then silence: keep the last `Running`.
-  3. A serial is taken once, on the first tracked frame it is seen: a refused one is never retried, so a retry (after a
-     rescan for NO_BOUNDARY / NO_ROOM) needs a new serial. A new serial while a match runs, RESULT included, is a
+  3. A serial is taken once, on the first tracked frame it is seen, and only when it is above the highest taken (after
+     the review: A -> B -> A does not restart A). A refused or failed one is never retried, so a retry (after a rescan
+     for NO_BOUNDARY / NO_ROOM) needs a higher serial. A higher serial while a match runs, RESULT included, is a
      rematch at once. `duel = null` ends any phase at once; the fighters jump back to where they stood.
-  4. `Refused(NO_FIGHTER)` mid-match means the duel is over and the table is the walking game's; the setup may stay in
-     the slot (it is not restarted) until T59 drops it.
+  4. `Refused(NO_FIGHTER)` or `Refused(FAILED)` mid-match means the duel is over and the table is the walking game's;
+     the setup may stay in the slot (it is not restarted) until T59 drops it. FAILED from a tap or a command arrives on
+     the next frame. Every duel that started logs one `duel_end`.
   5. Taps outside FIGHT are dropped, not kept; commands outside FIGHT are sent and ignored by `DuelMatch`. In a watched
      match both do nothing (commands log `duel_command_ignored`).
   6. `onCastEvent` gets the fighters' body transitions in a duel (JUMPED, LANDED, FELL, RESPAWNED, PAUSED, RESUMED,
@@ -496,3 +505,45 @@ Every Gradle call: `flock /tmp/rudeus-gradle.lock env ANDROID_HOME=/opt/android-
   If anything is off: revert D and look again; if still wrong, revert S and report which step failed.
 - cut/deferred: nothing cut (the "level" group is in). Not built, as the brief lists: the floor duel, sounds for a
   dash / hit / slam, keeping a 3-2-1 tap, aiming the dash.
+
+### Review follow-ups (verdict: merge; same worktree, after `1f80acd`)
+- commits, one per group, each green on `:core:jvmTest` before it was made: C `232cbb0` (serials rise, one `duel_end`
+  per `duel_start`; core 855), A `3a3d576` (a duel that throws ends, non-finite boundaries; core 858), B `84c96f6`
+  (six rules pinned, tests only; core 864), then this Result. C comes first because A's failure ends the duel through
+  C's `endDuel`. Core 864 = 853 + 11 `DuelStageTest` (50 now); `scripts/verify.sh` after B: exit 0, core 864,
+  shared 43, android 4, apk built; the iOS main and test klibs of `:core` compile. No file outside `core/.../session/`,
+  `DuelStageTest.kt` and this brief changed; nothing under `core/duel`, `shared`, `androidApp`, Gradle.
+- A. `TableEngine` wraps only the duel's calls in `catch (e: Exception)` (never `Error`): `duel.step` in `onFrame` (the
+  step, its reports, a rearrange), `duel.tap`, `duel.command`, and `DuelStage.open` at the start (its own
+  `IllegalArgumentException`s stay NO_ROOM). Free play's `stage.step` / `stage.tap` / `stage.command` are called bare,
+  as before. A catch logs `duel_failed serial= phase= what=<simpleName>` (`phase=null` when the start failed), then the
+  duel ends as after `duel = null` (`duel_end`), the slot hears `Refused(serial, FAILED)` once (at once from a frame;
+  from the next frame for a tap or a command, since `onDuel` is a frame's callback), and the serial is taken, so it is
+  never retried. `DuelRefusal.FAILED` is appended. A boundary with a non-finite vertex (`Level.hasFiniteBoundary()`
+  in `DuelStage.kt`) is NO_BOUNDARY at the start and `duel_arena_kept reason=NO_BOUNDARY` (no `marks_ms=`: no
+  search) at a rearrange. How the tests make the duel throw, with no production hook: the slot's `onCastEvent`, which
+  the duel's step calls for every body transition, throws on my fighter's JUMPED (a test double for something the
+  stage calls); and the fake `ArPort.depthGapsOnWay` throws inside a duel tap.
+- C. The serial rule now matches the contract: a serial at or below the highest taken is ignored (`setup.serial <=
+  taken`), which no rule of the brief contradicts (serials rise); `DuelSetup.serial`'s KDoc says so in one more
+  sentence. A running duel that a rematch, a refused new serial or NO_FIGHTER replaces logs its `duel_end`; for a
+  duel's own end the reason comes first (`duel_refused .. NO_FIGHTER` or `duel_failed`, then `duel_end`), a new
+  serial's line comes after the old duel's `duel_end`.
+- mutation check of the follow-ups (one at a time, restored byte for byte, `cmp` true every time;
+  `kz.rudy.ar.core.session.*` run): **14 of 14 caught**.
+  | mutant | red |
+  |---|---|
+  | the step's catch gone (rethrows) | `anExceptionInTheDuelStepEndsTheDuelAndFreePlayGoesOn`, `aFailedSerialIsNotRetried`, `everyDuelThatStartedLogsOneDuelEnd` |
+  | the tap's catch gone | `anExceptionInTheDuelStepEndsTheDuelAndFreePlayGoesOn` |
+  | a tap's failure reported from the tap, not the next frame | `anExceptionInTheDuelStepEndsTheDuelAndFreePlayGoesOn` |
+  | a failed serial retried (`duelSerial = null` on failure) | `aFailedSerialIsNotRetried`, `anExceptionInTheDuelStepEndsTheDuelAndFreePlayGoesOn` |
+  | no finite-boundary check (`boundary != null`) | `aNonFiniteBoundaryIsRefusedWithoutSearchingMarks` |
+  | M18 a serial taken during a loss (tracking check dropped) | `aSetupSeenDuringALossStartsOnTheFirstTrackedFrame` |
+  | M19 the tap's way from the loop's pre-duel body | `theTapsDepthCheckStartsFromTheDuelBody` |
+  | M23 the tap clamped into `loop.level` | `theTapIsClampedIntoTheArenaNotIntoALevelWrittenSince` |
+  | M5 an input taken on a tracked `dt = 0` frame | `anInputIsKeptAcrossATrackedFrameThatStepsNothing` |
+  | M7 no report at once on the frame back | `theFirstFrameBackFromAShortLossReportsAtOnce` |
+  | M1 a fighter's leaving checked only while tracking | `aFighterLeavingDuringALossEndsTheDuelAtOnce` |
+  | M15 no walk bob in a duel (the `walkA += dt` line removed) | `aTapIsMoveToForMyFighterOnly` (its three new lines) |
+  | C only the last serial remembered (`==` for `<=`) | `aSerialAtOrBelowTheHighestTakenIsIgnored`, `aFailedSerialIsNotRetried` |
+  | C a rematch without `duel_end` | `aSerialAtOrBelowTheHighestTakenIsIgnored`, `everyDuelThatStartedLogsOneDuelEnd` |
