@@ -14,8 +14,10 @@ import kz.rudy.ar.core.session.TableSlot
 // on any platform turns ArSlot edges into engine calls the same way. The four LaunchedEffects the Android AR view had
 // (size, active id, abilities, command) keep their keys; they feed a TableEngine remembered without keys, so a new
 // ArSlot never recreates it and it dies with the AR view's composition. Not tested (Compose); its proof is the move.
+// T56 — a fifth effect, the scenario request, moved here from RudeusArView with its key. The slot's size, debug flag and
+// its tracking and cast-state callbacks reach the engine through [toTableSlot]; the two Pixel numbers come in from the host.
 
-/** [members] with the slot's command, active id, sounds flag and its two callbacks, as the engine reads them. */
+/** [members] with the slot's command, active id, sounds flag, size, debug flag and its four callbacks, as the engine reads them. */
 fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
     members = members.map { Member(it.id, it.ability, it.emotes) },
     activeId = activeId,
@@ -23,11 +25,16 @@ fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
     soundsOn = soundsOn,
     onAnchorPlaced = onAnchorPlaced,
     onCastEvent = onCastEvent,
+    characterSize = characterSize,
+    debug = debug,
+    onTracking = onTracking,
+    onCastState = onCastState,
 )
 
 /**
- * The engine of one AR session and the four effects that feed it. Call it once, before anything reads the surface.
+ * The engine of one AR session and the five effects that feed it. Call it once, before anything reads the surface.
  * [members] = who the host renders (`slot.characters`; the Android host still has its v1.0 legacy member).
+ * [feetDepthBias] and [reappearAfterTrackingMs] are the host's Pixel numbers (FEET_DEPTH_BIAS, REAPPEAR_AFTER_TRACKING_MS).
  * Compose decides when (the effect keys), the engine decides what.
  */
 @Composable
@@ -37,6 +44,8 @@ fun rememberTableEngine(
     playEmoteSound: (EmoteSound) -> Unit,
     onMemberRemoved: (String) -> Unit,
     log: (String) -> Unit,
+    feetDepthBias: Float,
+    reappearAfterTrackingMs: Long,
     separate: Boolean = true,
 ): TableEngine {
     val view = remember(slot, members) { slot.toTableSlot(members) }
@@ -51,6 +60,8 @@ fun rememberTableEngine(
             playEmoteSound = { currentPlay(it) },
             onMemberRemoved = { currentRemoved(it) },
             log = { currentLog(it) },
+            feetDepthBias = feetDepthBias,
+            reappearAfterTrackingMs = reappearAfterTrackingMs,
             separate = separate,
         )
     }
@@ -62,5 +73,6 @@ fun rememberTableEngine(
     LaunchedEffect(slot.activeId) { game.activeOffered(slot.activeId) }
     LaunchedEffect(members) { game.abilities(view.members) }
     LaunchedEffect(slot.command?.serial) { game.command(view) }
+    LaunchedEffect(slot.scenarioRequest) { game.scenario(slot.scenarioRequest) }
     return game
 }

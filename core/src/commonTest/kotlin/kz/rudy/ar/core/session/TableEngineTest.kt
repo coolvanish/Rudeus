@@ -62,7 +62,7 @@ private class Host(surface: Surface = Surface.TABLE) {
 
     var now = T0
     var latest: TableSlot = slotOf()
-    val engine = TableEngine({ latest }, surface, { sounds += it }, { released += it }, { lines += it })
+    val engine = TableEngine({ latest }, surface, { sounds += it }, { released += it }, { lines += it }, feetDepthBias = 0.6f, reappearAfterTrackingMs = 800L)
     val loop get() = engine.loop
 
     fun slotOf(vararg members: Member, activeId: String? = null, soundsOn: Boolean = true) = TableSlot(

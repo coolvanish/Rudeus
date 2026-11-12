@@ -1,6 +1,6 @@
 # T56 — thin-host-step-3b
 
-status: doing
+status: review
 created: 2026-11-12
 phase: v2 wave 3 (ai/build-plan-v2.md, "iOS readiness": thin host). Step S3b of the map in ai/tasks/T43-thin-host-map.md
 gate: G1 foundation (`scripts/verify.sh` green, `:core` and `:shared` still compile for iOS); a precondition of T54 and T50
@@ -393,9 +393,229 @@ anything on a device. T53's 27 tests are not copied to the host: they run agains
   report, the timer and the posers stay.
 - S4 appends `planeToClip` and the view size to `CameraFrame`; T50 appends `NodePose.picture`. Nothing here changes.
 
-## Result (filled on acceptance)
-- commits P, A, B, C; measured: test counts per commit, the mutation list, the host diff stat
-- line check against 6d157cc; the step-3 and step-4 diffs: ...
-- found by the characterization tests; deviations from the letter of the brief: ...
-- Pixel check ("walk, cover, grow, replay"): ...
-- cut/deferred: ...
+## Result (filled 2026-11-12, cloud container with /opt/android-sdk, no device)
+- commits (on 7a0e15e): P `bacd521` (inert types), A `e162438` (host-local engine + `TableFramePinTest`), B `e9715e7`
+  (`:core` / `:shared` copies + the same tests), C `833bae0` (the host switches over). This Result is a fifth,
+  docs-only commit, so reverting C alone touches only the host.
+- line check: the nine lines of the header match at 7a0e15e, and `ar/RudeusArView.kt` / `ar/CharacterNode.kt` there are
+  `cmp`-equal to 6d157cc's, so every line number of this brief held; nothing was shifted.
+- measured (test XML; every Gradle call under `flock /tmp/rudeus-gradle.lock`):
+  - baseline 7a0e15e: core 737, shared 43, android 3.
+  - P: `:core:jvmTest :core:compileKotlinIosSimulatorArm64 :shared:testAndroidHostTest :androidApp:assembleDebug` green;
+    core 737, shared 43, android 3.
+  - A: `:androidApp:testDebugUnitTest` 31 = 3 + 28 `TableFramePinTest`, 0 failed; `:androidApp:assembleDebug` green.
+  - B: core 765 = 737 + 28 `TableFrameTest`, shared 43 (`TableSlotTest` is still one test, now with the new fields),
+    android 31, all 0 failed; `:core` and `:shared` main and test klibs compile for iosSimulatorArm64. The same 28
+    assertions are green against both engines at this commit.
+  - C: `scripts/verify.sh` exit 0: core 765, shared 43, android 3 (back to the baseline), apk built. A forced
+    `:core:jvmTest --rerun` after the mutation check: 765, 0 failed.
+  - Mutation check on the `:core` engine (one at a time, `TableEngine.kt` restored byte for byte after each, `cmp`
+    true every time; `kz.rudy.ar.core.session.*` run): 8 of 8 caught.
+    1. `visible` always true -> `hiddenFor800MsAfterTrackingReturns`, `noPoseWhileNotTracking`, `engineAndHostPoserAgreeBitForBit`
+    2. `reappearAtMs` also set on tracked frames -> `hiddenFor800Ms...`, `posesFollowCastOrderAndSkipNobody`,
+       `aMemberAddedBetweenFrames...`, `sizeIsTheLatestSlots...`, `engineAndHostPoser...BitForBit`
+    3. the scripted taps after the step -> `aBeatDueOnTheResumeFrameIsAppliedButItsEventIsLost`, `aNewRequestRestartsTheReplayFromSpawn`
+    4. simulated time for `sinceLandedMs` -> `sinceLandedIsOnTheHostClock`, `engineAndHostPoser...BitForBit`
+    5. `scenario` without `restartAtSpawn` -> `aNewRequestRestartsTheReplayFromSpawn`, `theSameRequestOfferedTwiceStartsOnce`
+    6. `syncCast` after the step -> `oneFrameReportsTheEdgeThenPlacedThenEventsThenCastState`, `aMemberAddedBetweenFrames...`,
+       `aMemberThatJoinsDuringALoss...`, `posesFollowCastOrderAndSkipNobody`
+    7. `trackingEdge` without its compare -> 10 tests, among them `trackingEdgeIsReportedOnce`, `anEdgeReportedEarly...`,
+       `anchorThenTrackingKeepTodaysOrder`, `scenarioFeedMatchesScenarioRunner`
+    8. the cast state only while tracking -> `castStateAtMostEvery100MsAndOnlyInDebug`, `oneFrameReportsTheEdge...`
+  - No compiler warning in any T56 file: forced non-incremental recompiles of `:androidApp:compileDebugKotlin` (at A and
+    at C), its unit-test compile (A), and `:core` JVM + iOS main and test, `:shared` iOS main and test (B): 61 warnings,
+    all in files T56 does not touch.
+  - host diff (`git diff bacd521..833bae0 --stat -- androidApp/src/main`, i.e. `<A>^..<C>`): `RudeusArView.kt` 23 in /
+    94 out (875 -> 804 lines), `CharacterNode.kt` 8 in / 29 out (162 -> 141); no `ar/TableEngine*.kt` left. Per commit:
+    A `RudeusArView.kt` 22 / 96 and `CharacterNode.kt` 8 / 29 (the fifteen edits), plus the two new host files 353 and
+    79 lines and the pin test 934; C `RudeusArView.kt` 4 / 1 (two imports back, the note re-wrapped to take the words),
+    the three host-local files deleted. SceneView / ARCore: no call added, removed or made differently except decision 7
+    (see "deviations" 5 for what that line reads).
+  - `grep -rn "HAND-REVIEW" core/src shared/src`: empty. `git diff --stat 7a0e15e..HEAD`: only files under "Owns".
+  - `grep -n "loop\." ar/RudeusArView.kt`: code lines 409-412 (`confirmSurface`, old 428-431), 537, 540 (grab, old 564,
+    567), 575-576, 582 (lead, old 602-603, 609), 736, 745, 751 (tap, old 807, 816, 822), and `val loop = game.loop` at
+    316 (old 317; the grep itself does not match it, the line has no `loop.`). The other matches are header comments
+    (103, 118, 128, 129, 142, 145), unchanged.
+- step-3 diff, run on the committed A tree (old files saved with `git show HEAD:...` before editing; engine bodies at
+  host `ar/TableEngine.kt` 283-287, 266-278, 296-347, 210, 218, 244, 248, 352; the script is the brief's 16 lines):
+  ```
+  ### trackingEdge: old 686,689 vs body 283,287
+  0a1
+  >         if (!anchored) return
+  ### scenario: old 409,419 vs body 266,278
+  0a1,2
+  >         if (request == lastScenario) return
+  >         lastScenario = request
+  ### onFrame, steps 3-7: old 719,749 vs body 300,330
+  (no difference)
+  ### onFrame, step 8: old 750,767 vs body 331,347
+  2c2
+  <                     if (tracking) {
+  ---
+  >         if (!tracking) return emptyList()
+  5a6
+  >         val poses = ArrayList<NodePose>(cast.members.size)
+  7,10c8,9
+  <                             val rig = rigs[m.id] ?: continue
+  <                             val node = rig.node ?: continue
+  <                             rig.poser.apply(
+  <                                 node, m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
+  ---
+  >             val p = poser(m.id).pose(
+  >                 m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
+  16,17c15
+  <                             if (node.isVisible != visible) node.isVisible = visible
+  <                         }
+  ---
+  >             poses += if (visible) p else p.copy(visible = false)
+  18a17
+  >         return poses
+  ### onFrame, steps 1-2 (no old lines; by eye): body 296,299
+          if (!anchored) return emptyList()
+          trackingEdge(input.tracking)
+          val now = input.nowMs
+          val tracking = input.tracking
+  ### standing: old 486 vs body 210 (by eye)
+  1c1
+  <                 val standing = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+  ---
+  >     fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+  ### anchorPlaced, syncCast: old 540, 545 (after t56.sed) vs the three added body lines (by eye)
+          this.tracking = true
+          s.onTracking(true)
+  ---
+          if (!anchored) return
+  244:        tracking = true
+  248:        s.onTracking(true)
+  ### the poser's constructor call: oldnode.kt 140 vs body 352 (by eye)
+      private val poser = BillboardPoser(id, sprite.heightM, sprite.facesRight, FEET_DEPTH_BIAS)
+  ---
+          posers.getOrPut(id) { BillboardPoser(id, profile.characterHeightM, drawnRight[id] ?: false, feetDepthBias) }
+  ### scan lines: old 473, 476, 486-489 (rewritten) vs the new view
+  (no difference)
+  ```
+  The copies at A (`strip` = `grep -vE '^\s*(//|/\*|\*)'`, `:core` / `:shared` file on the left): `TableEngine.kt`
+  hunks `1c1` (package), `4a5,7` and `9a13,21` (imports), `12c24` + `14c26,28` (`internal` on `Member` and
+  `TableSlot`, with the added `internal const val CAST_STATE_PERIOD_MS = 100L` between), `23c41` (`internal class
+  TableEngine(`), and otherwise only additions: `20a35,38` (the four slot fields), `28a47,48` (the two constructor
+  parameters), `40a61,66` (`level`), `44a71,79` (the private state), `103a139,140` (`standing`), `104a142` (`if
+  (!anchored) return`), `125a164` (`tracking = true`), `128a168` (`s.onTracking(true)`), `129a170,251` (`spriteBuilt`,
+  `scenario`, `trackingEdge`, `onFrame`, `poser`). `TableEngineHost.kt`: `1c1` (package), `7a8,9` and `9,11d10`
+  (imports), `14c13` and `24c27` (`internal` twice), and additions `20a20,23` (the four fields in `toTableSlot`),
+  `29a33,34` (the two parameters), `43a49,50` (the `TableEngine(` call's two arguments), `51a59` (the scenario effect).
+- step-4 diffs at B (the same `strip`; the test files plain):
+  ```
+  ### core/.../session/TableEngine.kt vs androidApp/.../ar/TableEngine.kt
+  1c1
+  < package kz.rudy.ar.core.session
+  ---
+  > package kz.rudy.ar.ar
+  15a16,21
+  > import kz.rudy.ar.core.session.BillboardPoser
+  > import kz.rudy.ar.core.session.CharacterAction
+  > import kz.rudy.ar.core.session.CharacterCommand
+  > import kz.rudy.ar.core.session.FrameInput
+  > import kz.rudy.ar.core.session.GameLoop
+  > import kz.rudy.ar.core.session.NodePose
+  20c26
+  < class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+  ---
+  > internal class Member(val id: String, val ability: Ability, val emotes: EmoteSet)
+  22c28
+  < class TableSlot(
+  ---
+  > internal class TableSlot(
+  35c41
+  < class TableEngine(
+  ---
+  > internal class TableEngine(
+  ### shared/.../TableEngineHost.kt vs androidApp/.../ar/TableEngineHost.kt
+  1c1
+  < package kz.rudy.ar
+  ---
+  > package kz.rudy.ar.ar
+  7a8,9
+  > import kz.rudy.ar.ArCharacter
+  > import kz.rudy.ar.ArSlot
+  9,11d10
+  < import kz.rudy.ar.core.session.Member
+  < import kz.rudy.ar.core.session.TableEngine
+  < import kz.rudy.ar.core.session.TableSlot
+  14c13
+  < fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
+  ---
+  > internal fun ArSlot.toTableSlot(members: List<ArCharacter>): TableSlot = TableSlot(
+  28c27
+  < fun rememberTableEngine(
+  ---
+  > internal fun rememberTableEngine(
+  ### androidApp/.../TableFramePinTest.kt vs core/.../TableFrameTest.kt (plain diff)
+  1c1
+  < package kz.rudy.ar.ar
+  ---
+  > package kz.rudy.ar.core.session
+  148c148
+  < class TableFramePinTest {
+  ---
+  > class TableFrameTest {
+  ```
+- found by the characterization tests: **27 of 28 were green against the host-local engine on the first run; no moved
+  body was changed.** The red one was the test's own mistake (it cleared the log before the loss, then counted a
+  `scenario_step idx=0` line it had cleared); its assertion now says what it meant, "the first beat is not played
+  again". Pinned beyond the brief's wording, as the code does it, no fix proposed:
+  1. A member who joins on a frame without tracking is placed and paused on that frame: `b PLACED`, then `b PAUSED`
+     (after the others' `PAUSED`), so the HUD hears PAUSED for a character it has just been told about. On the frame
+     back it hears RESUMED with the others. (`oneFrameReportsTheEdge...`, `aMemberThatJoinsDuringALoss...`)
+  2. T47's finding 1 in a new place: a level swapped in during a loss with a platform under a standing member is
+     stood on by the resume frame's 0 ms step (`Physics.step` applies the ground rule at dt = 0), and that diff is
+     PAUSED -> IDLE, so the step-up is reported as RESUMED, never STEPPED_UP. The same frame folds a scripted beat's
+     STARTED_WALKING into RESUMED (`aBeatDueOnTheResumeFrame...`, as the brief expected).
+  3. Moving the scripted taps after the step does not change DAY5's event list on `day5Level` (each beat is one frame
+     late, nothing else differs at 16 ms frames), so `scenarioFeedMatchesScenarioRunner` alone would not see that
+     mutation; the resume-frame test and the restart test do.
+  4. The scenario guard keeps the last request it saw, so 1 -> 0 -> 1 starts twice (as a keyed effect would run it),
+     the same value twice starts once, and a request rejected before the anchor is not retried after it.
+  5. `jump_ignored .. scenario=true` reads the FIRST member's state (`loop.state`); for ROLL on the plain square both
+     scripted jumps log `mode=WALKING` (10.4 s and 11.4 s are inside the third walk at ROLL speed).
+  6. The cast-state report runs on the host clock during a loss too (PAUSED states, every 112 ms at 16 ms frames),
+     reports at once on the first debug frame (`castStateAtMs` starts at 0), and is due at exactly 100 ms (`>=`).
+  7. Hidden at 799 ms after the last untracked frame, shown at 800; a second loss restarts the count; a hidden pose is
+     the full pose with `visible = false`, so the flip goes on being computed while hidden.
+  8. `standing()` with nobody on the table is one default `CharacterState` at the origin, before the anchor and after
+     everyone left; the scan merge treats the origin as occupied then, as before.
+  Found by reading, not changed: the engine keeps a removed member's `posers` / `drawnRight` entries (only
+  `spriteBuilt` drops a poser, as specified). On Android a member that comes back always gets a new rig and so a new
+  `spriteBuilt`; a host without that call would find the old flip. `ar/RudeusArView.kt:227` (the
+  `GENERATED_SPRITE_FACES_RIGHT` KDoc) still says "CharacterPoser flips it", and `core/session/GameLoop.kt`'s header
+  says "read by CharacterPoser": stale names outside the numbered edits / in a file this brief must not touch.
+- deviations from the letter of the brief (none changes behaviour):
+  1. Edit 3 also removes the blank line after the deleted constant, so no double blank line is left (3 lines out).
+  2. The pin test's harness class is `FrameHost`, not T53's `Host`: core's `TableEngineTest.kt` already declares
+     `private class Host` in `kz.rudy.ar.core.session`, and two private top-level classes of one name in one package
+     clash on the JVM. Renamed before B and amended into A (local, never pushed; A's hash above is the amended one), so
+     the two test files still differ by the package line and the class name only.
+  3. The step-8 diff shows the brief's five changes, but diff pairs the old `if (tracking) {` closing brace with the new
+     for-loop brace: hunk 4 is "`isVisible` line + the old for-loop `}`" -> `poses +=`, hunk 5 adds `return poses`.
+  4. `anchorPlaced` writes `tracking = true` (the contract's words) where the sed of old 540 gives `this.tracking = true`;
+     nothing shadows `tracking` there.
+  5. Decision 7, precisely: line 216 as written also reads `Anchor.getPose` on every anchored frame, three times
+     (inside `planeCoords`, `planeHeight` and `cameraRight`); before, two times per tracked frame and once more per join.
+     ARCore documents it like the camera poses (meaningful while TRACKING, no failure otherwise). No other read added.
+  6. `RudeusArView.kt` is 23 in / 94 out and `CharacterNode.kt` 8 in / 29 out over `<A>^..<C>` (the brief estimated
+     about 20 / 95 and 10 / 30); commit C is 4 / 1 because the note's new words wrap onto a second line.
+  7. The host-local headers keep the T53 note under the HAND-REVIEW line in one comment block (no blank line between),
+     so the comment-stripped diff at B shows no blank-line hunk.
+- Pixel check ("walk, cover, grow, replay"): **needs the user's run** (no device in the cloud container). The six
+  steps under "Done when": one character on a table with a cup, scanned once, footprints on. (1) Tap to its right, then
+  to its left: it walks and bobs, turns once each way, the mini-map dot goes with it. (2) Tap far away and cover the
+  lens 3 s while it walks: the Paused scrim at once, the character stays put; uncover: the scrim goes, the character is
+  hidden a little under a second, then stands where it stopped, no slide, and finishes the walk. (3) Add a second
+  character: it appears beside the first; press Bigger: both grow, feet on the table. (4) Press Jump: stretch going
+  up, squash on landing. (5) Press Scan again: "found", and it still cannot walk through the cup. (6) Press Scenario
+  and cover the lens 2 s half-way: the first character starts from the spawn point, freezes under the cover, goes on,
+  plays to the end. In `scripts/device.sh log`: `scenario_start id=day5 steps=5`, `scenario_step idx=0` to `idx=4` in
+  order, one `scenario_done ms=` just over 15000, one `cast_add` with `n=2`, no `scenario_rejected`, no
+  `anchor_refused`. If anything is off, revert C first, then B and A together, as "Done when" says.
+- cut/deferred: nothing cut. `engine.loop` stays public for the tap and grab lines above (T54); the early
+  `trackingEdge` call and the scan block stay in the host until S5; `SlotState` keeps `surfaceReady` and its two
+  delegates.
