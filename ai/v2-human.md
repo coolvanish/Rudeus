@@ -1,12 +1,14 @@
 # v2 waves 1–4 — what only a human can do (2026-11-12)
 
 `claude/practical-dijkstra-2uveq7` (from `main` at 4f58c28): the first waves of `ai/build-plan-v2.md`. Verify in
-the cloud container after T54 and the duel contract: core 814, shared 43, androidApp 4 tests, 0 failed; APK 63 MB; `:core` and `:shared`
+the cloud container after T58 and T59: core 864, shared 65, androidApp 4 tests, 0 failed; APK 63 MB; `:core` and `:shared`
 compile for `iosSimulatorArm64`. Every device row is UNTESTED: the container has no Pixel, no API key and no Mac.
-**2026-11-12: you reported the Pixel checks of T47, T52 and then T53 as fine in chat ("все ок"). Two host steps
-now wait for your run, in this order: T56, "walk, cover, grow, replay", then T54, "tap, pick, drag, grow" (§3).**
-The duel (T58 in `:core`, T59 in `:shared`) is built on top of them and needs no host edit; its first match on the
-Pixel is the third check. The duel decisions in §4.3 are still open; none of them blocks this work.
+**2026-11-12: you reported the Pixel checks of T47, T52 and then T53 as fine in chat ("все ок"). Since then the
+branch gained two host steps and the duel, none of them run on a phone yet. Your next Pixel session, in this
+order (§3): 1. T56, "walk, cover, grow, replay"; 2. T54, "tap, pick, drag, grow"; 3. the first duel (G5).** The
+first two are host moves and should look exactly like before; the third is the first time anyone plays the duel.
+Reverts go in the opposite order (duel first, then T54, then T56): the commands are under each check. The duel
+decisions in §4.3 stay open until you have played; the feel table under G5 collects the answers.
 
 ## 1. What the agents did (read the diffs: `git log --oneline 4f58c28..HEAD`)
 | Brief | What | Status |
@@ -27,6 +29,8 @@ Pixel is the third check. The duel decisions in §4.3 are still open; none of th
 | T57 duel-balance-2 | your four rule decisions, each with an off switch (off = the T48 physics bit for bit): stomp and ram share the dash cooldown, SPEED lengthens every dash, height matters for hits, FLY's archetype 4/6/4/6. The bots use every special (new acceptance row B11). Two reviews: the first found that between bots three of the four specials were never used, so the balance row measured nothing; fixed and re-measured | done; balance is in band at NORMAL, not at HARD; see §3 G4 and §4.3 |
 | T56 thin-host S3b | the per-frame step is `TableEngine.onFrame(FrameInput): List<NodePose>` in `:core` (tracking edge, scenario, physics, cast-state report, the 0.8 s reappear, one pose per member); the scan reads the level through `engine.level` / `engine.standing()`; 28 tests incl. a bit-for-bit run against the old poser; `RudeusArView.kt` 875 -> 804 lines, `CharacterNode.kt` 162 -> 141. Reviewed: move proofs redone, 22 of 22 mutants caught, verdict merge | **needs your Pixel run**; host diffs need your approval |
 | T54 thin-host S4 | everything a finger does after the anchor is in `:core`: the table tap (walk, the boundary growth, the depth-gap check), picking a character on screen, the grab and the lead (`CastTouch` moved out of the host), behind `TableEngine` and a new `ArPort` with three questions (`hitTable`, `depthGapsOnWay`, `screenView`). No host line reads the engine's loop any more. 47 + 2 tests incl. 10 000 seeded picks against the old projection; `RudeusArView.kt` 804 -> 752 lines. Reviewed: move proofs redone, 14 of 18 mutants caught (2 equivalent, 2 closed by new tests), verdict merge | **needs your Pixel run** (after T56's); host diffs need your approval |
+| T58 duel-stage | the duel runs inside `core.session.TableEngine` as a second "stage" (free play is the first and is unchanged: T53's, T56's and T54's tests are green untouched). The slot names a `DuelSetup`; a table tap is "walk there" for your fighter, Dash / Jump / Special are commands, the other side is a `DuelBot`; pause never resets; a level scanned mid-round is applied between rounds; a duel that throws ends cleanly and free play goes on instead of the AR session crashing. 50 tests; 19 + 14 mutants caught. **No host file changed** | done in the cloud; first run on the Pixel is G5 |
+| T59 duel-app-flow | the app flow in `:shared`: a Duel button on the play screen, opponent picker with Easy / Normal / Hard and Watch, the VS card, the fight HUD (three thumb buttons with cooldowns, score, round, clock, point banners), the result with Again / Done, Rescan between rounds; the flow's transitions are pure functions with tests (`DuelFlow`). **No host file changed** | done in the cloud; look and feel are yours (G5) |
 | T55 duel-bot-sim | seeded bot (EASY / NORMAL / HARD), `DuelRunner` (bots decide on a tick grid: identical matches at any frame length), `DuelSim`, three tuning arenas. Measured: plain dashes almost never ring anyone out (FLY / HIDE mirrors end 92–99 % of rounds by the clock): the numbers are not a game yet, T48 tunes them | done |
 
 ## 2. Install and log
@@ -138,8 +142,50 @@ cup and a book, 30 x 30 cm, 120 x 60 cm), 200 matches per cell. Before = T48.
 What the numbers cannot tell: how it feels with a child's thumbs. Between bots a jump clears almost no dash (they
 dash from 1–2 cm away); the jump-over is yours to try on the Pixel once T50 has wired the duel.
 
-### G5 duel on the Pixel, G6 iOS — not started
-G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
+### G5 duel on the Pixel — UNTESTED (the first time anyone plays it; about 15 minutes)
+A table of at least 60 x 40 cm on the textured cloth, a cup, a book about 3 cm thick, characters with JUMP, FLY,
+ROLL and HIDE, `scripts/device.sh log` in a second terminal.
+| Step | What you should see | Status |
+|---|---|---|
+| 1. Play a JUMP character, place it, Scan | the Duel button is grey before the scan and lights after it. It sits **above** the Scan button (the implementer's choice: in one row Jump would shrink to about 90 dp): say if that is fine. Footprints on: note the largest gap between the loop and the real table edge in cm (G5 wants 2 or less); footprints off | UNTESTED |
+| 2. Duel, pick a FLY one, Normal, Play | the picker lists everyone but yours; the VS card shows both stat cards and goes after 2.5 s or a tap | UNTESTED |
+| 3. The start | both stand facing each other, yours on your side; any third character is out of sight; 3, 2, 1, Go; the clock starts at 1:00 | UNTESTED |
+| 4. Tap the table; tap past the edge; Dash; Jump; Stomp | yours walks there; past the edge it stops at the edge; Dash is a short charge the way it faces and refills in about 2.5 s | UNTESTED |
+| 5. Push the other over the edge, or get pushed | "Point for you" / "Point for them", a pip fills, both go back to their marks, the next countdown starts | UNTESTED |
+| 6. Cover the lens 5 s mid-round | Paused; uncovered, the clock, positions and score are unchanged and the round goes on | UNTESTED |
+| 7. Between rounds move the cup and press Rescan during 3, 2, 1 | the countdown waits, then both stand clear of the cup's new place | UNTESTED |
+| 8. Play to the end; Again; Done | "You won" or "Good try" with the score; Again: 0 : 0, round 1, no VS card; Done: free play, every character back in sight, a tap walks yours, no "tap to place" | UNTESTED |
+| 9. Duel again with Watch; system Back mid-fight | the two play by themselves, your three buttons stay grey; Back goes straight to free play | UNTESTED |
+| 10. Rest a thumb on Dash and tap the table with the other hand at the same moment, five times | do both count? | UNTESTED |
+Three whole matches without placing the character again are G5's "three in a row". In the log, per match: one
+`duel_start serial= mine= foe= level= seed= marks_ms=` (write `marks_ms` down: over about 30 means a visible
+hitch at Go), a `duel_round n=` per round, a `duel_point round= winner= reason=` per point, one `duel_over winner=
+at_ms=`, one `duel_end`; step 7 a `duel_arena marks=`. In the whole session one `anchor t_ms=0`, no
+`anchor_refused`, no `cast_add` after the cover, and no `duel_failed` (that line means the duel threw and was
+ended to save the session: send me the line). What a fault means: Duel stays grey after a scan = the level never
+reached the app; no HUD after the VS card = no report (a `duel_refused reason=` line says why); fighters stuck on
+their old spots, or a character missing after Done = the stage switch; a button that does nothing =
+`duel_command_ignored`; a tap that does nothing = `duel_tap_past_edge` or the phase; a HUD that stutters = the
+report rate.
+
+**The feel table (answers decide §4.3; write them here or tell me):**
+| Question | Try | Answer |
+|---|---|---|
+| Jump over a dash | JUMP or HIDE against Normal, press Jump as it runs at you, ten tries | |
+| FLY's 200 ms lift-off, HIDE's dodge | play a FLY, press Float as the other dashes, ten tries | |
+| The stomp's 9 cm reach | play a JUMP, the other on the book: Stomp from the table, then Dash from the table | |
+| Match length | three matches: the table in cm, each `duel_over at_ms=`, rounds with `reason=TIMEOUT` | |
+| JUMP v FLY; ROLL without a jump | one match each at Normal: winnable? | |
+| Easy / Normal / Hard | one match each: which should a child meet first? | |
+| Dash direction (it goes the way the fighter last walked, not at the opponent) | twenty dashes: how many went where you meant; would "at the other fighter" be better? | |
+| A tap during 3, 2, 1 (it is dropped today) | did you expect a walk at Go? | |
+| HUD with one hand | cooldown fill jerky or fine; banner in the way; thumb reaches all three buttons; the two on-screen Back buttons | |
+If the duel misbehaves but free play is fine, nothing needs reverting: do not press Duel, and tell me. If free
+play itself changed after T58 (T58 moved the walking game's bodies behind the stage seam): `git revert -m 1
+007bee6` takes the duel stage out (the Duel button then opens an empty fight: also `git revert -m 1 96adb08`).
+
+### G6 iOS — not started
+G6 needs T46 and T51 on the Mac.
 
 ## 4. Decisions only you can make
 1. **Done waits for a tap** (T44). To get the 2 s auto-advance back: `git revert ed89103`.
@@ -198,8 +244,9 @@ G5 needs T53, T56, T54, T50. G6 needs T46 and T51 on the Mac.
   script that installs the Android SDK) was created for this repo; its setup script has not run on a fresh container yet.
 
 ## 6. Known limits (by design today)
-- The duel exists only in `:core` and as unwired UI: nothing on the phone plays it yet.
-- The duel's balance is measured bots against bots only. Nobody has played it: every feel question in §4.3 is open until T50.
+- The duel is wired but has never run on a phone. What it lacks by design today: hits, stuns and wall slams have no sound or picture (only jump, landing and fall sounds); wobble is computed and never drawn; every refusal says "Not enough room" whatever the reason; a duel needs a scanned table with a boundary (no duel on the floor); on a full table the opponent takes a friend's seat at Play without a word and the cast is not restored; the arena follows the scanned boundary, which can run past the real table edge (a fighter pushed past the real edge but inside the boundary stands in the air: step 1 measures the gap).
+- **Bots do not attack a fighter that stands still on a table with a cup and a book** (NORMAL and HARD: the idle side wins 24 of 24 by the clock; EASY and the empty tables are fine). Found by T58's implementer, reproduced by the reviewer; T60 is fixing it and is not in this branch yet.
+- The duel's balance is measured bots against bots only. Nobody has played it: every feel question in §4.3 is open until the G5 run.
 - T33 pose frames never reach the screen (the host never reads `ArCharacter.frames`); T50 builds the picture swap.
 - An action issued on the first frame back from a tracking loss loses its event (no jump sound); v1.0 behaviour, pinned.
 - Found by T54 in the moved touch code, pinned by tests as it is and not fixed (a later brief can): a tap on a character also walks it to the table point under the finger (a few centimetres behind its feet when the finger is on its head); only a standing or walking character can be picked (a tap on a jumping or paused one walks the active one to the point behind it); the nearest centre in pixels wins, so a character can be picked through another; nothing in taps or grabs checks tracking (a grab survives a tracking loss).
