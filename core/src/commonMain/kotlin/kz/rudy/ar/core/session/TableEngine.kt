@@ -11,8 +11,11 @@ import kz.rudy.ar.core.domain.Surface
 import kz.rudy.ar.core.domain.SurfaceProfile
 import kz.rudy.ar.core.domain.Vec2
 import kz.rudy.ar.core.domain.defaultFor
+import kz.rudy.ar.core.duel.DuelMatchState
+import kz.rudy.ar.core.emote.EmotePose
 import kz.rudy.ar.core.emote.EmoteSet
 import kz.rudy.ar.core.emote.EmoteSound
+import kz.rudy.ar.core.physics.PhysicsBody
 import kz.rudy.ar.core.pipeline.SurfaceBoundary
 import kz.rudy.ar.core.scenario.ScenarioPlayer
 import kz.rudy.ar.core.scenario.ScenarioStep
@@ -40,6 +43,10 @@ import kotlin.math.abs
 // pick); it names no member, no level and no loop, and `loop` is internal. New and silent: onTap and onTouch do nothing
 // before the anchor, and spriteGone forgets a picture's size, poser and drawn facing. Nothing here looks at tracking,
 // as before: a walk set during a loss waits for it, and PAUSED still freezes and never resets.
+// T58 — what differs between games is a Stage (Stage.kt): the walking game is `Walk` below, its code moved as it was
+// and pinned by the three files above, untouched; a duel is DuelStage, chosen per frame from `TableSlot.duel` and pinned
+// by DuelStageTest. The anchor, the tracking edge, the cast sync, the reappear timer, the posers and the cast-state
+// report stay here. A duel does not step the walking loop: every member gets its body back when it ends.
 
 /** Footprints mini-map: how often the host reports every member's physics state (`ArSlot.onCastState`) while debug chrome is on. */
 internal const val CAST_STATE_PERIOD_MS = 100L
@@ -116,6 +123,21 @@ class TableEngine(
     /** The physics driver. No host reads it (T54); the tests read physics state through it. */
     internal val loop = GameLoop(separate = separate)
 
+    /** T58: the walking game, the first stage ([Walk]). */
+    private val walk = Walk()
+
+    /** T58: what a tap, a command and a frame mean now ([Stage]): [walk], or the duel the slot asked for. */
+    private var stage: Stage = walk
+
+    /** T58: the highest `TableSlot.duel` serial taken on a tracked frame (started or refused); null before any. */
+    private var duelSerial: Int? = null
+
+    /** T58 review: a duel that failed in a tap or a command, told to the slot by the next frame. */
+    private var failedBetweenFrames: DuelReport.Refused? = null
+
+    /** T58: the running duel's match, null in the walking game. No host reads it; the tests read the duel through it. */
+    internal val duelMatch: DuelMatchState? get() = (stage as? DuelStage)?.match
+
     /** The one the sprite and physics are built for: follows the slot until the anchor, then locked. */
     var surface: Surface = surface
         private set
@@ -129,12 +151,14 @@ class TableEngine(
     /**
      * The level physics steps against: the scan reads it, and swaps a new one in between frames (the next step stands
      * on it; nobody moves, nothing resets). A plain get / set of `loop.level`; a tap that grows the boundary writes it
-     * too ([onTap], then `TableSlot.onLevel`).
+     * too ([onTap], then `TableSlot.onLevel`). T58: in a duel the write is kept here at once, and the duel's arena
+     * follows it between rounds ([DuelStage.levelArrived]).
      */
     var level: Level
         get() = loop.level
         set(v) {
             loop.level = v
+            (stage as? DuelStage)?.levelArrived(v)
         }
 
     private var ignoredSurface: Surface? = null // logged once per requested value after the anchor
@@ -204,31 +228,15 @@ class TableEngine(
             log("command_ignored serial=${c.serial} id=${c.id} anchored=${anchored}")
             return
         }
-        when (val action = c.action) {
-            CharacterAction.Jump -> {
-                val s = loop.state(c.id) ?: return
-                if (!loop.jump(c.id)) log("jump_ignored id=${c.id} mode=${s.mode} ability=${s.ability}")
-                else log("jump id=${c.id} ability=${s.ability} u=${s.pos.u} v=${s.pos.v}") // Pixel evidence
+        val duel = stage as? DuelStage
+        if (duel == null) {
+            stage.command(c, from)
+        } else {
+            try {
+                duel.command(c, from)
+            } catch (e: Exception) { // T58 review: as in a frame
+                failDuel(duel, e, inFrame = false)
             }
-            CharacterAction.WalkForward -> {
-                val s = loop.state(c.id) ?: return
-                val target = s.pos + s.facing * (0.10f * profile.scale)
-                val boundary = loop.level.boundary
-                if (boundary != null && !boundary.contains(target)) {
-                    log("voice_walk_outside_boundary id=${c.id} u=${target.u} v=${target.v}")
-                } else {
-                    loop.walkTo(c.id, target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
-                }
-            }
-            is CharacterAction.Emote -> {
-                val member = from.members.firstOrNull { it.id == c.id } ?: return
-                val choreo = member.emotes[action.emote]
-                loop.emote(c.id, choreo)
-                if (from.soundsOn) playEmoteSound(choreo.sound)
-                log("emote id=${c.id} emote=${action.emote} source=${member.emotes.source} ms=${choreo.durationMs}")
-            }
-            CharacterAction.Dash, CharacterAction.Special ->
-                log("duel_command_ignored serial=${c.serial} id=${c.id} duel=false")
         }
     }
 
@@ -239,7 +247,7 @@ class TableEngine(
      * T37: where every member stands, in cast order, for the scan's merge (the object under a character never changes)
      * and its boundary fold; one default state while nobody is on the table.
      */
-    fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+    fun standing(): List<CharacterState> = stage.standing()
 
     /**
      * T32: the physics cast follows the slot's members. Main thread, from the anchor and from every anchored frame (a
@@ -261,6 +269,87 @@ class TableEngine(
             log("cast_add id=${c.id} n=${loop.ids.size} u=${pos.u} v=${pos.v}")
             current().onCastEvent(c.id, CharacterEvent.PLACED)
         }
+    }
+
+    /**
+     * T58: the stage follows `TableSlot.duel`, compared by its serial on every anchored frame right after [syncCast]:
+     * no setup ends a running duel (the walking game goes on where it stood); a fighter gone from the cast ends it
+     * (NO_FIGHTER), also during a loss; a serial above the highest taken is taken on a tracked frame (the camera decides
+     * the sides): it ends a running duel (a rematch) and starts a match, or is refused once and never retried. Starting
+     * releases every finger. Every duel that started logs one `duel_end`. Without a setup and a duel: one null check.
+     */
+    private fun syncDuel(input: FrameInput) {
+        val setup = current().duel
+        val duel = stage as? DuelStage
+        if (setup == null) {
+            if (duel != null) endDuel(duel)
+            return
+        }
+        if (duel != null && !(loop.has(duel.mineId) && loop.has(duel.foeId))) {
+            refuseDuel(duel.serial, DuelRefusal.NO_FIGHTER, running = duel)
+        }
+        val taken = duelSerial
+        if (!input.tracking || (taken != null && setup.serial <= taken)) return
+        duelSerial = setup.serial
+        (stage as? DuelStage)?.let(::endDuel) // a rematch, or a refusal of the new serial, ends the running duel
+        val reason = when {
+            setup.mineId == setup.foeId || !isFighter(setup.mineId) || !isFighter(setup.foeId) -> DuelRefusal.NO_FIGHTER
+            !loop.level.hasFiniteBoundary() -> DuelRefusal.NO_BOUNDARY // also before DuelArena.marks meets an infinite vertex
+            else -> null
+        }
+        val started = if (reason != null) {
+            null
+        } else {
+            try {
+                DuelStage.open(setup, loop, current, profile, port, log, walkDepthSamples, input.camera.pos)
+            } catch (e: Exception) { // T58 review: the duel's code never ends the session; open's own refusal is NO_ROOM
+                log("duel_failed serial=${setup.serial} phase=null what=${e::class.simpleName}")
+                current().onDuel(DuelReport.Refused(setup.serial, DuelRefusal.FAILED))
+                return
+            }
+        }
+        if (started == null) {
+            refuseDuel(setup.serial, reason ?: DuelRefusal.NO_ROOM, running = null)
+            return
+        }
+        for (id in loop.ids) touch.unbindMember(id) // a finger held when the duel starts leads nobody any more
+        log(
+            "duel_start serial=${setup.serial} mine=${setup.mineId} foe=${setup.foeId} level=${setup.foeLevel} " +
+                "seed=${setup.seed} marks_ms=${started.marksMs}",
+        )
+        stage = started // its first step (this frame) reports the start
+    }
+
+    /** T58: member [id] can fight: on the table and in the slot (its stats and ability come from the slot). */
+    private fun isFighter(id: String): Boolean = loop.has(id) && current().members.any { it.id == id }
+
+    /** T58: the running [duel] ends (one `duel_end` per `duel_start`) and the walking game goes on where it stood. */
+    private fun endDuel(duel: DuelStage) {
+        val m = duel.match
+        log("duel_end serial=${duel.serial} phase=${m.phase} score=${m.scoreA}:${m.scoreB}")
+        stage = walk
+    }
+
+    /**
+     * T58: the duel with [serial] did not start, or the [running] one ended before RESULT: the reason is logged, the
+     * running duel ends, the slot hears why, the walking game goes on.
+     */
+    private fun refuseDuel(serial: Int, reason: DuelRefusal, running: DuelStage?) {
+        log("duel_refused serial=$serial reason=$reason")
+        if (running != null) endDuel(running)
+        current().onDuel(DuelReport.Refused(serial, reason))
+    }
+
+    /**
+     * T58 review: [duel]'s own code threw ([e]) inside a frame ([inFrame]), a tap or a command. One line without the
+     * message, the duel ends as if the slot had dropped it, and the slot hears FAILED once: at once from a frame, from
+     * the next frame for a tap or a command (onDuel is a frame's callback). Its serial is taken: never retried.
+     */
+    private fun failDuel(duel: DuelStage, e: Exception, inFrame: Boolean) {
+        log("duel_failed serial=${duel.serial} phase=${duel.match.phase} what=${e::class.simpleName}")
+        endDuel(duel)
+        val report = DuelReport.Refused(duel.serial, DuelRefusal.FAILED)
+        if (inFrame) current().onDuel(report) else failedBetweenFrames = report
     }
 
     /**
@@ -315,6 +404,10 @@ class TableEngine(
             log("scenario_rejected anchored=false")
             return
         }
+        if (stage !== walk) { // T58: no replay during a duel; not retried, as before the anchor
+            log("scenario_rejected duel=true")
+            return
+        }
         val script = Scenarios.DAY5.scaled(profile.scale)
         loop.restartAtSpawn() // every run starts at spawn (FIRST member only, T32): a FLY run ends past the gap and would skip the cup beat
         val startMs = loop.simMs // simulated time, see the T21 header
@@ -342,33 +435,24 @@ class TableEngine(
         trackingEdge(input.tracking)
         val now = input.nowMs
         val tracking = input.tracking
-        // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
-        // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
         syncCast { input.camera.right } // T32: members added or removed since the last frame
-        val player = replay
-        val scripted: (() -> Unit)? = if (player == null) null else {
-            {
-                val first = player.issued
-                val hero = loop.firstId // T32: the scenario drives the FIRST member only
-                player.due(loop.simMs).forEachIndexed { i, step ->
-                    when (step) {
-                        is ScenarioStep.WalkTo -> if (hero != null) loop.walkTo(hero, step.target)
-                        is ScenarioStep.Jump -> if (hero == null || !loop.jump(hero)) {
-                            log("jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
-                        }
-                    }
-                    log("scenario_step idx=${first + i} at_ms=${step.atMs}")
-                }
-                if (player.finished) {
-                    replay = null
-                    log("scenario_done ms=${loop.simMs - replayStartMs}")
-                }
+        failedBetweenFrames?.let { failedBetweenFrames = null; current().onDuel(it) } // T58 review: a tap's failure
+        syncDuel(input) // T58: the slot's duel starts, ends or is refused here (after the opponent may have joined)
+        val duel = stage as? DuelStage
+        if (duel == null) {
+            stage.step(input) // T58: the scenario's due taps and physics (the walking game's steps 4-5, moved into Walk)
+        } else {
+            try {
+                duel.step(input) // the step, its reports, a rearrange
+            } catch (e: Exception) { // T58 review: the duel never ends the AR session
+                failDuel(duel, e, inFrame = true)
             }
         }
-        val cast = loop.onFrame(now, tracking, { id, e -> current().onCastEvent(id, e) }, beforeStep = scripted)
+        val cast = loop.cast
         // footprints mini-map — the HUD never saw physics positions, so its dot stood still while the sprite
         // walked. Report every member's state about 10x a second while debug chrome is on; a small map, never per frame.
-        if (current().debug && now - castStateAtMs >= CAST_STATE_PERIOD_MS) {
+        // T58: not during a duel (the walking loop stands still; the duel reports through onDuel).
+        if (stage === walk && current().debug && now - castStateAtMs >= CAST_STATE_PERIOD_MS) {
             castStateAtMs = now
             current().onCastState(cast.members.associate { it.id to it.body.state })
         }
@@ -381,13 +465,13 @@ class TableEngine(
         val poses = ArrayList<NodePose>(cast.members.size)
         for (m in cast.members) {
             val p = poser(m.id).pose(
-                m.body.state, cameraLocal, cameraHeightM, loop.walkPhaseMs(m.id),
-                verticalVelocity = m.body.verticalVelocity,
-                sinceLandedMs = now - loop.landedAtMs(m.id),
+                stage.body(m.id).state, cameraLocal, cameraHeightM, stage.walkPhaseMs(m.id),
+                verticalVelocity = stage.body(m.id).verticalVelocity,
+                sinceLandedMs = now - stage.landedAtMs(m.id),
                 size = current().characterSize,
-                emotePose = loop.emotePose(m.id),
+                emotePose = stage.emotePose(m.id),
             )
-            poses += if (visible) p else p.copy(visible = false)
+            poses += if (visible && stage.shows(m.id)) p else p.copy(visible = false)
         }
         return poses
     }
@@ -395,6 +479,117 @@ class TableEngine(
     /** Member [id]'s poser: made on first use and again after [spriteBuilt], at the locked surface's character height. */
     private fun poser(id: String): BillboardPoser =
         posers.getOrPut(id) { BillboardPoser(id, profile.characterHeightM, drawnRight[id] ?: false, feetDepthBias) }
+
+    /**
+     * T58: the walking game, the engine's first stage. The body of [onTap] after its guard, the `when` of [command], the
+     * scenario feed with the loop's frame (steps 4-5 of [onFrame]) and [standing] were moved here as they were; the
+     * pose loop reads the loop through the other answers. An inner class, so the moved lines use the engine's own
+     * `table`, `confirmSurface`, `replay` and the rest unchanged.
+     */
+    private inner class Walk : Stage {
+        override val fingers: Boolean get() = true
+
+        override fun tap(xPx: Float, yPx: Float, uv: Vec2, depthGapM: () -> Float?) {
+            // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first;
+            // with one member on the table `grabbable` is always null and the tap walks it, as v1.0).
+            val tapped = table.grabbable(xPx, yPx)
+            if (tapped != null) {
+                if (tapped != activeId()) current().onActiveChanged(tapped)
+                return
+            }
+            val active = activeId() ?: return
+            val from = loop.state(active)?.pos ?: return
+            val depthGap = depthGapM()
+            // Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
+            // so "in the polygon" is not "on the table". A drop in depth on the way or at the tap refuses it; :core decides.
+            // No depth reading (null) never refuses. The boundary is not touched. The character says it cannot go there
+            // (the BLOCKED line), so a refused tap is not a dead tap.
+            val gaps = port.depthGapsOnWay(from, uv, walkDepthSamples) + depthGap
+            log("tap_depth_gap=$depthGap feet_h=${loop.state(active)?.h} way=$gaps id=$active")
+            if (SurfaceBoundary.crossesEdge(gaps, profile)) {
+                log("tap_past_edge u=${uv.u} v=${uv.v}")
+                current().onCastEvent(active, CharacterEvent.BLOCKED)
+            } else {
+                confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
+                loop.walkTo(active, uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+            }
+        }
+
+        override fun command(c: CharacterCommand, from: TableSlot) {
+            when (val action = c.action) {
+                CharacterAction.Jump -> {
+                    val s = loop.state(c.id) ?: return
+                    if (!loop.jump(c.id)) log("jump_ignored id=${c.id} mode=${s.mode} ability=${s.ability}")
+                    else log("jump id=${c.id} ability=${s.ability} u=${s.pos.u} v=${s.pos.v}") // Pixel evidence
+                }
+                CharacterAction.WalkForward -> {
+                    val s = loop.state(c.id) ?: return
+                    val target = s.pos + s.facing * (0.10f * profile.scale)
+                    val boundary = loop.level.boundary
+                    if (boundary != null && !boundary.contains(target)) {
+                        log("voice_walk_outside_boundary id=${c.id} u=${target.u} v=${target.v}")
+                    } else {
+                        loop.walkTo(c.id, target) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+                    }
+                }
+                is CharacterAction.Emote -> {
+                    val member = from.members.firstOrNull { it.id == c.id } ?: return
+                    val choreo = member.emotes[action.emote]
+                    loop.emote(c.id, choreo)
+                    if (from.soundsOn) playEmoteSound(choreo.sound)
+                    log("emote id=${c.id} emote=${action.emote} source=${member.emotes.source} ms=${choreo.durationMs}")
+                }
+                CharacterAction.Dash, CharacterAction.Special ->
+                    log("duel_command_ignored serial=${c.serial} id=${c.id} duel=false")
+            }
+        }
+
+        @Suppress("UNUSED_VARIABLE") // the moved last line keeps its `val cast`; the engine reads `loop.cast` after this
+        override fun step(input: FrameInput) {
+            val now = input.nowMs
+            val tracking = input.tracking
+            // T21 (c): scripted taps due on the simulated clock go to the loop like real taps, inside the
+            // loop's frame (after resume, before the step: review fix). The lambda exists only while a script runs.
+            val player = replay
+            val scripted: (() -> Unit)? = if (player == null) null else {
+                {
+                    val first = player.issued
+                    val hero = loop.firstId // T32: the scenario drives the FIRST member only
+                    player.due(loop.simMs).forEachIndexed { i, step ->
+                        when (step) {
+                            is ScenarioStep.WalkTo -> if (hero != null) loop.walkTo(hero, step.target)
+                            is ScenarioStep.Jump -> if (hero == null || !loop.jump(hero)) {
+                                log("jump_ignored mode=${loop.state.mode} ability=${loop.state.ability} scenario=true")
+                            }
+                        }
+                        log("scenario_step idx=${first + i} at_ms=${step.atMs}")
+                    }
+                    if (player.finished) {
+                        replay = null
+                        log("scenario_done ms=${loop.simMs - replayStartMs}")
+                    }
+                }
+            }
+            val cast = loop.onFrame(now, tracking, { id, e -> current().onCastEvent(id, e) }, beforeStep = scripted)
+        }
+
+        override fun standing(): List<CharacterState> = loop.cast.members.map { it.body.state }.ifEmpty { listOf(loop.state) }
+
+        override fun shows(id: String): Boolean = true
+
+        /** The loop's body of [id], by index (no iterator: the pose loop asks twice per member per frame). */
+        override fun body(id: String): PhysicsBody {
+            val members = loop.cast.members
+            for (i in members.indices) if (members[i].id == id) return members[i].body
+            error("member $id is not in the loop") // the pose loop asks only for the loop's own members
+        }
+
+        override fun walkPhaseMs(id: String): Long = loop.walkPhaseMs(id)
+
+        override fun landedAtMs(id: String): Long = loop.landedAtMs(id)
+
+        override fun emotePose(id: String): EmotePose? = loop.emotePose(id)
+    }
 
     /**
      * T54: a tap on the table at view pixel ([xPx], [yPx]); [uv] is the table under it (the host's hit test, which its
@@ -405,38 +600,25 @@ class TableEngine(
      */
     fun onTap(xPx: Float, yPx: Float, uv: Vec2, depthGapM: () -> Float?) {
         if (!anchored) return
-        // T32: a tap on a member only makes it active (the finger grab normally consumes this tap first;
-        // with one member on the table `grabbable` is always null and the tap walks it, as v1.0).
-        val tapped = table.grabbable(xPx, yPx)
-        if (tapped != null) {
-            if (tapped != activeId()) current().onActiveChanged(tapped)
-            return
-        }
-        val active = activeId() ?: return
-        val from = loop.state(active)?.pos ?: return
-        val depthGap = depthGapM()
-        // Pixel 2026-11-03 — ARCore's polygon runs past the table (a tap there read 29 cm below the plane),
-        // so "in the polygon" is not "on the table". A drop in depth on the way or at the tap refuses it; :core decides.
-        // No depth reading (null) never refuses. The boundary is not touched. The character says it cannot go there
-        // (the BLOCKED line), so a refused tap is not a dead tap.
-        val gaps = port.depthGapsOnWay(from, uv, walkDepthSamples) + depthGap
-        log("tap_depth_gap=$depthGap feet_h=${loop.state(active)?.h} way=$gaps id=$active")
-        if (SurfaceBoundary.crossesEdge(gaps, profile)) {
-            log("tap_past_edge u=${uv.u} v=${uv.v}")
-            current().onCastEvent(active, CharacterEvent.BLOCKED)
+        val duel = stage as? DuelStage
+        if (duel == null) {
+            stage.tap(xPx, yPx, uv, depthGapM)
         } else {
-            confirmSurface(uv) // the boundary is convex, so the straight walk there stays inside it
-            loop.walkTo(active, uv) // its STARTED_WALKING event is reported by the next frame's loop.onFrame
+            try {
+                duel.tap(xPx, yPx, uv, depthGapM)
+            } catch (e: Exception) { // T58 review: as in a frame
+                failDuel(duel, e, inFrame = false)
+            }
         }
     }
 
     /**
      * T54: one touch event after the anchor, from the host's raw touch listener (before its tap detector). True: the
      * stream belongs to a finger that leads a member, and the host's tap detector must not see it ([CastTouch]).
-     * Before the anchor: false, nothing else.
+     * Before the anchor: false, nothing else. T58: also false, nothing asked, while the stage has no [Stage.fingers].
      */
     fun onTouch(e: TouchEvent): Boolean {
-        if (!anchored) return false
+        if (!anchored || !stage.fingers) return false
         return touch.onTouch(e, table)
     }
 

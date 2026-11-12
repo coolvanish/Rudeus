@@ -11,7 +11,10 @@ import kz.rudy.ar.core.duel.DuelRules
 
 /** The duel the UI wants on the table; `TableSlot.duel == null` is the walking game. Immutable, one per slot. */
 class DuelSetup(
-    /** Rising; a serial the engine has not seen starts a new match, a seen one never restarts. */
+    /**
+     * Rising; a serial the engine has not seen starts a new match, a seen one never restarts. The engine takes a serial
+     * on the first tracked frame it sees it, and ignores one at or below the highest it has taken.
+     */
     val serial: Int,
     /** The child's fighter: a member id. */
     val mineId: String,
@@ -43,4 +46,8 @@ sealed interface DuelReport {
     class Refused(override val serial: Int, val reason: DuelRefusal) : DuelReport
 }
 
-enum class DuelRefusal { NO_BOUNDARY, NO_ROOM, NO_FIGHTER }
+/**
+ * Why a duel did not start or ended before RESULT. NO_BOUNDARY also covers a boundary with a non-finite vertex; FAILED:
+ * the duel's own code threw inside a frame, a tap or a command (T58 review), and the table went back to the walking game.
+ */
+enum class DuelRefusal { NO_BOUNDARY, NO_ROOM, NO_FIGHTER, FAILED }
