@@ -1,6 +1,6 @@
 # T60 — bot-beats-idle
 
-status: review
+status: done (merged 2026-11-13 with the fix switched off; switching it on waits for the user, ai/v2-human.md §4.3 j)
 created: 2026-11-12
 phase: v2 wave 4 (ai/build-plan-v2.md, "The game")
 gate: G5 duel on the Pixel (a bot that does nothing on a table with a cup and a book would be the first thing a child sees)
