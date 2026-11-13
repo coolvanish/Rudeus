@@ -1,4 +1,33 @@
-# Duel balance (T48, T57, T60)
+# Duel balance (T48, T57, T60, T61)
+
+## T61: bot impatience (ai/tasks/T61-bot-impatience.md)
+
+**The rule** (`BotSkill.impatientAfterMs`; **0 = off, every level's default for now**): a NORMAL or HARD bot that has
+not attacked (a dash, a stomp, a ram) for that long of FIGHT, counted between its own decisions of a round, attacks from
+where it stands: at an opponent it can hit within a dash's height reach it dashes whatever the alignment, walks
+straight at it when that line touches no object's body, and keeps out of objects by their bodies only, until it
+attacks; then it plays its plan again. Measured at 16 000 ms for NORMAL and HARD.
+
+**Why it is off.** On by default, the one red test of the duel package's 137 is T60's `theFixSwitchedOffIsTheOldBot`,
+whose last check is that the default bot loses to a fighter standing on its cup-and-book mark: exactly what T61's R1
+reverses. The brief keeps T60's tests as they are, so turning it on is a human's decision (the brief's Result).
+
+**Why 16 s.** Between bots, a stretch without an attack (this rule's clock, not T60's I4, which also restarts on
+closing in) of 10 s or more happens in 8.4 % of NORMAL and 4.4 % of HARD matrix-like matches; 12 s 1.8 / 0.5 %; 15 s 0.4 /
+0.1 %, and 15 s fires in one of the 24 golden matches (its longest stretch: 15.55 s). At 16 s: 0.34 % / 0.06 % (R6).
+
+| # | Criterion | Impatience 0 (the shipped bot) | Impatience 16 s |
+|---|---|---|---|
+| R1 | T60's I1 sample, 168 per level | 126 of 168 per level: cup-and-book 0 of 42, all 0:2 on the clock | 168 of 168 at both levels, all 2:0 by ring-outs (cup-and-book 52 s a match) |
+| R2 | 60 random tables, 720 matches, not won <= 7 | 80 not won (15 tables) | 10 not won (5 tables): FAIL |
+| R3 | behind the cup / on the book / walking back to the middle, won of 8 (NORMAL, HARD) | 8, 8 / 8, 8 / 6, 1 | the same; on the book 4 by ring-outs (was 3) |
+| R4 | `duel matrix --n 200` against T57's table | identical (the shipped state) | 290 of 320 cells identical; 30 move by at most 1 point; no verdict changes; B7 61 -> 62 out (large NORMAL FLY AGILITY 40.0 -> 39.5 %); B9 identical |
+| R5 | existing tests | green | one red: T60's `theFixSwitchedOffIsTheOldBot` |
+| R6 | bot-v-bot matches in which it fires | - | NORMAL 0.34 %, HARD 0.06 % (3200 each); over the matrix's own seeds about 0.25 / 0.11 % |
+
+R2's last 10 (traced): on tables 5, 9, 17 and 39 every impatient hit slams the fighter into a cup right behind it on
+the bot's line (it never moves toward an edge); on table 42 one hit knocks it onto a book's edge, out of a dash's
+reach, where the bot keeps its plan. The layouts are in the brief's Result.
 
 ## T60: a bot must beat a fighter that stands still (ai/tasks/T60-bot-beats-idle.md)
 
