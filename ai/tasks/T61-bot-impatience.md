@@ -106,8 +106,14 @@ off. With these defaults the duel package's 137 tests are green, every existing 
 - **R2** (60 seeded random 60 x 40 cm tables, 1..3 cups r 3..5 cm or books 8..14 x 6..10 cm; NORMAL and HARD, JUMP / ROLL
   / FLY against an idle JUMP, both marks: 720): before (impatience 0) **80 not won** (79 lost 0:2 on the clock, almost all
   with 0 attacks), 565 won 2:0 by ring-outs, 15 tables; with impatience 16 s **10 not won** (6 lost 0:2, 4 lost 1:2),
-  684 won 2:0, 5 tables. FAIL (bar 7). The reviewer's probe (another generator) had 113 before. Every table that still
-  fails, with why (traced: one match each):
+  684 won 2:0, 5 tables. FAIL (bar 7). The reviewer's independent probe (its own generator, 720 matches):
+
+  | | everything off (T60's switch, impatience) | the shipped defaults | the defaults + `wholeDetour` |
+  |---|---|---|---|
+  | this generator | 80 not won | 10 | not measured |
+  | the reviewer's | 113 | 10 | 6 |
+
+  Every table that still fails here, with why (traced: one match each):
   1. table 5 [cup r 4.5 cm at (-0.242, 0.142); book 13.2 x 8.8 cm at (0.098, 0.118); cup r 3.5 cm at (-0.082, 0.034)],
      NORMAL JUMP 0:2 and HARD JUMP 1:2, second mark: the idle fighter's mark (-0.09, -0.03) is just below the small cup;
      every impatient stomp or dash pushes it into that cup (a wall slam, 4 to 6 a match), it never moves.
@@ -126,7 +132,8 @@ off. With these defaults the duel package's 137 tests are green, every existing 
   right behind the opponent on that line (day5's cause 1 in the T60 Result); attacking from where it stands cannot push
   it anywhere.
 - **R3** (T60's three spots, 8 matches each): before / with impatience. Behind the cup: NORMAL and HARD won 8 of 8 on the
-  clock both ways (longest stretch without closing in or attacking 58.9 -> 42.5 s); on the book: 8 of 8 both ways, by
+  clock both ways (T60's stand-off metric 58.9 -> 42.5 s; without an attack, as the rule counts, 59.1 / 59.3 s both ways:
+  the rule does not end it, "what a human must decide" 4); on the book: 8 of 8 both ways, by
   ring-outs 3 -> 4 at both levels (59.1 / 59.2 s both ways: the fighter is out of a dash's reach there); between the cup
   and the book: NORMAL 6 of 8, HARD 1 of 8 both ways (the bots attack there all the time; the rule never fires). No spot
   gets worse (asserted).
@@ -171,7 +178,17 @@ off. With these defaults the duel package's 137 tests are green, every existing 
   `theRandomTablesAndTheStandOffSpots` (the generator; R2's 720 and R3 printed before / after; R3's "no spot gets
   worse" asserted). `IMPATIENT` is 16 s at NORMAL and HARD written out, equal to the default. T60's class: one line,
   the old bot's tuning in `theFixSwitchedOffIsTheOldBot` (problem 2). Duel package 137 tests (130 + 7), green, 74 to 82 s
-  summed on this container (the T61 class about 22 s). `scripts/verify.sh` with the shipped defaults (f715184): OK in
+  summed on this container (the T61 class about 22 s).
+  **Review follow-ups (tests made stronger, no production line changed):** T60's `FIXED` is `wholeDetour = true` with
+  impatience 0 at NORMAL and HARD, so T60's tests measure the detour fix alone again; `theFixSwitchedOffIsTheOldBot` runs
+  the 24 golden prints on the named old bot and on `BotTuning()` (the shipped bot plays them exactly as the old bot: 24
+  of 24), the "loses 0:2 with 0 attacks" half on the old bot only; `impatienceDoesNotCarryTheBotOverAnEdge` gains the
+  case where `dashSafe` decides (a HARD bot 3.5 cm from an edge, a ROLL opponent 5 cm beside it sliding toward the edge
+  at 1.5 m/s: the led dash would end 2 cm past the edge; the same opponent standing still gets the dash). Mutants, each
+  applied and the file restored byte for byte: the `wholeDetour` branch disabled turns `aBotBeatsAFighterThatStandsStill`,
+  `theFixSwitchedOffIsTheOldBot` and `noBotStandsOffForARound` red; NORMAL / HARD impatience at 10 s turns
+  `theFixSwitchedOffIsTheOldBot` red at "the shipped default, match 11"; impatient dashes skipping `dashSafe` (`urge ||
+  dashSafe(...)`) turns `impatienceDoesNotCarryTheBotOverAnEdge` red (it started Dash (0.661, -0.751)). `scripts/verify.sh` with the shipped defaults (f715184): OK in
   99 s, core 876, shared 65, android 4 tests, 0 failed; iOS klibs; debug APK.
 - **what a human must decide**:
   1. **The correction of T60's off-position test** (problem 2): the orchestrator's reasoning is above and in commit
@@ -186,7 +203,14 @@ off. With these defaults the duel package's 137 tests are green, every existing 
      random tables it would aim at the 9 slam cases, likely leaving table 42 (out of reach on a book).
   3. The threshold: 16 s is set by the goldens (15.55 s) and R6; a child waits 16 s for the first attack on a stuck
      table (rounds about 52 s on cup-and-book against 22 on the empty table).
-  4. Still standing off (T60's Result, unchanged): behind the cup (the bot wins on the clock, 42 s without an attack now,
-     59 before), on the book (out of a dash's reach: no impatient dash; 59 s), and day5's three causes (T60's Result 6).
+  4. Still standing off (T60's Result; **the rule does not end these**): behind the cup, the bot wins on the clock, and
+     the longest stretch of FIGHT without an attack, as the rule counts, is 59.1 s (NORMAL) and 59.3 s (HARD) with
+     impatience and without, with the same number of attacks (the reviewer's measurement): the bot stays impatient for the
+     whole round and does not attack, because no walk target satisfies both the edge margin and the cup's circle and the
+     cup blocks the line. (R3's 58.9 -> 42.5 s is T60's stand-off metric, which also restarts when the bot closes in; it
+     does not mean an attack came sooner.) On the book: out of a dash's reach, no impatient dash, 59 s. And day5's three
+     causes (T60's Result 6).
+  5. **For the user**: on cup-and-book a fighter that stands still now meets 16 s of to-and-fro before the first attack
+     of every round (mean match 52.4 s there, against 22.6 s on the empty table).
 - **cut/deferred**: R2's bar (cut-if-slips: R1 holds on the tuning arenas, and on 98.6 % of the random tables'
   matches); the fourth candidate (not used, by decision).

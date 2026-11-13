@@ -25,10 +25,12 @@ private const val HUMAN = "human"
 private const val STAND_OFF_LIMIT_MS = 10_000L
 
 /**
- * The bot with T60's fix on ([BotTuning.wholeDetour]). It is off by default: on, `normalIsBetweenEasyAndHard` fails its
- * floor in the cup-and-book ROLL cell (the brief's Result), and turning it on is a human's decision.
+ * The bot with T60's fix on ([BotTuning.wholeDetour]) and nothing else that ends a stand-off: T61's impatience, on by
+ * default since T61, off at NORMAL and HARD, so that T60's tests measure the detour fix alone. `wholeDetour` is off by
+ * default: on, `normalIsBetweenEasyAndHard` fails its floor in the cup-and-book ROLL cell (the brief's Result), and
+ * turning it on is a human's decision.
  */
-private val FIXED = BotTuning(wholeDetour = true)
+private val FIXED = BotTuning(wholeDetour = true).let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
 
 /**
  * One match of a bot ([BOT]) against a side the test plays ([HUMAN]), and what came of it.
@@ -245,11 +247,13 @@ class DuelIdleTest {
         // The old bot named by its switches (T61: impatience is a second behaviour on by default, so "the default with
         // wholeDetour off" is no longer the pre-T60 bot).
         val off = BotTuning(wholeDetour = false).let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
-        for (i in 0 until GOLDEN_MATCHES) {
-            val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, off)
+        // The prints on the old bot, and on the shipped default: it plays these 24 bot-v-bot matches exactly as the old bot
+        // does (T61's rule never fires in them: their longest stretch without an attack is 15.55 s).
+        for ((name, tuning) in listOf("the old bot" to off, "the shipped default" to BotTuning())) for (i in 0 until GOLDEN_MATCHES) {
+            val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, tuning)
             val (summary, expected) = PRE_T60_PRINTS[i]
-            assertEquals(summary, "${r.winner}/${r.scoreA}/${r.scoreB}/${r.rounds}/${r.matchMs}/${r.ringOuts}/${r.timeouts}/${r.hits}/${r.wallSlams}/${r.specials}", "match $i")
-            assertEquals(expected, fp, "match $i: the same events, decisions and final state")
+            assertEquals(summary, "${r.winner}/${r.scoreA}/${r.scoreB}/${r.rounds}/${r.matchMs}/${r.ringOuts}/${r.timeouts}/${r.hits}/${r.wallSlams}/${r.specials}", "$name, match $i")
+            assertEquals(expected, fp, "$name, match $i: the same events, decisions and final state")
         }
         assertFalse(PRE_T57_TUNING.wholeDetour)
         // And the switch is the fix: off, a NORMAL bot loses to a fighter standing on its mark of cup-and-book without a
@@ -457,9 +461,9 @@ internal val IMPATIENT: BotTuning = BotTuning().let { it.copy(normal = it.normal
 /** T61: a NORMAL or HARD bot that has not attacked for a while attacks from where it stands. */
 class DuelImpatienceTest {
 
-    /** A FIGHT 10 s into round 1 on [arena]: "me" (slot a, [me]) at [pa], an idle JUMP "foe" at [pb], both standing. */
-    private fun fight(arena: Level, me: Ability, pa: Vec2, pb: Vec2): DuelMatchState {
-        val s = DuelMatch.start(Contestant("me", FighterStats.BALANCED, me), Contestant("foe", FighterStats.BALANCED, Ability.JUMP), arena, DuelArenas.marks(arena))
+    /** A FIGHT 10 s into round 1 on [arena]: "me" (slot a, [me]) at [pa], an idle [foe] "foe" at [pb], both standing. */
+    private fun fight(arena: Level, me: Ability, pa: Vec2, pb: Vec2, foe: Ability = Ability.JUMP): DuelMatchState {
+        val s = DuelMatch.start(Contestant("me", FighterStats.BALANCED, me), Contestant("foe", FighterStats.BALANCED, foe), arena, DuelArenas.marks(arena))
         fun place(f: DuelFighter, p: Vec2) = f.copy(body = f.body.copy(state = f.body.state.copy(pos = p, h = kz.rudy.ar.core.physics.Physics.groundHeight(arena, p, 0f) ?: 0f)))
         return s.copy(phase = MatchPhase.FIGHT, phaseLeftMs = 50_000L, duel = s.duel.copy(a = place(s.duel.a, pa), b = place(s.duel.b, pb), timeMs = 10_000L))
     }
@@ -602,9 +606,33 @@ class DuelImpatienceTest {
 
     @Test
     fun impatienceDoesNotCarryTheBotOverAnEdge() {
-        // A NORMAL and a HARD bot that grow impatient after 48 ms (so every one of its decisions is impatient) against a
-        // fighter that stands still in a corner or by an edge, on the four tuning arenas and ten random tables, 30 s: it
-        // never rings itself out and never sends a walk target off the table; the opponent goes off again and again.
+        // The case where the safety check decides. A HARD bot 3.5 cm from the bottom edge, impatient; a ROLL opponent 5 cm
+        // away beside it along the edge (out of reach of the in-path excuse: the dash would meet it after more than half its
+        // reach), sliding toward the edge at 1.5 m/s. HARD leads its aim, so its dash would go down-right and end past the
+        // edge: it must not start it (dash end margin, `dashSafe`), impatient or not. The same opponent standing still gets
+        // the dash (it ends 3.5 cm inside): the bot is impatient there and the check is what refuses.
+        val arena = DuelArenas.EMPTY
+        val t = IMPATIENT
+        val me = Vec2(0f, -0.165f)
+        val them = Vec2(0.11f, -0.165f)
+        val knock = Vec2(0f, -1.5f)
+        val still = fight(arena, Ability.FLY, me, them, foe = Ability.ROLL)
+        val sliding = still.copy(duel = still.duel.copy(b = still.duel.b.copy(knock = knock)))
+        val mind = calm(BotLevel.HARD, t.hard.impatientAfterMs)
+        assertEquals(DuelInput.Dash(Vec2(1f, 0f)), DuelBot.decide(mind, "me", still, arena, tuning = t).second, "the impatient dash at a fighter in line")
+        // Where the led dash would end (the bot's aim: the opponent plus its knock x knockLeadShare over the time to meet).
+        val p = DuelParams.DEFAULT
+        val speed = p.dashSpeedMpsFor(FighterStats.BALANCED)
+        val gap = me.distanceTo(them) - 2f * R
+        val aimAt = them + knock * t.knockLeadShare * (gap / speed * t.leadShare)
+        val end = me + (aimAt - me).normalized() * (speed * p.dashMs / 1000f)
+        assertTrue(!arena.boundary!!.contains(end), "the led dash would end off the table at $end")
+        val answer = DuelBot.decide(mind, "me", sliding, arena, tuning = t).second
+        assertTrue(answer !is DuelInput.Dash, "an impatient bot started a dash that ends off the table: $answer")
+        // And in whole matches: a NORMAL and a HARD bot that grow impatient after 48 ms (so every one of its decisions is
+        // impatient) against a fighter that stands still in a corner or by an edge, on the four tuning arenas and ten
+        // random tables, 30 s: it never rings itself out and never sends a walk target off the table; the opponent goes off
+        // again and again. (Against a still fighter every dash hits, so this half alone could not catch a missing check.)
         val rules = DuelRules(pointsToWin = 1000, maxRounds = 1000)
         val eager = BotTuning().let { it.copy(normal = it.normal.copy(impatientAfterMs = 48L), hard = it.hard.copy(impatientAfterMs = 48L)) }
         var outs = 0
