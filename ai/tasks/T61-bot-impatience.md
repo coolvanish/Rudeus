@@ -71,17 +71,23 @@ Gradle. No threshold of any existing test changes; if one goes red, stop and rep
 - `scripts/verify.sh` exit 0; R1..R6 in the Result and in `docs/duel-balance.md`; no file outside "Owns" changed
 
 ## Result (filled on acceptance)
-**Problems first.** (1) **The rule is in but off by default** (`impatientAfterMs` 0 at every level): R1 and R5 contradict
-each other. T60's `theFixSwitchedOffIsTheOldBot` ends by checking that the default bot (T60's switch off) loses to a
-fighter standing on its cup-and-book mark without a single attack; R1 asks the default bot to win that match. With the
-rule on by default (16 s) that assertion is the one test of 137 in the duel package that goes red; every other one,
-`normalIsBetweenEasyAndHard`, `hardBeatsEasy`, `acceptanceHoldsOnASample`, `botsUseTheirSpecialsInWholeMatches` and the
-goldens included, stays green with identical numbers. The brief says "stop and report" and "T60's tests stay as they
-are", so I did not edit it. (2) **R2 is not met**: 10 of 720 not won with impatience on (bar 7), 80 before. 9 of the 10
-are an impatient bot dashing the fighter into a cup right behind it, again and again. (3) The coordinator's premise
-"8.0..8.6 s between bots" was my T60 I4 metric, which also restarts when a bot closes in. Without an attack, as this
-rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4 % (HARD) of the matrix's matches, so
-10 s fails R6 and 15 s fires in a golden match: the number is 16 000.
+**Problems first.** (1) **R2 is not met: 10 of 720 not won (1.4 %), bar 7** (80 before). 9 of the 10 are an impatient bot
+dashing the fighter into a cup right behind it on its line, again and again (wall slams, no ring-out); the tenth knocks
+it onto a book's edge, out of a dash's reach. (2) **A T60 test was corrected, not loosened** (the orchestrator's
+decision, for the user to judge; commit 9861ec3): R1 and R5 contradicted each other as the brief stood, because T60's
+`theFixSwitchedOffIsTheOldBot` took "the default tuning with `wholeDetour` off" as the bot before T60 and checked that
+this bot loses to a fighter standing on its cup-and-book mark with 0 attacks, while R1 asks the default bot to win that
+match. The test proves two things: T60's switch off reproduces the pre-T60 bot (the 24 golden prints), and that old bot
+loses there, so the difference is the fix. With impatience a second behaviour on by default, "the default with
+`wholeDetour` off" is no longer the old bot, so the test now names it by both switches (`wholeDetour = false`,
+`impatientAfterMs = 0` at NORMAL and HARD). Its assertions, prints, sample and numbers are unchanged; nothing it checked
+stops being checked; R1's test asserts the opposite for the shipped default; no threshold changes anywhere. (3) The
+coordinator's premise "8.0..8.6 s between bots" was my T60 I4 metric, which also restarts when a bot closes in. Without
+an attack, as this rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4 % (HARD) of the
+matrix's matches, so 10 s fails R6 and 15 s fires in a golden match: the number is 16 000.
+
+**Shipped**: impatience on by default, 16 000 ms at NORMAL and HARD (EASY 0, `PRE_T57_TUNING` 0); T60's `wholeDetour`
+off. With these defaults the duel package's 137 tests are green, every existing threshold untouched.
 
 - **The rule** (`DuelBot.kt`, `BotTuning.kt`): `BotSkill.impatientAfterMs` (0 = off: today's bot bit for bit, no PRNG
   draw, the mind keeps no clock; `PRE_T57_TUNING` sets 0 for NORMAL and HARD, two lines of `DuelNewRulesTest.kt`).
@@ -124,8 +130,9 @@ rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4
   ring-outs 3 -> 4 at both levels (59.1 / 59.2 s both ways: the fighter is out of a dash's reach there); between the cup
   and the book: NORMAL 6 of 8, HARD 1 of 8 both ways (the bots attack there all the time; the rule never fires). No spot
   gets worse (asserted).
-- **R4** (`duel matrix --n 200`, impatience 16 s via `--tuning`, against T57's table = the shipped state at 59c8522):
-  **290 of 320 cells identical; 30 move, every one by at most 1 point** (6 on cup-and-book, 24 on large: 7 equal-stats,
+- **R4** (`duel matrix --n 200` with the shipped defaults, 110 s; the same 320 cells as the earlier run with impatience
+  16 s via `--tuning`; against T57's table, the state up to 59c8522): **290 of 320 cells identical; 30 move, every one by
+  at most 1 point** (6 on cup-and-book, 24 on large: 7 equal-stats,
   9 archetype, 14 stat cells). No row changes its verdict and no range's ends move: B1 4 out, B2 6, B3 54, B5 3, B4 / B6
   / B8 / B11 PASS, B9 64 000 replays identical; B7 61 -> 62 out (large NORMAL FLY AGILITY 40.0 -> 39.5 %). How often the
   rule fired in the moved cells (of 200): equal cup-and-book NORMAL JUMP v ROLL 1, FLY v ROLL 1, FLY v HIDE 1, HARD FLY v
@@ -134,10 +141,10 @@ rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4
   FLY 1, FLY v ROLL 1; stat large NORMAL FLY POWER 1, SPEED 10, GUARD 13, AGILITY 3, ROLL POWER 2, HIDE POWER 1, SPEED 3,
   GUARD 18, AGILITY 1, 8/8/8/8 1; HARD FLY SPEED 7, GUARD 3, HIDE SPEED 14, GUARD 6: 116 of the 6000 matches of those
   cells.
-- **R5**: with the default off (committed) every existing test is green, thresholds untouched. With the rule on by
-  default: one red, T60's `theFixSwitchedOffIsTheOldBot` (above); `hardBeatsEasy`, `normalIsBetweenEasyAndHard` (HARD v
-  NORMAL 351 / 268 / 252 / 358 and 247 / 274 / 238 / 286 of 400, identical), `acceptanceHoldsOnASample`,
-  `botsUseTheirSpecialsInWholeMatches` and the goldens green.
+- **R5** (the shipped defaults): every existing test green, thresholds untouched: `hardBeatsEasy` (100 %, 94.5 %),
+  `normalIsBetweenEasyAndHard` (NORMAL v EASY 100 %, 95.5 %; HARD v NORMAL 351 / 268 / 252 / 358 and 247 / 274 / 238 /
+  286 of 400: identical to T57's), `botsUseTheirSpecialsInWholeMatches`, `acceptanceHoldsOnASample`, the goldens and
+  T60's five (its off-position test with the old bot named by both switches, problem 2).
 - **R6** (bot-v-bot, the matches in which the rule fires at least once; measured as the matches with a stretch of the
   threshold or more without an attack with the rule off, where it first fires): equal, archetype and stat cells, four
   arenas, seeds 1..20 (3200 matches per level): 10 s NORMAL 8.4 %, HARD 4.4 %; 12 s 1.8 % / 0.5 %; 15 s 0.4 % / 0.1 %; **16 s
@@ -150,10 +157,9 @@ rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4
   | 0 | before (impatience 0) | 0 of 42 on cup-and-book | 80 | - | = | |
   | 1 | 10 s; impatient: dash at any alignment, walk (routed) at the opponent | 168 / 168 | 53 | 8.4 / 4.4 % | match 11 differs | no: R6 |
   | 2 | 15 s; + walk straight at it when the line touches no object's body | 168 / 168 | 23 | 0.4 / 0.1 % | match 15 differs | no |
-  | 3 | 16 s; + keep out of objects by their bodies only while impatient | 168 / 168 | **10** | 0.34 / 0.06 % | identical | **committed, default off** |
+  | 3 | 16 s; + keep out of objects by their bodies only while impatient | 168 / 168 | **10** | 0.34 / 0.06 % | identical | **kept; on by default since 50907c3** |
 
-  The fourth candidate was not used: the contract ("restarts when the bot attacks") rules out the natural next step for
-  R2, and the default cannot be turned on without a human (problem 1).
+  The fourth candidate was not used (the orchestrator's decision): R2 stays not met, as measured.
 - **Tests** (`DuelIdleTest.kt`, class `DuelImpatienceTest`, 7 new; T60's class untouched): `anImpatientBotAttacksFromWhereItStands`,
   `impatienceRestartsWithEveryAttackAndEveryRound` (and a 5 s tracking loss changes no attack's match time),
   `impatienceOffIsTodaysBot` (the 24 golden setups at today's rules with impatience 0 against the prints recorded on
@@ -161,21 +167,25 @@ rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4
   impatience, asserted; 3 with it, asserted as "no more than 3": R2's 1 % is not met, see above),
   `impatienceDoesNotCarryTheBotOverAnEdge` (bots impatient from their second decision, a still fighter in corners and by
   edges, 4 tuning arenas and 10 random tables, 108 matches of 30 s: it went off 369 times, the bot never; every walk
-  target 2 radii inside), `anImpatientBotBeatsAFighterThatStandsStill` (R1), `theRandomTablesAndTheStandOffSpots` (the
-  generator; R2's 720 and R3 printed before / after; R3's "no spot gets worse" asserted). Every T61 check runs with
-  `IMPATIENT` (16 s at NORMAL and HARD). Duel package 137 tests (130 + 7), green, 80 to 82 s summed on this container
-  (the T61 class 22 s of it). `scripts/verify.sh`: OK in 102 s (core 876, shared 65, android 4 tests, 0 failed; iOS
-  klibs; debug APK).
+  target 2 radii inside), `theDefaultBotBeatsAFighterThatStandsStill` (R1 on `BotTuning()`, and that it is `IMPATIENT`),
+  `theRandomTablesAndTheStandOffSpots` (the generator; R2's 720 and R3 printed before / after; R3's "no spot gets
+  worse" asserted). `IMPATIENT` is 16 s at NORMAL and HARD written out, equal to the default. T60's class: one line,
+  the old bot's tuning in `theFixSwitchedOffIsTheOldBot` (problem 2). Duel package 137 tests (130 + 7), green, 74 to 82 s
+  summed on this container (the T61 class about 22 s).
 - **what a human must decide**:
-  1. **Turn impatience on** (`impatientAfterMs = 16_000` for NORMAL and HARD in `BotSkill`)? It ends the stand-off a
-     child sees on cup-and-book (168 of 168 won) and on most random tables (80 -> 10 of 720 not won), fires in about 0.3
-     % of bot-v-bot matches and moves 30 matrix cells by at most 1 point. It needs T60's `theFixSwitchedOffIsTheOldBot`
-     changed: its `off` tuning must switch impatience off too (`BotTuning(wholeDetour = false)` with NORMAL / HARD
-     `impatientAfterMs = 0`), so that it keeps testing what it names, T60's switch; no threshold changes.
-  2. **R2's last 10**: an impatient bot pushes along its line to the opponent, and on these tables a cup stands right
-     behind the opponent on that line. The next candidate would be to let an impatient bot also go round to a side whose
-     push is not stopped by an object within a few centimetres (choosePush's "blocked" test), or to stay impatient until
-     its plan attacks by itself; the second changes the contract ("restarts with every attack").
+  1. **The correction of T60's off-position test** (problem 2): the orchestrator's reasoning is above and in commit
+     9861ec3; the user may overrule it (then impatience goes back to 0 by default and R1 fails with the defaults).
+  2. **R2's last 10** (an impatient bot pushes along its line to the opponent, and on tables 5, 9, 17, 39 a cup stands
+     right behind the opponent on that line). The next step: an impatient bot goes round to a push that no object
+     blocks (choosePush's "blocked" test: an object within a body's width of the push's line before the edge), and dashes
+     from there. Its cost in the matrix, estimated (not measured): it acts only while impatient, which happens in 116 of
+     the 64 000 matrix matches, and only where an object stops the push; the large table, where 24 of today's 30 moved
+     cells are, has no object, and on cup-and-book the rule fires in 7 of the 1200 matches of its 6 moved cells. So
+     at most those cup-and-book matches change again: the same 6 cells or fewer, by 1 point or less, no verdict. On the
+     random tables it would aim at the 9 slam cases, likely leaving table 42 (out of reach on a book).
   3. The threshold: 16 s is set by the goldens (15.55 s) and R6; a child waits 16 s for the first attack on a stuck
-     table (rounds 52 s on cup-and-book instead of 22 on empty).
-- **cut/deferred**: R2's bar (cut-if-slips: R1 holds on the tuning arenas); the default on; the fourth candidate.
+     table (rounds about 52 s on cup-and-book against 22 on the empty table).
+  4. Still standing off (T60's Result, unchanged): behind the cup (the bot wins on the clock, 42 s without an attack now,
+     59 before), on the book (out of a dash's reach: no impatient dash; 59 s), and day5's three causes (T60's Result 6).
+- **cut/deferred**: R2's bar (cut-if-slips: R1 holds on the tuning arenas, and on 98.6 % of the random tables'
+  matches); the fourth candidate (not used, by decision).
