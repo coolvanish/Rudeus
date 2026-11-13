@@ -163,8 +163,9 @@ rule counts, bot-v-bot stretches of 10 s or more occur in 8.4 % (NORMAL) and 4.4
   edges, 4 tuning arenas and 10 random tables, 108 matches of 30 s: it went off 369 times, the bot never; every walk
   target 2 radii inside), `anImpatientBotBeatsAFighterThatStandsStill` (R1), `theRandomTablesAndTheStandOffSpots` (the
   generator; R2's 720 and R3 printed before / after; R3's "no spot gets worse" asserted). Every T61 check runs with
-  `IMPATIENT` (16 s at NORMAL and HARD). Duel package 137 tests (130 + 7), green, 80 s summed on this container (the
-  T61 class 22 s of it).
+  `IMPATIENT` (16 s at NORMAL and HARD). Duel package 137 tests (130 + 7), green, 80 to 82 s summed on this container
+  (the T61 class 22 s of it). `scripts/verify.sh`: OK in 102 s (core 876, shared 65, android 4 tests, 0 failed; iOS
+  klibs; debug APK).
 - **what a human must decide**:
   1. **Turn impatience on** (`impatientAfterMs = 16_000` for NORMAL and HARD in `BotSkill`)? It ends the stand-off a
      child sees on cup-and-book (168 of 168 won) and on most random tables (80 -> 10 of 720 not won), fires in about 0.3
