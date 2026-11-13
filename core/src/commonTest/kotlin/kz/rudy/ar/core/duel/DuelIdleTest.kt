@@ -242,7 +242,9 @@ class DuelIdleTest {
         // ([goldenMatch]: four arenas, every ability, four level pairs) with today's rules and tuning, the switch off, give
         // the very results, events, decisions and final states recorded on 920ed48 (before T60). PRE_T57_TUNING has it
         // off too, so `theNewRulesSwitchedOffAreThePreviousPhysics` still replays 207acc6 through the new code.
-        val off = BotTuning(wholeDetour = false)
+        // The old bot named by its switches (T61: impatience is a second behaviour on by default, so "the default with
+        // wholeDetour off" is no longer the pre-T60 bot).
+        val off = BotTuning(wholeDetour = false).let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
         for (i in 0 until GOLDEN_MATCHES) {
             val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, off)
             val (summary, expected) = PRE_T60_PRINTS[i]
