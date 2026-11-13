@@ -3,9 +3,14 @@ package kz.rudy.ar.core.duel
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.FighterStats
 import kz.rudy.ar.core.domain.Level
+import kz.rudy.ar.core.domain.LevelObject
+import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.Vec2
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.roundToLong
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -325,3 +330,133 @@ private val PRE_T60_PRINTS: List<Pair<String, Long>> = listOf(
     "a/2/0/2/12928/2/0/3/0/2" to 8229038344571701012L,
     "b/1/2/3/49696/3/0/18/0/7" to -503426696238601224L,
 )
+
+// ---------------------------------------------------------------------------------------------------------------------
+// T61: bot impatience. Random tables (R2), the stand-off spots of T60's Result (R3), and the rule's tests.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * R2's table [seed]: [DuelArenas.EMPTY]'s 60 x 40 cm with 1..3 objects, each a cup (radius 3..5 cm, 9 cm tall: an
+ * OBSTACLE) or a book (8..14 x 6..10 cm, 3 cm: a PLATFORM), wholly on the table and apart from the others (bounding
+ * circles), placed uniformly at random; a draw where [DuelArena.marks] finds no two marks is drawn again. Seeded: the
+ * same table on every run.
+ */
+internal fun randomTable(seed: Long): Level {
+    val rnd = Random(seed)
+    fun between(lo: Float, hi: Float) = lo + (hi - lo) * rnd.nextFloat()
+    while (true) {
+        val wanted = 1 + rnd.nextInt(3)
+        val objects = ArrayList<LevelObject>()
+        val circles = ArrayList<Pair<Vec2, Float>>()
+        var tries = 0
+        while (objects.size < wanted && tries < 50) {
+            tries++
+            val id = "o${objects.size + 1}"
+            val isCup = rnd.nextBoolean()
+            val w = if (isCup) 0f else between(0.08f, 0.14f)
+            val d = if (isCup) 0f else between(0.06f, 0.10f)
+            val r = if (isCup) between(0.03f, 0.05f) else sqrt(w * w + d * d) / 2f
+            val hu = if (isCup) r else w / 2f
+            val hv = if (isCup) r else d / 2f
+            val c = Vec2(between(-0.3f + hu, 0.3f - hu), between(-0.2f + hv, 0.2f - hv))
+            if (circles.any { (o, or) -> o.distanceTo(c) < or + r }) continue
+            objects += if (isCup) cup(id, c, r) else book(id, c, w, d, 0.03f)
+            circles += c to r
+        }
+        val level = DuelArenas.EMPTY.copy(objects = objects)
+        if (DuelArena.marks(level, R, DuelArenas.SEPARATION_M) != null) return level
+    }
+}
+
+/** R2: the 60 random tables, seeds 1..60. */
+internal val RANDOM_TABLES: List<Level> by lazy { (1L..60L).map { randomTable(it) } }
+
+/** [x] metres with three decimals, the same text on every platform: -0.0814f -> "-0.081". */
+private fun m3(x: Float): String {
+    val k = (x.toDouble() * 1000.0).roundToLong()
+    val a = abs(k)
+    return "${if (k < 0L) "-" else ""}${a / 1000L}.${(a % 1000L).toString().padStart(3, '0')}"
+}
+
+/** [level]'s objects in a line: "cup r 4.0 cm at (0.206, 0.111); book 12.0 x 8.0 cm at (...)". */
+internal fun layout(level: Level): String = level.objects.joinToString("; ") { o ->
+    val c = o.footprint.centroid()
+    val at = "(${m3(c.u)}, ${m3(c.v)})"
+    if (o.kind == ObjectKind.OBSTACLE) {
+        "cup r ${DuelMatrix.one(o.footprint.points.maxOf { it.distanceTo(c) } * 100f)} cm at $at"
+    } else {
+        val us = o.footprint.points.map { it.u }
+        val vs = o.footprint.points.map { it.v }
+        "book ${DuelMatrix.one((us.max() - us.min()) * 100f)} x ${DuelMatrix.one((vs.max() - vs.min()) * 100f)} cm at $at"
+    }
+}
+
+/** One R2 match: its table (index into [RANDOM_TABLES]), who played, and the result. */
+internal class TableMatch(val table: Int, val what: String, val result: SideResult)
+
+/**
+ * R2 on [tables]: NORMAL and HARD bots of JUMP, ROLL and FLY against an idle JUMP, both marks, seed 1000 + the table's
+ * index; [tuning] for the bots. 12 matches a table.
+ */
+internal fun randomTableMatches(tuning: BotTuning, tables: IntRange = RANDOM_TABLES.indices): List<TableMatch> {
+    val out = ArrayList<TableMatch>()
+    for (i in tables) for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) for (x in listOf(Ability.JUMP, Ability.ROLL, Ability.FLY)) {
+        for (first in listOf(true, false)) {
+            val r = sideMatch(RANDOM_TABLES[i], level, x, Ability.JUMP, first, 1000L + i, tuning = tuning)
+            out += TableMatch(i, "$level $x ${if (first) "first" else "second"} mark", r)
+        }
+    }
+    return out
+}
+
+/** R2's summary of [ms], then every table with a match the bot did not win, with its layout. */
+internal fun randomTableReport(ms: List<TableMatch>): String {
+    val lost = ms.filter { it.result.winner != BOT }
+    val byTable = lost.groupBy { it.table }
+    val head = "${ms.size} matches: not won ${lost.size} (lost 0:2 on the clock ${lost.count { it.result.lostOnTheClock }}, " +
+        "draws ${lost.count { it.result.winner == null }}), won 2:0 by ring-outs ${ms.count { it.result.cleanWin }}, " +
+        "stand-offs of 10 s or more ${ms.count { it.result.standOffMs >= 10_000L }}, tables with a match not won ${byTable.size}"
+    val tables = byTable.entries.joinToString("\n") { (i, l) ->
+        "  table ${i + 1} [${layout(RANDOM_TABLES[i])}]: " +
+            l.joinToString(", ") { "${it.what} ${it.result.scoreBot}:${it.result.scoreHuman} attacks ${it.result.attacks}" }
+    }
+    return if (tables.isEmpty()) head else "$head\n$tables"
+}
+
+/** R3: T60's three stand-off spots on cup-and-book; the human walks to its spot every 480 ms of FIGHT and stays. */
+internal val STAND_OFF_SPOTS: List<Pair<String, Vec2>> = listOf(
+    "behind the cup" to Vec2(0f, 0.165f), "on the book" to Vec2(0f, -0.11f), "between the cup and the book" to Vec2(0f, 0f),
+)
+
+/** R3 for [tuning]: per spot and level, 8 matches (bot abilities and marks varied). */
+internal fun spotMatches(tuning: BotTuning): List<Triple<String, BotLevel, List<SideResult>>> = STAND_OFF_SPOTS.flatMap { (what, p) ->
+    listOf(BotLevel.NORMAL, BotLevel.HARD).map { level ->
+        Triple(what, level, (0 until 8).map { k ->
+            sideMatch(DuelArenas.CUP_AND_BOOK, level, Ability.entries[k % 4], Ability.entries[(k / 4 + k) % 4], k % 2 == 0, 40L + k, tuning = tuning) { s ->
+                if (s.phase == MatchPhase.FIGHT && (s.duel.timeMs / 48L) % 10L == 0L) mapOf(HUMAN to DuelInput.MoveTo(p)) else emptyMap()
+            }
+        })
+    }
+}
+
+internal fun spotReport(ms: List<Triple<String, BotLevel, List<SideResult>>>): String = ms.joinToString("; ") { (what, level, rs) ->
+    "$what $level: won ${rs.count { it.winner == BOT }} of 8 (by ring-outs ${rs.count { it.cleanWin }}), longest stand-off ${rs.maxOf { it.standOffMs }} ms"
+}
+
+/** T61: a NORMAL or HARD bot that has not attacked for a while attacks from where it stands. */
+class DuelImpatienceTest {
+
+    @Test
+    fun theRandomTablesAndTheStandOffSpots() {
+        // R2's generator: 60 seeded tables, each with 1..3 objects and two marks; the same table every time.
+        assertEquals(60, RANDOM_TABLES.size)
+        for ((i, t) in RANDOM_TABLES.withIndex()) {
+            assertTrue(t.objects.size in 1..3, "table ${i + 1}: ${t.objects.size} objects")
+            assertEquals(null, DuelArena.startProblem(t, DuelArenas.marks(t), R), "table ${i + 1}")
+        }
+        assertEquals(RANDOM_TABLES[6], randomTable(7L))
+        // The measurement (printed): R2's 720 matches and R3's spots with today's bot.
+        println("theRandomTablesAndTheStandOffSpots: R2, today's bot: ${randomTableReport(randomTableMatches(BotTuning()))}")
+        println("theRandomTablesAndTheStandOffSpots: R3, today's bot: ${spotReport(spotMatches(BotTuning()))}")
+    }
+}
