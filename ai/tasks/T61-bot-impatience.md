@@ -171,7 +171,8 @@ off. With these defaults the duel package's 137 tests are green, every existing 
   `theRandomTablesAndTheStandOffSpots` (the generator; R2's 720 and R3 printed before / after; R3's "no spot gets
   worse" asserted). `IMPATIENT` is 16 s at NORMAL and HARD written out, equal to the default. T60's class: one line,
   the old bot's tuning in `theFixSwitchedOffIsTheOldBot` (problem 2). Duel package 137 tests (130 + 7), green, 74 to 82 s
-  summed on this container (the T61 class about 22 s).
+  summed on this container (the T61 class about 22 s). `scripts/verify.sh` with the shipped defaults (f715184): OK in
+  99 s, core 876, shared 65, android 4 tests, 0 failed; iOS klibs; debug APK.
 - **what a human must decide**:
   1. **The correction of T60's off-position test** (problem 2): the orchestrator's reasoning is above and in commit
      9861ec3; the user may overrule it (then impatience goes back to 0 by default and R1 fails with the defaults).
