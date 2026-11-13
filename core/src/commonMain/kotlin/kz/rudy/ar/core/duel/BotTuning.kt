@@ -173,9 +173,9 @@ data class BotTuning(
  *   walks at the opponent and dashes whatever the alignment, as EASY does, until it attacks, whatever stopped its plan
  *   (straight at it when that line touches no object's body; round objects by their bodies, without the clearance).
  *   Only at an opponent it can hit within a dash's height reach. 0 = never (EASY, which dashes at any alignment anyway,
- *   and the bot before T61, bit for bit). **0 for every level by default** (the T61 Result): measured at 16 000 for
- *   NORMAL and HARD; on by default it turns T60's `theFixSwitchedOffIsTheOldBot` red, whose last check is that the
- *   default bot loses to a fighter standing on its cup-and-book mark; that is a human's decision.
+ *   and the bot before T61, bit for bit). NORMAL and HARD: 16 000 (the T61 Result: between bots a stretch that long
+ *   without an attack is rare, 0.34 % of NORMAL and 0.06 % of HARD matches, and the 24 golden matches' longest is 15.55
+ *   s; 30 of the matrix's 320 cells move, by at most 1 point).
  */
 @Serializable
 data class BotSkill(
@@ -239,7 +239,7 @@ data class BotSkill(
             thinkMs = 144, thinkJitterTicks = 2, dashRangeShare = 0.8f, alignCos = 0.8660254f, aimErrorShare = 0.1f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = false, weighsPush = false,
             usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false,
-            jumpChance = 0.5f, reflexChance = 0.3f,
+            jumpChance = 0.5f, reflexChance = 0.3f, impatientAfterMs = 16_000L,
         )
 
         /**
@@ -259,7 +259,7 @@ data class BotSkill(
             thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
             wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
             usesSpecial = true, nearEdgeRadii = 20f, sidesteps = true, counters = true, safeRamsOnly = true,
-            sidestepEdgeRadii = 4f, jumpChance = 1f, reflexes = true, closesInOnJumpers = true,
+            sidestepEdgeRadii = 4f, jumpChance = 1f, reflexes = true, closesInOnJumpers = true, impatientAfterMs = 16_000L,
         )
     }
 }

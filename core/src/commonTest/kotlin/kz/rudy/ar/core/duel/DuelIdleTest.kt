@@ -449,8 +449,8 @@ internal fun spotReport(ms: List<Triple<String, BotLevel, List<SideResult>>>): S
 internal val PATIENT: BotTuning = BotTuning().let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
 
 /**
- * The default tuning with T61's impatience on at NORMAL and HARD, 16 s (the value measured; the default is 0 until a
- * human decides, the brief's Result): every T61 check but the off position runs with it.
+ * T61's impatience on at NORMAL and HARD, 16 s, written out: the default since T61 (`theDefaultBotBeatsAFighterThatStandsStill`
+ * checks that the two are the same); every T61 check but the off position runs with it.
  */
 internal val IMPATIENT: BotTuning = BotTuning().let { it.copy(normal = it.normal.copy(impatientAfterMs = 16_000L), hard = it.hard.copy(impatientAfterMs = 16_000L)) }
 
@@ -570,27 +570,29 @@ class DuelImpatienceTest {
     }
 
     @Test
-    fun anImpatientBotBeatsAFighterThatStandsStill() {
+    fun theDefaultBotBeatsAFighterThatStandsStill() {
         // R1: T60's I1 sample (four tuning arenas, every bot ability against the same ability and against JUMP, both
-        // marks, 3 seeds: 168 per level) with T60's switch off and impatience on (16 s): every match 2:0 by ring-outs.
-        // Without impatience (today's default) both levels lose all 42 on cup-and-book 0:2 on the clock.
+        // marks, 3 seeds: 168 per level) with the defaults (T60's switch off, impatience on at 16 s): every match 2:0 by
+        // ring-outs. Without impatience (the bot before T61) both levels lose all 42 on cup-and-book 0:2 on the clock.
+        assertEquals(IMPATIENT, BotTuning())
+        assertFalse(BotTuning().wholeDetour)
         for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
             val lines = ArrayList<String>()
             for ((name, arena) in ARENAS) {
-                val rs = PAIRS.flatMap { (x, y) -> listOf(true, false).flatMap { first -> (1L..3L).map { seed -> "$x v idle $y first=$first seed $seed" to sideMatch(arena, level, x, y, first, seed, tuning = IMPATIENT) } } }
+                val rs = PAIRS.flatMap { (x, y) -> listOf(true, false).flatMap { first -> (1L..3L).map { seed -> "$x v idle $y first=$first seed $seed" to sideMatch(arena, level, x, y, first, seed, tuning = BotTuning()) } } }
                 lines += "$name ${rs.count { it.second.cleanWin }} of ${rs.size} 2:0 by ring-outs, mean ${rs.sumOf { it.second.matchMs } / rs.size / 100 / 10.0} s"
                 for ((what, r) in rs) assertTrue(r.cleanWin, "$name $level $what: $r")
             }
-            println("anImpatientBotBeatsAFighterThatStandsStill: $level ${lines.joinToString("; ")}")
+            println("theDefaultBotBeatsAFighterThatStandsStill: $level ${lines.joinToString("; ")}")
         }
     }
 
     @Test
     fun aBotBeatsAnIdleFighterOnRandomTables() {
         // R2 on the first 15 of the 60 random tables (180 matches: NORMAL and HARD bots of JUMP, ROLL and FLY against an
-        // idle JUMP, both marks), impatience on (16 s). Without it 28 of these 180 are lost (tables 3, 5, 9 and 13); with it
-        // 3 (tables 5 and 9, the Result says why). R2's bar is 1 % (1 of 180), not met: this pins today's 3, so that a
-        // change that makes it worse turns red. The full 720: `theRandomTablesAndTheStandOffSpots`.
+        // idle JUMP, both marks), the defaults (impatience on, 16 s). Without impatience 28 of these 180 are lost (tables 3,
+        // 5, 9 and 13); with it 3 (tables 5 and 9, the Result says why). R2's bar is 1 % (1 of 180), not met: this pins
+        // today's 3, so that a change that makes it worse turns red. The full 720: `theRandomTablesAndTheStandOffSpots`.
         val ms = randomTableMatches(IMPATIENT, 0 until 15)
         val report = randomTableReport(ms)
         println("aBotBeatsAnIdleFighterOnRandomTables: $report")

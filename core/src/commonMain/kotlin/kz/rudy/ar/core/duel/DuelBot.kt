@@ -97,8 +97,8 @@ data class BotMind(
  * opponent and dashes whatever the alignment, as EASY does, until it attacks; then it plays its plan again. Every safety
  * rule above still holds (no dash off the table or over a hole); against a fighter out of reach (on a book) it keeps its
  * plan. While impatient it walks straight at the opponent when that line touches no object's body, and keeps out of
- * objects by their bodies only (no clearance), so a gap its body fits through is a way. Off (0, every level's default
- * for now) it is the bot before T61, decision for decision.
+ * objects by their bodies only (no clearance), so a gap its body fits through is a way. NORMAL and HARD after 16 s;
+ * off (0, EASY) it is the bot before T61, decision for decision.
  */
 object DuelBot {
 
