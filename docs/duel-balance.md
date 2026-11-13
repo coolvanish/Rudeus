@@ -1,4 +1,94 @@
-# Duel balance (T48, T57, T60)
+# Duel balance (T48, T57, T60, T61)
+
+## T61: bot impatience (ai/tasks/T61-bot-impatience.md)
+
+**The rule** (`BotSkill.impatientAfterMs`, **on by default: 16 000 ms at NORMAL and HARD**, 0 at EASY and in
+`PRE_T57_TUNING`; T60's `wholeDetour` stays off): a NORMAL or HARD bot that has not attacked (a dash, a stomp, a ram)
+for that long of FIGHT, counted between its own decisions of a round, attacks from where it stands: at an opponent it can
+hit within a dash's height reach it dashes whatever the alignment, walks straight at it when that line touches no
+object's body, and keeps out of objects by their bodies only, until it attacks; then it plays its plan again.
+
+**Why 16 s.** Between bots, a stretch without an attack (this rule's clock, not T60's I4, which also restarts on
+closing in) of 10 s or more happens in 8.4 % of NORMAL and 4.4 % of HARD matrix-like matches; 12 s 1.8 / 0.5 %; 15 s 0.4 /
+0.1 %, and 15 s fires in one of the 24 golden matches (its longest stretch: 15.55 s). At 16 s: 0.34 % / 0.06 % (R6).
+
+**T60's off-position test.** `theFixSwitchedOffIsTheOldBot` took "the default tuning with `wholeDetour` off" as the bot
+before T60; with impatience on by default that is no longer that bot, so the test now names it by both switches
+(`wholeDetour = false`, `impatientAfterMs = 0` at NORMAL and HARD). Its assertions, prints and numbers are unchanged
+(the orchestrator's correction of the T61 brief; commit 9861ec3 gives the reasoning).
+
+| # | Criterion | Before T61 (impatience 0) | Shipped (impatience 16 s) |
+|---|---|---|---|
+| R1 | T60's I1 sample, 168 per level, the defaults | 126 of 168 per level: cup-and-book 0 of 42, all 0:2 on the clock | 168 of 168 at both levels, all 2:0 by ring-outs (cup-and-book 52 s a match) |
+| R2 | 60 random tables, 720 matches, not won <= 7 | 80 not won (15 tables) | 10 not won (1.4 %, 5 tables): not met |
+| R3 | behind the cup / on the book / walking back to the middle, won of 8 (NORMAL, HARD) | 8, 8 / 8, 8 / 6, 1 | the same; on the book 4 by ring-outs (was 3) |
+| R4 | `duel matrix --n 200` against T57's table | identical | 290 of 320 cells identical; 30 move by at most 1 point (2 of 200); no verdict changes; B7 61 -> 62 out (large NORMAL FLY AGILITY 40.0 -> 39.5 %); B9 identical |
+| R5 | existing tests | green | green, thresholds untouched (T60's off-position test names its old bot, above) |
+| R6 | bot-v-bot matches in which it fires | - | NORMAL 0.34 %, HARD 0.06 % (3200 each); over the matrix's own seeds about 0.25 / 0.11 % |
+
+R2's last 10 (traced): on tables 5, 9, 17 and 39 every impatient hit slams the fighter into a cup right behind it on
+the bot's line (it never moves toward an edge); on table 42 one hit knocks it onto a book's edge, out of a dash's
+reach, where the bot keeps its plan. The layouts are in the brief's Result.
+
+### The current matrix (the shipped defaults, `duel matrix --n 200`, 2026-11-13)
+
+`duel matrix --n 200 --seed 1 --level normal,hard --arenas empty,cup-and-book,small,large --groups ability,equal,stat
+--step-ms 33 --check-n 200 --check-step-ms 16`, 110 s on 4 threads. Every cell equals T57's table below except the 30
+listed after the verdicts; so T57's per-cell tables, read with those 30 rows, are the current ones.
+
+| # | Criterion | Threshold | Measured | Verdict |
+|---|---|---|---|---|
+| B1 | each ability against the field, all at 5/5/5/5 | 35.0 %..65.0 % | 20.3 %..83.5 % | FAIL (4 out: empty HARD JUMP 24.7, FLY 65.3; small HARD FLY 83.5; large HARD JUMP 20.3: T57's four) |
+| B2 | each ability against the field, archetype stats | 30.0 %..70.0 % | 19.5 %..84.3 % | FAIL (6 out, T57's) |
+| B3 | every matchup, each side, equal stats and archetypes | 25.0 %..75.0 % | 1.0 %..99.0 % | FAIL (54 out) |
+| B4 | rounds ended by the clock, per ability pair | <= 25.0 % (large: <= 40.0 %) | 0.0 %..0.2 % | PASS |
+| B5 | hits per ring-out, per ability pair | 2.0..8.0 (large: ..10.0) | per pair 2.5..8.7 (per arena 3.6..7.2) | FAIL (3 out) |
+| B6 | mean match length, per ability pair | 30.0..120.0 s (small: 20.0..) | per pair 23.7 s..54.7 s | PASS |
+| B7 | a specialist (8/4/4/4) against 5/5/5/5 | 40.0 %..65.0 % | 7.0 %..83.5 % | FAIL (62 out: T57's 61 + large NORMAL FLY AGILITY 39.5 %) |
+| B8 | 8/8/8/8 against 5/5/5/5 | >= 65.0 % | 80.0 %..100.0 % | PASS |
+| B9 | the same matches at another frame length | identical | identical (64 000 replayed at 16 ms) | PASS |
+| B11 | specials per fighter and match (equal stats); no twin pairs | >= 1.0 NORMAL, >= 0.5 HARD; 0 twins | 0.9..3.9 a match; 0 twins | PASS |
+
+Against the field (B1 / B2) seven values move, by at most 0.5 point: equal stats on cup-and-book, NORMAL FLY 51.3 ->
+51.5, ROLL 42.2 -> 42.0, HARD FLY 60.5 -> 60.3, ROLL 37.5 -> 37.7; archetypes on the large table, NORMAL JUMP 42.3 ->
+42.7, ROLL 84.0 -> 84.2, HIDE 38.8 -> 38.3. The 30 cells that differ from T57's, and in how many of their 200 matches the rule fires (measured as a
+stretch of 16 s or more without an attack in T57's match):
+
+| group | arena | level | cell | A's wins of 200, T57 -> now | rule fired (of 200) |
+|---|---|---|---|---|---|
+| equal | cup-and-book | NORMAL | JUMP v ROLL | 118 -> 118 | 1 |
+| equal | cup-and-book | NORMAL | FLY v ROLL | 101 -> 102 | 1 |
+| equal | cup-and-book | NORMAL | FLY v HIDE | 86 -> 86 | 1 |
+| equal | cup-and-book | HARD | FLY v ROLL | 123 -> 122 | 1 |
+| equal | cup-and-book | HARD | FLY v HIDE | 100 -> 100 | 1 |
+| equal | large | NORMAL | JUMP v FLY | 42 -> 42 | 2 |
+| equal | large | NORMAL | ROLL v HIDE | 91 -> 91 | 3 |
+| archetype | cup-and-book | HARD | ROLL v ROLL | 103 -> 103 | 2 |
+| archetype | large | NORMAL | JUMP v FLY | 72 -> 74 | 3 |
+| archetype | large | NORMAL | FLY v FLY | 102 -> 103 | 2 |
+| archetype | large | NORMAL | FLY v ROLL | 22 -> 22 | 1 |
+| archetype | large | NORMAL | FLY v HIDE | 59 -> 61 | 3 |
+| archetype | large | NORMAL | ROLL v HIDE | 177 -> 178 | 9 |
+| archetype | large | NORMAL | HIDE v HIDE | 96 -> 96 | 1 |
+| archetype | large | HARD | JUMP v FLY | 22 -> 22 | 1 |
+| archetype | large | HARD | FLY v ROLL | 41 -> 41 | 1 |
+| stat | large | NORMAL | FLY POWER v 5/5/5/5 | 109 -> 108 | 1 |
+| stat | large | NORMAL | FLY SPEED v 5/5/5/5 | 154 -> 155 | 10 |
+| stat | large | NORMAL | FLY GUARD v 5/5/5/5 | 123 -> 124 | 13 |
+| stat | large | NORMAL | FLY AGILITY v 5/5/5/5 | 80 -> 79 | 3 |
+| stat | large | NORMAL | ROLL POWER v 5/5/5/5 | 140 -> 141 | 2 |
+| stat | large | NORMAL | HIDE POWER v 5/5/5/5 | 69 -> 69 | 1 |
+| stat | large | NORMAL | HIDE SPEED v 5/5/5/5 | 167 -> 167 | 3 |
+| stat | large | NORMAL | HIDE GUARD v 5/5/5/5 | 92 -> 93 | 18 |
+| stat | large | NORMAL | HIDE AGILITY v 5/5/5/5 | 119 -> 119 | 1 |
+| stat | large | NORMAL | HIDE 8/8/8/8 v 5/5/5/5 | 200 -> 200 | 1 |
+| stat | large | HARD | FLY SPEED v 5/5/5/5 | 136 -> 135 | 7 |
+| stat | large | HARD | FLY GUARD v 5/5/5/5 | 114 -> 114 | 3 |
+| stat | large | HARD | HIDE SPEED v 5/5/5/5 | 137 -> 135 | 14 |
+| stat | large | HARD | HIDE GUARD v 5/5/5/5 | 84 -> 82 | 6 |
+
+(Cells where A's wins are unchanged still differ in match time, hits or specials. The T57 table below is history: the
+state from T57 to T60.)
 
 ## T60: a bot must beat a fighter that stands still (ai/tasks/T60-bot-beats-idle.md)
 

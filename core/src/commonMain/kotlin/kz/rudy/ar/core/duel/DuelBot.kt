@@ -26,6 +26,10 @@ enum class BotLevel { EASY, NORMAL, HARD }
  * @property wander EASY: the spot it is wandering to until [wanderUntilMs]; null = not wandering.
  * @property push the direction it settled on pushing the opponent (a unit vector), kept so it does not dither; null
  *   before its first decision.
+ * @property calmMs T61 ([BotSkill.impatientAfterMs]): FIGHT time since the bot last attacked (a dash, a stomp or a ram
+ *   it sent) or since its round began, as of its decision at [calmAtMs] in round [calmRound]; only kept by a level with
+ *   impatience (else 0, -1, 0 for ever). It advances only between two of its own decisions in one round: a countdown, a
+ *   point pause or a tracking loss does not count.
  */
 @Serializable
 data class BotMind(
@@ -35,6 +39,9 @@ data class BotMind(
     val wander: Vec2? = null,
     val wanderUntilMs: Long = 0L,
     val push: Vec2? = null,
+    val calmMs: Long = 0L,
+    val calmAtMs: Long = -1L,
+    val calmRound: Int = 0,
 )
 
 /**
@@ -83,6 +90,15 @@ data class BotMind(
  * reach is the bot's own. Its walk is planned at the ground it will come down on, with the rules off too (the pre-T57
  * code planned a bot in the air at its feet: the one part not behind a switch; the recorded pre-T57 matches of
  * `theNewRulesSwitchedOffAreThePreviousPhysics` do not tell the two apart).
+ *
+ * **T61: impatience** ([BotSkill.impatientAfterMs], NORMAL and HARD). A bot that has not attacked for that long of
+ * FIGHT ([BotMind.calmMs]) attacks from where it stands, whatever stops its plan (a closed gap, a spot inside a cup's
+ * circle, a push into an obstacle): while the opponent can be hit and is within a dash's height reach, it walks at the
+ * opponent and dashes whatever the alignment, as EASY does, until it attacks; then it plays its plan again. Every safety
+ * rule above still holds (no dash off the table or over a hole); against a fighter out of reach (on a book) it keeps its
+ * plan. While impatient it walks straight at the opponent when that line touches no object's body, and keeps out of
+ * objects by their bodies only (no clearance), so a gap its body fits through is a way. NORMAL and HARD after 16 s;
+ * off (0, EASY) it is the bot before T61, decision for decision.
  */
 object DuelBot {
 
@@ -117,22 +133,32 @@ object DuelBot {
             }
             val rng = Rng(mind.rng)
             val answer = Brain(self, foe, arena, boundary, params, physics, tuning, skill, rng, mind, now).reflex() ?: return mind to DuelInput.None
-            return mind.copy(rng = rng.state) to answer
+            val thought = mind.copy(rng = rng.state)
+            // T61: a stomp-jump on a reflex tick is an attack too (the clock is the bot's own, kept only with impatience).
+            return (if (skill.impatientAfterMs > 0L && attacks(answer, self)) thought.copy(calmMs = 0L, calmAtMs = now, calmRound = state.round) else thought) to answer
         }
         val skill = tuning.skill(mind.level)
         val rng = Rng(mind.rng)
         val wait = skill.thinkMs + tuning.tickMs * rng.int(skill.thinkJitterTicks + 1)
-        val brain = Brain(self, foe, arena, boundary, params, physics, tuning, skill, rng, mind, now)
+        // T61: FIGHT time since its last attack, counted between its own decisions of this round.
+        val patience = skill.impatientAfterMs
+        val calm = if (patience > 0L && mind.calmRound == state.round && mind.calmAtMs >= 0L) mind.calmMs + (now - mind.calmAtMs) else 0L
+        val brain = Brain(self, foe, arena, boundary, params, physics, tuning, skill, rng, mind, now, impatient = patience > 0L && calm >= patience)
         val input = brain.checked(brain.think())
-        val next = mind.copy(
+        var next = mind.copy(
             rng = rng.state,
             nextThinkMs = now + maxOf(wait, 1L),
             wander = brain.wander,
             wanderUntilMs = brain.wanderUntilMs,
             push = brain.push ?: mind.push,
         )
+        if (patience > 0L) next = next.copy(calmMs = if (attacks(input, self)) 0L else calm, calmAtMs = now, calmRound = state.round)
         return next to input
     }
+
+    /** T61: [input] from [self] starts an attack: a dash (a counter too), or the special of a JUMP (stomp) or a ROLL (ram). */
+    private fun attacks(input: DuelInput, self: DuelFighter): Boolean =
+        input is DuelInput.Dash || (input == DuelInput.Special && (self.ability == Ability.JUMP || self.ability == Ability.ROLL))
 }
 
 /** SplitMix64 (Steele, Lea, Flood 2014): a few lines, wraps the same way on every platform. Local scratch only. */
@@ -271,6 +297,8 @@ private class Brain(
     val rng: Rng,
     mind: BotMind,
     val now: Long,
+    /** T61: the bot has not attacked for [BotSkill.impatientAfterMs] of FIGHT. */
+    private val impatient: Boolean = false,
 ) {
     var wander: Vec2? = mind.wander
     var wanderUntilMs: Long = mind.wanderUntilMs
@@ -311,13 +339,24 @@ private class Brain(
         }
     }
 
+    /**
+     * T61: impatient ([BotSkill.impatientAfterMs]) at an opponent it can hit and that is within a dash's height reach (a
+     * fighter on a book out of reach is left to the plan: a dash at it could only miss).
+     */
+    private val urge: Boolean = impatient && foeHittable && reachable(dashSpeed, params.dashMs)
+
+    /**
+     * What it keeps out of: every hole (its bounding circle plus [margin]) and every object that blocks at [planH] (its
+     * bounding circle plus the bot's radius and [BotTuning.clearanceRadii]; T61: while it [urge]s, without the clearance,
+     * so that it goes through a gap its body fits through, as between two cups).
+     */
     private val keeps: List<Keep> = arena.objects.mapNotNull { o ->
         val hole = o.kind == ObjectKind.CLIFF
         if (!hole && !Physics.blocks(o, planH, physics)) return@mapNotNull null
         val c = o.footprint.centroid()
         var bare = 0f
         for (p in o.footprint.points) bare = maxOf(bare, p.distanceTo(c))
-        Keep(c, bare + if (hole) margin else r + t.clearanceRadii * r, hole, bare, if (hole) o.footprint else null)
+        Keep(c, bare + if (hole) margin else r + (if (urge) 0f else t.clearanceRadii * r), hole, bare, if (hole) o.footprint else null)
     }
 
     fun think(): DuelInput {
@@ -360,12 +399,12 @@ private class Brain(
         if (shared && canSpecial && foeHittable) special(push)?.let { return it }
 
         // 3. The dash: not at a fighter out of reach in height (T57 rule 3), and against one that could jump over it,
-        // for a bot that knows, only from close.
+        // for a bot that knows, only from close. T61: an impatient bot dashes whatever the alignment.
         if (canDash && foeHittable && gap <= dashReach * skill.dashRangeShare && clearLine(me, them) &&
             reachable(dashSpeed, params.dashMs) && !jumpable()
         ) {
             var dir = aim()
-            if (skill.alignCos <= -1f || dir.dot(push) >= skill.alignCos) {
+            if (skill.alignCos <= -1f || urge || dir.dot(push) >= skill.alignCos) {
                 if (skill.aimErrorShare > 0f) dir = (dir + dir.perp() * (rng.signed() * skill.aimErrorShare)).normalized()
                 if (rng.chance(skill.wrongWayChance)) dir = randomDirection()
                 if (dir != Vec2.ZERO && dashSafe(dir, dashReach)) return DuelInput.Dash(dir)
@@ -376,9 +415,11 @@ private class Brain(
         if (!shared && canSpecial && foeHittable) special(push)?.let { return it }
 
         // 5. Walk: to the spot behind the opponent, or wherever it wanders; when no spot round it is within height reach
-        // (T57), at it, up onto whatever it stands on.
+        // (T57), at it, up onto whatever it stands on. T61: an impatient bot walks at it, straight when that line touches
+        // nothing that blocks (the keep-out circles' margins would send it round a cup it stands next to).
+        if (urge && keeps.none { k -> near(me, them, k.c, k.bare + r) }) return DuelInput.MoveTo(safe(them))
         val behind = them - push * (contact + t.standoffGapRadii * r)
-        val goal = wanderGoal() ?: if (climbing && !fromSpot(behind)) them else behind
+        val goal = wanderGoal() ?: if (urge || (climbing && !fromSpot(behind))) them else behind
         return DuelInput.MoveTo(route(goal))
     }
 

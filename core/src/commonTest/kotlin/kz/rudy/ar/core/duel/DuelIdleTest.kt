@@ -3,9 +3,14 @@ package kz.rudy.ar.core.duel
 import kz.rudy.ar.core.domain.Ability
 import kz.rudy.ar.core.domain.FighterStats
 import kz.rudy.ar.core.domain.Level
+import kz.rudy.ar.core.domain.LevelObject
+import kz.rudy.ar.core.domain.ObjectKind
 import kz.rudy.ar.core.domain.Vec2
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.roundToLong
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -20,10 +25,12 @@ private const val HUMAN = "human"
 private const val STAND_OFF_LIMIT_MS = 10_000L
 
 /**
- * The bot with T60's fix on ([BotTuning.wholeDetour]). It is off by default: on, `normalIsBetweenEasyAndHard` fails its
- * floor in the cup-and-book ROLL cell (the brief's Result), and turning it on is a human's decision.
+ * The bot with T60's fix on ([BotTuning.wholeDetour]) and nothing else that ends a stand-off: T61's impatience, on by
+ * default since T61, off at NORMAL and HARD, so that T60's tests measure the detour fix alone. `wholeDetour` is off by
+ * default: on, `normalIsBetweenEasyAndHard` fails its floor in the cup-and-book ROLL cell (the brief's Result), and
+ * turning it on is a human's decision.
  */
-private val FIXED = BotTuning(wholeDetour = true)
+private val FIXED = BotTuning(wholeDetour = true).let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
 
 /**
  * One match of a bot ([BOT]) against a side the test plays ([HUMAN]), and what came of it.
@@ -237,12 +244,16 @@ class DuelIdleTest {
         // ([goldenMatch]: four arenas, every ability, four level pairs) with today's rules and tuning, the switch off, give
         // the very results, events, decisions and final states recorded on 920ed48 (before T60). PRE_T57_TUNING has it
         // off too, so `theNewRulesSwitchedOffAreThePreviousPhysics` still replays 207acc6 through the new code.
-        val off = BotTuning(wholeDetour = false)
-        for (i in 0 until GOLDEN_MATCHES) {
-            val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, off)
+        // The old bot named by its switches (T61: impatience is a second behaviour on by default, so "the default with
+        // wholeDetour off" is no longer the pre-T60 bot).
+        val off = BotTuning(wholeDetour = false).let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
+        // The prints on the old bot, and on the shipped default: it plays these 24 bot-v-bot matches exactly as the old bot
+        // does (T61's rule never fires in them: their longest stretch without an attack is 15.55 s).
+        for ((name, tuning) in listOf("the old bot" to off, "the shipped default" to BotTuning())) for (i in 0 until GOLDEN_MATCHES) {
+            val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, tuning)
             val (summary, expected) = PRE_T60_PRINTS[i]
-            assertEquals(summary, "${r.winner}/${r.scoreA}/${r.scoreB}/${r.rounds}/${r.matchMs}/${r.ringOuts}/${r.timeouts}/${r.hits}/${r.wallSlams}/${r.specials}", "match $i")
-            assertEquals(expected, fp, "match $i: the same events, decisions and final state")
+            assertEquals(summary, "${r.winner}/${r.scoreA}/${r.scoreB}/${r.rounds}/${r.matchMs}/${r.ringOuts}/${r.timeouts}/${r.hits}/${r.wallSlams}/${r.specials}", "$name, match $i")
+            assertEquals(expected, fp, "$name, match $i: the same events, decisions and final state")
         }
         assertFalse(PRE_T57_TUNING.wholeDetour)
         // And the switch is the fix: off, a NORMAL bot loses to a fighter standing on its mark of cup-and-book without a
@@ -325,3 +336,358 @@ private val PRE_T60_PRINTS: List<Pair<String, Long>> = listOf(
     "a/2/0/2/12928/2/0/3/0/2" to 8229038344571701012L,
     "b/1/2/3/49696/3/0/18/0/7" to -503426696238601224L,
 )
+
+// ---------------------------------------------------------------------------------------------------------------------
+// T61: bot impatience. Random tables (R2), the stand-off spots of T60's Result (R3), and the rule's tests.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * R2's table [seed]: [DuelArenas.EMPTY]'s 60 x 40 cm with 1..3 objects, each a cup (radius 3..5 cm, 9 cm tall: an
+ * OBSTACLE) or a book (8..14 x 6..10 cm, 3 cm: a PLATFORM), wholly on the table and apart from the others (bounding
+ * circles), placed uniformly at random; a draw where [DuelArena.marks] finds no two marks is drawn again. Seeded: the
+ * same table on every run.
+ */
+internal fun randomTable(seed: Long): Level {
+    val rnd = Random(seed)
+    fun between(lo: Float, hi: Float) = lo + (hi - lo) * rnd.nextFloat()
+    while (true) {
+        val wanted = 1 + rnd.nextInt(3)
+        val objects = ArrayList<LevelObject>()
+        val circles = ArrayList<Pair<Vec2, Float>>()
+        var tries = 0
+        while (objects.size < wanted && tries < 50) {
+            tries++
+            val id = "o${objects.size + 1}"
+            val isCup = rnd.nextBoolean()
+            val w = if (isCup) 0f else between(0.08f, 0.14f)
+            val d = if (isCup) 0f else between(0.06f, 0.10f)
+            val r = if (isCup) between(0.03f, 0.05f) else sqrt(w * w + d * d) / 2f
+            val hu = if (isCup) r else w / 2f
+            val hv = if (isCup) r else d / 2f
+            val c = Vec2(between(-0.3f + hu, 0.3f - hu), between(-0.2f + hv, 0.2f - hv))
+            if (circles.any { (o, or) -> o.distanceTo(c) < or + r }) continue
+            objects += if (isCup) cup(id, c, r) else book(id, c, w, d, 0.03f)
+            circles += c to r
+        }
+        val level = DuelArenas.EMPTY.copy(objects = objects)
+        if (DuelArena.marks(level, R, DuelArenas.SEPARATION_M) != null) return level
+    }
+}
+
+/** R2: the 60 random tables, seeds 1..60. */
+internal val RANDOM_TABLES: List<Level> by lazy { (1L..60L).map { randomTable(it) } }
+
+/** [x] metres with three decimals, the same text on every platform: -0.0814f -> "-0.081". */
+private fun m3(x: Float): String {
+    val k = (x.toDouble() * 1000.0).roundToLong()
+    val a = abs(k)
+    return "${if (k < 0L) "-" else ""}${a / 1000L}.${(a % 1000L).toString().padStart(3, '0')}"
+}
+
+/** [level]'s objects in a line: "cup r 4.0 cm at (0.206, 0.111); book 12.0 x 8.0 cm at (...)". */
+internal fun layout(level: Level): String = level.objects.joinToString("; ") { o ->
+    val c = o.footprint.centroid()
+    val at = "(${m3(c.u)}, ${m3(c.v)})"
+    if (o.kind == ObjectKind.OBSTACLE) {
+        "cup r ${DuelMatrix.one(o.footprint.points.maxOf { it.distanceTo(c) } * 100f)} cm at $at"
+    } else {
+        val us = o.footprint.points.map { it.u }
+        val vs = o.footprint.points.map { it.v }
+        "book ${DuelMatrix.one((us.max() - us.min()) * 100f)} x ${DuelMatrix.one((vs.max() - vs.min()) * 100f)} cm at $at"
+    }
+}
+
+/** One R2 match: its table (index into [RANDOM_TABLES]), who played, and the result. */
+internal class TableMatch(val table: Int, val what: String, val result: SideResult)
+
+/**
+ * R2 on [tables]: NORMAL and HARD bots of JUMP, ROLL and FLY against an idle JUMP, both marks, seed 1000 + the table's
+ * index; [tuning] for the bots. 12 matches a table.
+ */
+internal fun randomTableMatches(tuning: BotTuning, tables: IntRange = RANDOM_TABLES.indices): List<TableMatch> {
+    val out = ArrayList<TableMatch>()
+    for (i in tables) for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) for (x in listOf(Ability.JUMP, Ability.ROLL, Ability.FLY)) {
+        for (first in listOf(true, false)) {
+            val r = sideMatch(RANDOM_TABLES[i], level, x, Ability.JUMP, first, 1000L + i, tuning = tuning)
+            out += TableMatch(i, "$level $x ${if (first) "first" else "second"} mark", r)
+        }
+    }
+    return out
+}
+
+/** R2's summary of [ms], then every table with a match the bot did not win, with its layout. */
+internal fun randomTableReport(ms: List<TableMatch>): String {
+    val lost = ms.filter { it.result.winner != BOT }
+    val byTable = lost.groupBy { it.table }
+    val head = "${ms.size} matches: not won ${lost.size} (lost 0:2 on the clock ${lost.count { it.result.lostOnTheClock }}, " +
+        "draws ${lost.count { it.result.winner == null }}), won 2:0 by ring-outs ${ms.count { it.result.cleanWin }}, " +
+        "stand-offs of 10 s or more ${ms.count { it.result.standOffMs >= 10_000L }}, tables with a match not won ${byTable.size}"
+    val tables = byTable.entries.joinToString("\n") { (i, l) ->
+        "  table ${i + 1} [${layout(RANDOM_TABLES[i])}]: " +
+            l.joinToString(", ") { "${it.what} ${it.result.scoreBot}:${it.result.scoreHuman} attacks ${it.result.attacks}" }
+    }
+    return if (tables.isEmpty()) head else "$head\n$tables"
+}
+
+/** R3: T60's three stand-off spots on cup-and-book; the human walks to its spot every 480 ms of FIGHT and stays. */
+internal val STAND_OFF_SPOTS: List<Pair<String, Vec2>> = listOf(
+    "behind the cup" to Vec2(0f, 0.165f), "on the book" to Vec2(0f, -0.11f), "between the cup and the book" to Vec2(0f, 0f),
+)
+
+/** R3 for [tuning]: per spot and level, 8 matches (bot abilities and marks varied). */
+internal fun spotMatches(tuning: BotTuning): List<Triple<String, BotLevel, List<SideResult>>> = STAND_OFF_SPOTS.flatMap { (what, p) ->
+    listOf(BotLevel.NORMAL, BotLevel.HARD).map { level ->
+        Triple(what, level, (0 until 8).map { k ->
+            sideMatch(DuelArenas.CUP_AND_BOOK, level, Ability.entries[k % 4], Ability.entries[(k / 4 + k) % 4], k % 2 == 0, 40L + k, tuning = tuning) { s ->
+                if (s.phase == MatchPhase.FIGHT && (s.duel.timeMs / 48L) % 10L == 0L) mapOf(HUMAN to DuelInput.MoveTo(p)) else emptyMap()
+            }
+        })
+    }
+}
+
+internal fun spotReport(ms: List<Triple<String, BotLevel, List<SideResult>>>): String = ms.joinToString("; ") { (what, level, rs) ->
+    "$what $level: won ${rs.count { it.winner == BOT }} of 8 (by ring-outs ${rs.count { it.cleanWin }}), longest stand-off ${rs.maxOf { it.standOffMs }} ms"
+}
+
+/** The default tuning with T61's impatience off (NORMAL and HARD at 0): the bot before T61. */
+internal val PATIENT: BotTuning = BotTuning().let { it.copy(normal = it.normal.copy(impatientAfterMs = 0L), hard = it.hard.copy(impatientAfterMs = 0L)) }
+
+/**
+ * T61's impatience on at NORMAL and HARD, 16 s, written out: the default since T61 (`theDefaultBotBeatsAFighterThatStandsStill`
+ * checks that the two are the same); every T61 check but the off position runs with it.
+ */
+internal val IMPATIENT: BotTuning = BotTuning().let { it.copy(normal = it.normal.copy(impatientAfterMs = 16_000L), hard = it.hard.copy(impatientAfterMs = 16_000L)) }
+
+/** T61: a NORMAL or HARD bot that has not attacked for a while attacks from where it stands. */
+class DuelImpatienceTest {
+
+    /** A FIGHT 10 s into round 1 on [arena]: "me" (slot a, [me]) at [pa], an idle [foe] "foe" at [pb], both standing. */
+    private fun fight(arena: Level, me: Ability, pa: Vec2, pb: Vec2, foe: Ability = Ability.JUMP): DuelMatchState {
+        val s = DuelMatch.start(Contestant("me", FighterStats.BALANCED, me), Contestant("foe", FighterStats.BALANCED, foe), arena, DuelArenas.marks(arena))
+        fun place(f: DuelFighter, p: Vec2) = f.copy(body = f.body.copy(state = f.body.state.copy(pos = p, h = kz.rudy.ar.core.physics.Physics.groundHeight(arena, p, 0f) ?: 0f)))
+        return s.copy(phase = MatchPhase.FIGHT, phaseLeftMs = 50_000L, duel = s.duel.copy(a = place(s.duel.a, pa), b = place(s.duel.b, pb), timeMs = 10_000L))
+    }
+
+    /** A fresh mind of [level] that has gone [calmMs] without attacking, as of now (10 s into round 1). */
+    private fun calm(level: BotLevel, calmMs: Long) = DuelBot.mind(level, 1L).copy(calmMs = calmMs, calmAtMs = 10_000L, calmRound = 1)
+
+    @Test
+    fun anImpatientBotAttacksFromWhereItStands() {
+        val arena = DuelArenas.EMPTY
+        val t = IMPATIENT
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
+            val wait = t.skill(level).impatientAfterMs
+            // Beside the opponent, in a dash's range, 90° off the push (toward the bottom edge): the plan walks round it;
+            // after `impatientAfterMs` without an attack the bot dashes at it from where it stands.
+            val beside = fight(arena, Ability.FLY, Vec2(0f, 0f), Vec2(0.07f, 0f))
+            val patient = DuelBot.decide(calm(level, wait - 48L), "me", beside, arena, tuning = t).second
+            assertTrue(patient !is DuelInput.Dash, "$level, patient: $patient")
+            val urged = DuelBot.decide(calm(level, wait), "me", beside, arena, tuning = t)
+            assertTrue(urged.second is DuelInput.Dash && (urged.second as DuelInput.Dash).dir!!.u > 0.9f, "$level, impatient: ${urged.second}")
+            assertEquals(0L to 10_000L, urged.first.calmMs to urged.first.calmAtMs, "$level: the attack restarts its clock")
+            // Out of range: it walks at the opponent, not to the spot behind it.
+            val far = fight(arena, Ability.FLY, Vec2(-0.1f, 0f), Vec2(0.15f, 0.05f))
+            val walk = DuelBot.decide(calm(level, wait), "me", far, arena, tuning = t).second
+            assertEquals(DuelInput.MoveTo(Vec2(0.15f, 0.05f)), walk, "$level")
+            assertTrue(DuelBot.decide(calm(level, 0L), "me", far, arena, tuning = t).second != walk, "$level: the plan goes behind it")
+            // An opponent on the book, out of a dash's height reach: no dash that could only miss; the plan, unchanged.
+            val onBook = fight(DuelArenas.CUP_AND_BOOK, Ability.FLY, Vec2(0f, -0.02f), Vec2(0f, -0.09f))
+            assertEquals(0.03f, onBook.duel.b.body.state.h)
+            assertEquals(
+                DuelBot.decide(calm(level, 0L), "me", onBook, DuelArenas.CUP_AND_BOOK, tuning = t).second,
+                DuelBot.decide(calm(level, wait), "me", onBook, DuelArenas.CUP_AND_BOOK, tuning = t).second, "$level",
+            )
+        }
+        // EASY has no impatience (it dashes at any alignment anyway); its mind keeps no clock.
+        assertEquals(0L, t.easy.impatientAfterMs)
+        val easy = DuelBot.decide(DuelBot.mind(BotLevel.EASY, 1L), "me", fight(arena, Ability.FLY, Vec2(-0.1f, 0f), Vec2(0.15f, 0.05f)), arena, tuning = t).first
+        assertEquals(Triple(0L, -1L, 0), Triple(easy.calmMs, easy.calmAtMs, easy.calmRound))
+    }
+
+    @Test
+    fun impatienceRestartsWithEveryAttackAndEveryRound() {
+        // NORMAL JUMP against a fighter standing on its mark of cup-and-book (T60's case: the plan never attacks). Its
+        // clock counts FIGHT time between its own decisions: the first attack of every round comes once it has gone
+        // `impatientAfterMs` without one (within a decision's wait), and every attack restarts it.
+        val arena = DuelArenas.CUP_AND_BOOK
+        val t = IMPATIENT
+        val wait = t.normal.impatientAfterMs
+        val think = t.normal.let { it.thinkMs + t.tickMs * it.thinkJitterTicks }
+        val starts = ArrayList<Long>()
+        fun run(lossAtMs: Long?): List<Triple<Long, Int, BotMind>> {
+            val start = RunnerState(
+                DuelMatch.start(Contestant("bot", FighterStats.BALANCED, Ability.JUMP), Contestant("idle", FighterStats.BALANCED, Ability.JUMP), arena, DuelArenas.marks(arena)),
+                botA = DuelBot.mind(BotLevel.NORMAL, 1L),
+            )
+            var s = start
+            val attacks = ArrayList<Triple<Long, Int, BotMind>>()
+            var lost = false
+            while (s.match.phase != MatchPhase.RESULT) {
+                if (lossAtMs != null && !lost && s.match.duel.timeMs >= lossAtMs) {
+                    lost = true
+                    // 5 s of tracking loss in the middle of a stretch without an attack: no clock runs, the bot's neither.
+                    repeat(150) { s = DuelRunner.step(s, arena, 33L, tracking = false, tuning = t).state }
+                }
+                val before = s
+                val out = DuelRunner.step(s, arena, 33L, tuning = t)
+                if (lossAtMs == null) for (e in out.events) if (e is MatchEvent.RoundStarted) starts += e.atMs
+                for (d in out.decisions) {
+                    if (d.input is DuelInput.Dash || d.input == DuelInput.Special) attacks += Triple(d.atMs, before.match.round, out.state.botA!!)
+                }
+                if (s.match.phase != MatchPhase.FIGHT && out.state.match.phase != MatchPhase.FIGHT) assertEquals(s.botA, out.state.botA, "no decision outside FIGHT")
+                s = out.state
+            }
+            return attacks
+        }
+        val attacks = run(null)
+        assertTrue(attacks.isNotEmpty() && starts.size >= 2)
+        for (a in attacks) assertEquals(0L to a.first, a.third.calmMs to a.third.calmAtMs, "an attack at ${a.first} restarts the clock")
+        for ((round, at) in starts.withIndex()) {
+            val first = attacks.firstOrNull { it.second == round + 1 } ?: continue
+            assertTrue(first.first - at in wait..wait + 2 * think, "round ${round + 1}: first attack ${first.first - at} ms in")
+        }
+        assertEquals(1, attacks.first().third.calmRound)
+        assertTrue(attacks.any { it.second == 2 && it.third.calmRound == 2 }, "round 2 has its own clock")
+        // A tracking loss 4 s into the first round changes nothing in match time.
+        assertEquals(attacks.map { it.first to it.second }, run(starts.first() + 4_000L).map { it.first to it.second })
+        println("impatienceRestartsWithEveryAttackAndEveryRound: rounds start at $starts; attacks at ${attacks.map { "${it.first} (round ${it.second})" }}")
+    }
+
+    @Test
+    fun impatienceOffIsTodaysBot() {
+        // `impatientAfterMs` 0 is the bot before T61, decision for decision: the 24 golden match setups at today's rules
+        // with impatience off give the prints recorded on 920ed48 (the T57 bot; T60's switch is off by default), and its
+        // minds keep no clock. PRE_T57_TUNING sets 0 explicitly, so the goldens replay 207acc6 through the new code.
+        for (i in 0 until GOLDEN_MATCHES) {
+            val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, PATIENT)
+            val (summary, expected) = PRE_T60_PRINTS[i]
+            assertEquals(summary, "${r.winner}/${r.scoreA}/${r.scoreB}/${r.rounds}/${r.matchMs}/${r.ringOuts}/${r.timeouts}/${r.hits}/${r.wallSlams}/${r.specials}", "match $i")
+            assertEquals(expected, fp, "match $i: the same events, decisions and final state")
+        }
+        for (level in BotLevel.entries) assertEquals(0L, PRE_T57_TUNING.skill(level).impatientAfterMs, "$level")
+        val minds = (0L until 3L).map { seed ->
+            var s = RunnerState(DuelMatch.start(Contestant("a", FighterStats.BALANCED, Ability.JUMP), Contestant("b", FighterStats.BALANCED, Ability.ROLL), DuelArenas.EMPTY, DuelArenas.marks(DuelArenas.EMPTY)), DuelBot.mind(BotLevel.NORMAL, seed), DuelBot.mind(BotLevel.HARD, seed + 7L))
+            while (s.match.phase != MatchPhase.RESULT) s = DuelRunner.step(s, DuelArenas.EMPTY, 33L, tuning = PATIENT).state
+            s.botA!! to s.botB!!
+        }
+        for ((a, b) in minds) for (m in listOf(a, b)) assertEquals(Triple(0L, -1L, 0), Triple(m.calmMs, m.calmAtMs, m.calmRound))
+    }
+
+    @Test
+    fun theDefaultBotBeatsAFighterThatStandsStill() {
+        // R1: T60's I1 sample (four tuning arenas, every bot ability against the same ability and against JUMP, both
+        // marks, 3 seeds: 168 per level) with the defaults (T60's switch off, impatience on at 16 s): every match 2:0 by
+        // ring-outs. Without impatience (the bot before T61) both levels lose all 42 on cup-and-book 0:2 on the clock.
+        assertEquals(IMPATIENT, BotTuning())
+        assertFalse(BotTuning().wholeDetour)
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
+            val lines = ArrayList<String>()
+            for ((name, arena) in ARENAS) {
+                val rs = PAIRS.flatMap { (x, y) -> listOf(true, false).flatMap { first -> (1L..3L).map { seed -> "$x v idle $y first=$first seed $seed" to sideMatch(arena, level, x, y, first, seed, tuning = BotTuning()) } } }
+                lines += "$name ${rs.count { it.second.cleanWin }} of ${rs.size} 2:0 by ring-outs, mean ${rs.sumOf { it.second.matchMs } / rs.size / 100 / 10.0} s"
+                for ((what, r) in rs) assertTrue(r.cleanWin, "$name $level $what: $r")
+            }
+            println("theDefaultBotBeatsAFighterThatStandsStill: $level ${lines.joinToString("; ")}")
+        }
+    }
+
+    @Test
+    fun aBotBeatsAnIdleFighterOnRandomTables() {
+        // R2 on the first 15 of the 60 random tables (180 matches: NORMAL and HARD bots of JUMP, ROLL and FLY against an
+        // idle JUMP, both marks), the defaults (impatience on, 16 s). Without impatience 28 of these 180 are lost (tables 3,
+        // 5, 9 and 13); with it 3 (tables 5 and 9, the Result says why). R2's bar is 1 % (1 of 180), not met: this pins
+        // today's 3, so that a change that makes it worse turns red. The full 720: `theRandomTablesAndTheStandOffSpots`.
+        val ms = randomTableMatches(IMPATIENT, 0 until 15)
+        val report = randomTableReport(ms)
+        println("aBotBeatsAnIdleFighterOnRandomTables: $report")
+        assertTrue(ms.count { it.result.winner != BOT } <= 3, report)
+        assertEquals(28, randomTableMatches(PATIENT, 0 until 15).count { it.result.winner != BOT }, "the sample's stand-offs without impatience")
+    }
+
+    @Test
+    fun impatienceDoesNotCarryTheBotOverAnEdge() {
+        // The case where the safety check decides. A HARD bot 3.5 cm from the bottom edge, impatient; a ROLL opponent 5 cm
+        // away beside it along the edge (out of reach of the in-path excuse: the dash would meet it after more than half its
+        // reach), sliding toward the edge at 1.5 m/s. HARD leads its aim, so its dash would go down-right and end past the
+        // edge: it must not start it (dash end margin, `dashSafe`), impatient or not. The same opponent standing still gets
+        // the dash (it ends 3.5 cm inside): the bot is impatient there and the check is what refuses.
+        val arena = DuelArenas.EMPTY
+        val t = IMPATIENT
+        val me = Vec2(0f, -0.165f)
+        val them = Vec2(0.11f, -0.165f)
+        val knock = Vec2(0f, -1.5f)
+        val still = fight(arena, Ability.FLY, me, them, foe = Ability.ROLL)
+        val sliding = still.copy(duel = still.duel.copy(b = still.duel.b.copy(knock = knock)))
+        val mind = calm(BotLevel.HARD, t.hard.impatientAfterMs)
+        assertEquals(DuelInput.Dash(Vec2(1f, 0f)), DuelBot.decide(mind, "me", still, arena, tuning = t).second, "the impatient dash at a fighter in line")
+        // Where the led dash would end (the bot's aim: the opponent plus its knock x knockLeadShare over the time to meet).
+        val p = DuelParams.DEFAULT
+        val speed = p.dashSpeedMpsFor(FighterStats.BALANCED)
+        val gap = me.distanceTo(them) - 2f * R
+        val aimAt = them + knock * t.knockLeadShare * (gap / speed * t.leadShare)
+        val end = me + (aimAt - me).normalized() * (speed * p.dashMs / 1000f)
+        assertTrue(!arena.boundary!!.contains(end), "the led dash would end off the table at $end")
+        val answer = DuelBot.decide(mind, "me", sliding, arena, tuning = t).second
+        assertTrue(answer !is DuelInput.Dash, "an impatient bot started a dash that ends off the table: $answer")
+        // And in whole matches: a NORMAL and a HARD bot that grow impatient after 48 ms (so every one of its decisions is
+        // impatient) against a fighter that stands still in a corner or by an edge, on the four tuning arenas and ten
+        // random tables, 30 s: it never rings itself out and never sends a walk target off the table; the opponent goes off
+        // again and again. (Against a still fighter every dash hits, so this half alone could not catch a missing check.)
+        val rules = DuelRules(pointsToWin = 1000, maxRounds = 1000)
+        val eager = BotTuning().let { it.copy(normal = it.normal.copy(impatientAfterMs = 48L), hard = it.hard.copy(impatientAfterMs = 48L)) }
+        var outs = 0
+        var played = 0
+        val arenas = ARENAS.values.toList() + RANDOM_TABLES.take(10)
+        for ((k, arena) in arenas.withIndex()) {
+            val pts = arena.boundary!!.points
+            val (u0, u1, v0, v1) = listOf(pts.minOf { it.u }, pts.maxOf { it.u }, pts.minOf { it.v }, pts.maxOf { it.v })
+            val spots = listOf(Vec2(u1 - 0.05f, v1 - 0.05f), Vec2(u0 + 0.05f, v0 + 0.05f), Vec2(0f, v0 + 0.05f), Vec2(u1 - 0.05f, 0f))
+            for ((j, spot) in spots.withIndex()) for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
+                val marks = DuelArenas.marks(arena).first to spot
+                if (DuelArena.startProblem(arena, marks, R) != null) continue
+                val bot = Contestant("bot", FighterStats.BALANCED, Ability.entries[(k + j) % 4])
+                val start = RunnerState(DuelMatch.start(bot, Contestant("idle", FighterStats.BALANCED, Ability.JUMP), arena, marks, rules), botA = DuelBot.mind(level, 10L * k + j))
+                var s = start
+                while (s.match.duel.timeMs < 30_000L) {
+                    val out = DuelRunner.step(s, arena, 33L, rules = rules, tuning = eager)
+                    for (e in out.events) if (e is MatchEvent.Fight && e.event is DuelEvent.RingOut) {
+                        val id = (e.event as DuelEvent.RingOut).id
+                        assertTrue(id != "bot", "arena $k, spot $j, $level: the impatient bot left the table at ${e.event.atMs} ms")
+                        outs++
+                    }
+                    for (d in out.decisions) {
+                        val input = d.input
+                        if (input is DuelInput.MoveTo) assertTrue(DuelArena.insideDistance(arena.boundary!!, input.target) >= 2f * R - 1e-4f, "arena $k, spot $j, $level: target ${input.target}")
+                    }
+                    s = out.state
+                }
+                played++
+            }
+        }
+        println("impatienceDoesNotCarryTheBotOverAnEdge: $played matches of 30 s, the still fighter pushed off $outs times, the bot never")
+        assertTrue(played >= 80 && outs > played, "$played matches, $outs ring-outs")
+    }
+
+    @Test
+    fun theRandomTablesAndTheStandOffSpots() {
+        // R2's generator: 60 seeded tables, each with 1..3 objects and two marks; the same table every time.
+        assertEquals(60, RANDOM_TABLES.size)
+        for ((i, t) in RANDOM_TABLES.withIndex()) {
+            assertTrue(t.objects.size in 1..3, "table ${i + 1}: ${t.objects.size} objects")
+            assertEquals(null, DuelArena.startProblem(t, DuelArenas.marks(t), R), "table ${i + 1}")
+        }
+        assertEquals(RANDOM_TABLES[6], randomTable(7L))
+        // The measurement (printed): R2's 720 matches and R3's spots, impatience off (before T61) and on (the defaults).
+        println("theRandomTablesAndTheStandOffSpots: R2 before T61: ${randomTableReport(randomTableMatches(PATIENT))}")
+        println("theRandomTablesAndTheStandOffSpots: R2 with impatience (16 s): ${randomTableReport(randomTableMatches(IMPATIENT))}")
+        val before = spotMatches(PATIENT)
+        val after = spotMatches(IMPATIENT)
+        println("theRandomTablesAndTheStandOffSpots: R3 before T61: ${spotReport(before)}")
+        println("theRandomTablesAndTheStandOffSpots: R3 with impatience (16 s): ${spotReport(after)}")
+        // R3: no spot gets worse (as many matches won, as many by ring-outs).
+        for ((b, a) in before.zip(after)) {
+            assertTrue(a.third.count { it.winner == BOT } >= b.third.count { it.winner == BOT }, "${a.first} ${a.second}: won fewer")
+            assertTrue(a.third.count { it.cleanWin } >= b.third.count { it.cleanWin }, "${a.first} ${a.second}: fewer by ring-outs")
+        }
+    }
+}
