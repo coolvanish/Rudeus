@@ -1,4 +1,107 @@
-# Duel balance (T48, T57)
+# Duel balance (T48, T57, T60)
+
+## T60: a bot must beat a fighter that stands still (ai/tasks/T60-bot-beats-idle.md)
+
+**Found by T58**: on `DuelArenas.CUP_AND_BOOK` a NORMAL or HARD bot never scored against a fighter that sends no
+input. **The cause** (`Brain.around`, the detour round the opponent): the push from the mark goes toward the bottom edge,
+so the spot to dash from is above the fighter, against the cup's keep-out circle; the shorter way there runs between
+the fighter and the cup (13.6 cm apart, 16.6 cm needed), and the side of the detour, picked anew on every decision by
+its next waypoint alone, flips: off the ring the waypoint into the gap is refused, on the ring its first step is not.
+The bot goes to and fro 1 to 2 cm below-left of the fighter for the whole round, from where a dash would push it 30° or
+more off the push, so it never dashes. EASY dashes at any alignment and wins. The full trace is in the brief's Result.
+
+**The fix, behind `BotTuning.wholeDetour` (off by default, a human decides; see below).** When another object that
+blocks closes the shorter way round (a hole does not count: its bounding circle is too coarse), the bot takes the other
+side if its whole way round is open, else walks straight at its goal if nothing is in the way; otherwise as before. No rule, physics or `DuelParams` change; nothing drawn from
+the bot's generator; `PRE_T57_TUNING` sets it false, and with it false the 24 golden match setups at today's rules give
+the prints recorded before T60 (`theFixSwitchedOffIsTheOldBot`). On a table without objects it changes nothing.
+
+**Why it is off by default.** On, it breaks `normalIsBetweenEasyAndHard` (not loosened): HARD ROLL beats NORMAL ROLL on
+cup-and-book 214 of 400 on the test's seeds, under the 0.55 floor (220); 238 before. Over five seed bases (2000
+matches) 63.4 % -> 54.1 %. The fix on NORMAL alone: 50.4 %; on HARD alone: 68.4 %. Both levels play better near the cup
+with it; NORMAL, which went to and fro beside a HARD bot standing by the cup too, gains far more. The six
+candidates that met I1 all cost that cell, 211..217 of 400 (the brief's candidate log). The orchestrator decided to turn
+the fix on and to set that test's per-ability floor to 0.50 with a 0.58 mean; the permission system refused the commit
+that lowers the floor (a threshold change needs the user's own approval), so the default stays off until the user
+approves it.
+
+### The idle table (I1, I2): a fighter that sends no input on its mark, 5/5/5/5 both
+
+Every bot ability against the same ability and against JUMP, both marks, 3 seeds: 42 matches per cell. "won" = the
+bot won; all wins were 2:0 by two ring-outs; "clock" = lost 0:2 on two timeouts; s = mean match length; stand-off = I4's
+longest stretch without closing in or attacking.
+
+| arena | level | before (T57 bot): won / clock / s / stand-off | after (`wholeDetour` on) |
+|---|---|---|---|
+| empty | EASY | 42 / 0 / 33.7 s / 4.2 s | 42 / 0 / 33.7 s / 4.2 s |
+| empty | NORMAL | 42 / 0 / 22.6 s / 2.7 s | 42 / 0 / 22.6 s / 2.7 s |
+| empty | HARD | 42 / 0 / 22.5 s / 2.6 s | 42 / 0 / 22.5 s / 2.6 s |
+| cup-and-book | EASY | 42 / 0 / 32.9 s / 4.2 s | 42 / 0 / 33.1 s / 4.2 s |
+| cup-and-book | NORMAL | **0 / 42 / 129.0 s / 59.2 s** | 42 / 0 / 28.4 s / 3.0 s |
+| cup-and-book | HARD | **0 / 42 / 129.0 s / 57.6 s** | 42 / 0 / 27.6 s / 2.6 s |
+| small | EASY | 42 / 0 / 19.5 s / 3.3 s | 42 / 0 / 19.5 s / 3.3 s |
+| small | NORMAL | 42 / 0 / 14.1 s / 2.5 s | 42 / 0 / 14.1 s / 2.5 s |
+| small | HARD | 42 / 0 / 14.3 s / 2.6 s | 42 / 0 / 14.3 s / 2.6 s |
+| large | EASY | 42 / 0 / 42.3 s / 4.5 s | 42 / 0 / 42.3 s / 4.5 s |
+| large | NORMAL | 42 / 0 / 27.7 s / 2.7 s | 42 / 0 / 27.7 s / 2.7 s |
+| large | HARD | 42 / 0 / 27.5 s / 2.7 s | 42 / 0 / 27.5 s / 2.7 s |
+
+I3 (a target that walks to a new point one radius from its mark every 500 ms): 9 of 9 per arena and level, NORMAL and
+HARD, all 2:0 by ring-outs, before and after (its motion breaks the to and fro). I4 between bots (equal and archetype
+cells, four arenas, NORMAL and HARD, seeds 1..10: 3200 bot sides): longest 8.6 s before, 8.0 s after, none over 10 s
+(the tests' 640 sides: 7.5 s).
+
+**Arenas with a CLIFF hole** (not tuning arenas; every ability pair at equal stats, seeds 1..6, 96 matches per level;
+"sides" = bot sides with a stretch over 10 s without closing in or attacking, of 192):
+
+| arena | level | rounds on the clock, off / on | sides over 10 s, off / on | a still fighter: won (by ring-outs), off / on |
+|---|---|---|---|---|
+| `Scenarios.day5Level()` (cup, book, 10 x 30 cm gap) | NORMAL | 6 of 235 / 7 of 238 | 27 / 30 | 23 (0) / 22 (0) of 24 |
+| `Scenarios.day5Level()` | HARD | 62 of 228 / 61 of 229 | 126 / 127 | 23 (0) / 22 (0) of 24 |
+| 50 x 40 cm, a 4 x 30 cm hole strip, a book | NORMAL | 0 / 0 | 0 / 0 | 24 (2) / 24 (2) of 24 |
+| 50 x 40 cm, a 4 x 30 cm hole strip, a book | HARD | 1 / 1 | 2 / 2 | 24 (2) / 24 (2) of 24 |
+
+day5 is where the T58 review saw HARD v HARD draw 0:0 after 5 rounds. Its causes are not T60's gap (traced): the mark
+(0.08, 0) touches the cup and the push toward the nearest edge drives the fighter into it (wall slams); a bot on that mark
+starts inside the cup's keep-out circle with its goal straight away from it and goes to and fro round it (the side flips
+with a near-zero cross product); the gap's bounding circle plus margin (21.8 cm) bars walk targets on half the table.
+The fix changes none of it. A first version of the fix also counted a hole's coarse bounding circle (21 cm round the
+strip) as an object closing the way, and on the strip table NORMAL stalled more often (0 -> 6 sides over 10 s); since
+candidate 7 a hole closes a way as the edge does, and the switch changes nothing on that table. Both are in the brief's
+"what a human must decide".
+
+### The matrix (`duel matrix --n 200`), before and with the switch on
+
+Before = 920ed48 (identical to the T57 table below); the committed default (switch off) gives the same `matrix.json`
+cells. On = `--tuning` `{"wholeDetour": true}`, 91 s on 4 threads, measured with candidate 3; candidate 7 (kept) differs
+only near holes, which no tuning arena has (`--n 100`: all 320 cells identical to 3's). Only the 80 cup-and-book cells
+change; the other 240 tallies are identical.
+
+| # | Threshold | Before | On | |
+|---|---|---|---|---|
+| B1 | 35..65 % | 20.3..83.5 % (4 out) | 20.3..83.5 % (5 out: + cup-and-book HARD ROLL 37.5 -> 33.2 %) | FAIL both |
+| B2 | 30..70 % | 19.5..84.3 % (6 out) | 19.5..84.3 % (6 out, the same) | FAIL both |
+| B3 | 25..75 % | 1.0..99.0 % (54 out) | 1.0..99.0 % (52 out: cup-and-book NORMAL archetype FLY v ROLL back in) | FAIL both |
+| B4 | <= 25 % (large 40) | 0..0.2 % | 0..0.2 % | PASS both |
+| B5 | 2..8 (large 10) | 2.5..8.7 (3 out) | 2.5..8.5 (1 out: cup-and-book HARD archetype JUMP v HIDE 8.5) | FAIL both |
+| B6 | 30..120 s (small 20) | 23.7..54.7 s | 23.7..54.7 s | PASS both |
+| B7 | 40..65 % | 7.0..83.5 % (61 out) | 7.0..83.5 % (62 out: 3 back in, 4 SPEED specialists on cup-and-book now out) | FAIL both |
+| B8 | >= 65 % | 80.0..100 % | 80.0..100 % | PASS both |
+| B9 | identical | 64 000 replays identical | 64 000 replays identical | PASS both |
+| B11 | >= 1.0 NORMAL, >= 0.5 HARD | 0.9..3.9, 0 twins | 0.9..3.9, 0 twins | PASS both |
+
+No row changes its verdict and no row's range moves. Against the field on cup-and-book (B1, equal stats, JUMP / FLY /
+ROLL / HIDE): NORMAL 53.2 / 51.3 / 42.2 / 53.3 -> 54.0 / 48.2 / 42.5 / 55.3, HARD 43.3 / 60.5 / 37.5 / 58.7 -> 46.0 /
+62.5 / 33.2 / 58.3 (every move under 5 points). With archetype stats (B2) HARD ROLL 58.7 -> 48.5 % and HARD HIDE
+47.8 -> 53.2 %, both toward 50. 19 single cells move 5 points or more, all on cup-and-book; the largest are the SPEED
+specialists (NORMAL ROLL 44 -> 24 %, HIDE 49 -> 36 %, HARD FLY 48 -> 35.5 %, HARD ROLL 41 -> 31.5 %) and ROLL against
+HIDE at HARD (archetype 47.5 -> 31.5 %): probably the cells where one side profited most from the other going to and
+fro beside the cup (a SPEED 8 line walks round fastest; a ROLL may ram up to 60° off its push where a dash needs 30°, so
+the to and fro cost it least). Not traced cell by cell.
+
+The strength tests with the switch on (their own seeds): `hardBeatsEasy` empty 100 %, cup-and-book 94.5 -> 96.5 %;
+NORMAL v EASY 100 % and 95.5 -> 97.5 %; HARD v NORMAL empty identical (JUMP 351, FLY 268, ROLL 252, HIDE 358 of 400),
+cup-and-book JUMP 247 -> 257, FLY 274 -> 268, **ROLL 238 -> 214** (floor 220), HIDE 286 -> 284.
 
 ## T57: the rules of 2026-11-12 (ai/tasks/T57-duel-balance-2.md)
 

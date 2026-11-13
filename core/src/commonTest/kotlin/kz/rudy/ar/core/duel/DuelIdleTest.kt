@@ -1,0 +1,327 @@
+package kz.rudy.ar.core.duel
+
+import kz.rudy.ar.core.domain.Ability
+import kz.rudy.ar.core.domain.FighterStats
+import kz.rudy.ar.core.domain.Level
+import kz.rudy.ar.core.domain.Vec2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.random.Random
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/** The bot's side and the human's side of [sideMatch]. */
+private const val BOT = "bot"
+private const val HUMAN = "human"
+
+/** I4's limit: a NORMAL or HARD bot never goes this long without closing in on its opponent or attacking it. */
+private const val STAND_OFF_LIMIT_MS = 10_000L
+
+/**
+ * The bot with T60's fix on ([BotTuning.wholeDetour]). It is off by default: on, `normalIsBetweenEasyAndHard` fails its
+ * floor in the cup-and-book ROLL cell (the brief's Result), and turning it on is a human's decision.
+ */
+private val FIXED = BotTuning(wholeDetour = true)
+
+/**
+ * One match of a bot ([BOT]) against a side the test plays ([HUMAN]), and what came of it.
+ *
+ * @property botRingOuts rounds the human lost by a ring-out; [humanRingOuts] the bot did; [timeouts] rounds to the clock.
+ * @property attacks dashes and specials the bot started.
+ * @property standOffMs the longest stretch of FIGHT in which the bot neither closed the distance by a radius nor
+ *   attacked, the human on the table ([StandOff]).
+ */
+internal class SideResult(
+    val winner: String?,
+    val scoreBot: Int,
+    val scoreHuman: Int,
+    val botRingOuts: Int,
+    val humanRingOuts: Int,
+    val timeouts: Int,
+    val attacks: Int,
+    val standOffMs: Long,
+    val matchMs: Long,
+) {
+    /** Won 2:0, both points by ring-outs of the human. */
+    val cleanWin: Boolean get() = winner == BOT && scoreHuman == 0 && timeouts == 0 && humanRingOuts == 0
+
+    /** Lost 0:2 with both points to the clock. */
+    val lostOnTheClock: Boolean get() = winner == HUMAN && scoreBot == 0 && timeouts >= 2
+
+    override fun toString() = "$scoreBot:$scoreHuman ${winner ?: "draw"} ring-outs $botRingOuts / $humanRingOuts clock $timeouts attacks $attacks stand-off ${standOffMs} ms in ${matchMs / 1000} s"
+}
+
+/**
+ * Tracks I4 for one fighter ([me]) on every state of a match: the longest stretch of FIGHT in which it neither attacked
+ * (a dash or a special) nor came one radius closer to the other than the farthest the other has been from it since the
+ * stretch began (so walking back at a fighter that a hit knocked away is closing in). A stretch restarts at every
+ * attack, every such closing in, every round, and while either is out (falling: not reachable on foot). The bot of the
+ * T60 bug went to and fro 1 to 2 cm from the other, its distance changing by less than a radius: 59 s.
+ */
+internal class StandOff(private val me: String) {
+    var longestMs = 0L
+        private set
+    private var startMs = -1L
+    private var refM = 0f
+
+    fun see(state: DuelMatchState, events: List<MatchEvent>, arena: Level) {
+        val now = state.duel.timeMs
+        val self = state.duel[me]
+        val other = if (state.duel.a.id == me) state.duel.b else state.duel.a
+        if (state.phase != MatchPhase.FIGHT || self == null || DuelPhysics.isOut(other, arena) || DuelPhysics.isOut(self, arena)) {
+            startMs = -1L
+            return
+        }
+        val d = self.body.state.pos.distanceTo(other.body.state.pos)
+        val attacked = events.any { e ->
+            e is MatchEvent.Fight && e.event.let { (it is DuelEvent.DashStarted && it.id == me) || (it is DuelEvent.SpecialStarted && it.id == me) }
+        }
+        if (startMs < 0L || attacked || d <= refM - self.body.state.radiusM) {
+            startMs = now
+            refM = d
+            return
+        }
+        refM = maxOf(refM, d)
+        longestMs = maxOf(longestMs, now - startMs)
+    }
+}
+
+/**
+ * A match on [arena] between a [level] bot of [botAbility] and a side of [humanAbility] that [human] plays (no input by
+ * default: a fighter that stands still), both 5/5/5/5; the bot on the first mark when [botFirst]. 33 ms frames; the bot
+ * with T60's fix on unless [tuning] says otherwise.
+ */
+internal fun sideMatch(
+    arena: Level,
+    level: BotLevel,
+    botAbility: Ability,
+    humanAbility: Ability,
+    botFirst: Boolean,
+    seed: Long,
+    tuning: BotTuning = FIXED,
+    human: (DuelMatchState) -> Map<String, DuelInput> = { emptyMap() },
+): SideResult {
+    val bot = Contestant(BOT, FighterStats.BALANCED, botAbility)
+    val other = Contestant(HUMAN, FighterStats.BALANCED, humanAbility)
+    val marks = DuelArenas.marks(arena)
+    val start = if (botFirst) {
+        RunnerState(DuelMatch.start(bot, other, arena, marks), botA = DuelBot.mind(level, seed))
+    } else {
+        RunnerState(DuelMatch.start(other, bot, arena, marks), botB = DuelBot.mind(level, seed))
+    }
+    var s = start
+    var botRingOuts = 0
+    var humanRingOuts = 0
+    var timeouts = 0
+    var attacks = 0
+    val standOff = StandOff(BOT)
+    while (s.match.phase != MatchPhase.RESULT && s.match.duel.timeMs < 600_000L) {
+        val out = DuelRunner.step(s, arena, 33L, human(s.match), tuning = tuning)
+        for (e in out.events) {
+            when (e) {
+                is MatchEvent.Point -> if (e.reason == PointReason.TIMEOUT) timeouts++ else if (e.winner == BOT) botRingOuts++ else if (e.winner == HUMAN) humanRingOuts++
+                is MatchEvent.Fight -> when (val f = e.event) {
+                    is DuelEvent.DashStarted -> if (f.id == BOT) attacks++
+                    is DuelEvent.SpecialStarted -> if (f.id == BOT) attacks++
+                    else -> Unit
+                }
+                else -> Unit
+            }
+        }
+        s = out.state
+        standOff.see(s.match, out.events, arena)
+    }
+    val m = s.match
+    return SideResult(m.winner, m.scoreOf(BOT), m.scoreOf(HUMAN), botRingOuts, humanRingOuts, timeouts, attacks, standOff.longestMs, m.duel.timeMs)
+}
+
+/**
+ * I3's target: every 500 ms of match time it walks to a new point one radius from its own mark (in a direction drawn
+ * from [seed]).
+ */
+internal fun shuffler(seed: Long): (DuelMatchState) -> Map<String, DuelInput> {
+    val rnd = Random(seed)
+    var last = -1L
+    return { s ->
+        val slot = s.duel.timeMs / 500L
+        if (s.phase == MatchPhase.FIGHT && slot != last) {
+            last = slot
+            val mark = if (s.duel.a.id == HUMAN) s.startA else s.startB
+            val r = s.duel[HUMAN]!!.body.state.radiusM
+            val angle = rnd.nextDouble() * 2.0 * kotlin.math.PI
+            mapOf(HUMAN to DuelInput.MoveTo(mark + Vec2(cos(angle).toFloat(), sin(angle).toFloat()) * r))
+        } else {
+            emptyMap()
+        }
+    }
+}
+
+/** I1's sample: every bot ability against the same ability and against JUMP. */
+private val PAIRS: List<Pair<Ability, Ability>> = Ability.entries.flatMap { x -> listOf(x to x, x to Ability.JUMP).distinct() }
+
+/** The tuning arenas, by name. */
+private val ARENAS = DuelArenas.MATRIX
+
+/**
+ * T60: a bot must beat a fighter that stands still (and one that only shuffles round its mark). Every check but the
+ * switch's own runs with the fix on ([FIXED]).
+ */
+class DuelIdleTest {
+
+    /** I1's matches for [level]: arena name -> results, every pair x both marks x seeds 1..3. */
+    private fun idleSample(level: BotLevel): Map<String, List<Pair<String, SideResult>>> = ARENAS.mapValues { (_, arena) ->
+        val out = ArrayList<Pair<String, SideResult>>()
+        for ((x, y) in PAIRS) for (first in listOf(true, false)) for (seed in 1L..3L) {
+            out += "$x v idle $y, ${if (first) "first" else "second"} mark, seed $seed" to sideMatch(arena, level, x, y, first, seed)
+        }
+        out
+    }
+
+    private fun table(level: BotLevel, sample: Map<String, List<Pair<String, SideResult>>>): String = sample.entries.joinToString("; ") { (name, rs) ->
+        val r = rs.map { it.second }
+        "$name $level: bot won ${r.count { it.winner == BOT }} of ${r.size} (${r.count { it.cleanWin }} 2:0 by ring-outs), " +
+            "lost ${r.count { it.winner == HUMAN }} (${r.count { it.lostOnTheClock }} 0:2 on the clock), " +
+            "mean ${r.sumOf { it.matchMs } / r.size / 100 / 10.0} s, longest stand-off ${r.maxOf { it.standOffMs }} ms"
+    }
+
+    @Test
+    fun aBotBeatsAFighterThatStandsStill() {
+        // I1: a fighter that sends no input, against NORMAL and HARD bots: the four tuning arenas, every bot ability
+        // against the same ability and against JUMP, both marks, 3 seeds (168 matches per level). The bot wins every one
+        // 2:0, both points by ring-outs. With the fix off (the T57 bot) both levels lose all 42 on cup-and-book 0:2 on the
+        // clock without a dash: the bot goes to and fro between two detour waypoints beside the idle fighter (the brief's
+        // Result).
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) {
+            val sample = idleSample(level)
+            println("aBotBeatsAFighterThatStandsStill: ${table(level, sample)}")
+            for ((name, rs) in sample) for ((what, r) in rs) assertTrue(r.cleanWin, "$name $level $what: $r")
+        }
+    }
+
+    @Test
+    fun easyStillBeatsAnIdleFighter() {
+        // I2: the same sample against EASY: at least 2 of 3 seeds per cell, and no match lost 0:2 on the clock.
+        val sample = idleSample(BotLevel.EASY)
+        println("easyStillBeatsAnIdleFighter: ${table(BotLevel.EASY, sample)}")
+        for ((name, rs) in sample) {
+            for ((what, r) in rs) assertTrue(!r.lostOnTheClock, "$name EASY $what: $r")
+            for (cell in rs.chunked(3)) {
+                assertTrue(cell.count { it.second.winner == BOT } >= 2, "$name EASY ${cell.first().first}: ${cell.map { it.second }}")
+            }
+        }
+    }
+
+    @Test
+    fun aBotBeatsATargetThatShuffles() {
+        // I3: a target that walks to a new point one radius from its mark every 500 ms (seeded): 9 matches per arena and
+        // level (bot and target abilities and marks varied), NORMAL and HARD win at least 8.
+        val lines = ArrayList<String>()
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) for ((name, arena) in ARENAS) {
+            val rs = (0 until 9).map { k ->
+                val x = Ability.entries[k % 4]
+                val y = Ability.entries[(k + 1 + k / 4) % 4]
+                "$x v shuffling $y seed $k" to sideMatch(arena, level, x, y, k % 2 == 0, 100L + k, human = shuffler(700L + k))
+            }
+            val won = rs.count { it.second.winner == BOT }
+            lines += "$name $level $won of 9 (${rs.count { it.second.cleanWin }} 2:0 by ring-outs; longest stand-off ${rs.maxOf { it.second.standOffMs }} ms)"
+            assertTrue(won >= 8, "$name $level: the bot won $won of 9: ${rs.filter { it.second.winner != BOT }}")
+        }
+        println("aBotBeatsATargetThatShuffles: ${lines.joinToString("; ")}")
+    }
+
+    @Test
+    fun theFixSwitchedOffIsTheOldBot() {
+        // `BotTuning.wholeDetour` off is the T57 bot, decision for decision: the 24 golden match setups
+        // ([goldenMatch]: four arenas, every ability, four level pairs) with today's rules and tuning, the switch off, give
+        // the very results, events, decisions and final states recorded on 920ed48 (before T60). PRE_T57_TUNING has it
+        // off too, so `theNewRulesSwitchedOffAreThePreviousPhysics` still replays 207acc6 through the new code.
+        val off = BotTuning(wholeDetour = false)
+        for (i in 0 until GOLDEN_MATCHES) {
+            val (r, fp) = goldenMatch(i, DuelParams.DEFAULT, off)
+            val (summary, expected) = PRE_T60_PRINTS[i]
+            assertEquals(summary, "${r.winner}/${r.scoreA}/${r.scoreB}/${r.rounds}/${r.matchMs}/${r.ringOuts}/${r.timeouts}/${r.hits}/${r.wallSlams}/${r.specials}", "match $i")
+            assertEquals(expected, fp, "match $i: the same events, decisions and final state")
+        }
+        assertFalse(PRE_T57_TUNING.wholeDetour)
+        // And the switch is the fix: off, a NORMAL bot loses to a fighter standing on its mark of cup-and-book without a
+        // single dash; on, it wins 2:0 by ring-outs.
+        val lost = sideMatch(DuelArenas.CUP_AND_BOOK, BotLevel.NORMAL, Ability.JUMP, Ability.JUMP, true, 1L, tuning = off)
+        assertTrue(lost.lostOnTheClock && lost.attacks == 0, "$lost")
+        val won = sideMatch(DuelArenas.CUP_AND_BOOK, BotLevel.NORMAL, Ability.JUMP, Ability.JUMP, true, 1L, tuning = FIXED)
+        assertTrue(won.cleanWin, "$won")
+    }
+
+    @Test
+    fun noBotStandsOffForARound() {
+        // I4: the longest stretch of FIGHT in which a NORMAL or HARD bot neither comes a radius closer nor attacks, the
+        // other on the table, stays under 10 s: against a fighter that stands still (I1's sample) and between bots (the
+        // matrix's equal-stats cells on the four arenas, 4 seeds each: 320 matches, both sides measured).
+        var idleMax = 0L
+        var idleWhere = ""
+        for (level in listOf(BotLevel.NORMAL, BotLevel.HARD)) for ((name, rs) in idleSample(level)) for ((what, r) in rs) {
+            if (r.standOffMs > idleMax) {
+                idleMax = r.standOffMs
+                idleWhere = "$name $level $what"
+            }
+        }
+        var botMax = 0L
+        var botWhere = ""
+        val cells = DuelMatrix.equalCells(ARENAS.keys.toList(), listOf(BotLevel.NORMAL, BotLevel.HARD))
+        for (c in cells) for (seed in 1L..4L) {
+            val arena = ARENAS.getValue(c.arena)
+            val marks = DuelArenas.marks(arena)
+            val m = if (seed % 2L == 1L) marks else marks.second to marks.first
+            var s = RunnerState(DuelMatch.start(c.a, c.b, arena, m), DuelBot.mind(c.level, 2L * seed), DuelBot.mind(c.level, 2L * seed + 1L))
+            val a = StandOff(c.a.id)
+            val b = StandOff(c.b.id)
+            while (s.match.phase != MatchPhase.RESULT) {
+                val out = DuelRunner.step(s, arena, 33L, tuning = FIXED)
+                s = out.state
+                a.see(s.match, out.events, arena)
+                b.see(s.match, out.events, arena)
+            }
+            for ((side, so) in listOf(c.labelA to a, c.labelB to b)) {
+                if (so.longestMs > botMax) {
+                    botMax = so.longestMs
+                    botWhere = "${c.arena} ${c.level} ${c.labelA} v ${c.labelB} seed $seed ($side)"
+                }
+            }
+        }
+        println("noBotStandsOffForARound: against a fighter that stands still $idleMax ms ($idleWhere); between bots $botMax ms ($botWhere)")
+        assertTrue(idleMax < STAND_OFF_LIMIT_MS, "against a fighter that stands still: $idleMax ms, $idleWhere")
+        assertTrue(botMax < STAND_OFF_LIMIT_MS, "between bots: $botMax ms, $botWhere")
+    }
+}
+
+/**
+ * What the T57 bot (920ed48, before T60) played in [goldenMatch] with `DuelParams.DEFAULT` and `BotTuning()`: the
+ * result's numbers and the fingerprint ([DuelIdleTest.theFixSwitchedOffIsTheOldBot]).
+ */
+private val PRE_T60_PRINTS: List<Pair<String, Long>> = listOf(
+    "b/1/2/3/40808/3/0/15/0/5" to 2143776594108503168L,
+    "a/2/1/3/48968/3/0/18/8/6" to -105897823244764273L,
+    "b/1/2/3/33040/3/0/10/0/4" to 4249649305524587591L,
+    "a/2/1/3/101080/3/0/38/0/10" to -7338515750620106694L,
+    "b/0/2/2/27616/2/0/11/0/2" to 623553659888911554L,
+    "b/1/2/3/52744/3/0/25/3/6" to -6632976743386546430L,
+    "a/2/1/3/29936/3/0/9/0/3" to -8264088736710522419L,
+    "b/0/2/2/36240/2/0/15/0/4" to -8090752200506766762L,
+    "a/2/1/3/37952/3/0/12/0/5" to -8388630919781355443L,
+    "b/0/2/2/39808/2/0/15/4/2" to -2433896733872083054L,
+    "b/0/2/2/20984/2/0/6/0/1" to 578363453411104607L,
+    "a/2/0/2/37216/2/0/11/0/4" to 4364679026271495672L,
+    "b/0/2/2/31704/2/0/14/0/1" to 4188612832840687403L,
+    "b/0/2/2/41864/2/0/17/3/0" to 3016208883214277882L,
+    "a/2/1/3/30640/3/0/8/0/3" to -6547085993226500058L,
+    "b/0/2/2/63632/2/0/21/0/7" to -3985096976095182306L,
+    "b/1/2/3/36456/3/0/13/0/3" to 1468722206277205627L,
+    "b/0/2/2/43896/2/0/16/4/3" to 7319890126080570943L,
+    "a/2/0/2/25776/2/0/8/0/3" to -6127879400989571310L,
+    "b/1/2/3/57960/3/0/20/0/6" to -2929018388386138007L,
+    "b/0/2/2/21776/2/0/7/0/2" to 1011057463722000075L,
+    "b/0/2/2/27376/2/0/10/0/2" to -3962757788132248015L,
+    "a/2/0/2/12928/2/0/3/0/2" to 8229038344571701012L,
+    "b/1/2/3/49696/3/0/18/0/7" to -503426696238601224L,
+)
