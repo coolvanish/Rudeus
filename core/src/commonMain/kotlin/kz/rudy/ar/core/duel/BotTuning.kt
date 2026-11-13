@@ -168,6 +168,14 @@ data class BotTuning(
  *   within [nearEdgeRadii] of an edge; before T57 this was what [sidesteps] meant for a HIDE, and it still defaults to it.
  * @property reflexChance T57: a bot without [reflexes] notices a dash or a stomp coming at it on a tick it does not think
  *   on with this chance, and answers it then (a jump, a lift-off, a dodge). 0 = only when it thinks.
+ * @property impatientAfterMs T61: after this much FIGHT without attacking (a dash, a stomp or a ram; counted between its
+ *   own decisions, from every round start and every attack: [BotMind.calmMs]) the bot attacks from where it stands: it
+ *   walks at the opponent and dashes whatever the alignment, as EASY does, until it attacks, whatever stopped its plan
+ *   (straight at it when that line touches no object's body; round objects by their bodies, without the clearance).
+ *   Only at an opponent it can hit within a dash's height reach. 0 = never (EASY, which dashes at any alignment anyway,
+ *   and the bot before T61, bit for bit). **0 for every level by default** (the T61 Result): measured at 16 000 for
+ *   NORMAL and HARD; on by default it turns T60's `theFixSwitchedOffIsTheOldBot` red, whose last check is that the
+ *   default bot loses to a fighter standing on its cup-and-book mark; that is a human's decision.
  */
 @Serializable
 data class BotSkill(
@@ -192,8 +200,10 @@ data class BotSkill(
     val closesInOnJumpers: Boolean = false,
     val dodgesAnywhere: Boolean = sidesteps,
     val reflexChance: Float = 0f,
+    val impatientAfterMs: Long = 0L,
 ) {
     init {
+        require(impatientAfterMs >= 0L) { "impatientAfterMs must be >= 0, got $impatientAfterMs" }
         require(reflexChance in 0f..1f) { "reflexChance must be in 0..1, got $reflexChance" }
         require(jumpChance in 0f..1f) { "jumpChance must be in 0..1, got $jumpChance" }
         require(thinkMs >= 0L) { "thinkMs must be >= 0, got $thinkMs" }

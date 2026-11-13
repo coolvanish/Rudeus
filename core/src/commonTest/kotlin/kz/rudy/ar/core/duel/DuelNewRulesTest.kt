@@ -694,13 +694,13 @@ internal val PRE_T57_TUNING = BotTuning(
     normal = BotSkill(
         thinkMs = 144, thinkJitterTicks = 2, dashRangeShare = 0.8f, alignCos = 0.8660254f, aimErrorShare = 0.1f,
         wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = false, weighsPush = false,
-        usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false,
+        usesSpecial = true, nearEdgeRadii = 20f, sidesteps = false, counters = false, safeRamsOnly = false, impatientAfterMs = 0L,
     ),
     hard = BotSkill(
         thinkMs = 48, thinkJitterTicks = 3, dashRangeShare = 0.85f, alignCos = 0.8660254f, aimErrorShare = 0f,
         wrongWayChance = 0f, wanderChance = 0f, wanderMs = 0, leadsAim = true, weighsPush = true,
         usesSpecial = true, nearEdgeRadii = 8f, sidesteps = true, counters = true, safeRamsOnly = true,
-        sidestepEdgeRadii = 4f,
+        sidestepEdgeRadii = 4f, impatientAfterMs = 0L,
     ),
 )
 
