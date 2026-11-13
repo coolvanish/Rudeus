@@ -1,6 +1,6 @@
 # T61 — bot-impatience
 
-status: review
+status: done (merged 2026-11-13; R2 not met: 10 of 720, bar 7; see the Result)
 created: 2026-11-13
 phase: v2 wave 4 (ai/build-plan-v2.md, "The game")
 gate: G5 duel on the Pixel (a real table is a random table: the bot must not stand off on it)
